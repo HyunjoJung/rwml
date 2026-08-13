@@ -34,10 +34,9 @@ pub(crate) struct Styles {
     paragraph: HashMap<String, ParagraphProps>,
     character_run: HashMap<String, RunProps>,
     table_row: HashMap<String, TableRowStyleProps>,
-    table_cell_margins: HashMap<String, super::body::CellMarginSpec>,
+    table_cell: HashMap<String, TableStyleCellProps>,
     table_borders: HashMap<String, super::body::TableBorderTuple>,
     table_geometry: HashMap<String, super::body::TableStyleGeometry>,
-    table_cell_defaults: HashMap<String, super::body::TableStyleCellDefaults>,
 }
 
 impl Styles {
@@ -117,11 +116,19 @@ impl Styles {
         value
     }
 
-    /// A table style's own default cell margins, resolved through `basedOn`.
-    /// Conditional-region and `w:tblPrEx` margins stay out of this cascade.
-    pub(crate) fn table_cell_margins(&self, style_id: Option<&str>) -> super::body::CellMarginSpec {
+    #[cfg(test)]
+    pub(crate) fn table_cell_presentation_for_regions(
+        &self,
+        style_id: Option<&str>,
+        regions: TableRowStyleRegions,
+    ) -> TableStyleCellPresentation {
+        self.table_cell_props(style_id)
+            .presentation_for_regions(regions)
+    }
+
+    pub(crate) fn table_cell_props(&self, style_id: Option<&str>) -> TableStyleCellProps {
         style_id
-            .and_then(|style_id| self.table_cell_margins.get(style_id))
+            .and_then(|style_id| self.table_cell.get(style_id))
             .copied()
             .unwrap_or_default()
     }
@@ -147,17 +154,6 @@ impl Styles {
             .unwrap_or_default()
     }
 
-    /// A table style's whole-table cell defaults, resolved through `basedOn`.
-    pub(crate) fn table_cell_defaults(
-        &self,
-        style_id: Option<&str>,
-    ) -> super::body::TableStyleCellDefaults {
-        style_id
-            .and_then(|style_id| self.table_cell_defaults.get(style_id))
-            .copied()
-            .unwrap_or_default()
-    }
-
     pub(crate) fn table_row_band_size(&self, style_id: Option<&str>) -> Option<u8> {
         style_id
             .and_then(|style_id| self.table_row.get(style_id))
@@ -171,6 +167,23 @@ pub(crate) struct TableRowStyleRegions {
     pub(crate) last_row: bool,
     pub(crate) band1_horizontal: bool,
     pub(crate) band2_horizontal: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct TableStyleCellPresentation {
+    pub(crate) margins: super::body::CellMarginSpec,
+    pub(crate) defaults: super::body::TableStyleCellDefaults,
+}
+
+impl TableStyleCellPresentation {
+    fn overlay(&mut self, other: Self) {
+        self.margins.overlay(other.margins);
+        self.defaults.overlay(other.defaults);
+    }
+
+    fn is_empty(self) -> bool {
+        self.margins.is_empty() && self.defaults.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -1089,25 +1102,27 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     None => {}
                 }
             }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
-                let borders = super::body::read_tbl_borders(&mut r);
-                match &mut cur_style {
-                    Some(style) if style.kind == Some(StyleKind::Table) => {
-                        style.table_borders = Some(borders);
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPr" => {
+                if let Some(style) = &mut cur_style {
+                    if style.kind == Some(StyleKind::Table) {
+                        let values = read_style_table_properties(&mut r, b"tblPr", 0);
+                        style
+                            .table_cell_props
+                            .direct
+                            .margins
+                            .overlay(values.margins);
+                        if values.borders.is_some() {
+                            style.table_borders = values.borders;
+                        }
+                        style.table_geometry.overlay(values.geometry);
+                        if values.row_band_size.is_some() {
+                            style.table_row_props.row_band_size = values.row_band_size;
+                        }
+                    } else {
+                        skip_subtree(&mut r);
                     }
-                    _ => {}
-                }
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
-                // A table style's own default cell margins. Conditional regions
-                // are consumed by the `tblStylePr` arm, so only the style's
-                // non-conditional declaration reaches here.
-                let margins = super::body::read_cell_margins(&mut r, b"tblCellMar", 0);
-                match &mut cur_style {
-                    Some(style) if style.kind == Some(StyleKind::Table) => {
-                        style.table_cell_margins.overlay(margins);
-                    }
-                    _ => {}
+                } else {
+                    skip_subtree(&mut r);
                 }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblStylePr" => {
@@ -1115,19 +1130,17 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     TableRowStyleRegion::from_attr(attr_local_trimmed(&e, b"type").as_deref());
                 if let (Some(style), Some(region)) = (&mut cur_style, region) {
                     if style.kind == Some(StyleKind::Table) {
-                        let (props, margins, borders, geometry, cell_defaults) =
-                            read_conditional_table_region(&mut r, b"tblStylePr");
-                        style.table_row_props.region_mut(region).overlay(props);
-                        // Only the whole-table region joins the table-wide
-                        // margin cascade; row- and column-scoped regions need
-                        // per-cell resolution and stay unsupported.
+                        let values = read_conditional_table_region(&mut r, b"tblStylePr", 0);
+                        style.table_row_props.region_mut(region).overlay(values.row);
+                        style
+                            .table_cell_props
+                            .region_mut(region)
+                            .overlay(values.presentation);
                         if matches!(region, TableRowStyleRegion::WholeTable) {
-                            style.whole_table_cell_margins.overlay(margins);
-                            if borders.is_some() {
-                                style.whole_table_borders = borders;
+                            if values.borders.is_some() {
+                                style.whole_table_borders = values.borders;
                             }
-                            style.whole_table_geometry.overlay(geometry);
-                            style.whole_table_cell_defaults.overlay(cell_defaults);
+                            style.whole_table_geometry.overlay(values.geometry);
                         }
                     } else {
                         skip_subtree(&mut r);
@@ -1218,6 +1231,9 @@ pub(crate) fn parse(xml: &str) -> Styles {
                                 style.name = v;
                             }
                         }
+                        if is_start {
+                            skip_subtree(&mut r);
+                        }
                     }
                     b"basedOn" => {
                         if let Some(v) = attr_local_trimmed(&e, b"val") {
@@ -1225,23 +1241,12 @@ pub(crate) fn parse(xml: &str) -> Styles {
                                 style.based_on = Some(v);
                             }
                         }
-                    }
-                    b"tblW" | b"tblInd" | b"jc" | b"tblLayout" | b"bidiVisual" => {
-                        if let Some(style) = &mut cur_style {
-                            if style.kind == Some(StyleKind::Table) {
-                                style.table_geometry.record(&e);
-                            }
+                        if is_start {
+                            skip_subtree(&mut r);
                         }
                     }
-                    b"tblStyleRowBandSize" => {
-                        if let Some(style) = &mut cur_style {
-                            if style.kind == Some(StyleKind::Table) {
-                                if let Some(size) = attr_u8(&e, b"val").filter(|size| *size <= 3) {
-                                    style.table_row_props.row_band_size = Some(size);
-                                }
-                            }
-                        }
-                    }
+                    b"Choice" | b"Fallback" => {}
+                    _ if is_start && cur_style.is_some() => skip_subtree(&mut r),
                     _ => {}
                 }
             }
@@ -1325,9 +1330,9 @@ pub(crate) fn parse(xml: &str) -> Styles {
         if props.has_any() {
             styles.table_row.insert(id.clone(), props);
         }
-        let margins = resolve_style_table_cell_margins(id, &raw_styles, &mut Vec::new(), 0);
-        if !margins.is_empty() {
-            styles.table_cell_margins.insert(id.clone(), margins);
+        let cell_props = resolve_style_table_cell_props(id, &raw_styles, &mut Vec::new(), 0);
+        if !cell_props.is_empty() {
+            styles.table_cell.insert(id.clone(), cell_props);
         }
         if let Some(borders) = resolve_style_table_borders(id, &raw_styles, &mut Vec::new(), 0) {
             styles.table_borders.insert(id.clone(), borders);
@@ -1335,10 +1340,6 @@ pub(crate) fn parse(xml: &str) -> Styles {
         let geometry = resolve_style_table_geometry(id, &raw_styles, &mut Vec::new(), 0);
         if !geometry.is_empty() {
             styles.table_geometry.insert(id.clone(), geometry);
-        }
-        let cell_defaults = resolve_style_table_cell_defaults(id, &raw_styles, &mut Vec::new(), 0);
-        if !cell_defaults.is_empty() {
-            styles.table_cell_defaults.insert(id.clone(), cell_defaults);
         }
     }
     styles
@@ -1350,13 +1351,11 @@ struct RawStyle {
     kind: Option<StyleKind>,
     name: String,
     based_on: Option<String>,
-    table_cell_margins: super::body::CellMarginSpec,
-    whole_table_cell_margins: super::body::CellMarginSpec,
+    table_cell_props: TableStyleCellProps,
     table_borders: Option<super::body::TableBorderTuple>,
     whole_table_borders: Option<super::body::TableBorderTuple>,
     table_geometry: super::body::TableStyleGeometry,
     whole_table_geometry: super::body::TableStyleGeometry,
-    whole_table_cell_defaults: super::body::TableStyleCellDefaults,
     outline: Option<u8>,
     run_props: RunProps,
     paragraph_props: ParagraphProps,
@@ -1405,6 +1404,68 @@ struct TableRowStyleProps {
     row_band_size: Option<u8>,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct TableStyleCellProps {
+    direct: TableStyleCellPresentation,
+    whole_table: TableStyleCellPresentation,
+    band1_horizontal: TableStyleCellPresentation,
+    band2_horizontal: TableStyleCellPresentation,
+    first_row: TableStyleCellPresentation,
+    last_row: TableStyleCellPresentation,
+}
+
+impl TableStyleCellProps {
+    fn overlay(&mut self, other: Self) {
+        self.direct.overlay(other.direct);
+        self.whole_table.overlay(other.whole_table);
+        self.band1_horizontal.overlay(other.band1_horizontal);
+        self.band2_horizontal.overlay(other.band2_horizontal);
+        self.first_row.overlay(other.first_row);
+        self.last_row.overlay(other.last_row);
+    }
+
+    fn region_mut(&mut self, region: TableRowStyleRegion) -> &mut TableStyleCellPresentation {
+        match region {
+            TableRowStyleRegion::WholeTable => &mut self.whole_table,
+            TableRowStyleRegion::Band1Horizontal => &mut self.band1_horizontal,
+            TableRowStyleRegion::Band2Horizontal => &mut self.band2_horizontal,
+            TableRowStyleRegion::FirstRow => &mut self.first_row,
+            TableRowStyleRegion::LastRow => &mut self.last_row,
+        }
+    }
+
+    pub(crate) fn presentation_for_regions(
+        self,
+        regions: TableRowStyleRegions,
+    ) -> TableStyleCellPresentation {
+        let mut presentation = TableStyleCellPresentation::default();
+        presentation.overlay(self.direct);
+        presentation.overlay(self.whole_table);
+        if regions.band1_horizontal {
+            presentation.overlay(self.band1_horizontal);
+        }
+        if regions.band2_horizontal {
+            presentation.overlay(self.band2_horizontal);
+        }
+        if regions.first_row {
+            presentation.overlay(self.first_row);
+        }
+        if regions.last_row {
+            presentation.overlay(self.last_row);
+        }
+        presentation
+    }
+
+    fn is_empty(self) -> bool {
+        self.direct.is_empty()
+            && self.whole_table.is_empty()
+            && self.band1_horizontal.is_empty()
+            && self.band2_horizontal.is_empty()
+            && self.first_row.is_empty()
+            && self.last_row.is_empty()
+    }
+}
+
 impl TableRowStyleProps {
     fn has_any(self) -> bool {
         self.direct.cant_split.is_some()
@@ -1413,6 +1474,7 @@ impl TableRowStyleProps {
             || self.band2_horizontal.cant_split.is_some()
             || self.first_row.cant_split.is_some()
             || self.last_row.cant_split.is_some()
+            || self.row_band_size.is_some()
     }
 
     fn overlay(&mut self, other: Self) {
@@ -1551,31 +1613,30 @@ fn resolve_style_table_row_props(
     props
 }
 
-fn resolve_style_table_cell_margins(
+fn resolve_style_table_cell_props(
     id: &str,
     raw_styles: &HashMap<String, RawStyle>,
     stack: &mut Vec<String>,
     depth: usize,
-) -> super::body::CellMarginSpec {
+) -> TableStyleCellProps {
     if depth >= STYLE_CHAIN_LIMIT || stack.iter().any(|seen| seen == id) {
-        return super::body::CellMarginSpec::default();
+        return TableStyleCellProps::default();
     }
     let Some(style) = raw_styles
         .get(id)
         .filter(|style| style.kind == Some(StyleKind::Table))
     else {
-        return super::body::CellMarginSpec::default();
+        return TableStyleCellProps::default();
     };
     stack.push(id.to_string());
-    let mut margins = style
+    let mut props = style
         .based_on
         .as_deref()
-        .map(|base| resolve_style_table_cell_margins(base, raw_styles, stack, depth + 1))
+        .map(|base| resolve_style_table_cell_props(base, raw_styles, stack, depth + 1))
         .unwrap_or_default();
-    margins.overlay(style.table_cell_margins);
-    margins.overlay(style.whole_table_cell_margins);
+    props.overlay(style.table_cell_props);
     stack.pop();
-    margins
+    props
 }
 
 fn resolve_style_table_borders(
@@ -1632,104 +1693,97 @@ fn resolve_style_table_geometry(
     geometry
 }
 
-fn read_conditional_cell_defaults(
-    r: &mut Reader<&[u8]>,
-    defaults: &mut super::body::TableStyleCellDefaults,
-) {
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if matches!(local(e.name().as_ref()), b"shd" | b"vAlign" | b"tcW") =>
-            {
-                defaults.record(&e);
+#[derive(Default)]
+struct StyleTableProperties {
+    margins: super::body::CellMarginSpec,
+    borders: Option<super::body::TableBorderTuple>,
+    geometry: super::body::TableStyleGeometry,
+    row_band_size: Option<u8>,
+}
+
+impl StyleTableProperties {
+    fn overlay(&mut self, other: Self) {
+        self.margins.overlay(other.margins);
+        if other.borders.is_some() {
+            self.borders = other.borders;
+        }
+        self.geometry.overlay(other.geometry);
+        if other.row_band_size.is_some() {
+            self.row_band_size = other.row_band_size;
+        }
+    }
+
+    fn record_leaf(&mut self, e: &BytesStart<'_>) {
+        match local(e.name().as_ref()) {
+            b"tblW" | b"tblInd" | b"jc" | b"tblLayout" | b"bidiVisual" => {
+                self.geometry.record(e);
             }
-            Ok(Event::Start(_)) => skip_subtree(r),
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tcPr" => break,
-            Ok(Event::Eof) | Err(_) => break,
+            b"tblStyleRowBandSize" => {
+                if let Some(size) = attr_u8(e, b"val").filter(|size| *size <= 3) {
+                    self.row_band_size = Some(size);
+                }
+            }
             _ => {}
         }
     }
 }
 
-fn resolve_style_table_cell_defaults(
-    id: &str,
-    raw_styles: &HashMap<String, RawStyle>,
-    stack: &mut Vec<String>,
-    depth: usize,
-) -> super::body::TableStyleCellDefaults {
-    if depth >= STYLE_CHAIN_LIMIT || stack.iter().any(|seen| seen == id) {
-        return super::body::TableStyleCellDefaults::default();
-    }
-    let Some(style) = raw_styles
-        .get(id)
-        .filter(|style| style.kind == Some(StyleKind::Table))
-    else {
-        return super::body::TableStyleCellDefaults::default();
-    };
-    stack.push(id.to_string());
-    let mut defaults = style
-        .based_on
-        .as_deref()
-        .map(|base| resolve_style_table_cell_defaults(base, raw_styles, stack, depth + 1))
-        .unwrap_or_default();
-    defaults.overlay(style.whole_table_cell_defaults);
-    stack.pop();
-    defaults
-}
-
-fn read_conditional_table_region(
+fn read_style_table_properties(
     r: &mut Reader<&[u8]>,
     end: &[u8],
-) -> (
-    TableRowProps,
-    super::body::CellMarginSpec,
-    Option<super::body::TableBorderTuple>,
-    super::body::TableStyleGeometry,
-    super::body::TableStyleCellDefaults,
-) {
-    let mut props = TableRowProps::default();
-    let mut margins = super::body::CellMarginSpec::default();
-    let mut borders = None;
-    let mut geometry = super::body::TableStyleGeometry::default();
-    let mut cell_defaults = super::body::TableStyleCellDefaults::default();
+    depth: usize,
+) -> StyleTableProperties {
+    if depth >= STYLE_CHAIN_LIMIT {
+        skip_subtree(r);
+        return StyleTableProperties::default();
+    }
+    let mut values = StyleTableProperties::default();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPr" => {
-                props.overlay(read_table_row_props(r, b"trPr"));
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_style_table_properties_alternate_content(r, depth + 1) {
+                    values.overlay(value);
+                }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
-                margins.overlay(super::body::read_cell_margins(r, b"tblCellMar", 0));
+                values.margins.overlay(super::body::read_cell_margins(
+                    r,
+                    b"tblCellMar",
+                    depth as u32 + 1,
+                ));
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
-                borders = Some(super::body::read_tbl_borders(r));
+                values.borders = Some(super::body::read_tbl_borders(r));
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+            Ok(Event::Start(e))
                 if matches!(
                     local(e.name().as_ref()),
-                    b"tblW" | b"tblInd" | b"jc" | b"tblLayout" | b"bidiVisual"
+                    b"tblW"
+                        | b"tblInd"
+                        | b"jc"
+                        | b"tblLayout"
+                        | b"bidiVisual"
+                        | b"tblStyleRowBandSize"
                 ) =>
             {
-                geometry.record(&e);
+                values.record_leaf(&e);
+                skip_subtree(r);
             }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPr" => {
-                read_conditional_cell_defaults(r, &mut cell_defaults);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                if let Some(value) = read_conditional_table_row_props_alternate_content(r) {
-                    props.overlay(value);
-                }
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPr" => {
-                // Recurse so a region's `tblPr` contributes its margins too.
-                let (nested, nested_margins, nested_borders, nested_geometry, nested_cells) =
-                    read_conditional_table_region(r, b"tblPr");
-                props.overlay(nested);
-                margins.overlay(nested_margins);
-                if nested_borders.is_some() {
-                    borders = nested_borders;
-                }
-                geometry.overlay(nested_geometry);
-                cell_defaults.overlay(nested_cells);
+            Ok(Event::Empty(e))
+                if matches!(
+                    local(e.name().as_ref()),
+                    b"tblW"
+                        | b"tblInd"
+                        | b"jc"
+                        | b"tblLayout"
+                        | b"bidiVisual"
+                        | b"tblStyleRowBandSize"
+                ) =>
+            {
+                values.record_leaf(&e);
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
@@ -1737,35 +1791,19 @@ fn read_conditional_table_region(
             _ => {}
         }
     }
-    (props, margins, borders, geometry, cell_defaults)
+    values
 }
 
-fn read_conditional_table_row_props(r: &mut Reader<&[u8]>, end: &[u8]) -> TableRowProps {
-    let mut props = TableRowProps::default();
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPr" => {
-                props.overlay(read_table_row_props(r, b"trPr"));
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                if let Some(value) = read_conditional_table_row_props_alternate_content(r) {
-                    props.overlay(value);
-                }
-            }
-            Ok(Event::Start(_)) => skip_subtree(r),
-            Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    props
-}
-
-fn read_conditional_table_row_props_alternate_content(
+fn read_style_table_properties_alternate_content(
     r: &mut Reader<&[u8]>,
-) -> Option<TableRowProps> {
+    depth: usize,
+) -> Option<StyleTableProperties> {
+    if depth >= STYLE_CHAIN_LIMIT {
+        skip_subtree(r);
+        return None;
+    }
     let mut took = false;
-    let mut props = None;
+    let mut values = None;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
@@ -1774,17 +1812,232 @@ fn read_conditional_table_row_props_alternate_content(
                 match name {
                     b"Choice" | b"Fallback" if !took => {
                         took = true;
-                        props = Some(read_conditional_table_row_props(r, name));
+                        values = Some(read_style_table_properties(r, name, depth + 1));
                     }
                     _ => skip_subtree(r),
                 }
+            }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") && !took =>
+            {
+                took = true;
+                values = Some(StyleTableProperties::default());
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    props
+    values
+}
+
+fn read_conditional_cell_presentation(
+    r: &mut Reader<&[u8]>,
+    end: &[u8],
+    depth: usize,
+) -> TableStyleCellPresentation {
+    if depth >= STYLE_CHAIN_LIMIT {
+        skip_subtree(r);
+        return TableStyleCellPresentation::default();
+    }
+    let mut presentation = TableStyleCellPresentation::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcMar" => {
+                presentation.margins.overlay(super::body::read_cell_margins(
+                    r,
+                    b"tcMar",
+                    depth as u32 + 1,
+                ));
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) =
+                    read_conditional_cell_presentation_alternate_content(r, depth + 1)
+                {
+                    presentation.overlay(value);
+                }
+            }
+            Ok(Event::Start(e))
+                if matches!(local(e.name().as_ref()), b"shd" | b"vAlign" | b"tcW") =>
+            {
+                presentation.defaults.record(&e);
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"shd" | b"vAlign" | b"tcW") =>
+            {
+                presentation.defaults.record(&e);
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    presentation
+}
+
+fn read_conditional_cell_presentation_alternate_content(
+    r: &mut Reader<&[u8]>,
+    depth: usize,
+) -> Option<TableStyleCellPresentation> {
+    if depth >= STYLE_CHAIN_LIMIT {
+        skip_subtree(r);
+        return None;
+    }
+    let mut took = false;
+    let mut presentation = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        presentation = Some(read_conditional_cell_presentation(r, name, depth + 1));
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") && !took =>
+            {
+                took = true;
+                presentation = Some(TableStyleCellPresentation::default());
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    presentation
+}
+
+#[derive(Default)]
+struct ConditionalTableRegion {
+    row: TableRowProps,
+    presentation: TableStyleCellPresentation,
+    borders: Option<super::body::TableBorderTuple>,
+    geometry: super::body::TableStyleGeometry,
+}
+
+impl ConditionalTableRegion {
+    fn overlay(&mut self, other: Self) {
+        self.row.overlay(other.row);
+        self.presentation.overlay(other.presentation);
+        if other.borders.is_some() {
+            self.borders = other.borders;
+        }
+        self.geometry.overlay(other.geometry);
+    }
+}
+
+fn read_conditional_table_region(
+    r: &mut Reader<&[u8]>,
+    end: &[u8],
+    depth: usize,
+) -> ConditionalTableRegion {
+    if depth >= STYLE_CHAIN_LIMIT {
+        skip_subtree(r);
+        return ConditionalTableRegion::default();
+    }
+    let mut values = ConditionalTableRegion::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPr" => {
+                values.row.overlay(read_table_row_props(r, b"trPr"));
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
+                values
+                    .presentation
+                    .margins
+                    .overlay(super::body::read_cell_margins(
+                        r,
+                        b"tblCellMar",
+                        depth as u32 + 1,
+                    ));
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
+                values.borders = Some(super::body::read_tbl_borders(r));
+            }
+            Ok(Event::Start(e))
+                if matches!(
+                    local(e.name().as_ref()),
+                    b"tblW" | b"tblInd" | b"jc" | b"tblLayout" | b"bidiVisual"
+                ) =>
+            {
+                values.geometry.record(&e);
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e))
+                if matches!(
+                    local(e.name().as_ref()),
+                    b"tblW" | b"tblInd" | b"jc" | b"tblLayout" | b"bidiVisual"
+                ) =>
+            {
+                values.geometry.record(&e);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPr" => {
+                values
+                    .presentation
+                    .overlay(read_conditional_cell_presentation(r, b"tcPr", depth + 1));
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_conditional_table_region_alternate_content(r, depth + 1) {
+                    values.overlay(value);
+                }
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPr" => {
+                values.overlay(read_conditional_table_region(r, b"tblPr", depth + 1));
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    values
+}
+
+fn read_conditional_table_region_alternate_content(
+    r: &mut Reader<&[u8]>,
+    depth: usize,
+) -> Option<ConditionalTableRegion> {
+    if depth >= STYLE_CHAIN_LIMIT {
+        skip_subtree(r);
+        return None;
+    }
+    let mut took = false;
+    let mut values = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        values = Some(read_conditional_table_region(r, name, depth + 1));
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") && !took =>
+            {
+                took = true;
+                values = Some(ConditionalTableRegion::default());
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    values
 }
 
 fn read_table_row_props(r: &mut Reader<&[u8]>, end: &[u8]) -> TableRowProps {
@@ -2621,7 +2874,7 @@ mod tests {
             ));
         }
         xml.push_str(&format!(
-            r#"<w:style w:type="table" w:styleId="S{}"><w:trPr><w:cantSplit/></w:trPr><w:tblStylePr w:type="firstRow"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr></w:style></w:styles>"#,
+            r#"<w:style w:type="table" w:styleId="S{}"><w:trPr><w:cantSplit/></w:trPr><w:tblStylePr w:type="firstRow"><w:trPr><w:cantSplit/></w:trPr><w:tcPr><w:shd w:fill="123456"/></w:tcPr></w:tblStylePr></w:style></w:styles>"#,
             STYLE_CHAIN_LIMIT + 1
         ));
 
@@ -2651,6 +2904,27 @@ mod tests {
                 },
             ),
             Some(true)
+        );
+        let first = TableRowStyleRegions {
+            first_row: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            styles
+                .table_cell_presentation_for_regions(Some("S0"), first)
+                .defaults
+                .shading(),
+            None
+        );
+        assert_eq!(
+            styles
+                .table_cell_presentation_for_regions(
+                    Some(&format!("S{}", STYLE_CHAIN_LIMIT)),
+                    first,
+                )
+                .defaults
+                .shading(),
+            Some(Color::rgb(0x12, 0x34, 0x56))
         );
     }
 
@@ -2748,6 +3022,324 @@ mod tests {
             styles.table_row_cant_split_for_regions(Some("HistoricalConditional"), first),
             None
         );
+    }
+
+    #[test]
+    fn conditional_cell_presentation_recovers_after_mce_depth_limit() {
+        let mut nested = String::new();
+        for _ in 0..STYLE_CHAIN_LIMIT + 2 {
+            nested.push_str("<mc:AlternateContent><mc:Choice Requires=\"w\">");
+        }
+        nested.push_str("<w:tcPr><w:shd w:fill=\"FFFFFF\"/></w:tcPr>");
+        for _ in 0..STYLE_CHAIN_LIMIT + 2 {
+            nested.push_str(
+                "</mc:Choice><mc:Fallback><w:tcPr><w:shd w:fill=\"EEEEEE\"/></w:tcPr></mc:Fallback></mc:AlternateContent>",
+            );
+        }
+        let xml = format!(
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+                <w:style w:type="table" w:styleId="Bounded">
+                    <w:tblStylePr w:type="firstRow">{nested}
+                        <w:tcPr>
+                            <w:shd w:fill="123456"/>
+                            <w:vAlign w:val="bottom"/>
+                            <w:tcW w:w="2500" w:type="pct"/>
+                        </w:tcPr>
+                    </w:tblStylePr>
+                </w:style>
+            </w:styles>"#
+        );
+        let styles = parse(&xml);
+        let presentation = styles.table_cell_presentation_for_regions(
+            Some("Bounded"),
+            TableRowStyleRegions {
+                first_row: true,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(
+            presentation.defaults.shading(),
+            Some(Color::rgb(0x12, 0x34, 0x56))
+        );
+        assert_eq!(
+            presentation.defaults.valign(),
+            Some(crate::model::VCell::Bottom)
+        );
+        assert_eq!(presentation.defaults.width_pct(), Some(0.5));
+    }
+
+    #[test]
+    fn conditional_cell_region_precedence_applies_after_based_on_resolution() {
+        let styles = parse(
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="Base">
+                    <w:tblStylePr w:type="firstRow"><w:tcPr>
+                        <w:shd w:fill="112233"/>
+                    </w:tcPr></w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="Derived">
+                    <w:basedOn w:val="Base"/>
+                    <w:tblStylePr w:type="wholeTable"><w:tcPr>
+                        <w:shd w:fill="AABBCC"/>
+                    </w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+
+        let first = styles.table_cell_presentation_for_regions(
+            Some("Derived"),
+            TableRowStyleRegions {
+                first_row: true,
+                ..Default::default()
+            },
+        );
+        let ordinary = styles
+            .table_cell_presentation_for_regions(Some("Derived"), TableRowStyleRegions::default());
+        assert_eq!(first.defaults.shading(), Some(Color::rgb(0x11, 0x22, 0x33)));
+        assert_eq!(
+            ordinary.defaults.shading(),
+            Some(Color::rgb(0xAA, 0xBB, 0xCC))
+        );
+    }
+
+    #[test]
+    fn conditional_cell_declarations_clear_inherited_values_and_bound_percentages() {
+        let styles = parse(
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="Base">
+                    <w:tblStylePr w:type="wholeTable"><w:tcPr>
+                        <w:shd w:fill="112233"/>
+                        <w:tcW w:w="2500" w:type="pct"/>
+                    </w:tcPr></w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="Derived">
+                    <w:basedOn w:val="Base"/>
+                    <w:tblStylePr w:type="band1Horz"><w:tcPr>
+                        <w:shd w:val="nil" w:fill="AABBCC"/>
+                        <w:tcW w:w="1440" w:type="dxa"/>
+                    </w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band2Horz"><w:tcPr>
+                        <w:shd w:fill="auto"/>
+                        <w:tcW w:w="NaN" w:type="pct"/>
+                    </w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstRow"><w:tcPr>
+                        <w:tcW w:w="-1" w:type="pct"/>
+                    </w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastRow"><w:tcPr>
+                        <w:tcW w:w="5001" w:type="pct"/>
+                    </w:tcPr></w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="Bounds">
+                    <w:tblStylePr w:type="firstRow"><w:tcPr>
+                        <w:tcW w:w="0" w:type="pct"/>
+                    </w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastRow"><w:tcPr>
+                        <w:tcW w:w="5000" w:type="pct"/>
+                    </w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+
+        for regions in [
+            TableRowStyleRegions {
+                band1_horizontal: true,
+                ..Default::default()
+            },
+            TableRowStyleRegions {
+                band2_horizontal: true,
+                ..Default::default()
+            },
+        ] {
+            let presentation = styles.table_cell_presentation_for_regions(Some("Derived"), regions);
+            assert_eq!(presentation.defaults.shading(), None);
+            assert_eq!(presentation.defaults.width_pct(), None);
+        }
+        for regions in [
+            TableRowStyleRegions {
+                first_row: true,
+                ..Default::default()
+            },
+            TableRowStyleRegions {
+                last_row: true,
+                ..Default::default()
+            },
+        ] {
+            let presentation = styles.table_cell_presentation_for_regions(Some("Derived"), regions);
+            assert_eq!(
+                presentation.defaults.shading(),
+                Some(Color::rgb(0x11, 0x22, 0x33))
+            );
+            assert_eq!(presentation.defaults.width_pct(), None);
+        }
+
+        let both_bounds = styles.table_cell_presentation_for_regions(
+            Some("Bounds"),
+            TableRowStyleRegions {
+                first_row: true,
+                last_row: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(both_bounds.defaults.width_pct(), Some(1.0));
+    }
+
+    #[test]
+    fn conditional_cell_region_order_uses_the_last_matching_region() {
+        let styles = parse(
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="Order">
+                    <w:tblPr><w:tblCellMar><w:top w:w="10"/></w:tblCellMar></w:tblPr>
+                    <w:tblStylePr w:type="wholeTable"><w:tcPr><w:tcMar><w:top w:w="20"/></w:tcMar></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band1Horz"><w:tcPr><w:tcMar><w:top w:w="30"/></w:tcMar></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band2Horz"><w:tcPr><w:tcMar><w:top w:w="40"/></w:tcMar></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstRow"><w:tcPr><w:tcMar><w:top w:w="50"/></w:tcMar></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastRow"><w:tcPr><w:tcMar><w:top w:w="60"/></w:tcMar></w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let presentation = styles.table_cell_presentation_for_regions(
+            Some("Order"),
+            TableRowStyleRegions {
+                first_row: true,
+                last_row: true,
+                band1_horizontal: true,
+                band2_horizontal: true,
+            },
+        );
+
+        assert_eq!(presentation.margins.logical_values().0, Some(60));
+    }
+
+    #[test]
+    fn nonconditional_table_properties_ignore_history_and_unknown_wrappers() {
+        let styles = parse(
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="Scoped">
+                    <w:tblPr>
+                        <w:tblCellMar><w:top w:w="100"/></w:tblCellMar>
+                        <w:tblW w:w="2500" w:type="pct"/>
+                        <w:tblStyleRowBandSize w:val="2"/>
+                        <w:tblPrChange><w:tblPr>
+                            <w:tblCellMar><w:top w:w="900"/></w:tblCellMar>
+                            <w:tblW w:w="4500" w:type="pct"/>
+                            <w:tblStyleRowBandSize w:val="3"/>
+                        </w:tblPr></w:tblPrChange>
+                        <w:unknown>
+                            <w:tblCellMar><w:top w:w="901"/></w:tblCellMar>
+                            <w:tblW w:w="4000" w:type="pct"/>
+                            <w:tblStyleRowBandSize w:val="1"/>
+                        </w:unknown>
+                    </w:tblPr>
+                    <w:unknown><w:tblPr>
+                        <w:tblCellMar><w:top w:w="902"/></w:tblCellMar>
+                        <w:tblW w:w="3500" w:type="pct"/>
+                        <w:tblStyleRowBandSize w:val="3"/>
+                    </w:tblPr></w:unknown>
+                </w:style>
+            </w:styles>"#,
+        );
+        let presentation = styles
+            .table_cell_presentation_for_regions(Some("Scoped"), TableRowStyleRegions::default());
+
+        assert_eq!(presentation.margins.logical_values().0, Some(100));
+        assert_eq!(styles.table_geometry(Some("Scoped")).width_pct, Some(0.5));
+        assert_eq!(styles.table_row_band_size(Some("Scoped")), Some(2));
+    }
+
+    #[test]
+    fn conditional_cell_mce_selects_one_branch_and_recovers_siblings() {
+        let styles = parse(
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+                <w:style w:type="table" w:styleId="Mce">
+                    <w:tblStylePr w:type="firstRow"><w:tcPr>
+                        <mc:AlternateContent>
+                            <mc:Choice Requires="w"/>
+                            <mc:Fallback><w:shd w:fill="EEEEEE"/></mc:Fallback>
+                        </mc:AlternateContent>
+                        <w:tcMar><mc:AlternateContent>
+                            <mc:Choice Requires="w"><w:top w:w="120"/></mc:Choice>
+                            <mc:Fallback><w:top w:w="920"/></mc:Fallback>
+                        </mc:AlternateContent><w:bottom w:w="240"/></w:tcMar>
+                        <w:shd w:fill="123456"/>
+                    </w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let presentation = styles.table_cell_presentation_for_regions(
+            Some("Mce"),
+            TableRowStyleRegions {
+                first_row: true,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(presentation.margins.logical_values().0, Some(120));
+        assert_eq!(presentation.margins.logical_values().2, Some(240));
+        assert_eq!(
+            presentation.defaults.shading(),
+            Some(Color::rgb(0x12, 0x34, 0x56))
+        );
+    }
+
+    #[test]
+    fn conditional_cell_mce_depth_limits_recover_inside_tcpr_and_tcmar() {
+        let mut tcpr_nested = String::new();
+        for _ in 0..STYLE_CHAIN_LIMIT + 2 {
+            tcpr_nested.push_str("<mc:AlternateContent><mc:Choice Requires=\"w\">");
+        }
+        tcpr_nested.push_str("<w:shd w:fill=\"EEEEEE\"/>");
+        for _ in 0..STYLE_CHAIN_LIMIT + 2 {
+            tcpr_nested.push_str(
+                "</mc:Choice><mc:Fallback><w:shd w:fill=\"DDDDDD\"/></mc:Fallback></mc:AlternateContent>",
+            );
+        }
+
+        let mut margin_nested = String::new();
+        for _ in 0..132 {
+            margin_nested.push_str("<mc:AlternateContent><mc:Choice Requires=\"w\">");
+        }
+        margin_nested.push_str("<w:top w:w=\"900\"/>");
+        for _ in 0..132 {
+            margin_nested.push_str(
+                "</mc:Choice><mc:Fallback><w:top w:w=\"901\"/></mc:Fallback></mc:AlternateContent>",
+            );
+        }
+
+        let xml = format!(
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+                <w:style w:type="table" w:styleId="Deep">
+                    <w:tblStylePr w:type="firstRow"><w:tcPr>
+                        {tcpr_nested}<w:shd w:fill="123456"/>
+                    </w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastRow"><w:tcPr><w:tcMar>
+                        {margin_nested}<w:bottom w:w="240"/>
+                    </w:tcMar></w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#
+        );
+        let styles = parse(&xml);
+        let first = styles.table_cell_presentation_for_regions(
+            Some("Deep"),
+            TableRowStyleRegions {
+                first_row: true,
+                ..Default::default()
+            },
+        );
+        let last = styles.table_cell_presentation_for_regions(
+            Some("Deep"),
+            TableRowStyleRegions {
+                last_row: true,
+                ..Default::default()
+            },
+        );
+
+        assert_eq!(first.defaults.shading(), Some(Color::rgb(0x12, 0x34, 0x56)));
+        assert_eq!(last.margins.logical_values().0, None);
+        assert_eq!(last.margins.logical_values().2, Some(240));
     }
 
     #[test]

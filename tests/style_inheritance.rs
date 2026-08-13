@@ -425,6 +425,40 @@ fn horizontal_band_table_style_pagination_docx(direct_row_props: &str) -> Vec<u8
     )
 }
 
+#[cfg(feature = "render")]
+fn conditional_cell_presentation_render_docx(presentation: &str) -> Vec<u8> {
+    let content_types = content_types(true);
+    let styles_xml = format!(
+        r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:style w:type="table" w:styleId="ConditionalVisual">
+                <w:tblStylePr w:type="firstRow">{presentation}</w:tblStylePr>
+            </w:style>
+        </w:styles>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        ("word/styles.xml", &styles_xml),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tblPr>
+                    <w:tblStyle w:val="ConditionalVisual"/><w:tblLook w:firstRow="1"/>
+                </w:tblPr><w:tr><w:tc><w:p><w:r>
+                    <w:t>line one</w:t><w:br/><w:t>line two</w:t><w:br/><w:t>line three</w:t>
+                </w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:sectPr><w:pgSz w:w="4400" w:h="1800"/>
+                    <w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/>
+                </w:sectPr>
+            </w:body></w:document>"#,
+        ),
+    ])
+}
+
 #[test]
 fn docx_run_props_resolve_docdefaults_paragraph_and_character_styles() {
     let doc = Document::open(&style_inheritance_docx()).expect("fixture opens");
@@ -782,6 +816,43 @@ fn opened_docx_render_honors_horizontal_table_style_band_cant_split() {
     );
 }
 
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_consumes_conditional_cell_presentation_deterministically() {
+    let baseline = Document::open(&conditional_cell_presentation_render_docx(""))
+        .expect("baseline conditional table opens");
+    let styled = Document::open(&conditional_cell_presentation_render_docx(
+        r#"<w:tcPr>
+            <w:tcMar><w:top w:w="400"/><w:start w:w="100"/>
+                <w:bottom w:w="400"/><w:end w:w="100"/></w:tcMar>
+            <w:shd w:val="clear" w:fill="DDEEFF"/>
+            <w:vAlign w:val="bottom"/>
+        </w:tcPr>"#,
+    ))
+    .expect("styled conditional table opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let baseline_layout = baseline
+        .layout_pages_with_fonts(&fonts)
+        .expect("baseline layout");
+    let styled_layout = styled
+        .layout_pages_with_fonts(&fonts)
+        .expect("styled layout");
+    assert_eq!((baseline_layout.pages, styled_layout.pages), (1, 2));
+    assert_eq!(
+        styled_layout,
+        styled
+            .layout_pages_with_fonts(&fonts)
+            .expect("repeat styled layout")
+    );
+
+    let baseline_pdf = baseline.to_pdf_with_fonts(&fonts);
+    let styled_pdf = styled.to_pdf_with_fonts(&fonts);
+    assert!(styled_pdf.starts_with(b"%PDF-"));
+    assert_ne!(styled_pdf, baseline_pdf);
+    assert_eq!(styled_pdf, styled.to_pdf_with_fonts(&fonts));
+}
+
 /// A table style's own `tblCellMar` is the table's cell-margin default, ahead
 /// of the schema defaults and behind any direct `tblPr`/`tcMar` declaration.
 #[test]
@@ -901,10 +972,9 @@ fn table_styles_supply_cell_margin_defaults() {
     );
 }
 
-/// `tblStylePr type="wholeTable"` carries a table style's whole-table cell
-/// margins and applies on top of the style's own `tblPr`.
+/// Conditional table-style margins apply on top of the style's own `tblPr`.
 #[test]
-fn whole_table_style_regions_supply_cell_margins() {
+fn table_style_regions_supply_cell_margins() {
     let content_types = content_types(true);
     let bytes = docx_fixture(&[
         ("[Content_Types].xml", &content_types),
@@ -945,13 +1015,12 @@ fn whole_table_style_regions_supply_cell_margins() {
     let Block::Table(table) = &doc.model().blocks[0] else {
         panic!("table");
     };
-    // wholeTable overrides the style's own tblPr top and adds bottom; the
-    // leading value it does not touch survives, and the row-scoped region is
-    // not applied.
+    // wholeTable overrides the style's own top and adds bottom. The omitted
+    // tblLook uses Word's first-row default, so that later region wins top.
     assert_eq!(
         table.rows[0].cells[0].margins,
         Some(CellMargins {
-            top: 700,
+            top: 999,
             right: 115,
             bottom: 800,
             left: 200,
@@ -1147,6 +1216,358 @@ fn table_styles_supply_cell_defaults() {
         Some(Color::rgb(0xDD, 0xEE, 0xFF))
     );
     assert_eq!(table.rows[0].cells[1].valign, rwml::VCell::Bottom);
+}
+
+#[test]
+fn row_conditional_table_styles_supply_cell_presentation() {
+    let content_types = content_types(true);
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="ConditionalCells">
+                    <w:tblPr>
+                        <w:tblStyleRowBandSize w:val="1"/>
+                        <w:tblCellMar><w:start w:w="50" w:type="dxa"/></w:tblCellMar>
+                    </w:tblPr>
+                    <w:tblStylePr w:type="wholeTable">
+                        <w:tblPr><w:tblCellMar><w:top w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr>
+                        <w:tcPr>
+                            <w:tcMar><w:top w:w="120" w:type="dxa"/><w:start w:w="110" w:type="dxa"/></w:tcMar>
+                            <w:shd w:val="clear" w:fill="010203"/>
+                            <w:vAlign w:val="center"/>
+                            <w:tcW w:w="1000" w:type="pct"/>
+                        </w:tcPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="band1Horz">
+                        <w:tblPr><w:tblCellMar><w:top w:w="200" w:type="dxa"/></w:tblCellMar></w:tblPr>
+                        <w:tcPr>
+                            <w:tcMar><w:top w:w="220" w:type="dxa"/><w:start w:w="210" w:type="dxa"/></w:tcMar>
+                            <w:shd w:val="clear" w:fill="112233"/>
+                            <w:vAlign w:val="bottom"/>
+                            <w:tcW w:w="1500" w:type="pct"/>
+                        </w:tcPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="band2Horz">
+                        <w:tblPr><w:tblCellMar><w:top w:w="300" w:type="dxa"/></w:tblCellMar></w:tblPr>
+                        <w:tcPr>
+                            <w:tcMar><w:top w:w="320" w:type="dxa"/><w:start w:w="310" w:type="dxa"/></w:tcMar>
+                            <w:shd w:val="clear" w:fill="445566"/>
+                            <w:vAlign w:val="top"/>
+                            <w:tcW w:w="2000" w:type="pct"/>
+                        </w:tcPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="firstRow"><w:tcPr>
+                        <w:tcMar><w:top w:w="420" w:type="dxa"/><w:bottom w:w="410" w:type="dxa"/></w:tcMar>
+                        <w:shd w:val="clear" w:fill="778899"/>
+                        <w:vAlign w:val="center"/>
+                        <w:tcW w:w="2500" w:type="pct"/>
+                    </w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastRow"><w:tcPr>
+                        <w:tcMar><w:top w:w="520" w:type="dxa"/><w:bottom w:w="510" w:type="dxa"/></w:tcMar>
+                        <w:shd w:val="clear" w:fill="AABBCC"/>
+                        <w:vAlign w:val="bottom"/>
+                        <w:tcW w:w="3000" w:type="pct"/>
+                    </w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tblPr>
+                    <w:tblStyle w:val="ConditionalCells"/>
+                    <w:tblLook w:firstRow="1" w:lastRow="1" w:noHBand="0"/>
+                </w:tblPr>
+                    <w:tr><w:tc><w:p><w:r><w:t>first</w:t></w:r></w:p></w:tc></w:tr>
+                    <w:tr><w:tc><w:p><w:r><w:t>band two</w:t></w:r></w:p></w:tc></w:tr>
+                    <w:tr><w:tc><w:tcPr>
+                        <w:tcMar><w:start w:w="710" w:type="dxa"/></w:tcMar>
+                        <w:shd w:val="clear" w:fill="F0E0D0"/>
+                        <w:vAlign w:val="center"/>
+                        <w:tcW w:w="4500" w:type="pct"/>
+                    </w:tcPr><w:p><w:r><w:t>direct</w:t></w:r></w:p></w:tc></w:tr>
+                    <w:tr><w:tc><w:p><w:r><w:t>last</w:t></w:r></w:p></w:tc></w:tr>
+                </w:tbl>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("conditional cell presentation .docx opens");
+    let Block::Table(table) = &doc.model().blocks[0] else {
+        panic!("table");
+    };
+
+    let expected = [
+        (
+            CellMargins {
+                top: 420,
+                right: 115,
+                bottom: 410,
+                left: 210,
+            },
+            Color::rgb(0x77, 0x88, 0x99),
+            rwml::VCell::Center,
+            0.5,
+        ),
+        (
+            CellMargins {
+                top: 320,
+                right: 115,
+                bottom: 0,
+                left: 310,
+            },
+            Color::rgb(0x44, 0x55, 0x66),
+            rwml::VCell::Top,
+            0.4,
+        ),
+        (
+            CellMargins {
+                top: 220,
+                right: 115,
+                bottom: 0,
+                left: 710,
+            },
+            Color::rgb(0xF0, 0xE0, 0xD0),
+            rwml::VCell::Center,
+            0.9,
+        ),
+        (
+            CellMargins {
+                top: 520,
+                right: 115,
+                bottom: 510,
+                left: 310,
+            },
+            Color::rgb(0xAA, 0xBB, 0xCC),
+            rwml::VCell::Bottom,
+            0.6,
+        ),
+    ];
+    for (row, (margins, shading, valign, width_pct)) in table.rows.iter().zip(expected) {
+        let cell = &row.cells[0];
+        assert_eq!(cell.margins, Some(margins));
+        assert_eq!(cell.shading, Some(shading));
+        assert_eq!(cell.valign, valign);
+        assert_eq!(cell.width_pct, Some(width_pct));
+    }
+
+    let converted = doc.to_docx();
+    let reopened = Document::open(&converted).expect("converted conditional cells reopen");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("reopened table");
+    };
+    for (source_row, reopened_row) in table.rows.iter().zip(&reopened_table.rows) {
+        let source = &source_row.cells[0];
+        let reopened = &reopened_row.cells[0];
+        assert_eq!(reopened.margins, source.margins);
+        assert_eq!(reopened.shading, source.shading);
+        assert_eq!(reopened.valign, source.valign);
+        assert_eq!(reopened.width_pct, source.width_pct);
+    }
+}
+
+#[test]
+fn direct_cells_can_clear_conditional_shading_and_percentage_width() {
+    let content_types = content_types(true);
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="Base">
+                    <w:tblStylePr w:type="wholeTable"><w:tcPr>
+                        <w:shd w:fill="112233"/>
+                        <w:tcW w:w="2500" w:type="pct"/>
+                    </w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tblPr><w:tblStyle w:val="Base"/></w:tblPr><w:tr>
+                    <w:tc><w:tcPr>
+                        <w:shd w:val="nil" w:fill="AABBCC"/>
+                        <w:tcW w:w="1440" w:type="dxa"/>
+                    </w:tcPr><w:p><w:r><w:t>nil and dxa</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:tcPr>
+                        <w:shd w:fill="auto"/>
+                        <w:tcW w:w="Infinity" w:type="pct"/>
+                    </w:tcPr><w:p><w:r><w:t>auto and invalid</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:t>inherits</w:t></w:r></w:p></w:tc>
+                </w:tr></w:tbl>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("conditional suppression .docx opens");
+    let Block::Table(table) = &doc.model().blocks[0] else {
+        panic!("table");
+    };
+
+    for cell in &table.rows[0].cells[..2] {
+        assert_eq!(cell.shading, None);
+        assert_eq!(cell.width_pct, None);
+    }
+    assert_eq!(
+        table.rows[0].cells[2].shading,
+        Some(Color::rgb(0x11, 0x22, 0x33))
+    );
+    assert_eq!(table.rows[0].cells[2].width_pct, Some(0.5));
+
+    let reopened = Document::open(&doc.to_docx()).expect("suppression conversion reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("reopened table");
+    };
+    assert_eq!(reopened_table.rows[0].cells[0].shading, None);
+    assert_eq!(reopened_table.rows[0].cells[0].width_pct, None);
+}
+
+#[test]
+fn conditional_cell_presentation_respects_inheritance_mce_direct_precedence_and_merges() {
+    let content_types = content_types(true);
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+                <w:style w:type="table" w:styleId="Base">
+                    <w:tblPr>
+                        <w:tblStyleRowBandSize w:val="1"/>
+                        <w:tblCellMar><w:start w:w="50" w:type="dxa"/></w:tblCellMar>
+                    </w:tblPr>
+                    <w:tblStylePr w:type="wholeTable">
+                        <w:tblPr><w:tblCellMar><w:top w:w="100" w:type="dxa"/></w:tblCellMar></w:tblPr>
+                        <w:tcPr>
+                            <w:shd w:val="clear" w:fill="101010"/>
+                            <w:vAlign w:val="center"/>
+                            <w:tcW w:w="1000" w:type="pct"/>
+                        </w:tcPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="band1Horz"><w:tcPr>
+                        <w:tcMar><w:start w:w="200" w:type="dxa"/></w:tcMar>
+                        <w:shd w:val="clear" w:fill="202020"/>
+                    </w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstRow"><w:tcPr>
+                        <w:tcMar><w:bottom w:w="300" w:type="dxa"/></w:tcMar>
+                        <w:shd w:val="clear" w:fill="303030"/>
+                    </w:tcPr></w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="Derived">
+                    <w:basedOn w:val="Base"/>
+                    <w:tblStylePr w:type="wholeTable"><w:tblPr><w:tblCellMar>
+                        <w:top w:w="150" w:type="dxa"/>
+                    </w:tblCellMar></w:tblPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstRow">
+                        <w:tblPrChange><w:tblPr><w:tblCellMar>
+                            <w:top w:w="901" w:type="dxa"/>
+                        </w:tblCellMar></w:tblPr></w:tblPrChange>
+                        <w:unknown><w:tcPr><w:shd w:fill="BADBAD"/></w:tcPr></w:unknown>
+                        <mc:AlternateContent>
+                            <mc:Choice Requires="w"><w:tcPr>
+                                <w:tcMar><w:end w:w="400" w:type="dxa"/></w:tcMar>
+                                <w:shd w:val="clear" w:fill="404040"/>
+                                <w:tcPrChange><w:tcPr><w:shd w:fill="EEEEEE"/></w:tcPr></w:tcPrChange>
+                            </w:tcPr></mc:Choice>
+                            <mc:Fallback><w:tcPr>
+                                <w:tcMar><w:end w:w="902" w:type="dxa"/></w:tcMar>
+                                <w:shd w:fill="FAFAFA"/>
+                            </w:tcPr></mc:Fallback>
+                        </mc:AlternateContent>
+                        <w:tcPr><w:vAlign w:val="bottom"/></w:tcPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="lastRow"><mc:AlternateContent>
+                        <mc:Choice Requires="w"/>
+                        <mc:Fallback><w:tcPr><w:shd w:fill="FFFFFF"/></w:tcPr></mc:Fallback>
+                    </mc:AlternateContent></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tblPr>
+                    <w:tblStyle w:val="Derived"/><w:bidiVisual/>
+                    <w:tblCellMar>
+                        <w:top w:w="500" w:type="dxa"/><w:start w:w="600" w:type="dxa"/>
+                    </w:tblCellMar>
+                </w:tblPr>
+                    <w:tr>
+                        <w:tblPrEx><w:tblCellMar><w:bottom w:w="700" w:type="dxa"/></w:tblCellMar></w:tblPrEx>
+                        <w:trPr><w:cnfStyle w:firstRow="1" w:oddHBand="1"/></w:trPr>
+                        <w:tc><w:tcPr>
+                        <w:vMerge w:val="restart"/>
+                        <w:tcMar><w:start w:w="800" w:type="dxa"/></w:tcMar>
+                    </w:tcPr><w:p><w:r><w:t>restart</w:t></w:r></w:p></w:tc></w:tr>
+                    <w:tr><w:tc><w:tcPr>
+                        <w:vMerge/>
+                        <w:tcMar><w:start w:w="999" w:type="dxa"/></w:tcMar>
+                        <w:shd w:fill="FFFFFF"/>
+                    </w:tcPr><w:p><w:r><w:t>continuation</w:t></w:r></w:p></w:tc></w:tr>
+                </w:tbl>
+                <w:tbl><w:tblPr>
+                    <w:tblStyle w:val="Derived"/>
+                    <w:tblLook w:firstRow="1" w:lastRow="1" w:noHBand="1"/>
+                </w:tblPr><w:tr><w:tc><w:p><w:r><w:t>one row</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("conditional precedence .docx opens");
+    let model = doc.model();
+    let tables: Vec<_> = model
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Table(table) => Some(table),
+            _ => None,
+        })
+        .collect();
+
+    let merged = &tables[0].rows[0].cells[0];
+    assert_eq!(merged.row_span, 2);
+    assert_eq!(merged.text(), "restart");
+    assert_eq!(
+        merged.margins,
+        Some(CellMargins {
+            top: 150,
+            right: 800,
+            bottom: 700,
+            left: 400,
+        })
+    );
+    assert_eq!(merged.shading, Some(Color::rgb(0x40, 0x40, 0x40)));
+    assert_eq!(merged.valign, rwml::VCell::Bottom);
+    assert_eq!(merged.width_pct, Some(0.2));
+
+    let one_row = &tables[1].rows[0].cells[0];
+    assert_eq!(
+        one_row.margins,
+        Some(CellMargins {
+            top: 150,
+            right: 400,
+            bottom: 300,
+            left: 50,
+        })
+    );
+    assert_eq!(one_row.shading, Some(Color::rgb(0x40, 0x40, 0x40)));
+    assert_eq!(one_row.valign, rwml::VCell::Bottom);
+    assert_eq!(one_row.width_pct, Some(0.2));
 }
 
 /// A table style's layout algorithm and visual direction reach the model when

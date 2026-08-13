@@ -13,21 +13,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exceptions inherit omitted sides from the table style or schema defaults,
   including logical `start`/`end` mapping under `w:bidiVisual`, accepted-current
   Markup Compatibility selection, vertical-merge ownership, nested tables, and
-  fresh conversion/reopen. Other `w:tblPrEx` properties and row- or column-scoped
-  conditional table-style regions remain unsupported.
+  fresh conversion/reopen. Other `w:tblPrEx` properties remain unsupported.
+- Applies a table style's bounded `band1Horz`, `band2Horz`, `firstRow`, and
+  `lastRow` cell margins, flat shading, and vertical alignment after
+  `wholeTable`, and models their percentage preferred width, with inherited
+  region precedence, `w:tblLook`/row `w:cnfStyle` selection, margin overrides
+  at the table, row, and cell layers, direct-cell presentation overrides, RTL
+  side mapping, and vertical-merge restart ownership. Column, vertical-band,
+  corner, border, and paragraph/run conditional formatting remain outside this
+  subset.
 - Inherits a table style's own `w:tblCellMar` through its `w:basedOn` chain as
   the table's cell-margin default, beneath direct `w:tblPr`/`w:tcMar`
   declarations and above the schema defaults, including the style's `wholeTable`
-  conditional region. Row- and column-scoped conditional regions remain
-  unsupported.
+  and bounded row-scoped conditional regions.
 - Applies a table style's `w:tblBorders` — from its own `w:tblPr` or its
   `wholeTable` region, resolved through `w:basedOn` — when the table declares no
   borders of its own, so grid-style tables no longer lose their borders.
 - Fills a table's width, indentation, and alignment from its table style —
   `w:tblW`, `w:tblInd`, and table `w:jc`, resolved through `w:basedOn` and the
   `wholeTable` region — for values the table itself leaves unset.
-- Applies a table style's `wholeTable` `w:tcPr` cell shading, vertical alignment,
-  and preferred width to cells that declare none of their own.
+- Applies a table style's `wholeTable` and bounded row-region `w:tcPr` cell
+  shading, vertical alignment, and preferred width to cells that declare none
+  of their own.
 - Inherits a table style's `w:tblLayout` and `w:bidiVisual` for tables that
   declare neither, tracking whether the table declared them so an explicit off
   value still wins.
