@@ -30,6 +30,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
         self.assertNotIn("cargo publish", text)
         self.assertNotIn("gh release", text)
+        self.assertIn("CARGO_TARGET_DIR", text)
+        self.assertIn("cargo-target", text)
         for command in [
             "public_hygiene_audit.py",
             "gen_public_corpus.py",

@@ -20,6 +20,7 @@ from collections.abc import Sequence
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CARGO = os.environ.get("CARGO", "cargo")
 PYTHON = os.environ.get("PYTHON", sys.executable)
+COMMAND_ENV = os.environ.copy()
 PACKAGE_COMMAND = "cargo package"
 ASSET_NAME_TEMPLATES = (
     "rwml-{version}.crate",
@@ -34,7 +35,13 @@ ASSET_NAME_TEMPLATES = (
 def run(command: Sequence[str], *, stdout: object | None = None) -> None:
     printable = " ".join(str(part) for part in command)
     print(f"$ {printable}")
-    subprocess.run(command, cwd=ROOT, check=True, stdout=stdout)
+    subprocess.run(
+        command,
+        cwd=ROOT,
+        check=True,
+        stdout=stdout,
+        env=COMMAND_ENV,
+    )
 
 
 def run_to_file(command: Sequence[str], path: pathlib.Path) -> None:
@@ -45,7 +52,7 @@ def run_to_file(command: Sequence[str], path: pathlib.Path) -> None:
 
 def git_output(*arguments: str) -> str:
     return subprocess.check_output(
-        ["git", *arguments], cwd=ROOT, text=True
+        ["git", *arguments], cwd=ROOT, text=True, env=COMMAND_ENV
     ).strip()
 
 
@@ -55,6 +62,7 @@ def cargo_version() -> str:
             [CARGO, "metadata", "--no-deps", "--format-version", "1"],
             cwd=ROOT,
             text=True,
+            env=COMMAND_ENV,
         )
     )
     for package in metadata.get("packages", []):
@@ -168,8 +176,11 @@ def build_preflight(output_dir: pathlib.Path) -> dict[str, object]:
         )
     )
 
-    font_artifact = ROOT / f"rwml-fonts/target/package/rwml-fonts-{version}.crate"
-    main_artifact = ROOT / f"target/package/rwml-{version}.crate"
+    target_dir = pathlib.Path(COMMAND_ENV["CARGO_TARGET_DIR"])
+    if not target_dir.is_absolute():
+        target_dir = ROOT / target_dir
+    font_artifact = target_dir / "package" / f"rwml-fonts-{version}.crate"
+    main_artifact = target_dir / "package" / f"rwml-{version}.crate"
     run(
         run_python(
             "release_manifest.py",
@@ -233,6 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_dir = args.output_dir
     if not output_dir.is_absolute():
         output_dir = ROOT / output_dir
+    COMMAND_ENV.setdefault("CARGO_TARGET_DIR", str(output_dir / "cargo-target"))
     try:
         result = build_preflight(output_dir)
     except (OSError, RuntimeError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
