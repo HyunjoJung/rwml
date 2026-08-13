@@ -33,6 +33,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("CARGO_TARGET_DIR", text)
         self.assertIn("cargo-target", text)
         self.assertIn('COMMAND_ENV["PATH"]', text)
+        self.assertIn('"-m", "venv"', text)
+        self.assertIn('"PyMuPDF"', text)
+        self.assertIn('"Pillow"', text)
         for command in [
             "public_hygiene_audit.py",
             "gen_public_corpus.py",

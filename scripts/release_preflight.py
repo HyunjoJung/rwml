@@ -106,6 +106,34 @@ def run_python(script: str, *arguments: str) -> list[str]:
     return [PYTHON, f"scripts/{script}", *arguments]
 
 
+def run_python_with(interpreter: str, script: str, *arguments: str) -> list[str]:
+    return [interpreter, f"scripts/{script}", *arguments]
+
+
+def ensure_render_tools(output_dir: pathlib.Path) -> str:
+    venv_dir = output_dir / "render-tools"
+    interpreter = venv_dir / "bin" / "python"
+    if not interpreter.is_file():
+        run([PYTHON, "-m", "venv", relative(venv_dir)])
+    try:
+        run([str(interpreter), "-c", "import fitz; import PIL"])
+    except subprocess.CalledProcessError:
+        run(
+            [
+                str(interpreter),
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "--no-cache-dir",
+                "PyMuPDF",
+                "Pillow",
+            ]
+        )
+        run([str(interpreter), "-c", "import fitz; import PIL"])
+    return str(interpreter)
+
+
 def build_preflight(output_dir: pathlib.Path) -> dict[str, object]:
     require_clean_worktree()
     version = cargo_version()
@@ -136,9 +164,11 @@ def build_preflight(output_dir: pathlib.Path) -> dict[str, object]:
     render_report = output_dir / "render-validation.json"
     benchmark_report = output_dir / "extract-benchmark.json"
     manifest = output_dir / "rwml-release-manifest.json"
+    render_python = ensure_render_tools(output_dir)
     run_to_file(run_python("public_hygiene_audit.py", "--json"), hygiene_report)
     run_to_file(
-        run_python(
+        run_python_with(
+            render_python,
             "render_validate.py",
             "--json",
             "--soffice",
@@ -159,7 +189,8 @@ def build_preflight(output_dir: pathlib.Path) -> dict[str, object]:
         [CARGO, "build", "--release", "--example", "extract", "--locked"]
     )
     run(
-        run_python(
+        run_python_with(
+            render_python,
             "bench_vs_mature.py",
             "--corpus",
             "corpus/public/benchmark",
