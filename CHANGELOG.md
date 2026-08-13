@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Prunes an unreferenced internal image relationship and unreachable `word/media/*`
+  target when `remove_body_block` removes the last retained reference, while
+  preserving shared media, other relationship kinds, and unrelated package parts.
 - Makes strict render validation account for ActualText-aware RTL list-marker
   punctuation boundaries; the current 21-fixture public render corpus now
   reports 1.000 mean text recall with no fixture below the 0.97 floor.

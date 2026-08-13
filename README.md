@@ -276,9 +276,12 @@ and forbidden-control handling. Structural edits reject opaque direct children
 and cross-block ranges or complex fields; move/remove also protect section-boundary
 targets and moves. Rich paragraph/block insertion, nested containers, and
 relationship-bearing content remain outside this bounded API. Existing exact
-subtrees and untouched package parts are preserved, but removals do not
-garbage-collect relationships or media they make unreachable. Read/model views
-remain stale until explicitly refreshed or reopened.
+subtrees and untouched package parts are preserved. Removing a block also prunes
+an unreferenced internal image relationship and its unreachable `word/media/*`
+target when the retained relationship graph proves it is safe; other relationship
+kinds, shared media, and general package garbage collection remain outside this
+bounded behavior. Read/model views remain stale until explicitly refreshed or
+reopened.
 Regenerated relationship parts are validated before save, so internal
 relationship targets must point at retained package parts unless they are
 explicitly external.
@@ -1091,7 +1094,7 @@ rather than a Word- or LibreOffice-exact layout replacement.
 | PDF preview | Improve paragraph, table, tab, list, image, and section behavior from existing model data | Word-exact pagination, footnote composition, unequal columns, and full floating-shape exclusion reflow remain out of scope |
 | RTL | Extend tested mixed-script paragraph, table, tab, and list behavior | End-to-end RTL typography, punctuation, font fallback, and Word-exact list/table parity are not claimed |
 | Metafiles | Add narrowly validated raster profiles when fixtures prove them | General WMF/EMF vector replay, composition, scaling, cropping, and mirroring remain unsupported |
-| Editing | Expand package-preserving mutations where the target structure and rollback behavior are unambiguous | Arbitrary rich block editing, nested-container mutation, relationship garbage collection, and cross-block range rewriting remain limited |
+| Editing | Expand package-preserving mutations where the target structure and rollback behavior are unambiguous; bounded top-level removal prunes proven-orphaned image relationships/media | Arbitrary rich block editing, nested-container mutation, general relationship garbage collection, and cross-block range rewriting remain limited |
 
 Future changes are selected from reproducible fixtures and focused regression
 tests. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor gate and

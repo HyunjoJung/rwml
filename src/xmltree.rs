@@ -1953,6 +1953,55 @@ impl XmlTree {
         out
     }
 
+    /// OPC relationship ids referenced by namespace-qualified XML attributes.
+    /// Scanning the parsed tree avoids substring matches in text, comments, or
+    /// unrelated attributes and lets callers check many ids in one traversal.
+    pub(crate) fn relationship_references(&self) -> HashSet<Vec<u8>> {
+        fn walk(
+            tree: &XmlTree,
+            id: NodeId,
+            scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+            out: &mut HashSet<Vec<u8>>,
+        ) {
+            let base = scope.len();
+            if let Node::Element { attrs, .. } = &tree.nodes[id.0 as usize].node {
+                for (key, value) in attrs {
+                    if key == b"xmlns" {
+                        scope.push((Vec::new(), value.clone()));
+                    } else if let Some(prefix) = key.strip_prefix(b"xmlns:".as_slice()) {
+                        scope.push((prefix.to_vec(), value.clone()));
+                    }
+                }
+                for (key, value) in attrs {
+                    let Some(separator) = key.iter().position(|&byte| byte == b':') else {
+                        continue;
+                    };
+                    let prefix = &key[..separator];
+                    let namespace = scope
+                        .iter()
+                        .rev()
+                        .find(|(bound_prefix, _)| bound_prefix.as_slice() == prefix)
+                        .map(|(_, uri)| uri.as_slice());
+                    if namespace == Some(OOXML_REL_NS) {
+                        out.insert(value.clone());
+                    }
+                }
+            }
+
+            for &child in &tree.nodes[id.0 as usize].children {
+                walk(tree, child, scope, out);
+            }
+            scope.truncate(base);
+        }
+
+        let mut references = HashSet::new();
+        let mut scope = Vec::new();
+        for &root in &self.roots {
+            walk(self, root, &mut scope, &mut references);
+        }
+        references
+    }
+
     /// Cached result text and tab/break marker nodes for the zero-based field in
     /// body order. The order matches the public `Document::fields()` extraction:
     /// simple fields are counted at `w:fldSimple`, while complex fields are counted

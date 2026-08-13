@@ -1324,7 +1324,11 @@ impl Document {
     /// The edit is intentionally conservative. It rejects opaque direct body
     /// elements, malformed or cross-block ranges/complex fields, and any block
     /// carrying section properties. The read model and text views remain stale
-    /// until explicitly refreshed or reopened. On any error the document is unchanged.
+    /// until explicitly refreshed or reopened. When the removed subtree no longer
+    /// references an internal image relationship, an unreachable `word/media/*`
+    /// target is pruned only when no other retained relationship points at it;
+    /// other relationship kinds and shared media remain preserved. On any error
+    /// the document is unchanged.
     #[cfg(feature = "docx")]
     pub fn remove_body_block(&mut self, block_index: usize) -> Result<()> {
         let d = self.docx_tree_editable()?;
@@ -3125,8 +3129,13 @@ fn edit_docx_atomic_body_block(
     }
 
     let mut pkg = d.package.clone();
-    let tree = pkg.part_tree_mut("word/document.xml")?;
-    apply_atomic_body_block_edit(tree, edit)?;
+    {
+        let tree = pkg.part_tree_mut("word/document.xml")?;
+        apply_atomic_body_block_edit(tree, edit)?;
+    }
+    if matches!(edit, AtomicBodyBlockEdit::Remove { .. }) {
+        pkg.prune_unreferenced_media_relationships("word/document.xml")?;
+    }
     pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
     commit_docx_package(d, pkg)
 }
