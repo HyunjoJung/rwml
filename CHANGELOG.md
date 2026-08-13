@@ -169,7 +169,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   next line instead of running past the paragraph box. The reservation only
   tightens and is bounded to three passes, so line composition stays
   deterministic, and emitted page counts follow the resulting line count.
-  Alignments and directions outside the resolved-tab support keep parley's own
+  Unsupported directions and source contexts outside the resolved-tab support keep parley's own
   breaking unchanged. Post-tab field containment, Word-exact custom-tab-aware
   reflow, and Word-exact tab-driven pagination remain unsupported.
 - Opened `.docx` PDF previews now keep resolved left, center, right, and
@@ -187,9 +187,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paragraphs now use the same bounded path through source-aligned sidecars,
   including the ordinary RTL table-cell path for center/end/decimal stops.
   Explicit left-aligned LTR stops in center-, right-, and justified-aligned
-  paragraphs now use that path when the resolved stop is reachable. Table-cell
-  RTL center/end/decimal stops, default-tab fallback in non-left alignments,
-  leaders and bar tabs, settings-defined default-tab intervals in unsupported
+  paragraphs now use that path when the resolved stop is reachable. Ordinary
+  RTL table-cell center/end/decimal stops and default-tab fallback in supported
+  non-left LTR alignments now use the same bounded path. Leaders and bar tabs,
+  settings-defined default-tab intervals in unsupported
   contexts, implicit hanging-indent/list-marker tabs, post-tab field containment,
   custom-tab-aware line reflow, and Word-exact text-ruler behavior remain outside
   this bounded correction.

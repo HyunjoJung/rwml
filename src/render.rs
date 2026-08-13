@@ -1985,6 +1985,7 @@ fn shape_with_options(
         } else {
             !layout_rtl
                 && (matches!(align, Alignment::Left | Alignment::Start)
+                    || options.tab_stops.is_empty()
                     || options
                         .tab_stops
                         .iter()
@@ -2027,7 +2028,6 @@ fn shape_with_options(
                 width,
                 options.tab_origin,
                 options.default_tab_stop_pt,
-                matches!(align, Alignment::Left | Alignment::Start),
             )
         };
         pass += 1;
@@ -2378,7 +2378,6 @@ fn apply_tab_stops(
     width: f32,
     origin: f32,
     default_tab_stop_pt: Option<f32>,
-    use_default_fallback: bool,
 ) -> Vec<TabReservation> {
     let mut reservations = Vec::with_capacity(lines.len());
     for line in lines {
@@ -2393,29 +2392,22 @@ fn apply_tab_stops(
                 let original_advance = glyph.x_advance * run_size;
                 if glyph_text(text, glyph) == Some("\t") && run_size > 0.0 {
                     let field = tab_field_metrics(text, line, run_index, glyph_index);
-                    let field_start = explicit_tab_field_start(
-                        tab_stops, cursor, field, width, origin,
-                    )
-                    .or_else(|| {
-                        use_default_fallback.then(|| {
-                            default_tab_field_start_with_interval(
-                                cursor,
-                                width,
-                                origin,
-                                default_tab_stop_pt,
-                            )
-                        })
-                    });
-                    if let Some(field_start) = field_start {
-                        let advance = (field_start - cursor)
-                            .max(0.0)
-                            .min((width - cursor).max(0.0));
-                        line.runs[run_index].glyphs[glyph_index].x_advance = advance / run_size;
-                        accumulated_shift += advance - original_advance;
-                        cursor += advance;
-                    } else {
-                        cursor += original_advance;
-                    }
+                    let field_start =
+                        explicit_tab_field_start(tab_stops, cursor, field, width, origin)
+                            .unwrap_or_else(|| {
+                                default_tab_field_start_with_interval(
+                                    cursor,
+                                    width,
+                                    origin,
+                                    default_tab_stop_pt,
+                                )
+                            });
+                    let advance = (field_start - cursor)
+                        .max(0.0)
+                        .min((width - cursor).max(0.0));
+                    line.runs[run_index].glyphs[glyph_index].x_advance = advance / run_size;
+                    accumulated_shift += advance - original_advance;
+                    cursor += advance;
                 } else {
                     cursor += original_advance;
                 }
@@ -9304,10 +9296,9 @@ mod tests {
     }
 
     #[test]
-    fn default_tab_reflow_only_applies_to_left_and_start_aligned_ltr_text() {
-        // Default-tab reflow stays scoped to left/start alignment. Explicit
-        // custom stops use the same bounded reservation path for other LTR
-        // paragraph alignments.
+    fn default_tab_reflow_applies_to_non_left_aligned_ltr_text() {
+        // Default tabs use the same bounded reservation path for every
+        // supported LTR paragraph alignment.
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
         let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
@@ -9326,11 +9317,7 @@ mod tests {
             180.0,
             &mut tcx,
         );
-        assert_eq!(
-            centered.len(),
-            1,
-            "centered text must keep parley's breaking untouched"
-        );
+        assert_eq!(centered.len(), 2, "centered text must reflow around tabs");
     }
 
     #[test]

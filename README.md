@@ -358,8 +358,9 @@ Fitting protected content moves whole and over-tall content still splits for
 deterministic progress. Opened `.docx` `Document` renders
 additionally honor resolved left/center/right/decimal tab stops in LTR
 left/start-aligned top-level body paragraphs, plus explicit left-aligned stops
-in center/right/justified-aligned LTR top-level body paragraphs when reachable,
-and default, logical-start, center/end, and decimal tab stops in RTL
+and default-tab fallback in supported center/right/justified-aligned LTR
+top-level body paragraphs, and default, logical-start, center/end, and decimal
+tab stops in RTL
 right/start-aligned top-level body paragraphs.
 LTR stops retain their page-text-margin coordinates under supported left,
 positive first-line, and hanging indents; RTL logical-start stops retain
@@ -381,9 +382,9 @@ recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
 justified-aligned paragraphs use that path when the resolved stop is reachable.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
-center/end/decimal stops. Default-tab fallback in non-left alignments,
-leaders/bar tabs, settings-defined default-tab intervals for unsupported
-contexts, and implicit hanging-indent/list-marker tabs remain outside this
+center/end/decimal stops. Leaders/bar tabs, settings-defined default-tab
+intervals for unsupported contexts, and implicit hanging-indent/list-marker
+tabs remain outside this
 bounded tab support. Within
 the supported LTR and RTL paths, resolved tab advances now reserve line width
 before breaking, so content that no longer fits after a tab moves to the next
