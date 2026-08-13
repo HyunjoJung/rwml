@@ -59,6 +59,7 @@ KNOWN_WARNING_TOKENS = {
     "UndecodableRasterImages",
 }
 BOOLEAN_SUMMARY_KEYS = {"reference_stable"}
+STRING_LIST_SUMMARY_KEYS = {"unstable_references"}
 RELEASE_POLICIES: dict[str, dict[str, Any]] = {
     "public-release": {
         "name": "public-release",
@@ -157,6 +158,11 @@ def report_summary(path: Path) -> dict[str, Any]:
             continue
         if key in BOOLEAN_SUMMARY_KEYS:
             if not isinstance(value, bool):
+                raise ValueError(f"{path} summary value is invalid: {key}")
+        elif key in STRING_LIST_SUMMARY_KEYS:
+            if not isinstance(value, list) or any(
+                not isinstance(item, str) for item in value
+            ):
                 raise ValueError(f"{path} summary value is invalid: {key}")
         elif not is_number(value):
             raise ValueError(f"{path} summary value is invalid: {key}")
