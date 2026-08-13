@@ -10543,6 +10543,39 @@ mod tests {
         }
     }
 
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_rtl_start_tabs_reach_deterministic_rendering() {
+        let xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:p><w:pPr><w:bidi/><w:jc w:val="start"/><w:ind w:start="400" w:end="200"/>
+                <w:tabs><w:tab w:val="start" w:pos="2000"/></w:tabs></w:pPr>
+                <w:r><w:rPr><w:rtl/></w:rPr><w:t>א</w:t><w:tab/><w:t>ב</w:t></w:r>
+            </w:p>
+            <w:sectPr><w:pgSz w:w="4400" w:h="2200"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+        </w:body></w:document>"#;
+        let document = Document::open(&minimal_docx(xml)).unwrap();
+        let Block::Paragraph(paragraph) = &document.model().blocks[0] else {
+            panic!("synthetic DOCX must contain a paragraph");
+        };
+        assert!(paragraph.props.bidi);
+        assert_eq!(paragraph.props.align, Align::Right);
+        assert_eq!(paragraph.props.indent.right_pt, Some(20.0));
+        assert_eq!(paragraph.props.indent.left_pt, Some(10.0));
+        let fonts = vec![rwml_fonts::noto_sans_hebrew_subset().to_vec()];
+
+        let opened_pdf = document.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert_eq!(opened_pdf, document.try_to_pdf_with_fonts(&fonts).unwrap());
+        assert_ne!(
+            opened_pdf,
+            render_pdf_with_fonts(&document.model(), &fonts),
+            "model-only rendering has no opened-document custom-tab sidecar"
+        );
+        assert_eq!(
+            document.layout_pages_with_fonts(&fonts).unwrap(),
+            document.layout_pages_with_fonts(&fonts).unwrap()
+        );
+    }
+
     fn synthetic_paragraph_stylesheet(properties: &[(u16, u8)]) -> Vec<u8> {
         let mut grpprl = Vec::with_capacity(properties.len() * 3);
         for &(sprm, value) in properties {

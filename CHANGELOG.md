@@ -126,15 +126,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bullet gets it; levels that declare none keep the existing fallback and a
   `%N` pattern is still treated as autonumber syntax.
 
+- Opened `.docx` PDF previews now resolve default and explicit logical-start tab
+  stops in right/start-aligned RTL top-level body paragraphs from the right page
+  text margin's leading edge. The stops retain their margin coordinates under
+  resolved physical or logical left/right indents; deterministic fixed-font
+  geometry covers default and explicit stops, multiple fields, segmented paint
+  and source ranges, bounded line reflow, and the opened-DOCX path. RTL
+  center/end/decimal stops remain outside this bounded path.
 - Opened `.docx` PDF previews now reserve line width for resolved custom and
-  default tab advances before breaking, so top-level LTR left/start-aligned body
-  content that no longer fits after a tab moves to the next line instead of
-  running past the paragraph box. The reservation only tightens and is bounded
-  to three passes, so line composition stays deterministic, and emitted page
-  counts follow the resulting line count. Alignments and directions outside the
-  resolved-tab support keep parley's own breaking unchanged. Post-tab field
-  containment, Word-exact custom-tab-aware reflow, and Word-exact tab-driven
-  pagination remain unsupported.
+  default tab advances before breaking, so supported top-level LTR left/start
+  and RTL right/start body content that no longer fits after a tab moves to the
+  next line instead of running past the paragraph box. The reservation only
+  tightens and is bounded to three passes, so line composition stays
+  deterministic, and emitted page counts follow the resulting line count.
+  Alignments and directions outside the resolved-tab support keep parley's own
+  breaking unchanged. Post-tab field containment, Word-exact custom-tab-aware
+  reflow, and Word-exact tab-driven pagination remain unsupported.
 - Opened `.docx` PDF previews now keep resolved left, center, right, and
   decimal custom tab stops in page-text-margin coordinates under supported
   left, positive first-line, and hanging indents in left/start-aligned LTR
@@ -145,11 +152,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exact-edge/out-of-box fallback. Separate opened-DOCX evidence covers parsed
   first-line/hanging values, private tab-sidecar activation, deterministic
   layout/PDF output, and unchanged page counts for the bounded fixtures.
-  Table-cell and RTL tab semantics, center/right/justified paragraph
-  alignment, leaders and bar tabs, settings-defined default-tab intervals,
-  implicit hanging-indent/list-marker tabs, post-tab field containment,
-  custom-tab-aware line reflow, and Word-exact text-ruler behavior remain
-  outside this bounded correction.
+  Table-cell tab semantics, RTL center/end/decimal stops,
+  center/right/justified LTR paragraph alignment, leaders and bar tabs,
+  settings-defined default-tab intervals, implicit hanging-indent/list-marker
+  tabs, post-tab field containment, custom-tab-aware line reflow, and Word-exact
+  text-ruler behavior remain outside this bounded correction.
 - PDF table cells now apply finite positive model-backed paragraph before/after
   spacing on emitted paragraphs to row measurement, row splitting, vertical
   alignment, repeated headers, and `LayoutPages` block and modeled `PAGE`-field

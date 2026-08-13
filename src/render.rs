@@ -1821,6 +1821,7 @@ struct ShapeOptions<'a> {
     hanging_indent: bool,
     tab_origin: f32,
     tab_stops: &'a [TabStop],
+    rtl_tabs: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1968,9 +1969,18 @@ fn shape_with_options(
             },
         );
     }
-    let adjust_default_tabs = !layout.is_rtl()
-        && matches!(align, Alignment::Left | Alignment::Start)
-        && text.contains('\t');
+    let layout_rtl = layout.is_rtl();
+    let rtl_tabs = options.rtl_tabs && layout_rtl;
+    let adjust_tabs = text.contains('\t')
+        && if rtl_tabs {
+            matches!(align, Alignment::Right | Alignment::Start)
+                && options
+                    .tab_stops
+                    .iter()
+                    .all(|stop| stop.alignment == TabAlignment::Left)
+        } else {
+            !layout_rtl && matches!(align, Alignment::Left | Alignment::Start)
+        };
 
     let text_rc: Rc<str> = Rc::from(text);
     let break_width = width.max(1.0);
@@ -1988,11 +1998,14 @@ fn shape_with_options(
         }
         layout.align(align, Default::default());
         out = shape_extract_lines(&layout, text, &text_rc, ranges, links, dynamic_ranges, cx);
-        if !adjust_default_tabs {
+        if !adjust_tabs {
             break;
         }
-        let reservations =
-            apply_tab_stops(text, &mut out, options.tab_stops, width, options.tab_origin);
+        let reservations = if rtl_tabs {
+            apply_rtl_tab_stops(text, &mut out, options.tab_stops, width, options.tab_origin)
+        } else {
+            apply_tab_stops(text, &mut out, options.tab_stops, width, options.tab_origin)
+        };
         pass += 1;
         if pass > TAB_REFLOW_PASSES
             || !tighten_line_caps(&mut line_caps, &reservations, break_width)
@@ -2365,6 +2378,127 @@ fn apply_tab_stops(
     reservations
 }
 
+fn rtl_tab_field_advance(
+    text: &str,
+    line: &LineLayout,
+    tab_run_index: usize,
+    tab_glyph_index: usize,
+) -> f32 {
+    let mut advance = 0.0;
+    for run_index in (0..=tab_run_index).rev() {
+        let glyph_end = if run_index == tab_run_index {
+            tab_glyph_index
+        } else {
+            line.runs[run_index].glyphs.len()
+        };
+        for glyph in line.runs[run_index].glyphs[..glyph_end].iter().rev() {
+            if glyph_text(text, glyph) == Some("\t") {
+                return advance;
+            }
+            let glyph_advance = glyph.x_advance * line.runs[run_index].size;
+            if glyph_advance.is_finite() {
+                advance += glyph_advance.max(0.0);
+            }
+        }
+    }
+    advance
+}
+
+fn explicit_rtl_start_tab_field_start(
+    tab_stops: &[TabStop],
+    cursor: f32,
+    field_advance: f32,
+    width: f32,
+    origin: f32,
+) -> Option<f32> {
+    let absolute_cursor = origin + cursor;
+    let absolute_end = origin + width;
+    if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
+        return None;
+    }
+    tab_stops
+        .iter()
+        .filter(|stop| stop.alignment == TabAlignment::Left)
+        .filter_map(|stop| {
+            let absolute_field_start = stop.position_pt;
+            let absolute_field_end = absolute_field_start + field_advance;
+            (stop.position_pt.is_finite()
+                && stop.position_pt > absolute_cursor + f32::EPSILON
+                && absolute_field_end <= absolute_end)
+                .then_some((stop.position_pt, absolute_field_start - origin))
+        })
+        .min_by(|left, right| left.0.total_cmp(&right.0))
+        .map(|(_, field_start)| field_start)
+}
+
+fn apply_rtl_tab_stops(
+    text: &str,
+    lines: &mut [LineLayout],
+    tab_stops: &[TabStop],
+    width: f32,
+    origin: f32,
+) -> Vec<TabReservation> {
+    let mut reservations = Vec::with_capacity(lines.len());
+    for line in lines {
+        let mut run_deltas = vec![0.0_f32; line.runs.len()];
+        let mut shift_from_right = 0.0_f32;
+        for run_index in (0..line.runs.len()).rev() {
+            for glyph_index in (0..line.runs[run_index].glyphs.len()).rev() {
+                let run_size = line.runs[run_index].size;
+                if !run_size.is_finite()
+                    || run_size <= 0.0
+                    || glyph_text(text, &line.runs[run_index].glyphs[glyph_index]) != Some("\t")
+                {
+                    continue;
+                }
+                let tab_end = line.runs[run_index].x
+                    + line.runs[run_index]
+                        .glyphs
+                        .iter()
+                        .take(glyph_index + 1)
+                        .map(|glyph| glyph.x_advance * run_size)
+                        .sum::<f32>();
+                if !tab_end.is_finite() || !shift_from_right.is_finite() {
+                    continue;
+                }
+                let cursor = width - tab_end + shift_from_right;
+                let field_advance = rtl_tab_field_advance(text, line, run_index, glyph_index);
+                // ISO/IEC 29500-1 17.3.1.37 measures w:pos from the paragraph's
+                // leading edge, which is the right edge for an RTL paragraph.
+                let field_start = explicit_rtl_start_tab_field_start(
+                    tab_stops,
+                    cursor,
+                    field_advance,
+                    width,
+                    origin,
+                )
+                .unwrap_or_else(|| default_tab_field_start(cursor, width, origin));
+                let original_advance =
+                    line.runs[run_index].glyphs[glyph_index].x_advance * run_size;
+                let advance = (field_start - cursor)
+                    .max(0.0)
+                    .min((width - cursor).max(0.0));
+                let delta = advance - original_advance;
+                line.runs[run_index].glyphs[glyph_index].x_advance = advance / run_size;
+                run_deltas[run_index] += delta;
+                shift_from_right += delta;
+            }
+        }
+
+        let mut run_shift = 0.0_f32;
+        for run_index in (0..line.runs.len()).rev() {
+            run_shift += run_deltas[run_index];
+            line.runs[run_index].x -= run_shift;
+        }
+        let line_start = line.runs.iter().map(|run| run.x).fold(width, f32::min);
+        reservations.push(TabReservation {
+            shift: shift_from_right,
+            overflow: (-line_start).max(0.0),
+        });
+    }
+    reservations
+}
+
 /// Per-document ordered-list counters (levels 0..=8). Bullets and reader-captured
 /// labels need no counter; an authored ordered item without a label is numbered
 /// here.
@@ -2553,8 +2687,13 @@ fn shape_paragraph_content<'a>(
                 line_height: p.props.spacing.line_pct,
                 text_indent: indent.text_indent,
                 hanging_indent: indent.hanging_indent,
-                tab_origin: indent.x_indent,
+                tab_origin: if p.props.bidi {
+                    (available_width - indent.x_indent - indent.wrap_width).max(0.0)
+                } else {
+                    indent.x_indent
+                },
                 tab_stops,
+                rtl_tabs: p.props.bidi,
             },
             cx,
         ) {
@@ -8554,6 +8693,238 @@ mod tests {
             (b_x - 36.0).abs() <= 1.0,
             "b_x={b_x}, glyphs={glyph_debug:?}"
         );
+    }
+
+    #[test]
+    fn rtl_start_tab_advances_from_the_right_page_margin() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "א\tב".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[],
+        );
+        let line = &lines[0];
+        let rendered = &line.runs[0].text;
+        let field_start = rendered.find('ב').expect("tab field text");
+        let bounds =
+            text_bounds(line, field_start..field_start + 'ב'.len_utf8()).expect("field glyph");
+        let actual = line.x_indent + bounds.1;
+
+        assert!(
+            (actual - 144.0).abs() <= 1.5,
+            "RTL start field must end 36pt from the 180pt right margin: actual={actual}, bounds={bounds:?}"
+        );
+    }
+
+    #[test]
+    fn rtl_explicit_start_tabs_keep_page_margin_coordinates_under_indents() {
+        for indent in [
+            Indent {
+                right_pt: Some(20.0),
+                ..Indent::default()
+            },
+            Indent {
+                left_pt: Some(20.0),
+                ..Indent::default()
+            },
+        ] {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    bidi: true,
+                    indent,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "א\tב".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt: 100.0,
+                    alignment: TabAlignment::Left,
+                }],
+            );
+            let line = &lines[0];
+            let rendered = &line.runs[0].text;
+            let field_start = rendered.find('ב').expect("tab field text");
+            let actual = tab_aligned_position(
+                line,
+                field_start..field_start + 'ב'.len_utf8(),
+                TabAlignment::Right,
+            );
+
+            assert!(
+                (actual - 80.0).abs() <= 1.5,
+                "a stop 100pt from the 180pt right margin must land at x=80: indent={indent:?}, actual={actual}"
+            );
+        }
+    }
+
+    #[test]
+    fn rtl_default_tabs_advance_multiple_fields_from_right_to_left() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "א\tב\tג".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[],
+        );
+        let line = &lines[0];
+        let rendered = &line.runs[0].text;
+        let beta = rendered.find('ב').expect("first tab field");
+        let gamma = rendered.find('ג').expect("second tab field");
+        let beta_right =
+            tab_aligned_position(line, beta..beta + 'ב'.len_utf8(), TabAlignment::Right);
+        let gamma_right =
+            tab_aligned_position(line, gamma..gamma + 'ג'.len_utf8(), TabAlignment::Right);
+
+        assert!((beta_right - 144.0).abs() <= 1.5, "beta={beta_right}");
+        assert!((gamma_right - 108.0).abs() <= 1.5, "gamma={gamma_right}");
+    }
+
+    #[test]
+    fn rtl_start_tabs_preserve_segment_paint_and_source_ranges() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![
+                Run {
+                    text: "א\t".to_string(),
+                    ..Run::default()
+                },
+                Run {
+                    text: "ב".to_string(),
+                    props: CharProps {
+                        highlight: Some("yellow".to_string()),
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                },
+            ],
+            None,
+            &[TabStop {
+                position_pt: 100.0,
+                alignment: TabAlignment::Left,
+            }],
+        );
+        let line = &lines[0];
+        let field_start = line.runs[0].text.find('ב').expect("tab field text");
+        let field_right = tab_aligned_position(
+            line,
+            field_start..field_start + 'ב'.len_utf8(),
+            TabAlignment::Right,
+        );
+
+        assert!((field_right - 80.0).abs() <= 1.5);
+        assert_eq!(
+            line.char_range.map(|range| (range.start, range.end)),
+            Some((0, 3))
+        );
+        assert!(line
+            .runs
+            .iter()
+            .any(|run| run.highlight == Some(rgb::Color::new(0xFF, 0xFF, 0x00))));
+    }
+
+    #[test]
+    fn rtl_non_start_custom_tabs_remain_outside_the_bounded_path() {
+        let field_bounds = |position_pt| {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    bidi: true,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "א\tב".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt,
+                    alignment: TabAlignment::Center,
+                }],
+            );
+            let rendered = &lines[0].runs[0].text;
+            let field_start = rendered.find('ב').expect("tab field text");
+            text_bounds(&lines[0], field_start..field_start + 'ב'.len_utf8()).expect("field glyph")
+        };
+
+        assert_eq!(field_bounds(60.0), field_bounds(120.0));
+    }
+
+    #[test]
+    fn natural_rtl_text_without_paragraph_bidi_keeps_existing_tab_behavior() {
+        let field_bounds = |position_pt| {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "א\tב".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt,
+                    alignment: TabAlignment::Left,
+                }],
+            );
+            let rendered = &lines[0].runs[0].text;
+            let field_start = rendered.find('ב').expect("tab field text");
+            text_bounds(&lines[0], field_start..field_start + 'ב'.len_utf8()).expect("field glyph")
+        };
+
+        assert_eq!(field_bounds(60.0), field_bounds(120.0));
+    }
+
+    #[test]
+    fn rtl_tab_advances_reflow_unfitting_content_deterministically() {
+        let paragraph = || {
+            paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    bidi: true,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "\t\t\t\tאבגדה".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[],
+            )
+        };
+        let first = paragraph();
+        let second = paragraph();
+
+        assert_eq!(first.len(), 2);
+        assert_eq!(first.len(), second.len());
+        for (left, right) in first.iter().zip(&second) {
+            assert_eq!(
+                left.char_range.map(|range| (range.start, range.end)),
+                right.char_range.map(|range| (range.start, range.end))
+            );
+            assert!(left.runs.iter().all(|run| run.x >= -0.5));
+        }
     }
 
     /// The end of the last glyph on a line, in paragraph-box coordinates.

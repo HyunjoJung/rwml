@@ -353,10 +353,14 @@ model property. Explicit direct-off values override inherited-on values.
 Fitting protected content moves whole and over-tall content still splits for
 deterministic progress. Opened `.docx` `Document` renders
 additionally honor resolved left/center/right/decimal tab stops in LTR
-left/start-aligned top-level body paragraphs, retaining their page-text-margin
-coordinates under supported left, positive first-line, and hanging indents.
-Default-tab fallback targets use the same margin-anchored grid and are clamped
-to the active paragraph box. Opened documents also honor document-default,
+left/start-aligned top-level body paragraphs, plus default and resolved
+logical-start tab stops in RTL right/start-aligned top-level body paragraphs.
+LTR stops retain their page-text-margin coordinates under supported left,
+positive first-line, and hanging indents; RTL logical-start stops retain
+leading-edge coordinates from the right page-text margin under resolved
+physical or logical left/right indents. Default-tab fallback targets use the
+same margin-anchored grid and are clamped to the active paragraph box. Opened
+documents also honor document-default,
 declared default paragraph-style, and bounded explicit paragraph-style
 before/after spacing, proportional automatic line spacing, first-line/hanging
 indents, flat RGB shading, and `pageBreakBefore`; authored zero/off direct
@@ -364,16 +368,17 @@ overrides; and source-aligned `keepNext`,
 `keepLines`, and default-on `widowControl` pagination hints in top-level body
 paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
-render hints to the public `DocModel`. Table-cell and RTL tab semantics,
-center/right/justified paragraph alignment, leaders/bar tabs, settings-defined
-default-tab intervals, and implicit hanging-indent/list-marker tabs remain
-outside this bounded tab support. Within that support, resolved tab advances
-now reserve line width before breaking, so content that no longer fits after a
-tab moves to the next line instead of running past the paragraph box; the
-reservation only ever tightens and is bounded to three passes, keeping the
-result deterministic, and emitted page counts follow the resulting line count.
-Post-tab field containment, Word-exact custom-tab-aware reflow, and Word-exact
-tab-driven pagination remain outside the claim. Nested table content remains
+render hints to the public `DocModel`. Table-cell tab semantics, RTL
+center/end/decimal tab stops, center/right/justified LTR paragraph alignment,
+leaders/bar tabs, settings-defined default-tab intervals, and implicit
+hanging-indent/list-marker tabs remain outside this bounded tab support. Within
+the supported LTR and RTL paths, resolved tab advances now reserve line width
+before breaking, so content that no longer fits after a tab moves to the next
+line instead of running past the paragraph box; the reservation only ever
+tightens and is bounded to three passes, keeping the result deterministic, and
+emitted page counts follow the resulting line count. Post-tab field
+containment, Word-exact custom-tab-aware reflow, and Word-exact tab-driven
+pagination remain outside the claim. Nested table content remains
 a flattened text preview rather than a nested grid layout.
 One per-story fallback-counter state follows source-logical order across body,
 direct-cell, nested-cell, and later body paragraphs. `w:bidiVisual` changes
