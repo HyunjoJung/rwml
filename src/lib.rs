@@ -2944,6 +2944,7 @@ impl Document {
                         table_cell_pagination: &d.table_cell_pagination,
                         table_nested_pagination: &d.table_nested_pagination,
                         table_cell_tab_stops: &d.table_cell_tab_stops,
+                        default_tab_stop_pt: d.default_tab_stop_pt,
                     },
                 )
             }

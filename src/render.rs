@@ -155,6 +155,7 @@ const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
 pub(crate) struct SourceRenderHints<'a> {
     pub(crate) pagination: &'a [PaginationHint],
     pub(crate) tab_stops: &'a [Vec<TabStop>],
+    pub(crate) default_tab_stop_pt: Option<f32>,
     pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     pub(crate) table_cell_pagination: &'a [TableCellPaginationHints],
     pub(crate) table_nested_pagination: &'a [TableCellNestedPaginationHints],
@@ -1822,6 +1823,7 @@ struct ShapeOptions<'a> {
     hanging_indent: bool,
     tab_origin: f32,
     tab_stops: &'a [TabStop],
+    default_tab_stop_pt: Option<f32>,
     rtl_tabs: bool,
 }
 
@@ -2003,9 +2005,23 @@ fn shape_with_options(
             break;
         }
         let reservations = if rtl_tabs {
-            apply_rtl_tab_stops(text, &mut out, options.tab_stops, width, options.tab_origin)
+            apply_rtl_tab_stops(
+                text,
+                &mut out,
+                options.tab_stops,
+                width,
+                options.tab_origin,
+                options.default_tab_stop_pt,
+            )
         } else {
-            apply_tab_stops(text, &mut out, options.tab_stops, width, options.tab_origin)
+            apply_tab_stops(
+                text,
+                &mut out,
+                options.tab_stops,
+                width,
+                options.tab_origin,
+                options.default_tab_stop_pt,
+            )
         };
         pass += 1;
         if pass > TAB_REFLOW_PASSES
@@ -2320,7 +2336,17 @@ fn explicit_tab_field_start(
         .map(|(_, field_start)| field_start)
 }
 
+#[cfg(test)]
 fn default_tab_field_start(cursor: f32, width: f32, origin: f32) -> f32 {
+    default_tab_field_start_with_interval(cursor, width, origin, None)
+}
+
+fn default_tab_field_start_with_interval(
+    cursor: f32,
+    width: f32,
+    origin: f32,
+    default_tab_stop_pt: Option<f32>,
+) -> f32 {
     let absolute_cursor = origin + cursor;
     let absolute_end = origin + width;
     if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
@@ -2329,8 +2355,10 @@ fn default_tab_field_start(cursor: f32, width: f32, origin: f32) -> f32 {
     if absolute_cursor >= absolute_end {
         return width;
     }
-    let absolute_stop = (((absolute_cursor / DEFAULT_TAB_STOP_PT).floor() + 1.0)
-        * DEFAULT_TAB_STOP_PT)
+    let interval = default_tab_stop_pt
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(DEFAULT_TAB_STOP_PT);
+    let absolute_stop = (((absolute_cursor / interval).floor() + 1.0) * interval)
         .min(absolute_end)
         .max(absolute_cursor);
     (absolute_stop - origin).max(cursor).min(width)
@@ -2342,6 +2370,7 @@ fn apply_tab_stops(
     tab_stops: &[TabStop],
     width: f32,
     origin: f32,
+    default_tab_stop_pt: Option<f32>,
 ) -> Vec<TabReservation> {
     let mut reservations = Vec::with_capacity(lines.len());
     for line in lines {
@@ -2358,7 +2387,14 @@ fn apply_tab_stops(
                     let field = tab_field_metrics(text, line, run_index, glyph_index);
                     let field_start =
                         explicit_tab_field_start(tab_stops, cursor, field, width, origin)
-                            .unwrap_or_else(|| default_tab_field_start(cursor, width, origin));
+                            .unwrap_or_else(|| {
+                                default_tab_field_start_with_interval(
+                                    cursor,
+                                    width,
+                                    origin,
+                                    default_tab_stop_pt,
+                                )
+                            });
                     let advance = (field_start - cursor)
                         .max(0.0)
                         .min((width - cursor).max(0.0));
@@ -2438,6 +2474,7 @@ fn apply_rtl_tab_stops(
     tab_stops: &[TabStop],
     width: f32,
     origin: f32,
+    default_tab_stop_pt: Option<f32>,
 ) -> Vec<TabReservation> {
     let mut reservations = Vec::with_capacity(lines.len());
     for line in lines {
@@ -2473,7 +2510,14 @@ fn apply_rtl_tab_stops(
                     width,
                     origin,
                 )
-                .unwrap_or_else(|| default_tab_field_start(cursor, width, origin));
+                .unwrap_or_else(|| {
+                    default_tab_field_start_with_interval(
+                        cursor,
+                        width,
+                        origin,
+                        default_tab_stop_pt,
+                    )
+                });
                 let original_advance =
                     line.runs[run_index].glyphs[glyph_index].x_advance * run_size;
                 let advance = (field_start - cursor)
@@ -2550,10 +2594,12 @@ struct ShapedParagraph<'a> {
     images: Vec<&'a Image>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn shape_paragraph_content<'a>(
     p: &'a Paragraph,
     marker: Option<&str>,
     tab_stops: &[TabStop],
+    default_tab_stop_pt: Option<f32>,
     available_width: f32,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
@@ -2694,6 +2740,7 @@ fn shape_paragraph_content<'a>(
                     indent.x_indent
                 },
                 tab_stops,
+                default_tab_stop_pt,
                 rtl_tabs: p.props.bidi,
             },
             cx,
@@ -2727,16 +2774,27 @@ fn shape_paragraph_content<'a>(
     ShapedParagraph { lines, images }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn layout_paragraph(
     p: &Paragraph,
     out: &mut Vec<FlowItem>,
     marker: Option<&str>,
     tab_stops: &[TabStop],
+    default_tab_stop_pt: Option<f32>,
     geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) {
-    let shaped = shape_paragraph_content(p, marker, tab_stops, geom.content_w(), cx, capture, true);
+    let shaped = shape_paragraph_content(
+        p,
+        marker,
+        tab_stops,
+        default_tab_stop_pt,
+        geom.content_w(),
+        cx,
+        capture,
+        true,
+    );
     out.extend(shaped.lines.into_iter().map(FlowItem::Line));
     for img in shaped.images {
         if let Some(item) = image_flow_item(img, geom) {
@@ -2887,7 +2945,7 @@ fn shape_cell(
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) -> Vec<LineLayout> {
-    shape_cell_with_pagination(cell, None, None, None, inner_w, depth, cx, capture)
+    shape_cell_with_pagination(cell, None, None, None, None, inner_w, depth, cx, capture)
 }
 
 #[cfg(test)]
@@ -2897,6 +2955,7 @@ fn shape_cell_with_pagination(
     pagination: Option<&[Option<PaginationHint>]>,
     tab_stops: Option<&[Vec<TabStop>]>,
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
+    default_tab_stop_pt: Option<f32>,
     inner_w: f32,
     depth: u32,
     cx: &mut TextCx<'_>,
@@ -2908,6 +2967,7 @@ fn shape_cell_with_pagination(
         pagination,
         tab_stops,
         nested_pagination,
+        default_tab_stop_pt,
         inner_w,
         depth,
         cx,
@@ -2922,6 +2982,7 @@ fn shape_cell_with_pagination_and_lists(
     pagination: Option<&[Option<PaginationHint>]>,
     tab_stops: Option<&[Vec<TabStop>]>,
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
+    default_tab_stop_pt: Option<f32>,
     inner_w: f32,
     depth: u32,
     cx: &mut TextCx<'_>,
@@ -2938,6 +2999,7 @@ fn shape_cell_with_pagination_and_lists(
         pagination,
         tab_stops,
         nested_pagination,
+        default_tab_stop_pt,
         inner_w,
         depth,
         cx,
@@ -2999,6 +3061,7 @@ fn shape_cell_in_scope(
     pagination: Option<&[Option<PaginationHint>]>,
     tab_stops: Option<&[Vec<TabStop>]>,
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
+    default_tab_stop_pt: Option<f32>,
     inner_w: f32,
     depth: u32,
     cx: &mut TextCx<'_>,
@@ -3030,6 +3093,7 @@ fn shape_cell_in_scope(
                     p,
                     marker.as_deref(),
                     paragraph_tab_stops,
+                    default_tab_stop_pt,
                     inner_w,
                     cx,
                     capture,
@@ -3084,6 +3148,7 @@ fn shape_cell_in_scope(
                             nested_cell_pagination,
                             nested_cell_tab_stops,
                             nested_cell_tables,
+                            default_tab_stop_pt,
                             inner_w,
                             depth + 1,
                             cx,
@@ -3134,6 +3199,7 @@ struct TablePaginationView<'a> {
     cells: Option<&'a TableCellPaginationHints>,
     nested: Option<&'a TableCellNestedPaginationHints>,
     cell_tabs: Option<&'a TableCellTabStopHints>,
+    default_tab_stop_pt: Option<f32>,
 }
 
 fn table_placement(t: &Table, available_width: f32) -> (f32, f32) {
@@ -3387,6 +3453,7 @@ fn layout_table_with_row_pagination_and_lists(
                         direct_pagination,
                         direct_tab_stops,
                         direct_nested_pagination,
+                        pagination.default_tab_stop_pt,
                         (width - insets.left - insets.right).max(1.0),
                         0,
                         cx,
@@ -3765,6 +3832,7 @@ struct BlockCollectionOptions<'a> {
     section_columns: Option<&'a [Option<u16>]>,
     pagination_hints: Option<&'a [PaginationHint]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
+    default_tab_stop_pt: Option<f32>,
     table_row_pagination: Option<&'a [Vec<TableRowPaginationHint>]>,
     table_cell_pagination: Option<&'a [TableCellPaginationHints]>,
     table_nested_pagination: Option<&'a [TableCellNestedPaginationHints]>,
@@ -3776,6 +3844,7 @@ struct BodyCollectionSidecars<'a> {
     section_columns: &'a [Option<u16>],
     pagination_hints: &'a [PaginationHint],
     tab_stops: &'a [Vec<TabStop>],
+    default_tab_stop_pt: Option<f32>,
     table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     table_cell_pagination: &'a [TableCellPaginationHints],
     table_nested_pagination: &'a [TableCellNestedPaginationHints],
@@ -3802,6 +3871,7 @@ fn collect_blocks_with_block_anchors(
             section_columns: Some(sidecars.section_columns),
             pagination_hints: Some(sidecars.pagination_hints),
             tab_stops: Some(sidecars.tab_stops),
+            default_tab_stop_pt: sidecars.default_tab_stop_pt,
             table_row_pagination: Some(sidecars.table_row_pagination),
             table_cell_pagination: Some(sidecars.table_cell_pagination),
             table_nested_pagination: Some(sidecars.table_nested_pagination),
@@ -3869,6 +3939,7 @@ fn collect_blocks_inner(
                     out,
                     marker.as_deref(),
                     tab_stops,
+                    options.default_tab_stop_pt,
                     block_geom,
                     cx,
                     capture,
@@ -3909,6 +3980,7 @@ fn collect_blocks_inner(
                         cells: cell_pagination,
                         nested: nested_pagination,
                         cell_tabs: cell_tab_stops,
+                        default_tab_stop_pt: options.default_tab_stop_pt,
                     },
                     &mut lists,
                 );
@@ -7277,6 +7349,7 @@ fn collect_pdf_flow_items(
             section_columns: &body_columns,
             pagination_hints: source_hints.pagination,
             tab_stops: source_hints.tab_stops,
+            default_tab_stop_pt: source_hints.default_tab_stop_pt,
             table_row_pagination: source_hints.table_row_pagination,
             table_cell_pagination: source_hints.table_cell_pagination,
             table_nested_pagination: source_hints.table_nested_pagination,
@@ -8319,6 +8392,7 @@ mod tests {
             &mut flow,
             marker,
             tab_stops,
+            None,
             geom,
             &mut tcx,
             &mut capture,

@@ -500,6 +500,54 @@ fn table_cell_tab_render_docx(cell_tabs: &str, nested: bool) -> Vec<u8> {
     ])
 }
 
+#[cfg(feature = "render")]
+fn default_tab_stop_render_docx(default_tab_stop_twips: Option<u32>) -> Vec<u8> {
+    let content_types = content_types(false);
+    let settings = default_tab_stop_twips.map_or_else(String::new, |twips| {
+        format!(
+            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="{twips}"/></w:settings>"#
+        )
+    });
+    let parts = [
+        ("[Content_Types].xml", content_types.as_str()),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:r><w:t>lead</w:t><w:tab/><w:t>tail</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="2600"/><w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/></w:sectPr>
+            </w:body></w:document>"#,
+        ),
+    ];
+    let mut out = docx_fixture(&parts);
+    if !settings.is_empty() {
+        let mut with_settings = Vec::new();
+        {
+            let cursor = std::io::Cursor::new(&mut with_settings);
+            let mut zip = zip::ZipWriter::new(cursor);
+            let opt = zip::write::SimpleFileOptions::default();
+            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&out)).unwrap();
+            for index in 0..archive.len() {
+                let mut entry = archive.by_index(index).unwrap();
+                zip.start_file(entry.name(), opt).unwrap();
+                std::io::copy(&mut entry, &mut zip).unwrap();
+            }
+            zip.start_file("word/settings.xml", opt).unwrap();
+            zip.write_all(settings.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        out = with_settings;
+    }
+    out
+}
+
 #[test]
 fn docx_run_props_resolve_docdefaults_paragraph_and_character_styles() {
     let doc = Document::open(&style_inheritance_docx()).expect("fixture opens");
@@ -943,6 +991,36 @@ fn opened_docx_render_uses_explicit_tabs_inside_table_cells() {
         nested_explicit_pdf,
         nested_explicit.to_pdf_with_fonts(&fonts),
         "nested table-cell tab rendering must remain deterministic"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_uses_settings_default_tab_stop_interval() {
+    let default =
+        Document::open(&default_tab_stop_render_docx(None)).expect("default-tab fixture opens");
+    let configured = Document::open(&default_tab_stop_render_docx(Some(1440)))
+        .expect("configured default-tab fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let default_pdf = default.to_pdf_with_fonts(&fonts);
+    let configured_pdf = configured.to_pdf_with_fonts(&fonts);
+    let model_pdf = rwml::try_render_pdf_with_fonts(&configured.model(), &fonts)
+        .expect("model-only configured default-tab fixture renders");
+    assert!(default_pdf.starts_with(b"%PDF-"));
+    assert!(configured_pdf.starts_with(b"%PDF-"));
+    assert_ne!(
+        default_pdf, configured_pdf,
+        "settings-defined default tab interval must affect deterministic PDF output"
+    );
+    assert_ne!(
+        configured_pdf, model_pdf,
+        "opened-document default-tab sidecar must affect rendering beyond the model"
+    );
+    assert_eq!(
+        configured_pdf,
+        configured.to_pdf_with_fonts(&fonts),
+        "settings-defined default-tab rendering must remain deterministic"
     );
 }
 

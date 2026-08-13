@@ -220,6 +220,9 @@ pub(crate) struct DocxState {
     /// Renderer-only resolved table-cell paragraph tab stops aligned to body model blocks.
     #[cfg(feature = "render")]
     pub table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
+    /// Renderer-only document default tab interval from `word/settings.xml`.
+    #[cfg(feature = "render")]
+    pub default_tab_stop_pt: Option<f32>,
     /// Exact running header/footer records parsed from referenced `.docx` parts.
     pub header_footers: Vec<HeaderFooter>,
     /// Core metadata parsed from `docProps/core.xml`.
@@ -304,6 +307,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         .as_deref()
         .map(fields::note_numbering_from_settings)
         .unwrap_or_default();
+    #[cfg(feature = "render")]
+    let default_tab_stop_pt = settings_xml.as_deref().and_then(parse_default_tab_stop_pt);
     let document_properties = DocumentPropertyRefs {
         core: &core_properties,
         custom: &custom_property_fields,
@@ -674,6 +679,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         table_nested_pagination,
         #[cfg(feature = "render")]
         table_cell_tab_stops,
+        #[cfg(feature = "render")]
+        default_tab_stop_pt,
         header_footers,
         core_properties,
         fields,
@@ -3779,6 +3786,26 @@ fn parse_document_id(xml: &str) -> Option<String> {
     None
 }
 
+fn parse_default_tab_stop_pt(xml: &str) -> Option<f32> {
+    let mut r = Reader::from_str(xml);
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"defaultTabStop" =>
+            {
+                return attr_local(&e, b"val")
+                    .and_then(|value| value.trim().parse::<f32>().ok())
+                    .filter(|twips| twips.is_finite() && *twips > 0.0)
+                    .map(|twips| twips / 20.0)
+                    .filter(|points| points.is_finite() && *points > 0.0);
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    None
+}
+
 fn read_custom_property_value(r: &mut Reader<&[u8]>) -> Option<String> {
     let mut value = None;
     loop {
@@ -4261,8 +4288,8 @@ pub(crate) fn toggle_on(val: Option<String>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        custom_xml_item_id, normalize_part, parse_document_id, parse_rels, toggle_on,
-        MAX_REL_RECORDS,
+        custom_xml_item_id, normalize_part, parse_default_tab_stop_pt, parse_document_id,
+        parse_rels, toggle_on, MAX_REL_RECORDS,
     };
 
     #[test]
@@ -4317,6 +4344,18 @@ mod tests {
         assert_eq!(
             parse_document_id(alternate_prefix).as_deref(),
             Some("6ECD4467")
+        );
+    }
+
+    #[test]
+    fn parse_default_tab_stop_pt_reads_positive_twips() {
+        let xml = r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val=" 1440 "/></w:settings>"#;
+        assert_eq!(parse_default_tab_stop_pt(xml), Some(72.0));
+        assert_eq!(
+            parse_default_tab_stop_pt(
+                r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="0"/></w:settings>"#
+            ),
+            None
         );
     }
 

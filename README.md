@@ -363,7 +363,9 @@ LTR stops retain their page-text-margin coordinates under supported left,
 positive first-line, and hanging indents; RTL logical-start stops retain
 leading-edge coordinates from the right page-text margin under resolved
 physical or logical left/right indents. Default-tab fallback targets use the
-same margin-anchored grid and are clamped to the active paragraph box. Opened
+same margin-anchored grid, use a positive `w:defaultTabStop` interval from
+`word/settings.xml` when present, and are clamped to the active paragraph box.
+Opened
 documents also honor document-default,
 declared default paragraph-style, and bounded explicit paragraph-style
 before/after spacing, proportional automatic line spacing, first-line/hanging
@@ -376,7 +378,7 @@ render hints to the public `DocModel`. Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Table-cell RTL center/end/decimal tab stops,
 center/right/justified LTR paragraph alignment, leaders/bar tabs, settings-defined
-default-tab intervals, and implicit
+default-tab intervals for unsupported contexts, and implicit
 hanging-indent/list-marker tabs remain outside this bounded tab support. Within
 the supported LTR and RTL paths, resolved tab advances now reserve line width
 before breaking, so content that no longer fits after a tab moves to the next
