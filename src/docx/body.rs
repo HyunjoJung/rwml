@@ -21,6 +21,7 @@ use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
 use super::styles::{
     apply_paragraph_layout_child, ParagraphLayoutProps, RunProps, Styles, TableRowStyleRegions,
+    TableStyleCellProps,
 };
 use super::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree};
 use super::{
@@ -5503,6 +5504,11 @@ impl CellMarginSpec {
             && self.bottom.is_none()
             && self.leading.is_none()
     }
+
+    #[cfg(test)]
+    pub(crate) fn logical_values(self) -> (Option<u32>, Option<u32>, Option<u32>, Option<u32>) {
+        (self.top, self.trailing, self.bottom, self.leading)
+    }
 }
 
 fn resolve_cell_margins(
@@ -5553,9 +5559,11 @@ struct CellRaw {
     col_span: u16,
     vmerge: VMerge,
     shading: Option<Color>,
+    shading_declared: bool,
     valign: VCell,
     valign_declared: bool,
     width_pct: Option<f32>,
+    width_pct_declared: bool,
     margins: CellMarginSpec,
 }
 
@@ -5663,22 +5671,26 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
         .or_else(|| ctx.styles.table_row_band_size(props.style_id.as_deref()))
         // Word uses zero, rather than ECMA-376's one, when the property is omitted.
         .unwrap_or(0);
-    let row_pagination = rows
+    let row_regions: Vec<_> = rows
         .iter()
         .enumerate()
         .map(|(index, row)| {
-            let regions = row
-                .props
+            row.props
                 .style_regions
-                .unwrap_or_else(|| table_look.row_regions(index, row_count, row_band_size));
+                .unwrap_or_else(|| table_look.row_regions(index, row_count, row_band_size))
+        })
+        .collect();
+    let row_pagination = rows
+        .iter()
+        .zip(&row_regions)
+        .map(|(row, &regions)| {
             let style_cant_split = ctx
                 .styles
                 .table_row_cant_split_for_regions(props.style_id.as_deref(), regions);
             row.props.pagination(style_cant_split)
         })
         .collect();
-    let style_cell_margins = ctx.styles.table_cell_margins(props.style_id.as_deref());
-    let style_cell_defaults = ctx.styles.table_cell_defaults(props.style_id.as_deref());
+    let style_cell_props = ctx.styles.table_cell_props(props.style_id.as_deref());
     // A table style's geometry fills in only what the table left unset.
     let style_geometry = ctx.styles.table_geometry(props.style_id.as_deref());
     props.width_pct = props.width_pct.or(style_geometry.width_pct);
@@ -5701,13 +5713,8 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
             props.border_styles = borders.5;
         }
     }
-    let (table, cell_pagination, nested_pagination) = build_table(
-        rows,
-        props,
-        grid_widths,
-        style_cell_margins,
-        style_cell_defaults,
-    );
+    let (table, cell_pagination, nested_pagination) =
+        build_table(rows, props, grid_widths, style_cell_props, row_regions);
     (
         table,
         TablePaginationHints {
@@ -6078,31 +6085,48 @@ fn read_tblpr_alternate_content_branch(
     }
 }
 
-/// Cell defaults a table style can declare for the whole table. Only values
-/// the model already carries participate, and `valign` is optional so an
-/// explicit `top` stays distinguishable from an unset one.
+/// Cell defaults a table style can declare. Declaration flags preserve an
+/// explicit clear or unsupported nearer value so it can suppress inheritance.
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
 pub(crate) struct TableStyleCellDefaults {
-    pub(crate) shading: Option<Color>,
-    pub(crate) valign: Option<VCell>,
-    pub(crate) width_pct: Option<f32>,
+    shading: Option<Color>,
+    shading_declared: bool,
+    valign: Option<VCell>,
+    valign_declared: bool,
+    width_pct: Option<f32>,
+    width_pct_declared: bool,
 }
 
 impl TableStyleCellDefaults {
     pub(crate) fn overlay(&mut self, other: Self) {
-        if other.shading.is_some() {
+        if other.shading_declared {
             self.shading = other.shading;
+            self.shading_declared = true;
         }
-        if other.valign.is_some() {
+        if other.valign_declared {
             self.valign = other.valign;
+            self.valign_declared = true;
         }
-        if other.width_pct.is_some() {
+        if other.width_pct_declared {
             self.width_pct = other.width_pct;
+            self.width_pct_declared = true;
         }
     }
 
     pub(crate) fn is_empty(self) -> bool {
-        self.shading.is_none() && self.valign.is_none() && self.width_pct.is_none()
+        !self.shading_declared && !self.valign_declared && !self.width_pct_declared
+    }
+
+    pub(crate) fn shading(self) -> Option<Color> {
+        self.shading
+    }
+
+    pub(crate) fn valign(self) -> Option<VCell> {
+        self.valign
+    }
+
+    pub(crate) fn width_pct(self) -> Option<f32> {
+        self.width_pct
     }
 
     /// Record a `w:tcPr` child, reusing the direct cell reader's semantics.
@@ -6111,16 +6135,21 @@ impl TableStyleCellDefaults {
             gs: 1,
             vm: VMerge::None,
             shading: None,
+            shading_declared: false,
             valign: VCell::Top,
             valign_declared: false,
             width_pct: None,
+            width_pct_declared: false,
             margins: CellMarginSpec::default(),
         };
         apply_tcpr_child(&mut t, e);
         self.overlay(Self {
             shading: t.shading,
+            shading_declared: t.shading_declared,
             valign: t.valign_declared.then_some(t.valign),
+            valign_declared: t.valign_declared,
             width_pct: t.width_pct,
+            width_pct_declared: t.width_pct_declared,
         });
     }
 }
@@ -6757,9 +6786,11 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
             col_span: 1,
             vmerge: VMerge::None,
             shading: None,
+            shading_declared: false,
             valign: VCell::Top,
             valign_declared: false,
             width_pct: None,
+            width_pct_declared: false,
             margins: CellMarginSpec::default(),
         };
     }
@@ -6804,9 +6835,11 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         gs: 1,
         vm: VMerge::None,
         shading: None,
+        shading_declared: false,
         valign: VCell::Top,
         valign_declared: false,
         width_pct: None,
+        width_pct_declared: false,
         margins: CellMarginSpec::default(),
     });
     CellRaw {
@@ -6816,9 +6849,11 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         col_span: tc.gs,
         vmerge: tc.vm,
         shading: tc.shading,
+        shading_declared: tc.shading_declared,
         valign: tc.valign,
         valign_declared: tc.valign_declared,
         width_pct: tc.width_pct,
+        width_pct_declared: tc.width_pct_declared,
         margins: tc.margins,
     }
 }
@@ -6917,9 +6952,11 @@ struct TcPr {
     gs: u16,
     vm: VMerge,
     shading: Option<Color>,
+    shading_declared: bool,
     valign: VCell,
     valign_declared: bool,
     width_pct: Option<f32>,
+    width_pct_declared: bool,
     margins: CellMarginSpec,
 }
 
@@ -6929,9 +6966,11 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
         gs: 1,
         vm: VMerge::None,
         shading: None,
+        shading_declared: false,
         valign: VCell::Top,
         valign_declared: false,
         width_pct: None,
+        width_pct_declared: false,
         margins: CellMarginSpec::default(),
     };
     loop {
@@ -7030,7 +7069,14 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
                 _ => VMerge::Continue, // present with "continue"/no val
             };
         }
-        b"shd" => t.shading = attr_local(e, b"fill").and_then(|v| parse_rgb_hex_color(&v)),
+        b"shd" => {
+            t.shading_declared = true;
+            let suppresses_fill = attr_local_trimmed(e, b"val").as_deref() == Some("nil")
+                || attr_local_trimmed(e, b"fill").as_deref() == Some("auto");
+            t.shading = (!suppresses_fill)
+                .then(|| attr_local(e, b"fill").and_then(|v| parse_rgb_hex_color(&v)))
+                .flatten();
+        }
         b"vAlign" => {
             t.valign_declared = true;
             t.valign = match attr_local_trimmed(e, b"val").as_deref() {
@@ -7039,10 +7085,18 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
                 _ => VCell::Top,
             };
         }
-        // `type="pct"` w:w is in fiftieths of a percent (5000 = 100%);
-        // `dxa` (twips) is absolute and left as auto here.
-        b"tcW" if attr_local_trimmed(e, b"type").is_some_and(|value| value == "pct") => {
-            t.width_pct = attr_f32(e, b"w").map(|p| p / 5000.0);
+        // `type="pct"` w:w is in fiftieths of a percent (5000 = 100%).
+        // Other, malformed, or unbounded declarations suppress inherited
+        // percentages but remain outside the model's percentage-only field.
+        b"tcW" => {
+            t.width_pct_declared = true;
+            t.width_pct = if attr_local_trimmed(e, b"type").as_deref() == Some("pct") {
+                attr_f32(e, b"w")
+                    .filter(|value| value.is_finite() && (0.0..=5000.0).contains(value))
+                    .map(|value| value / 5000.0)
+            } else {
+                None
+            };
         }
         _ => {}
     }
@@ -7171,8 +7225,8 @@ fn build_table(
     raw_rows: Vec<RowRaw>,
     props: TableProps,
     grid_widths: Vec<u32>,
-    style_cell_margins: CellMarginSpec,
-    style_cell_defaults: TableStyleCellDefaults,
+    style_cell_props: TableStyleCellProps,
+    row_regions: Vec<TableRowStyleRegions>,
 ) -> (
     Table,
     TableCellPaginationHints,
@@ -7194,9 +7248,11 @@ fn build_table(
         vmerge: VMerge,
         dropped: bool,
         shading: Option<Color>,
+        shading_declared: bool,
         valign: VCell,
         valign_declared: bool,
         width_pct: Option<f32>,
+        width_pct_declared: bool,
         row_cell_margins: Option<CellMarginSpec>,
         margins: CellMarginSpec,
     }
@@ -7221,9 +7277,11 @@ fn build_table(
                 vmerge: c.vmerge,
                 dropped: false,
                 shading: c.shading,
+                shading_declared: c.shading_declared,
                 valign: c.valign,
                 valign_declared: c.valign_declared,
                 width_pct: c.width_pct,
+                width_pct_declared: c.width_pct_declared,
                 row_cell_margins,
                 margins: c.margins,
             });
@@ -7258,15 +7316,23 @@ fn build_table(
         }
     }
 
-    let cell_margin_defaults_active = !style_cell_margins.is_empty()
-        || !props.cell_margins.is_empty()
-        || grid.iter().flatten().any(|cell| {
-            !cell.dropped && (cell.row_cell_margins.is_some() || !cell.margins.is_empty())
+    let cell_margin_defaults_active = !props.cell_margins.is_empty()
+        || grid.iter().enumerate().any(|(row_index, row)| {
+            let regions = row_regions.get(row_index).copied().unwrap_or_default();
+            let style_margins = style_cell_props.presentation_for_regions(regions).margins;
+            row.iter().any(|cell| {
+                !cell.dropped
+                    && (!style_margins.is_empty()
+                        || cell.row_cell_margins.is_some()
+                        || !cell.margins.is_empty())
+            })
         });
     let mut rows = Vec::with_capacity(grid.len());
     let mut table_cell_pagination = Vec::with_capacity(grid.len());
     let mut table_nested_pagination = Vec::with_capacity(grid.len());
-    for row in grid {
+    for (row_index, row) in grid.into_iter().enumerate() {
+        let regions = row_regions.get(row_index).copied().unwrap_or_default();
+        let style_presentation = style_cell_props.presentation_for_regions(regions);
         let mut cells = Vec::with_capacity(row.len());
         let mut cell_pagination = Vec::with_capacity(row.len());
         let mut cell_nested_pagination = Vec::with_capacity(row.len());
@@ -7278,17 +7344,25 @@ fn build_table(
                 col_span: p.col_span,
                 row_span: p.row_span,
                 is_header: p.is_header,
-                // A table style's whole-table cell defaults fill in only what
-                // the cell itself left undeclared.
-                shading: p.shading.or(style_cell_defaults.shading),
+                // The restart row's resolved style presentation fills only
+                // properties the surviving cell left undeclared.
+                shading: if p.shading_declared {
+                    p.shading
+                } else {
+                    style_presentation.defaults.shading()
+                },
                 valign: if p.valign_declared {
                     p.valign
                 } else {
-                    style_cell_defaults.valign.unwrap_or(p.valign)
+                    style_presentation.defaults.valign().unwrap_or(p.valign)
                 },
-                width_pct: p.width_pct.or(style_cell_defaults.width_pct),
+                width_pct: if p.width_pct_declared {
+                    p.width_pct
+                } else {
+                    style_presentation.defaults.width_pct()
+                },
                 margins: resolve_cell_margins(
-                    style_cell_margins,
+                    style_presentation.margins,
                     p.row_cell_margins.unwrap_or(props.cell_margins),
                     p.margins,
                     props.bidi_visual,
@@ -8552,9 +8626,11 @@ mod tests {
             col_span: 1,
             vmerge,
             shading: None,
+            shading_declared: false,
             valign: VCell::Top,
             valign_declared: false,
             width_pct: None,
+            width_pct_declared: false,
             margins: CellMarginSpec::default(),
         }
     }
@@ -9654,12 +9730,13 @@ mod tests {
             props: RowProps::default(),
         }));
 
+        let row_regions = vec![TableRowStyleRegions::default(); rows.len()];
         let table = build_table(
             rows,
             TableProps::default(),
             Vec::new(),
-            CellMarginSpec::default(),
-            TableStyleCellDefaults::default(),
+            TableStyleCellProps::default(),
+            row_regions,
         )
         .0;
 
