@@ -690,8 +690,8 @@ super/subscript plus literal direct `sprmCFSmallCaps`/`sprmCFCaps`
 capitalization**), the STSH style sheet + outline levels (headings),
 `sprmTDefTable` (merge-aware tables with bounded relative column proportions),
 `PlcfSed`/SED section boundaries with SEPX page size, orientation, nonnegative
-per-side margins, title-page state, document-grid state, and page-number
-restart/format state,
+per-side margins, title-page state, all six section text directions,
+document-grid state, and page-number restart/format state,
 `PlfLst` list autonumbers with bounded `PlfLfo`/`LFOLVL` per-instance overrides,
 restart thresholds, legal-number formatting, and shared-list continuation,
 hyperlink field marks, and
@@ -969,12 +969,13 @@ code points.
   Valid `PlcfSed` SED records also preserve each section's SEPX page size,
   orientation, nonnegative left/right/top/bottom margins, equal-width
   `sprmSCcolumns` counts from 1 through 44, strict `sprmSFTitlePage` first-page
-  state, complete `sprmSClm` document grids with valid `sprmSDyaLinePitch` and
-  representable nonnegative `sprmSDxtCharSpace`, and source-order page-number
-  format/restart state through `SectionSetup` and the final `DocSetup`, including
-  headerless and single-section documents. Boundary SEPX records preserve
-  new/even/odd `sprmSBkc` break kinds, title-page and document-grid state, and
-  bounded `sprmSNfcPgn` plus
+  state, all six `sprmSTextFlow` directions, complete `sprmSClm` document grids
+  with valid `sprmSDyaLinePitch` and representable nonnegative
+  `sprmSDxtCharSpace`, and source-order page-number format/restart state through
+  `SectionSetup` and the final `DocSetup`, including headerless and
+  single-section documents. Boundary SEPX records preserve new/even/odd
+  `sprmSBkc` break kinds, title-page, text-direction, and document-grid state,
+  plus bounded `sprmSNfcPgn` and
   `sprmSFPgnRestart`/`sprmSPgnStart97`/`sprmSPgnStart` values through the shared
   model and fresh `.docx` conversion/reopen. Supported MSONFC values map to the
   existing model formats; valid unrepresentable values use a bounded decimal
@@ -989,10 +990,10 @@ code points.
   Continuous/new-column section marks normalize to the shared model's
   next-page fallback. Custom column widths/gaps, separator lines, manual column
   breaks, RTL column ordering, gutters/facing pages, header/footer distances,
-  page borders, section text flow, vertical justification, signed negative
-  document-grid character-pitch deltas, negative fixed-position top/bottom
-  semantics, display-number effects on physical pagination, and page-number
-  footer inference remain outside this bounded reader path.
+  page borders, vertical justification, signed negative document-grid
+  character-pitch deltas, negative fixed-position top/bottom semantics,
+  display-number effects on physical pagination, and page-number footer
+  inference remain outside this bounded reader path.
   Exact multi-note/endnote reference markers and exact text-box shape anchors
   are not yet fully promoted, so non-body regions still remain in the flat
   block stream;
@@ -1239,9 +1240,10 @@ current limit never counts as finishing it.
       annotation author metadata, and per-section `PlcfHdd` header/footer story
       application through `PlcfSed`, plus SED/SEPX-backed page size,
       orientation, nonnegative per-side margins, title-page state, equal-width
-      columns, complete document-grid state with representable character pitch,
-      and page-number restart/format state for single, headerless, and
-      multi-section documents. Missing annotation bookmark tables,
+      columns, all six section text directions, complete document-grid state
+      with representable character pitch, and page-number restart/format state
+      for single, headerless, and multi-section documents. Missing annotation
+      bookmark tables,
       count-mismatched shape/text-box tables, malformed local SEPX data, and
       unsupported section properties retain bounded fallbacks by design
 - [x] Reader side-table context parity: supported `STYLEREF` fields compute in

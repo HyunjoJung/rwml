@@ -70,6 +70,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   omitted, invalid operands leave prior source-order state intact, and a valid
   negative character-pitch delta clears an earlier representable value because
   the existing public model stores that field as unsigned.
+- Preserves all six legacy `.doc` `sprmSTextFlow` section directions through
+  `SectionSetup` and the final `DocSetup`, including `@`-font/non-`@` glyph
+  rotation distinctions, exact fresh `.docx` text-direction output, and reopen
+  parity. Invalid values leave the last valid source-order state intact.
 - Preserves legacy `.doc` section page-number formats and restart values from
   `sprmSNfcPgn`, `sprmSFPgnRestart`, `sprmSPgnStart97`, and `sprmSPgnStart`
   through the shared model and fresh `.docx` conversion/reopen. Supported

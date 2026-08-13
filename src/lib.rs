@@ -5970,6 +5970,11 @@ mod tests {
         grpprl.extend_from_slice(&character_space.to_le_bytes());
     }
 
+    fn push_section_text_direction(grpprl: &mut Vec<u8>, text_flow: u16) {
+        grpprl.extend_from_slice(&0x5033u16.to_le_bytes());
+        grpprl.extend_from_slice(&text_flow.to_le_bytes());
+    }
+
     fn legacy_doc_with_section_page_grpprls(
         text: &str,
         section_cps: &[u32],
@@ -7223,6 +7228,104 @@ mod tests {
                 .contains(r#"<w:docGrid w:type="lines" w:linePitch="480"/>"#));
             assert_eq!(
                 Document::open(&docx).unwrap().model().setup.doc_grid,
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_all_section_text_directions() {
+        let section_cps = [0, 5, 10, 15, 20, 25, 30];
+        let expected = [
+            TextDirection::LeftToRightTopToBottom,
+            TextDirection::TopToBottomRightToLeft,
+            TextDirection::BottomToTopLeftToRight,
+            TextDirection::TopToBottomRightToLeftVertical,
+            TextDirection::LeftToRightTopToBottomVertical,
+            TextDirection::TopToBottomLeftToRightVertical,
+        ];
+        let mut sections = Vec::new();
+        for text_flow in 0..=5 {
+            let mut section =
+                section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+            push_section_text_direction(&mut section, text_flow);
+            sections.push(section);
+        }
+        let sepx_grpprls = sections.iter().map(Vec::as_slice).collect::<Vec<_>>();
+        let bytes = legacy_doc_with_section_page_grpprls(
+            "AAAAABBBBBCCCCCDDDDDEEEEEFFFFF",
+            &section_cps,
+            &sepx_grpprls,
+        );
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+        let section_directions = model
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup.text_direction),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            section_directions,
+            expected[..5].iter().copied().map(Some).collect::<Vec<_>>()
+        );
+        assert_eq!(model.setup.text_direction, Some(expected[5]));
+
+        #[cfg(feature = "docx")]
+        {
+            let docx = doc.to_docx();
+            let document_xml = docx_part(&docx, "word/document.xml");
+            for value in ["lrTb", "tbRl", "btLr", "tbRlV", "lrTbV", "tbLrV"] {
+                assert!(
+                    document_xml.contains(&format!(r#"<w:textDirection w:val="{value}"/>"#)),
+                    "missing text direction {value}: {document_xml}"
+                );
+            }
+
+            let reopened = Document::open(&docx).unwrap().model();
+            let reopened_directions = reopened
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    Block::SectionBreak(setup) => Some(setup.text_direction),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(reopened_directions, section_directions);
+            assert_eq!(reopened.setup.text_direction, model.setup.text_direction);
+        }
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_single_section_text_direction() {
+        let section_cps = [0, 4];
+        let mut only = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_text_direction(&mut only, 3);
+        push_section_text_direction(&mut only, 7);
+        let sepx_grpprls = [only.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("ONLY", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+        let expected = Some(TextDirection::TopToBottomRightToLeftVertical);
+
+        assert!(model
+            .blocks
+            .iter()
+            .all(|block| !matches!(block, Block::SectionBreak(_))));
+        assert_eq!(model.setup.text_direction, expected);
+
+        #[cfg(feature = "docx")]
+        {
+            let docx = doc.to_docx();
+            assert!(docx_part(&docx, "word/document.xml")
+                .contains(r#"<w:textDirection w:val="tbRlV"/>"#));
+            assert_eq!(
+                Document::open(&docx).unwrap().model().setup.text_direction,
                 expected
             );
         }
