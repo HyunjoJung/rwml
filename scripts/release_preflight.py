@@ -21,6 +21,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 CARGO = os.environ.get("CARGO", "cargo")
 PYTHON = os.environ.get("PYTHON", sys.executable)
 COMMAND_ENV = os.environ.copy()
+if pathlib.Path(CARGO).is_absolute():
+    cargo_dir = str(pathlib.Path(CARGO).parent)
+    COMMAND_ENV["PATH"] = os.pathsep.join(
+        [cargo_dir, COMMAND_ENV.get("PATH", "")]
+    )
 PACKAGE_COMMAND = "cargo package"
 ASSET_NAME_TEMPLATES = (
     "rwml-{version}.crate",
