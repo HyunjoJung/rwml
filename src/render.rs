@@ -185,6 +185,12 @@ pub(crate) struct RunningSurfaceTableCellTabStopHints {
     pub(crate) even_footer: Vec<TableCellTabStopHints>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct RunningSurfaceDistanceHints {
+    pub(crate) header_pt: Option<f32>,
+    pub(crate) footer_pt: Option<f32>,
+}
+
 #[derive(Clone, Copy, Default)]
 pub(crate) struct SourceRenderHints<'a> {
     pub(crate) pagination: &'a [PaginationHint],
@@ -201,6 +207,7 @@ pub(crate) struct SourceRenderHints<'a> {
     pub(crate) table_cell_tab_stops: &'a [TableCellTabStopHints],
     pub(crate) running_line_spacing: &'a [RunningSurfaceLineSpacingHints],
     pub(crate) running_table_cell_tab_stops: &'a [RunningSurfaceTableCellTabStopHints],
+    pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4126,6 +4133,79 @@ fn layout_running_surface_items(
             _ => None,
         })
         .collect()
+}
+
+fn normalized_running_surface_distance(distance_pt: Option<f32>) -> Option<f32> {
+    distance_pt.filter(|distance| distance.is_finite() && *distance >= 0.0)
+}
+
+fn running_surface_items_extent(items: &[RunningSurfaceItem], geom: Geom) -> Option<f32> {
+    let mut extent = 0.0_f32;
+    for item in items {
+        let item_extent = match item {
+            RunningSurfaceItem::Gap(gap) => *gap,
+            RunningSurfaceItem::Line(line) => line.height,
+            RunningSurfaceItem::Picture { layout, .. } => {
+                fit_image_layout_to_box(*layout, geom.content_w(), f32::MAX)?.bounds_h
+            }
+            RunningSurfaceItem::Chart { w, h, .. } => {
+                fit_chart_layout_to_box(*w, *h, geom.content_w(), f32::MAX)?.bounds_h
+            }
+            RunningSurfaceItem::Table { rows } => {
+                let mut table_extent = 0.0_f32;
+                for row in rows {
+                    if !row.height.is_finite() || row.height < 0.0 {
+                        return None;
+                    }
+                    table_extent += row.height;
+                    if !table_extent.is_finite() {
+                        return None;
+                    }
+                }
+                table_extent
+            }
+        };
+        if !item_extent.is_finite() || item_extent < 0.0 {
+            return None;
+        }
+        extent += item_extent;
+        if !extent.is_finite() {
+            return None;
+        }
+    }
+    Some(extent)
+}
+
+fn running_header_vertical_bounds(geom: Geom, distance_pt: Option<f32>) -> (f32, f32) {
+    let limit = geom.top();
+    let Some(distance) = normalized_running_surface_distance(distance_pt) else {
+        return (HEADER_Y, limit);
+    };
+    if !limit.is_finite() || limit <= 0.0 {
+        return (limit, limit);
+    }
+    (distance.min(limit), limit)
+}
+
+fn running_footer_vertical_bounds(
+    geom: Geom,
+    distance_pt: Option<f32>,
+    content_extent: Option<f32>,
+) -> (f32, f32) {
+    let Some(distance) = normalized_running_surface_distance(distance_pt) else {
+        return (geom.bottom() + FOOTER_GAP, geom.page_h);
+    };
+    if !geom.page_h.is_finite() || geom.page_h <= 0.0 || !geom.bottom().is_finite() {
+        return (0.0, 0.0);
+    }
+    let body_bottom = geom.bottom().max(0.0).min(geom.page_h);
+    let limit = (geom.page_h - distance).max(body_bottom).min(geom.page_h);
+    let inner = (body_bottom + FOOTER_GAP).min(limit);
+    let start = content_extent
+        .filter(|extent| extent.is_finite() && *extent >= 0.0)
+        .map(|extent| (limit - extent).max(inner))
+        .unwrap_or(inner);
+    (start, limit)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -9012,6 +9092,11 @@ fn render_pdf(
         let running_table_tabs = source_hints
             .running_table_cell_tab_stops
             .get(page_section.section_index);
+        let running_distances = source_hints
+            .running_surface_distances
+            .get(page_section.section_index)
+            .copied()
+            .unwrap_or_default();
         let header_spacing = running_spacing
             .map(|hints| running_surface_line_spacing(hints, header_variant, true))
             .unwrap_or_default();
@@ -9039,7 +9124,7 @@ fn render_pdf(
             page_geom,
             &mut tcx,
         );
-        let footer_items = layout_running_surface_items(
+        let mut footer_items = layout_running_surface_items(
             footer_blocks,
             footer_spacing,
             footer_table_cell_spacing,
@@ -9047,6 +9132,19 @@ fn render_pdf(
             source_hints.default_tab_stop_pt,
             page_geom,
             &mut tcx,
+        );
+        let explicit_footer_distance =
+            normalized_running_surface_distance(running_distances.footer_pt);
+        if page_section.setup.page_numbers && explicit_footer_distance.is_some() {
+            if let Some(line) = layout_page_number_line(page_index + 1, page_geom, &mut tcx) {
+                footer_items.push(RunningSurfaceItem::Line(line));
+            }
+        }
+        let header_bounds = running_header_vertical_bounds(page_geom, running_distances.header_pt);
+        let footer_bounds = running_footer_vertical_bounds(
+            page_geom,
+            explicit_footer_distance,
+            running_surface_items_extent(&footer_items, page_geom),
         );
         let mut surface = page.surface();
         for overlay in floating_shape_overlays
@@ -9060,7 +9158,7 @@ fn render_pdf(
         draw_running_surface_items(
             &mut surface,
             header_items,
-            (HEADER_Y, page_geom.top()),
+            header_bounds,
             page_geom,
             page_number,
             &mut page_links,
@@ -9069,13 +9167,13 @@ fn render_pdf(
         let fy = draw_running_surface_items(
             &mut surface,
             footer_items,
-            (page_geom.bottom() + FOOTER_GAP, page_geom.page_h),
+            footer_bounds,
             page_geom,
             page_number,
             &mut page_links,
             &mut tcx,
         );
-        if page_section.setup.page_numbers {
+        if page_section.setup.page_numbers && explicit_footer_distance.is_none() {
             if let Some(line) = layout_page_number_line(page_index + 1, page_geom, &mut tcx) {
                 if fy + line.height <= page_geom.page_h {
                     let baseline = fy + line.baseline;
@@ -9198,10 +9296,12 @@ mod tests {
         display_text, first_row_fragment_height, fit_chart_layout_to_box, fit_image_layout_to_box,
         image_layout, image_paint_transform, layout_page_number_line, layout_paragraph,
         layout_table, layout_table_with_row_pagination, page_field_text, paginate,
-        paginate_with_column_gap, push_clipped_page_link, rgb,
-        running_header_footer_blocks_for_page, shape, shape_cell, split_row,
-        unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout, StyledText,
-        TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
+        paginate_with_column_gap, push_clipped_page_link, render_pdf, rgb,
+        running_footer_vertical_bounds, running_header_footer_blocks_for_page,
+        running_header_vertical_bounds, shape, shape_cell, split_row,
+        unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout,
+        RunningSurfaceDistanceHints, SourceRenderHints, StyledText, TablePaginationView, TextCx,
+        DEFAULT_TAB_STOP_PT,
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Chart, ChartSeries, Color, DocModel, FieldRole,
@@ -9231,6 +9331,104 @@ mod tests {
             (actual - expected).abs() < 0.001,
             "expected {expected}, got {actual}"
         );
+    }
+
+    #[test]
+    fn explicit_running_surface_distances_clamp_to_non_overlapping_bands() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 300.0,
+            margin_pt: 40.0,
+            ..PageSetup::default()
+        });
+
+        assert_eq!(running_header_vertical_bounds(geom, None), (24.0, 40.0));
+        assert_eq!(running_header_vertical_bounds(geom, Some(0.0)), (0.0, 40.0));
+        assert_eq!(
+            running_header_vertical_bounds(geom, Some(30.0)),
+            (30.0, 40.0)
+        );
+        assert_eq!(
+            running_header_vertical_bounds(geom, Some(80.0)),
+            (40.0, 40.0)
+        );
+        assert_eq!(
+            running_header_vertical_bounds(geom, Some(f32::NAN)),
+            (24.0, 40.0)
+        );
+
+        assert_eq!(
+            running_footer_vertical_bounds(geom, None, Some(14.0)),
+            (268.0, 300.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(0.0), Some(14.0)),
+            (286.0, 300.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(10.0), Some(14.0)),
+            (276.0, 290.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(40.0), Some(14.0)),
+            (260.0, 260.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(400.0), Some(14.0)),
+            (260.0, 260.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(-1.0), Some(14.0)),
+            (268.0, 300.0)
+        );
+    }
+
+    #[test]
+    fn explicit_footer_distance_bottom_anchors_generated_page_numbers() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let model = DocModel {
+            setup: crate::model::DocSetup {
+                page: PageSetup {
+                    width_pt: 220.0,
+                    height_pt: 300.0,
+                    margin_pt: 40.0,
+                    ..PageSetup::default()
+                },
+                page_numbers: true,
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let explicit = [RunningSurfaceDistanceHints {
+            footer_pt: Some(0.0),
+            ..RunningSurfaceDistanceHints::default()
+        }];
+        let invalid = [RunningSurfaceDistanceHints {
+            footer_pt: Some(f32::NAN),
+            ..RunningSurfaceDistanceHints::default()
+        }];
+        let render = |distances: &[RunningSurfaceDistanceHints]| {
+            render_pdf(
+                &model,
+                &fonts,
+                None,
+                &[],
+                SourceRenderHints {
+                    running_surface_distances: distances,
+                    ..SourceRenderHints::default()
+                },
+            )
+            .expect("page-number render succeeds")
+            .pdf
+        };
+
+        let baseline = render(&[]);
+        let anchored = render(&explicit);
+        assert!(baseline.starts_with(b"%PDF-"));
+        assert!(anchored.starts_with(b"%PDF-"));
+        assert_ne!(anchored, baseline);
+        assert_eq!(baseline, render(&invalid));
+        assert_eq!(anchored, render(&explicit));
     }
 
     /// Pins the parley contract the tab-aware breaking path relies on: driving

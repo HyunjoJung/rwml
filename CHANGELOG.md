@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies explicit unsigned opened-DOCX `w:pgMar` header and footer distances
+  through a private section-aligned renderer sidecar. Headers start at the
+  source offset from the physical top edge; footer content and generated page
+  numbers are bottom-aligned to the source offset from the physical bottom
+  edge. Both bands clamp at the body margin, preserving the renderer's bounded
+  non-overlap policy without changing the public model or body pagination.
+  Missing, malformed, negative, overflowing, revised-away, and unselected
+  markup-compatibility values retain the existing fixed preview bands. Legacy
+  `.doc` distances, public distance authoring, automatic margin-conflict
+  resolution, and Word-exact overlap remain outside this source-only path.
 - Paints decoded block and reader-style inline raster images plus non-empty
   model-authored charts inside ordinary modeled table cells in body content and
   selected default/first/even running headers and footers. Supported cell media
@@ -75,7 +85,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   remaining margin band ends that surface, and footer page numbers follow the
   bounded cursor without changing body page counts. Adjacent gaps remain
   additive; Word-exact collapse, contextual/automatic spacing, and
-  header/footer distance semantics remain outside this bounded path.
+  automatic margin-conflict resolution remain outside this bounded path.
 - Paints ordinary modeled tables in selected default/first/even running header
   and footer bands, including tables decoded from referenced DOCX parts. Rows
   use the body table painter and retain model-backed width, alignment, visual

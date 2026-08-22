@@ -353,7 +353,16 @@ model-authored charts, and tables in source order; explicit zero suppresses a
 gap, and an unset after value retains the renderer's established default
 trailing gap. Gaps are bounded to the remaining margin band, footer page numbers
 follow the resulting cursor, and body page counts do not change. Adjacent gaps
-are additive rather than Word-exact collapsed. Opened `.docx` tables
+are additive rather than Word-exact collapsed. Opened `.docx` sections also
+apply explicit unsigned `w:pgMar` header and footer distances through a private
+section-aligned render sidecar. Headers start at the requested offset from the
+physical top edge; footer content, including generated page numbers, is
+bottom-aligned to the requested offset from the physical bottom edge. Both
+surfaces clamp at the body margin rather than overlap body content, and missing
+or malformed values retain the existing fixed preview bands. Legacy `.doc`
+distances, public authoring of distances, automatic margin-conflict resolution,
+and Word-exact overlap remain outside this bounded source-only path. Opened
+`.docx` tables
 materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
 `start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own

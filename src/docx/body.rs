@@ -283,6 +283,8 @@ pub(crate) struct HeaderFooterRef {
 pub(crate) struct HeaderFooterRefs {
     pub headers: Vec<HeaderFooterRef>,
     pub footers: Vec<HeaderFooterRef>,
+    pub header_distance_twips: Option<u32>,
+    pub footer_distance_twips: Option<u32>,
 }
 
 /// Scan `word/document.xml` for every `<w:headerReference>` / `<w:footerReference>`
@@ -374,10 +376,15 @@ fn read_hf_ref_section(r: &mut Xml<'_>) -> HeaderFooterRefs {
                     record_header_footer_ref(&mut refs, &e);
                     skip_subtree(r);
                 }
+                b"pgMar" => {
+                    record_header_footer_distances(&mut refs, &e);
+                    skip_subtree(r);
+                }
                 _ => skip_subtree(r),
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"headerReference" | b"footerReference" => record_header_footer_ref(&mut refs, &e),
+                b"pgMar" => record_header_footer_distances(&mut refs, &e),
                 _ => {}
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
@@ -425,10 +432,15 @@ fn read_hf_ref_alternate_content_branch(
                     record_header_footer_ref(refs, &e);
                     skip_subtree(r);
                 }
+                b"pgMar" => {
+                    record_header_footer_distances(refs, &e);
+                    skip_subtree(r);
+                }
                 _ => skip_subtree(r),
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"headerReference" | b"footerReference" => record_header_footer_ref(refs, &e),
+                b"pgMar" => record_header_footer_distances(refs, &e),
                 _ => {}
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
@@ -446,6 +458,15 @@ fn record_header_footer_ref(refs: &mut HeaderFooterRefs, e: &BytesStart<'_>) {
         b"headerReference" => refs.headers.push(reference),
         b"footerReference" => refs.footers.push(reference),
         _ => {}
+    }
+}
+
+fn record_header_footer_distances(refs: &mut HeaderFooterRefs, e: &BytesStart<'_>) {
+    if let Some(value) = attr_u32(e, b"header") {
+        refs.header_distance_twips = Some(value);
+    }
+    if let Some(value) = attr_u32(e, b"footer") {
+        refs.footer_distance_twips = Some(value);
     }
 }
 
@@ -9996,6 +10017,50 @@ mod tests {
                 type_name: "first".to_string()
             }]
         );
+    }
+
+    #[test]
+    fn scans_header_footer_distances_by_revision_view_and_selected_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:del><w:sectPr><w:pgMar w:header="100" w:footer="200"/></w:sectPr></w:del>
+            <w:ins><w:sectPr><w:pgMar w:header="300" w:footer="400"/></w:sectPr></w:ins>
+            <w:sectPr>
+                <w:sectPrChange><w:sectPr><w:pgMar w:header="500" w:footer="600"/></w:sectPr></w:sectPrChange>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:pgMar w:header="700" w:footer="800"/></mc:Choice>
+                    <mc:Fallback><w:pgMar w:header="900" w:footer="1000"/></mc:Fallback>
+                </mc:AlternateContent>
+            </w:sectPr>
+        </w:body></w:document>"#;
+
+        let accepted = scan_hf_ref_sections(xml);
+        assert_eq!(accepted.len(), 2);
+        assert_eq!(accepted[0].header_distance_twips, Some(300));
+        assert_eq!(accepted[0].footer_distance_twips, Some(400));
+        assert_eq!(accepted[1].header_distance_twips, Some(700));
+        assert_eq!(accepted[1].footer_distance_twips, Some(800));
+
+        let rejected = scan_hf_ref_sections_for_revision_reject(xml);
+        assert_eq!(rejected.len(), 2);
+        assert_eq!(rejected[0].header_distance_twips, Some(100));
+        assert_eq!(rejected[0].footer_distance_twips, Some(200));
+        assert_eq!(rejected[1].header_distance_twips, Some(700));
+        assert_eq!(rejected[1].footer_distance_twips, Some(800));
+    }
+
+    #[test]
+    fn header_footer_distance_scanner_ignores_invalid_unsigned_twips() {
+        let xml = r#"<w:document><w:body>
+            <w:p><w:pPr><w:sectPr><w:pgMar w:header="-1" w:footer="invalid"/></w:sectPr></w:pPr></w:p>
+            <w:sectPr><w:pgMar w:header=" 720 " w:footer="4294967296"/></w:sectPr>
+        </w:body></w:document>"#;
+        let sections = scan_hf_ref_sections(xml);
+
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections[0].header_distance_twips, None);
+        assert_eq!(sections[0].footer_distance_twips, None);
+        assert_eq!(sections[1].header_distance_twips, Some(720));
+        assert_eq!(sections[1].footer_distance_twips, None);
     }
 
     #[test]

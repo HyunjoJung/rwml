@@ -217,6 +217,9 @@ pub(crate) struct DocxState {
     /// Renderer-only table-cell tab stops for section running surfaces.
     #[cfg(feature = "render")]
     pub running_table_cell_tab_stops: Vec<crate::render::RunningSurfaceTableCellTabStopHints>,
+    /// Renderer-only source-defined header/footer edge distances by section.
+    #[cfg(feature = "render")]
+    pub running_surface_distances: Vec<crate::render::RunningSurfaceDistanceHints>,
     /// Renderer-only resolved explicit tab stops aligned to body model blocks.
     #[cfg(feature = "render")]
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
@@ -561,6 +564,9 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     #[cfg(feature = "render")]
     let running_table_cell_tab_stops =
         running_table_cell_tab_stops_by_model_section(&blocks, &section_header_footers);
+    #[cfg(feature = "render")]
+    let running_surface_distances =
+        running_surface_distances_by_model_section(&blocks, &section_header_footers);
     apply_section_header_footers(&mut blocks, &section_header_footers);
     let comments_xml = part(&mut zip, "word/comments.xml");
     let comments_ext_xml = part(&mut zip, "word/commentsExtended.xml");
@@ -714,6 +720,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         #[cfg(feature = "render")]
         running_table_cell_tab_stops,
         #[cfg(feature = "render")]
+        running_surface_distances,
+        #[cfg(feature = "render")]
         tab_stops,
         #[cfg(feature = "render")]
         column_break_offsets,
@@ -768,6 +776,8 @@ struct SectionHeaderFooter {
     line_spacing: crate::render::RunningSurfaceLineSpacingHints,
     #[cfg(feature = "render")]
     table_cell_tab_stops: crate::render::RunningSurfaceTableCellTabStopHints,
+    #[cfg(feature = "render")]
+    distances: crate::render::RunningSurfaceDistanceHints,
 }
 
 #[derive(Default)]
@@ -883,6 +893,15 @@ fn read_headers_footers(
     let mut inherited_footer_table_cell_tab_stops = Vec::new();
 
     for refs in section_refs {
+        #[cfg(feature = "render")]
+        let distances = crate::render::RunningSurfaceDistanceHints {
+            header_pt: refs
+                .header_distance_twips
+                .map(|distance| distance as f32 / 20.0),
+            footer_pt: refs
+                .footer_distance_twips
+                .map(|distance| distance as f32 / 20.0),
+        };
         let header_has_default = has_default_header_footer_ref(&refs.headers);
         let footer_has_default = has_default_header_footer_ref(&refs.footers);
         let HeaderFooterPartRead {
@@ -1020,6 +1039,8 @@ fn read_headers_footers(
                 first_footer: footer_table_cell_tab_stops.first,
                 even_footer: footer_table_cell_tab_stops.even,
             },
+            #[cfg(feature = "render")]
+            distances,
         });
     }
 
@@ -1154,6 +1175,30 @@ fn running_table_cell_tab_stops_by_model_section(
     }
     if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
         *target = source.table_cell_tab_stops.clone();
+    }
+    aligned
+}
+
+#[cfg(feature = "render")]
+fn running_surface_distances_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::render::RunningSurfaceDistanceHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::render::RunningSurfaceDistanceHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.distances;
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.distances;
     }
     aligned
 }
@@ -4562,6 +4607,12 @@ mod tests {
         custom_xml_item_id, normalize_part, parse_default_tab_stop_pt, parse_document_id,
         parse_rels, toggle_on, MAX_REL_RECORDS,
     };
+    #[cfg(feature = "render")]
+    use super::{running_surface_distances_by_model_section, SectionHeaderFooter};
+    #[cfg(feature = "render")]
+    use crate::model::{Block, SectionSetup};
+    #[cfg(feature = "render")]
+    use crate::render::RunningSurfaceDistanceHints;
 
     #[test]
     fn toggle_on_accepts_case_insensitive_off_values() {
@@ -4627,6 +4678,45 @@ mod tests {
                 r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="0"/></w:settings>"#
             ),
             None
+        );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn running_surface_distances_align_break_sections_and_final_section() {
+        let blocks = vec![
+            Block::SectionBreak(SectionSetup::default()),
+            Block::SectionBreak(SectionSetup::default()),
+        ];
+        let distances = |header_pt, footer_pt| SectionHeaderFooter {
+            distances: RunningSurfaceDistanceHints {
+                header_pt: Some(header_pt),
+                footer_pt: Some(footer_pt),
+            },
+            ..SectionHeaderFooter::default()
+        };
+        let sections = vec![
+            distances(10.0, 11.0),
+            distances(20.0, 21.0),
+            distances(30.0, 31.0),
+        ];
+
+        assert_eq!(
+            running_surface_distances_by_model_section(&blocks, &sections),
+            vec![
+                RunningSurfaceDistanceHints {
+                    header_pt: Some(10.0),
+                    footer_pt: Some(11.0),
+                },
+                RunningSurfaceDistanceHints {
+                    header_pt: Some(20.0),
+                    footer_pt: Some(21.0),
+                },
+                RunningSurfaceDistanceHints {
+                    header_pt: Some(30.0),
+                    footer_pt: Some(31.0),
+                },
+            ]
         );
     }
 

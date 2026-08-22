@@ -1290,3 +1290,74 @@ fn opened_docx_render_consumes_running_table_cell_tab_stops() {
     );
     assert_eq!(wider_default, render("", "", 1440));
 }
+
+#[cfg(feature = "render")]
+fn running_surface_distance_docx(page_margin_attributes: &str) -> Vec<u8> {
+    let document = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="4400" w:h="6000"/><w:pgMar w:top="1600" w:right="400" w:bottom="1600" w:left="400" {page_margin_attributes}/><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>"#
+    );
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+        ),
+        ("word/document.xml", &document),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>HEADER DISTANCE</w:t></w:r></w:p></w:hdr>"#,
+        ),
+        (
+            "word/footer1.xml",
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>FOOTER DISTANCE</w:t></w:r></w:p></w:ftr>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_consumes_running_surface_distances() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let baseline_document =
+        Document::open(&running_surface_distance_docx("")).expect("baseline fixture opens");
+    let baseline_model = baseline_document.model();
+    let baseline = baseline_document.to_pdf_with_fonts(&fonts);
+
+    let render = |attributes: &str| {
+        let document = Document::open(&running_surface_distance_docx(attributes))
+            .expect("distance fixture opens");
+        assert_eq!(
+            document.model(),
+            baseline_model,
+            "running-surface distances must remain outside the public model"
+        );
+        assert_eq!(
+            document
+                .layout_pages_with_fonts(&fonts)
+                .expect("distance layout succeeds")
+                .pages,
+            1
+        );
+        document.to_pdf_with_fonts(&fonts)
+    };
+
+    let header = render(r#"w:header="1000""#);
+    let footer = render(r#"w:footer="800""#);
+    let both = render(r#"w:header="1000" w:footer="800""#);
+
+    assert_ne!(header, baseline, "header distance must affect PDF output");
+    assert_ne!(footer, baseline, "footer distance must affect PDF output");
+    assert_ne!(both, header);
+    assert_ne!(both, footer);
+    assert_eq!(baseline, render(r#"w:header="-1" w:footer="invalid""#));
+    assert_eq!(header, render(r#"w:header="1000""#));
+    assert_eq!(footer, render(r#"w:footer="800""#));
+    assert_eq!(both, render(r#"w:header="1000" w:footer="800""#));
+}
