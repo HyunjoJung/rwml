@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Preserves each opened DOCX drawing's non-empty `wp:docPr/@descr` alternative
+  text on its cloned image occurrence, including the selected Markup
+  Compatibility branch and shared-media relationships with different
+  descriptions. Block and inline Markdown/HTML exports use the modeled alt text
+  with format-appropriate escaping, and fresh DOCX conversion writes it back.
 - Promotes an internal main-story end-of-section character (`0x0C`) from an
   opened legacy `.doc` file to the shared `PageBreak` block, so native preview,
   Markdown/HTML export, and fresh DOCX conversion retain the manual page break.

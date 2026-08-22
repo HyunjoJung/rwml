@@ -4306,9 +4306,10 @@ fn read_drawing(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Option<Image>, S
     let mut img = None;
     let mut text = String::new();
     let mut anchor = DrawingAnchorOffset::default();
+    let mut alt = None;
     // Start from the caller's structural depth (not 0) so the recursion budget is
     // continuous across the drawing/text-box boundary.
-    walk_drawing(r, ctx, &mut img, &mut text, &mut anchor, depth);
+    walk_drawing(r, ctx, &mut img, &mut text, &mut anchor, &mut alt, depth);
     (img, text)
 }
 
@@ -4321,6 +4322,7 @@ fn walk_drawing(
     img: &mut Option<Image>,
     text: &mut String,
     anchor: &mut DrawingAnchorOffset,
+    alt: &mut Option<String>,
     depth: u32,
 ) {
     loop {
@@ -4334,7 +4336,7 @@ fn walk_drawing(
                         ..DrawingAnchorOffset::default()
                     };
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, anchor, depth + 1);
+                        walk_drawing(r, ctx, img, text, anchor, alt, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
@@ -4357,34 +4359,56 @@ fn walk_drawing(
                         skip_subtree(r);
                     }
                 }
-                b"AlternateContent" => walk_alternate_content(r, ctx, img, text, anchor, depth + 1),
+                b"AlternateContent" => {
+                    walk_alternate_content(r, ctx, img, text, anchor, alt, depth + 1)
+                }
                 _ => {
+                    capture_drawing_alt(&e, img, alt);
                     if local(e.name().as_ref()) == b"xfrm" {
                         apply_image_rotation(img, &e);
                     }
                     if img.is_none() {
                         *img = blip_image(&e, ctx);
+                        apply_drawing_alt(img, alt);
                         apply_floating_anchor_offset(img, anchor);
                     }
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, anchor, depth + 1);
+                        walk_drawing(r, ctx, img, text, anchor, alt, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
                 }
             },
             Ok(Event::Empty(e)) => {
+                capture_drawing_alt(&e, img, alt);
                 if local(e.name().as_ref()) == b"xfrm" {
                     apply_image_rotation(img, &e);
                 }
                 if img.is_none() {
                     *img = blip_image(&e, ctx);
+                    apply_drawing_alt(img, alt);
                     apply_floating_anchor_offset(img, anchor);
                 }
             }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
+    }
+}
+
+fn capture_drawing_alt(e: &BytesStart<'_>, img: &mut Option<Image>, alt: &mut Option<String>) {
+    if alt.is_some() || local(e.name().as_ref()) != b"docPr" {
+        return;
+    }
+    if let Some(description) = attr_local_trimmed(e, b"descr") {
+        *alt = Some(description);
+        apply_drawing_alt(img, alt);
+    }
+}
+
+fn apply_drawing_alt(img: &mut Option<Image>, alt: &Option<String>) {
+    if let (Some(image), Some(alt)) = (img.as_mut(), alt.as_ref()) {
+        image.alt = Some(alt.clone());
     }
 }
 
@@ -4453,6 +4477,7 @@ fn walk_alternate_content(
     img: &mut Option<Image>,
     text: &mut String,
     anchor: &mut DrawingAnchorOffset,
+    alt: &mut Option<String>,
     depth: u32,
 ) {
     let mut took = false;
@@ -4462,7 +4487,7 @@ fn walk_alternate_content(
                 b"Choice" | b"Fallback" if !took => {
                     took = true;
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, anchor, depth + 1);
+                        walk_drawing(r, ctx, img, text, anchor, alt, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
@@ -9682,6 +9707,64 @@ mod tests {
             .find_map(|run| run.image.as_ref())
             .expect("image run");
         assert_eq!(image.rotation_degrees, Some(90));
+    }
+
+    #[test]
+    fn drawing_image_uses_selected_docpr_description_as_alt_text() {
+        let mut media = HashMap::new();
+        media.insert("rIdImg".to_string(), Image::default());
+        let xml = r#"<w:document><w:body><w:p><w:r><w:drawing>
+            <mc:AlternateContent>
+                <mc:Choice Requires="w14"><wp:inline>
+                    <wp:docPr id="1" name="Choice" descr=" Choice &amp; alt "/>
+                    <a:blip r:embed="rIdImg"/>
+                </wp:inline></mc:Choice>
+                <mc:Fallback><wp:inline>
+                    <wp:docPr id="2" name="Fallback" descr="Fallback alt"/>
+                    <a:blip r:embed="rIdImg"/>
+                </wp:inline></mc:Fallback>
+            </mc:AlternateContent>
+        </w:drawing></w:r></w:p></w:body></w:document>"#;
+        let blocks = parse_with_media(xml, media);
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("para");
+        };
+        let image = p
+            .runs
+            .iter()
+            .find_map(|run| run.image.as_ref())
+            .expect("image run");
+        assert_eq!(image.alt.as_deref(), Some("Choice & alt"));
+    }
+
+    #[test]
+    fn drawing_alt_text_is_scoped_per_media_occurrence() {
+        let mut media = HashMap::new();
+        media.insert("rIdShared".to_string(), Image::default());
+        let xml = r#"<w:document><w:body>
+            <w:p><w:r><w:drawing><wp:inline>
+                <wp:docPr id="1" name="First" descr="First alt"/>
+                <a:blip r:embed="rIdShared"/>
+            </wp:inline></w:drawing></w:r></w:p>
+            <w:p><w:r><w:drawing><wp:inline>
+                <wp:docPr id="2" name="Second" descr="Second alt"/>
+                <a:blip r:embed="rIdShared"/>
+            </wp:inline></w:drawing></w:r></w:p>
+        </w:body></w:document>"#;
+        let blocks = parse_with_media(xml, media);
+        let observed = blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Paragraph(paragraph) => paragraph
+                    .runs
+                    .iter()
+                    .find_map(|run| run.image.as_ref())
+                    .and_then(|image| image.alt.as_deref()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(observed, ["First alt", "Second alt"]);
     }
 
     #[test]

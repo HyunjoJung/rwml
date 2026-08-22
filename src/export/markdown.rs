@@ -32,7 +32,7 @@ fn render_block(block: &Block) -> String {
     match block {
         Block::Paragraph(p) => render_paragraph(p),
         Block::Table(t) => render_table(t),
-        Block::Image(img) => format!("![{}]()", img.alt.as_deref().unwrap_or("image")),
+        Block::Image(img) => format!("![{}]()", escaped_image_alt(img)),
         Block::Chart(chart) => format!(
             "![{}]()",
             chart
@@ -63,8 +63,8 @@ fn render_paragraph(p: &Paragraph) -> String {
 fn render_runs(runs: &[Run]) -> String {
     let mut out = String::new();
     for run in runs {
-        if run.image.is_some() {
-            out.push_str("![image]()");
+        if let Some(image) = &run.image {
+            out.push_str(&format!("![{}]()", escaped_image_alt(image)));
             continue;
         }
         if run.text.is_empty() {
@@ -85,6 +85,10 @@ fn render_runs(runs: &[Run]) -> String {
         }
     }
     out
+}
+
+fn escaped_image_alt(image: &crate::model::Image) -> String {
+    escape(image.alt.as_deref().unwrap_or("image"))
 }
 
 fn emphasis(text: String, run: &Run) -> String {
@@ -318,5 +322,30 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(render(&doc), "Cover\n\n\\pagebreak\n\nDetail");
+    }
+
+    #[test]
+    fn block_and_inline_images_use_escaped_alt_text() {
+        let doc = DocModel {
+            blocks: vec![
+                Block::Image(Image {
+                    alt: Some("Block [chart]".to_string()),
+                    ..Image::default()
+                }),
+                para(vec![Run {
+                    image: Some(Image {
+                        alt: Some("Inline <icon>".to_string()),
+                        ..Image::default()
+                    }),
+                    ..Run::default()
+                }]),
+            ],
+            ..DocModel::default()
+        };
+
+        assert_eq!(
+            render(&doc),
+            "![Block \\[chart\\]]()\n\n![Inline \\<icon\\>]()"
+        );
     }
 }

@@ -59,10 +59,7 @@ fn render_block(block: &Block) -> String {
     match block {
         Block::Paragraph(p) => render_paragraph(p),
         Block::Table(t) => render_table_fragment(t),
-        Block::Image(img) => format!(
-            "<img alt=\"{}\">",
-            escape_attr(img.alt.as_deref().unwrap_or("image"))
-        ),
+        Block::Image(img) => format!("<img alt=\"{}\">", escaped_image_alt(img)),
         Block::Chart(chart) => format!(
             "<figure class=\"chart\" aria-label=\"{}\"></figure>",
             escape_attr(
@@ -101,9 +98,10 @@ fn render_runs(runs: &[Run]) -> String {
     let mut out = String::new();
     for run in runs {
         if let Some(img) = &run.image {
+            let alt = escaped_image_alt(img);
             match crate::image::data_uri(img) {
-                Some(src) => out.push_str(&format!("<img src=\"{src}\" alt=\"image\">")),
-                None => out.push_str("<img alt=\"image\">"),
+                Some(src) => out.push_str(&format!("<img src=\"{src}\" alt=\"{alt}\">")),
+                None => out.push_str(&format!("<img alt=\"{alt}\">")),
             }
             continue;
         }
@@ -134,6 +132,10 @@ fn render_runs(runs: &[Run]) -> String {
         }
     }
     out
+}
+
+fn escaped_image_alt(image: &crate::model::Image) -> String {
+    escape_attr(image.alt.as_deref().unwrap_or("image"))
 }
 
 /// Render a table as an HTML `<table>` fragment. Used both by the HTML exporter
@@ -278,6 +280,34 @@ mod tests {
         assert_eq!(
             render(&doc),
             "<p>Cover</p><hr class=\"page-break\"><p>Detail</p>"
+        );
+    }
+
+    #[test]
+    fn block_and_inline_images_use_escaped_alt_text() {
+        let doc = DocModel {
+            blocks: vec![
+                Block::Image(Image {
+                    alt: Some("Block \"chart\"".to_string()),
+                    ..Image::default()
+                }),
+                Block::Paragraph(Paragraph {
+                    runs: vec![Run {
+                        image: Some(Image {
+                            alt: Some("Inline <icon>".to_string()),
+                            ..Image::default()
+                        }),
+                        ..Run::default()
+                    }],
+                    ..Paragraph::default()
+                }),
+            ],
+            ..DocModel::default()
+        };
+
+        assert_eq!(
+            render(&doc),
+            "<img alt=\"Block &quot;chart&quot;\"><p><img alt=\"Inline &lt;icon&gt;\"></p>"
         );
     }
 }

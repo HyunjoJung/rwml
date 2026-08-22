@@ -37,7 +37,7 @@ let md    = doc.to_markdown();   // # headings, **bold**, | tables |, lists, lin
 let html  = doc.to_html();       // <h1>, <strong>, <table colspan>, <img>, <a>, page breaks
 let model = doc.model();         // typed IR: Vec<Block> (Paragraph | Table | Image | PageBreak | SectionBreak)
 let hregs = model.source_regions(rwml::SourceRegionKind::HeaderFooter);
-let imgs  = doc.images();        // extracted raster bytes (like POI getAllPictures)
+let imgs  = doc.images();        // raster bytes plus per-drawing DOCX alternative text
 let info  = doc.report();        // format, stats, edit state, feature inventory incl. notes/text boxes/metafiles
 let json  = info.to_json();      // compact diagnostics JSON for scripts/CLI
 let edit  = doc.edit_capability(); // package-preserving edit availability
@@ -61,7 +61,9 @@ size, color, bold/italic, highlight, super/subscript), paragraph layout
 (named styles, headings, alignment, spacing, indent, shading, page-break-before), leveled lists,
 **bordered tables with width, fixed layout, alignment, indentation, uniform/per-side border widths, styles, and colors, and per-cell shading / width / margins / vertical alignment**, images
 with alt text, explicit pixel size, inline rotation, and page-relative floating
-offsets, simple fields with cached results, `PAGEREF` helper runs, dirty TOC
+offsets (including per-occurrence `wp:docPr/@descr` alt text from opened DOCX
+drawings through Markdown/HTML and fresh DOCX conversion), simple fields with
+cached results, `PAGEREF` helper runs, dirty TOC
 heading-range fields, run-anchored comments with reply parent ids and
 commentsExtended metadata, tracked
 insertion/deletion runs, run-level content controls, bookmarked runs, authored

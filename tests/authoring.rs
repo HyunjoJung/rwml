@@ -4321,6 +4321,15 @@ fn image_builder_adds_alt_text_and_size() {
     let images = reopened.images();
     assert_eq!(images.len(), 1);
     assert_eq!(images[0].bytes.as_deref(), Some(png.as_slice()));
+    assert_eq!(images[0].alt.as_deref(), Some("Chart <trend>"));
+    assert_eq!(reopened.to_markdown(), "![Chart \\<trend\\>]()");
+    assert!(
+        reopened.to_html().contains(r#"alt="Chart &lt;trend&gt;""#),
+        "HTML export must preserve escaped image alt text"
+    );
+
+    let converted = Document::open(&reopened.to_docx()).expect("fresh DOCX conversion reopens");
+    assert_eq!(converted.images()[0].alt.as_deref(), Some("Chart <trend>"));
 }
 
 #[test]
