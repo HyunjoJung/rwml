@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Paints decoded block and reader-style inline raster images in the selected
+  default/first/even running header and footer bands. Existing rotation-aware
+  image bounds are proportionally reduced, never enlarged, to the remaining
+  section-local margin band and centered within its content width; text order,
+  page counts, missing/undecodable-image diagnostics, and body image behavior
+  remain unchanged. Running-surface tables and charts, relationship display
+  extents, crop/flip/effects, and Word-exact overlap remain outside this bounded
+  path.
 - Applies opened legacy-DOC positive non-multiple minimum and negative encoded
   exact LSPD to ordinary paragraphs in section-linked even/default/first
   headers and footers. A section-and-variant-aligned private render sidecar

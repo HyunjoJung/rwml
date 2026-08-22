@@ -315,8 +315,12 @@ physical cell margins, authored and
 opened-DOCX `tblGrid` column proportions, bounded preferred-percentage outer
 widths, logical leading/center/trailing placement, and non-negative leading
 indentation, top-level and run-attached body images with model-backed
-whole-degree clockwise rotation, and **clickable hyperlink annotations** are
-drawn. Opened `.docx` tables materialize direct `dxa`/`nil` `w:tblCellMar`
+whole-degree clockwise rotation, and decoded block or reader-style inline
+raster images in selected default/first/even running headers and footers, and
+**clickable hyperlink annotations** are drawn. Running-surface images retain
+their rotation-aware bounds, are proportionally reduced without upscaling to
+the remaining section-local margin band, and are centered within its content
+width. Opened `.docx` tables materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
 `start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own
 `w:tblCellMar` through its `w:basedOn` chain, plus its `wholeTable`
@@ -407,8 +411,8 @@ explicit page break, with surviving vertical-merge owner cells, across skipped
 note separator records, and through section-specific default-surface
 inheritance and page-variant selection. Exact running-surface content is clipped
 to its margin-band line box. Notes retain the preview renderer's
-flattened end-of-flow placement; page-bottom note composition, tables and
-images inside running surfaces, model-authored content, and fresh conversion
+flattened end-of-flow placement; page-bottom note composition, running-surface
+tables, model-authored exact/minimum paragraph rules, and fresh conversion
 remain outside this absolute-spacing path.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
 center/end/decimal stops. Supported LTR and RTL dot, hyphen, underscore,
@@ -518,9 +522,8 @@ its local style payload. A later paragraph-style modifier resets earlier
 direct shading.
 At-least/exact and explicit zero proportional LSPD values clear an inherited
 multiplier but remain unset in the shared model because it has no corresponding
-line-rule representation. Tables and images in legacy running surfaces,
-shared-model use, and fresh `.docx` conversion remain outside this source-only
-preview bridge.
+line-rule representation. Tables in legacy running surfaces, shared-model use,
+and fresh `.docx` conversion remain outside this source-only preview bridge.
 Paragraph direction does not imply table mirroring. Opened
 legacy tables preserve strict direct row-mark
 `sprmTFBiDi` and compatibility
@@ -556,8 +559,9 @@ bridges.
 > `w:tblPrEx` remains a table-property exception path for the supported
 > row-local `w:tblCellMar` behavior; other `w:tblPrEx` properties are outside
 > this renderer slice, and `w:cantSplit` remains a `w:trPr` property.
-> Exact/at-least line rules outside the bounded opened-DOCX body and
-> recursively flattened table-cell path,
+> Exact/at-least line rules outside the bounded opened-DOCX top-level body,
+> recursively flattened table-cell, real-note, and ordinary running-surface
+> paragraph paths,
 > nonzero line-unit before/after spacing, enabled automatic/contextual paragraph
 > spacing, nonzero character-unit indents,
 > theme/automatic/pattern paragraph shading, and table/list/conditional-style
@@ -597,10 +601,11 @@ bridges.
 > legacy `.doc` per-cell, no-border, conflicting, merged/ragged, nested, or
 > style-derived border recovery remain outside this bounded renderer slice.
 > PDF image rotation normalizes direct-model angles modulo 360 and rotates the
-> decoded raster around its center. Source-authored display extents, crop/flip/
-> effects, floating-anchor offsets, exclusion-zone reflow, table-cell images,
-> and Word-exact inline baseline placement remain outside this bounded image
-> bridge.
+> decoded raster around its center. Running-surface pictures use decoded/model
+> raster dimensions rather than relationship display extents. Source-authored
+> display extents, crop/flip/effects, floating-anchor offsets, exclusion-zone
+> reflow, table-cell images, running-surface tables/charts, and Word-exact inline
+> baseline or header/footer overlap remain outside this bounded image bridge.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A

@@ -5,6 +5,14 @@ use std::io::Write;
 use rwml::{Block, Document, HeaderFooterKind};
 
 fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
+    let parts = parts
+        .iter()
+        .map(|(name, body)| (*name, body.as_bytes()))
+        .collect::<Vec<_>>();
+    docx_fixture_bytes(&parts)
+}
+
+fn docx_fixture_bytes(parts: &[(&str, &[u8])]) -> Vec<u8> {
     let mut out = Vec::new();
     {
         let cursor = std::io::Cursor::new(&mut out);
@@ -12,11 +20,22 @@ fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
         let opt = zip::write::SimpleFileOptions::default();
         for (name, body) in parts {
             zip.start_file(*name, opt).unwrap();
-            zip.write_all(body.as_bytes()).unwrap();
+            zip.write_all(body).unwrap();
         }
         zip.finish().unwrap();
     }
     out
+}
+
+#[cfg(feature = "render")]
+fn tiny_png() -> Vec<u8> {
+    vec![
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x08, 0x02, 0x00, 0x00, 0x00, 0x36,
+        0x88, 0x49, 0xD6, 0x00, 0x00, 0x00, 0x0B, 0x49, 0x44, 0x41, 0x54, 0x78, 0xDA, 0x63, 0x60,
+        0xC0, 0x02, 0x00, 0x00, 0x15, 0x00, 0x01, 0x39, 0xC1, 0xE0, 0x23, 0x00, 0x00, 0x00, 0x00,
+        0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ]
 }
 
 fn header_footer_variants_docx() -> Vec<u8> {
@@ -217,6 +236,55 @@ fn multi_section_variant_header_footer_docx() -> Vec<u8> {
             "word/footer4.xml",
             r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>SECOND FOOT</w:t></w:r></w:p></w:ftr>"#,
         ),
+    ])
+}
+
+#[cfg(feature = "render")]
+fn running_surface_image_docx(header_image: bool, footer_image: bool) -> Vec<u8> {
+    let empty_header = br#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p/></w:hdr>"#;
+    let image_header = br#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:p><w:r><w:drawing><wp:inline><wp:extent cx="19050" cy="28575"/><wp:docPr id="1" name="Header logo" descr="Header logo"/><a:blip r:embed="rIdImage"/></wp:inline></w:drawing></w:r></w:p></w:hdr>"#;
+    let empty_footer = br#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p/></w:ftr>"#;
+    let image_footer = br#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:p><w:r><w:drawing><wp:inline><wp:extent cx="19050" cy="28575"/><wp:docPr id="1" name="Footer mark" descr="Footer mark"/><a:blip r:embed="rIdImage"/></wp:inline></w:drawing></w:r></w:p></w:ftr>"#;
+    let header = if header_image {
+        image_header.as_slice()
+    } else {
+        empty_header.as_slice()
+    };
+    let footer = if footer_image {
+        image_footer.as_slice()
+    } else {
+        empty_footer.as_slice()
+    };
+    let png = tiny_png();
+
+    docx_fixture_bytes(&[
+        (
+            "[Content_Types].xml",
+            br#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="4400" w:h="6000"/><w:pgMar w:top="1200" w:right="400" w:bottom="1200" w:left="400"/><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        ("word/header1.xml", header),
+        ("word/footer1.xml", footer),
+        (
+            "word/_rels/header1.xml.rels",
+            br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/footer1.xml.rels",
+            br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/logo.png"/></Relationships>"#,
+        ),
+        ("word/media/logo.png", png.as_slice()),
     ])
 }
 
@@ -433,6 +501,75 @@ fn docx_multi_section_first_even_headers_attach_to_section_boundaries() {
     assert_eq!(single_paragraph_text(&model.setup.header), "SECOND HEAD");
     assert!(model.setup.first_header.is_empty());
     assert!(model.setup.even_header.is_empty());
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_paints_decoded_running_header_and_footer_images() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let open = |header, footer| {
+        Document::open(&running_surface_image_docx(header, footer))
+            .expect("running-surface image fixture opens")
+    };
+    let baseline = open(false, false);
+    let header = open(true, false);
+    let footer = open(false, true);
+    let both = open(true, true);
+
+    let header_model = header.model();
+    let [Block::Paragraph(header_paragraph)] = header_model.setup.header.as_slice() else {
+        panic!("decoded header image must remain in its source paragraph");
+    };
+    assert_eq!(
+        header_paragraph
+            .runs
+            .iter()
+            .filter(|run| run.image.is_some())
+            .count(),
+        1
+    );
+    let footer_model = footer.model();
+    let [Block::Paragraph(footer_paragraph)] = footer_model.setup.footer.as_slice() else {
+        panic!("decoded footer image must remain in its source paragraph");
+    };
+    assert_eq!(
+        footer_paragraph
+            .runs
+            .iter()
+            .filter(|run| run.image.is_some())
+            .count(),
+        1
+    );
+    for document in [&baseline, &header, &footer, &both] {
+        assert_eq!(
+            document
+                .layout_pages_with_fonts(&fonts)
+                .expect("running-surface image layout succeeds")
+                .pages,
+            1
+        );
+    }
+
+    let baseline_pdf = baseline.to_pdf_with_fonts(&fonts);
+    let header_pdf = header.to_pdf_with_fonts(&fonts);
+    let footer_pdf = footer.to_pdf_with_fonts(&fonts);
+    let both_pdf = both.to_pdf_with_fonts(&fonts);
+    for rendered in [&header_pdf, &footer_pdf, &both_pdf] {
+        assert!(rendered.starts_with(b"%PDF-"));
+        assert!(
+            rendered != &baseline_pdf,
+            "decoded running image was dropped"
+        );
+    }
+    assert_ne!(
+        header_pdf, footer_pdf,
+        "header and footer positions must differ"
+    );
+    assert_ne!(both_pdf, header_pdf);
+    assert_ne!(both_pdf, footer_pdf);
+    assert_eq!(header_pdf, header.to_pdf_with_fonts(&fonts));
+    assert_eq!(footer_pdf, footer.to_pdf_with_fonts(&fonts));
+    assert_eq!(both_pdf, both.to_pdf_with_fonts(&fonts));
 }
 
 #[cfg(feature = "render")]

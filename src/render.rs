@@ -3906,15 +3906,23 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
     }
 }
 
-/// Lay out blocks and keep only the text lines (used for running headers/footers,
-/// which are drawn compactly in the page margins; tables/images there are rare and
-/// dropped).
-fn layout_lines(
+enum RunningSurfaceItem {
+    Line(LineLayout),
+    Picture {
+        image: PdfImage,
+        layout: ImageLayout,
+    },
+}
+
+/// Lay out compact running-surface content while retaining decoded pictures.
+/// Tables, charts, pagination controls, and paragraph gaps remain outside this
+/// bounded margin-band path.
+fn layout_running_surface_items(
     blocks: &[Block],
     line_spacing_hints: &[Option<LineSpacingHint>],
     geom: Geom,
     cx: &mut TextCx<'_>,
-) -> Vec<LineLayout> {
+) -> Vec<RunningSurfaceItem> {
     let mut items = Vec::new();
     let mut capture = LayoutCapture::default();
     collect_blocks_inner(
@@ -3931,10 +3939,95 @@ fn layout_lines(
     items
         .into_iter()
         .filter_map(|i| match i {
-            FlowItem::Line(l) => Some(l),
+            FlowItem::Line(line) => Some(RunningSurfaceItem::Line(line)),
+            FlowItem::Picture { image, layout } => {
+                Some(RunningSurfaceItem::Picture { image, layout })
+            }
             _ => None,
         })
         .collect()
+}
+
+fn fit_image_layout_to_box(
+    layout: ImageLayout,
+    max_width: f32,
+    max_height: f32,
+) -> Option<ImageLayout> {
+    if !max_width.is_finite()
+        || !max_height.is_finite()
+        || max_width <= 0.0
+        || max_height <= 0.0
+        || !layout.image_w.is_finite()
+        || !layout.image_h.is_finite()
+        || !layout.bounds_w.is_finite()
+        || !layout.bounds_h.is_finite()
+        || layout.image_w <= 0.0
+        || layout.image_h <= 0.0
+        || layout.bounds_w <= 0.0
+        || layout.bounds_h <= 0.0
+    {
+        return None;
+    }
+    let scale = (max_width / layout.bounds_w)
+        .min(max_height / layout.bounds_h)
+        .min(1.0);
+    if !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    Some(ImageLayout {
+        image_w: layout.image_w * scale,
+        image_h: layout.image_h * scale,
+        bounds_w: layout.bounds_w * scale,
+        bounds_h: layout.bounds_h * scale,
+        rotation_degrees: layout.rotation_degrees,
+    })
+}
+
+fn draw_running_surface_items(
+    surface: &mut Surface<'_>,
+    items: Vec<RunningSurfaceItem>,
+    mut y: f32,
+    limit_y: f32,
+    geom: Geom,
+    page_number: usize,
+    cx: &mut TextCx<'_>,
+) -> f32 {
+    for item in items {
+        match item {
+            RunningSurfaceItem::Line(line) => {
+                if y + line.height > limit_y {
+                    break;
+                }
+                let baseline = y + line.baseline;
+                let x0 = geom.left + line.x_indent;
+                let clip_content = line.clip_to_height
+                    && push_vertical_line_clip(surface, 0.0, y, line.height, geom.page_w);
+                draw_line_background(surface, &line, x0, y);
+                draw_line_leaders(surface, &line, x0, y, baseline);
+                for run in line.runs {
+                    draw_run_with_page_context(surface, run, x0, baseline, page_number, cx);
+                }
+                if clip_content {
+                    surface.pop();
+                }
+                y += line.height;
+            }
+            RunningSurfaceItem::Picture { image, layout } => {
+                let Some(layout) = fit_image_layout_to_box(layout, geom.content_w(), limit_y - y)
+                else {
+                    break;
+                };
+                let bounds_x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
+                if let Some(size) = Size::from_wh(layout.image_w, layout.image_h) {
+                    surface.push_transform(&image_paint_transform(layout, bounds_x, y));
+                    surface.draw_image(image, size);
+                    surface.pop();
+                    y += layout.bounds_h;
+                }
+            }
+        }
+    }
+    y
 }
 
 trait RunningSurfaceSetup {
@@ -8402,8 +8495,10 @@ fn render_pdf(
         let footer_spacing = running_spacing
             .map(|hints| running_surface_line_spacing(hints, footer_variant, false))
             .unwrap_or_default();
-        let header_lines = layout_lines(header_blocks, header_spacing, page_geom, &mut tcx);
-        let footer_lines = layout_lines(footer_blocks, footer_spacing, page_geom, &mut tcx);
+        let header_items =
+            layout_running_surface_items(header_blocks, header_spacing, page_geom, &mut tcx);
+        let footer_items =
+            layout_running_surface_items(footer_blocks, footer_spacing, page_geom, &mut tcx);
         let mut surface = page.surface();
         for overlay in floating_shape_overlays
             .iter()
@@ -8411,63 +8506,26 @@ fn render_pdf(
         {
             draw_floating_shape_overlay(&mut surface, overlay, &mut tcx);
         }
-        // Running header (top margin) and footer (below the content box), on every
-        // page. Lines are cloned because drawing consumes the glyph runs.
-        let mut hy = HEADER_Y;
-        for line in &header_lines {
-            // Clamp to the top margin so a tall/multi-line header can't bleed into
-            // the body content area.
-            if hy + line.height > page_geom.top() {
-                break;
-            }
-            let baseline = hy + line.baseline;
-            let x0 = page_geom.left + line.x_indent;
-            let clip_content = line.clip_to_height
-                && push_vertical_line_clip(&mut surface, 0.0, hy, line.height, page_geom.page_w);
-            draw_line_background(&mut surface, line, x0, hy);
-            draw_line_leaders(&mut surface, line, x0, hy, baseline);
-            for run in &line.runs {
-                draw_run_with_page_context(
-                    &mut surface,
-                    run.clone(),
-                    x0,
-                    baseline,
-                    page_index + 1,
-                    &mut tcx,
-                );
-            }
-            if clip_content {
-                surface.pop();
-            }
-            hy += line.height;
-        }
-        let mut fy = page_geom.bottom() + FOOTER_GAP;
-        for line in &footer_lines {
-            // Clamp to the page so a tall footer doesn't run off the bottom edge.
-            if fy + line.height > page_geom.page_h {
-                break;
-            }
-            let baseline = fy + line.baseline;
-            let x0 = page_geom.left + line.x_indent;
-            let clip_content = line.clip_to_height
-                && push_vertical_line_clip(&mut surface, 0.0, fy, line.height, page_geom.page_w);
-            draw_line_background(&mut surface, line, x0, fy);
-            draw_line_leaders(&mut surface, line, x0, fy, baseline);
-            for run in &line.runs {
-                draw_run_with_page_context(
-                    &mut surface,
-                    run.clone(),
-                    x0,
-                    baseline,
-                    page_index + 1,
-                    &mut tcx,
-                );
-            }
-            if clip_content {
-                surface.pop();
-            }
-            fy += line.height;
-        }
+        // Running surfaces are bounded to their margin bands so text and images
+        // cannot bleed into body content or beyond the physical page.
+        draw_running_surface_items(
+            &mut surface,
+            header_items,
+            HEADER_Y,
+            page_geom.top(),
+            page_geom,
+            page_number,
+            &mut tcx,
+        );
+        let fy = draw_running_surface_items(
+            &mut surface,
+            footer_items,
+            page_geom.bottom() + FOOTER_GAP,
+            page_geom.page_h,
+            page_geom,
+            page_number,
+            &mut tcx,
+        );
         if page_section.setup.page_numbers {
             if let Some(line) = layout_page_number_line(page_index + 1, page_geom, &mut tcx) {
                 if fy + line.height <= page_geom.page_h {
@@ -8662,9 +8720,9 @@ mod tests {
 
     use super::{
         assign_section_to_render_pages, cell_insets, cell_line_origin, count_missing_image_bytes,
-        display_text, first_row_fragment_height, image_layout, image_paint_transform,
-        layout_page_number_line, layout_paragraph, layout_table, layout_table_with_row_pagination,
-        page_field_text, paginate, paginate_with_column_gap, rgb,
+        display_text, first_row_fragment_height, fit_image_layout_to_box, image_layout,
+        image_paint_transform, layout_page_number_line, layout_paragraph, layout_table,
+        layout_table_with_row_pagination, page_field_text, paginate, paginate_with_column_gap, rgb,
         running_header_footer_blocks_for_page, shape, shape_cell, split_row,
         unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout, StyledText,
         TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
@@ -8886,6 +8944,24 @@ mod tests {
             .is_none(),
             "underflowed fitted dimensions must be rejected"
         );
+    }
+
+    #[test]
+    fn running_surface_image_fit_respects_remaining_rotated_margin_bounds() {
+        let rotated = image_layout(200, 100, Some(90), 1_000.0, 1_000.0).unwrap();
+        let fitted = fit_image_layout_to_box(rotated, 60.0, 30.0).unwrap();
+
+        assert_eq!(fitted.rotation_degrees, 90);
+        assert_close(fitted.image_w, 30.0);
+        assert_close(fitted.image_h, 15.0);
+        assert_close(fitted.bounds_w, 15.0);
+        assert_close(fitted.bounds_h, 30.0);
+        assert_eq!(
+            fit_image_layout_to_box(rotated, 1_000.0, 1_000.0),
+            Some(rotated)
+        );
+        assert!(fit_image_layout_to_box(rotated, 60.0, 0.0).is_none());
+        assert!(fit_image_layout_to_box(rotated, f32::NAN, 30.0).is_none());
     }
 
     #[test]
@@ -15893,6 +15969,46 @@ mod tests {
             ..DocModel::default()
         };
         assert!(super::to_pdf(&bad).starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn renders_block_and_inline_images_in_running_surface_bands() {
+        let image = Image {
+            bytes: Some([0, 64, 128, 255].repeat(16)),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(4),
+            height_px: Some(4),
+            ..Image::default()
+        };
+        let baseline = super::to_pdf(&DocModel::default());
+        let header_model = DocModel {
+            setup: crate::model::DocSetup {
+                header: vec![Block::Image(image.clone())],
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let footer_model = DocModel {
+            setup: crate::model::DocSetup {
+                footer: vec![Block::Paragraph(Paragraph {
+                    runs: vec![Run {
+                        image: Some(image),
+                        ..Run::default()
+                    }],
+                    ..Paragraph::default()
+                })],
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+
+        let header = super::to_pdf(&header_model);
+        let footer = super::to_pdf(&footer_model);
+        assert_ne!(header, baseline);
+        assert_ne!(footer, baseline);
+        assert_ne!(header, footer);
+        assert_eq!(header, super::to_pdf(&header_model));
+        assert_eq!(footer, super::to_pdf(&footer_model));
     }
 
     #[test]
