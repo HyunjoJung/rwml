@@ -236,6 +236,8 @@ struct RunPaint {
     strikethrough: bool,
 }
 
+type PageLink = (f32, f32, f32, f32, Rc<str>);
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct LineBackground {
     color: rgb::Color,
@@ -4040,15 +4042,51 @@ fn fit_image_layout_to_box(
     })
 }
 
+fn push_clipped_page_link(
+    page_links: &mut Vec<PageLink>,
+    link: PageLink,
+    clip_left: f32,
+    clip_top: f32,
+    clip_right: f32,
+    clip_bottom: f32,
+) {
+    let (left, top, right, bottom, url) = link;
+    if ![
+        left,
+        top,
+        right,
+        bottom,
+        clip_left,
+        clip_top,
+        clip_right,
+        clip_bottom,
+    ]
+    .into_iter()
+    .all(f32::is_finite)
+        || clip_left >= clip_right
+        || clip_top >= clip_bottom
+    {
+        return;
+    }
+    let left = left.max(clip_left);
+    let top = top.max(clip_top);
+    let right = right.min(clip_right);
+    let bottom = bottom.min(clip_bottom);
+    if left < right && top < bottom {
+        page_links.push((left, top, right, bottom, url));
+    }
+}
+
 fn draw_running_surface_items(
     surface: &mut Surface<'_>,
     items: Vec<RunningSurfaceItem>,
-    mut y: f32,
-    limit_y: f32,
+    vertical_bounds: (f32, f32),
     geom: Geom,
     page_number: usize,
+    page_links: &mut Vec<PageLink>,
     cx: &mut TextCx<'_>,
 ) -> f32 {
+    let (mut y, limit_y) = vertical_bounds;
     for item in items {
         match item {
             RunningSurfaceItem::Gap(gap) => {
@@ -4073,6 +4111,17 @@ fn draw_running_surface_items(
                 draw_line_background(surface, &line, x0, y);
                 draw_line_leaders(surface, &line, x0, y, baseline);
                 for run in line.runs {
+                    if let Some(url) = run.link.clone() {
+                        let left = x0 + run.x;
+                        push_clipped_page_link(
+                            page_links,
+                            (left, y, left + run.width(), y + line.height, url),
+                            0.0,
+                            y,
+                            geom.page_w,
+                            limit_y,
+                        );
+                    }
                     draw_run_with_page_context(surface, run, x0, baseline, page_number, cx);
                 }
                 if clip_content {
@@ -4117,7 +4166,6 @@ fn draw_running_surface_items(
             }
             RunningSurfaceItem::Table { rows } => {
                 let mut previous_row_borders = None;
-                let mut ignored_links = Vec::new();
                 for row in rows {
                     let remaining = limit_y - y;
                     if !remaining.is_finite() || remaining <= 0.0 {
@@ -4133,6 +4181,9 @@ fn draw_running_surface_items(
                         false
                     };
                     let row_height = row.height;
+                    let row_top = y;
+                    let row_bottom = (y + row_height).min(limit_y);
+                    let mut row_links = Vec::new();
                     previous_row_borders = draw_row_layout(
                         surface,
                         row,
@@ -4142,9 +4193,19 @@ fn draw_running_surface_items(
                             page_number,
                         },
                         cx,
-                        &mut ignored_links,
+                        &mut row_links,
                         previous_row_borders.as_ref(),
                     );
+                    for link in row_links {
+                        push_clipped_page_link(
+                            page_links,
+                            link,
+                            0.0,
+                            row_top,
+                            geom.page_w,
+                            row_bottom,
+                        );
+                    }
                     if band_clip {
                         surface.pop();
                         y = limit_y;
@@ -5035,7 +5096,7 @@ fn draw_table_cell_content(
     placement: CellContentPlacement,
     page_number: usize,
     cx: &mut TextCx<'_>,
-    page_links: &mut Vec<(f32, f32, f32, f32, Rc<str>)>,
+    page_links: &mut Vec<PageLink>,
 ) {
     let offset = cell_vertical_offset(&cell, placement.row_height);
     let clip_left = placement.x;
@@ -5076,7 +5137,7 @@ fn draw_row_layout(
     row: RowLayout,
     placement: RowPaintPlacement,
     cx: &mut TextCx<'_>,
-    page_links: &mut Vec<(f32, f32, f32, f32, Rc<str>)>,
+    page_links: &mut Vec<PageLink>,
     previous: Option<&RenderedRowBorders>,
 ) -> Option<RenderedRowBorders> {
     let table_id = row.table_id;
@@ -8700,7 +8761,7 @@ fn render_pdf(
         let mut page = document.start_page_with(settings);
         // Link rects collected while drawing (top-down coords); added as annotations
         // after the surface is finished (which releases its borrow on the page).
-        let mut page_links: Vec<(f32, f32, f32, f32, Rc<str>)> = Vec::new();
+        let mut page_links: Vec<PageLink> = Vec::new();
         let (header_blocks, footer_blocks) = running_header_footer_blocks_for_page(
             &page_section.setup,
             page_number,
@@ -8736,19 +8797,19 @@ fn render_pdf(
         draw_running_surface_items(
             &mut surface,
             header_items,
-            HEADER_Y,
-            page_geom.top(),
+            (HEADER_Y, page_geom.top()),
             page_geom,
             page_number,
+            &mut page_links,
             &mut tcx,
         );
         let fy = draw_running_surface_items(
             &mut surface,
             footer_items,
-            page_geom.bottom() + FOOTER_GAP,
-            page_geom.page_h,
+            (page_geom.bottom() + FOOTER_GAP, page_geom.page_h),
             page_geom,
             page_number,
+            &mut page_links,
             &mut tcx,
         );
         if page_section.setup.page_numbers {
@@ -8867,15 +8928,17 @@ mod tests {
     use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
     use parley::{FontContext, LayoutContext};
     use std::collections::HashMap;
+    use std::rc::Rc;
 
     use super::{
         assign_section_to_render_pages, cell_insets, cell_line_origin, count_missing_image_bytes,
         display_text, first_row_fragment_height, fit_chart_layout_to_box, fit_image_layout_to_box,
         image_layout, image_paint_transform, layout_page_number_line, layout_paragraph,
         layout_table, layout_table_with_row_pagination, page_field_text, paginate,
-        paginate_with_column_gap, rgb, running_header_footer_blocks_for_page, shape, shape_cell,
-        split_row, unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout,
-        StyledText, TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
+        paginate_with_column_gap, push_clipped_page_link, rgb,
+        running_header_footer_blocks_for_page, shape, shape_cell, split_row,
+        unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout, StyledText,
+        TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
@@ -9135,6 +9198,39 @@ mod tests {
             assert!(fit_chart_layout_to_box(120.0, 60.0, value, 30.0).is_none());
             assert!(fit_chart_layout_to_box(120.0, 60.0, 80.0, value).is_none());
         }
+    }
+
+    #[test]
+    fn running_surface_link_rectangles_are_clipped_to_visible_finite_bounds() {
+        let target: Rc<str> = Rc::from("https://example.com/clipped");
+        let mut links = Vec::new();
+        push_clipped_page_link(
+            &mut links,
+            (10.0, 10.0, 50.0, 40.0, target.clone()),
+            20.0,
+            15.0,
+            45.0,
+            30.0,
+        );
+        assert_eq!(links, vec![(20.0, 15.0, 45.0, 30.0, target.clone())]);
+
+        for link in [
+            (0.0, 0.0, 10.0, 10.0, target.clone()),
+            (50.0, 20.0, 60.0, 25.0, target.clone()),
+            (20.0, 30.0, 30.0, 40.0, target.clone()),
+            (f32::NAN, 20.0, 30.0, 25.0, target.clone()),
+        ] {
+            push_clipped_page_link(&mut links, link, 20.0, 15.0, 45.0, 30.0);
+        }
+        push_clipped_page_link(
+            &mut links,
+            (20.0, 20.0, 30.0, 25.0, target),
+            45.0,
+            15.0,
+            20.0,
+            30.0,
+        );
+        assert_eq!(links.len(), 1, "hidden or invalid links must be dropped");
     }
 
     #[test]

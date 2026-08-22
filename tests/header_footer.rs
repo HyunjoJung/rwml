@@ -2,6 +2,8 @@
 
 use std::io::Write;
 
+#[cfg(feature = "render")]
+use rwml::FieldRole;
 use rwml::{Block, Document, HeaderFooterKind};
 
 fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
@@ -324,6 +326,44 @@ fn running_surface_table_docx(header_table: bool, footer_table: bool) -> Vec<u8>
         ),
         ("word/header1.xml", header),
         ("word/footer1.xml", footer),
+    ])
+}
+
+#[cfg(feature = "render")]
+fn running_surface_hyperlink_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="4400" w:h="6000"/><w:pgMar w:top="1600" w:right="400" w:bottom="1600" w:left="400"/><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:p><w:hyperlink r:id="rIdHeaderLink"><w:r><w:t>HEADER LINK</w:t></w:r></w:hyperlink></w:p></w:hdr>"#,
+        ),
+        (
+            "word/footer1.xml",
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:tc><w:p><w:hyperlink r:id="rIdTableLink"><w:r><w:t>FOOTER TABLE LINK</w:t></w:r></w:hyperlink></w:p></w:tc></w:tr></w:tbl></w:ftr>"#,
+        ),
+        (
+            "word/_rels/header1.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeaderLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/opened-header" TargetMode="External"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/footer1.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdTableLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/opened-footer-table" TargetMode="External"/></Relationships>"#,
+        ),
     ])
 }
 
@@ -701,6 +741,57 @@ fn opened_docx_render_paints_running_header_and_footer_tables() {
     assert_eq!(header_pdf, header.to_pdf_with_fonts(&fonts));
     assert_eq!(footer_pdf, footer.to_pdf_with_fonts(&fonts));
     assert_eq!(both_pdf, both.to_pdf_with_fonts(&fonts));
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_keeps_running_surface_hyperlink_annotations() {
+    const HEADER_URL: &str = "https://example.com/opened-header";
+    const TABLE_URL: &str = "https://example.com/opened-footer-table";
+    let document =
+        Document::open(&running_surface_hyperlink_docx()).expect("running-link fixture opens");
+    let model = document.model();
+    let [Block::Paragraph(header)] = model.setup.header.as_slice() else {
+        panic!("expected one linked header paragraph");
+    };
+    assert!(matches!(
+        &header.runs[0].field,
+        FieldRole::Hyperlink { url } if url == HEADER_URL
+    ));
+    let [Block::Table(footer_table)] = model.setup.footer.as_slice() else {
+        panic!("expected one linked footer table");
+    };
+    let [footer_row] = footer_table.rows.as_slice() else {
+        panic!("expected one footer table row");
+    };
+    let [footer_cell] = footer_row.cells.as_slice() else {
+        panic!("expected one footer table cell");
+    };
+    let [Block::Paragraph(footer_paragraph)] = footer_cell.blocks.as_slice() else {
+        panic!("expected one linked footer-cell paragraph");
+    };
+    assert!(matches!(
+        &footer_paragraph.runs[0].field,
+        FieldRole::Hyperlink { url } if url == TABLE_URL
+    ));
+
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    assert_eq!(
+        document
+            .layout_pages_with_fonts(&fonts)
+            .expect("running-link layout succeeds")
+            .pages,
+        1
+    );
+    let pdf = document.to_pdf_with_fonts(&fonts);
+    for target in [HEADER_URL, TABLE_URL] {
+        assert!(
+            pdf.windows(target.len())
+                .any(|window| window == target.as_bytes()),
+            "running target missing from reopened PDF: {target}"
+        );
+    }
+    assert_eq!(pdf, document.to_pdf_with_fonts(&fonts));
 }
 
 #[cfg(feature = "render")]

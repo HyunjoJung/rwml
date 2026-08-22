@@ -3387,6 +3387,97 @@ fn write_docx_keeps_header_footer_hyperlink_runs() {
     ));
 }
 
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_keeps_running_surface_hyperlink_annotations() {
+    let header_url = "https://example.com/running-header";
+    let footer_url = "https://example.com/running-footer";
+    let table_url = "https://example.com/running-table";
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("Header link").hyperlink(header_url).build()],
+                ..Paragraph::default()
+            })],
+            footer: vec![
+                Block::Paragraph(Paragraph {
+                    runs: vec![RunBuilder::new("Footer link").hyperlink(footer_url).build()],
+                    ..Paragraph::default()
+                }),
+                Block::Table(
+                    TableBuilder::new()
+                        .row([
+                            CellBuilder::new().paragraph_runs([RunBuilder::new("Table link")
+                                .hyperlink(table_url)
+                                .build()]),
+                        ])
+                        .build(),
+                ),
+            ],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+    let contains_target = |pdf: &[u8], target: &str| {
+        pdf.windows(target.len())
+            .any(|window| window == target.as_bytes())
+    };
+
+    let direct = rwml::render_pdf_with_report(&model);
+    assert_eq!(direct.report.pages, 1);
+    for target in [header_url, footer_url, table_url] {
+        assert!(
+            contains_target(&direct.pdf, target),
+            "direct-model running target missing from PDF: {target}"
+        );
+    }
+    assert_eq!(direct.pdf, rwml::render_pdf_with_report(&model).pdf);
+
+    let visible_url = "https://example.com/visible-running-row";
+    let clipped_url = "https://example.com/clipped-running-row";
+    let clipped_model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Table(
+                TableBuilder::new()
+                    .row([CellBuilder::new()
+                        .paragraph_runs([RunBuilder::new("Visible link")
+                            .hyperlink(visible_url)
+                            .build()])
+                        .paragraph("Spacer one")
+                        .paragraph("Spacer two")
+                        .paragraph("Spacer three")
+                        .paragraph_runs([RunBuilder::new("Clipped link")
+                            .hyperlink(clipped_url)
+                            .build()])])
+                    .build(),
+            )],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+    let clipped = rwml::render_pdf_with_report(&clipped_model);
+    assert_eq!(clipped.report.pages, 1);
+    assert!(contains_target(&clipped.pdf, visible_url));
+    assert!(
+        !contains_target(&clipped.pdf, clipped_url),
+        "fully clipped running-row target must not create an annotation"
+    );
+
+    let bytes = rwml::write_docx(&model);
+    let reopened = Document::open(&bytes).expect("running-link DOCX reopens");
+    let opened = reopened.to_pdf_with_report();
+    assert_eq!(opened.report.pages, 1);
+    for target in [header_url, footer_url] {
+        assert!(
+            contains_target(&opened.pdf, target),
+            "reopened running target missing from PDF: {target}"
+        );
+    }
+    assert_eq!(opened.pdf, reopened.to_pdf_with_report().pdf);
+}
+
 #[test]
 fn write_docx_keeps_header_footer_comment_runs() {
     let model = DocModel {

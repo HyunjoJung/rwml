@@ -319,6 +319,10 @@ whole-degree clockwise rotation, and decoded block or reader-style inline
 raster images plus model-authored charts and ordinary modeled tables in selected
 default/first/even running headers and footers, and **clickable hyperlink
 annotations** are drawn.
+Running paragraph and table-cell hyperlink annotations follow the selected
+surface variant and are clipped to the physical page plus the visible
+margin-band line or row fragment, so clipped table content cannot leave an
+active link over the body.
 Running-surface images retain
 their rotation-aware bounds, are proportionally reduced without upscaling to
 the remaining section-local margin band, and are centered within its content
@@ -332,8 +336,8 @@ alignment, visual RTL placement, borders, cell shading, margins, and vertical
 alignment. Fitting rows paint in source order; a first row taller than the
 remaining band paints once under a vertical clip and ends that surface without
 moving body content or changing page counts. Source-only paragraph hints inside
-those cells, nested-grid geometry, cell images/charts, hyperlink annotations,
-and Word-exact overlap remain outside this bounded path. Finite positive
+those cells, nested-grid geometry, cell images/charts, and Word-exact overlap
+remain outside this bounded path. Finite positive
 paragraph before/after gaps advance later running text, pictures,
 model-authored charts, and tables in source order; explicit zero suppresses a
 gap, and an unset after value retains the renderer's established default

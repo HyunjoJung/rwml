@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Emits clickable PDF annotations for hyperlink runs in selected
+  default/first/even running header and footer paragraphs and modeled table
+  cells, including targets resolved from referenced DOCX parts. Candidate
+  rectangles are intersected with the physical page and visible margin-band
+  line or row fragment; nonfinite, empty, and fully clipped targets are dropped,
+  so an over-tall clipped row cannot leave an active link over body content.
+  Link order, running cursor movement, diagnostics, body annotations, and page
+  counts remain unchanged. Fresh DOCX's readable flattened running-table
+  fallback and Word-exact header/footer overlap remain outside this path.
 - Paints non-empty model-authored charts in selected default/first/even running
   header and footer bands with the existing vector chart painter. Normalized
   chart dimensions are proportionally reduced, never enlarged, to the remaining
@@ -34,8 +43,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rows paint in source order; a first row taller than the remaining margin band
   paints once under an explicit band clip and ends that surface without moving
   body content or changing page counts. Running-table source-only paragraph
-  hints, nested-grid geometry, cell images/charts, hyperlink annotations, and
-  Word-exact overlap remain outside this bounded path.
+  hints, nested-grid geometry, cell images/charts, and Word-exact overlap remain
+  outside this bounded path.
 - Paints decoded block and reader-style inline raster images in the selected
   default/first/even running header and footer bands. Existing rotation-aware
   image bounds are proportionally reduced, never enlarged, to the remaining
