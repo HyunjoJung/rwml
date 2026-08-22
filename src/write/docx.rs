@@ -131,60 +131,19 @@ const WEB_EXTENSION_TASKPANES_NS: &str =
     "http://schemas.microsoft.com/office/webextensions/taskpanes/2010/11";
 
 /// Build a `word/header1.xml` / `footer1.xml` part body from running blocks.
-/// Text paragraphs keep run formatting/alignment; image blocks become visible
-/// placeholders and table blocks fall back to row text because richer
-/// header/footer relationships and table layout are not modeled here. Appends a
-/// centered `PAGE` field when `page_numbers`. A header/footer must contain at
-/// least one paragraph.
+/// Tables reuse the body table geometry while their cell content keeps
+/// header/footer-local relationships. Images and charts remain visible
+/// placeholders. Appends a centered `PAGE` field when `page_numbers`. A
+/// header/footer must contain at least one paragraph.
 fn render_hf_body(
     ctx: &mut Ctx,
     blocks: &[crate::model::Block],
     page_numbers: bool,
     rels: &mut Vec<Rel>,
 ) -> String {
-    use crate::model::Block;
     let mut out = String::new();
     for b in blocks {
-        match b {
-            Block::Paragraph(p) => {
-                out.push_str("<w:p>");
-                ctx.write_ppr(&mut out, &p.props);
-                for r in &p.runs {
-                    write_hf_run(ctx, rels, &mut out, r);
-                }
-                out.push_str("</w:p>");
-            }
-            Block::Image(img) => {
-                out.push_str("<w:p>");
-                write_image_placeholder(&mut out, img, "image unavailable");
-                out.push_str("</w:p>");
-            }
-            Block::Table(table) => {
-                for row in &table.rows {
-                    let text = row
-                        .cells
-                        .iter()
-                        .map(|cell| cell.text())
-                        .collect::<Vec<_>>()
-                        .join(" | ");
-                    if text.trim().is_empty() {
-                        continue;
-                    }
-                    out.push_str("<w:p><w:r>");
-                    write_run_text(&mut out, &text);
-                    out.push_str("</w:r></w:p>");
-                }
-            }
-            Block::Chart(chart) => {
-                out.push_str("<w:p><w:r>");
-                write_run_text(&mut out, &chart_placeholder_text(chart));
-                out.push_str("</w:r></w:p>");
-            }
-            Block::PageBreak => {
-                out.push_str(r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#);
-            }
-            _ => {}
-        }
+        ctx.write_hf_block(&mut out, b, rels);
     }
     if page_numbers {
         out.push_str(
@@ -663,6 +622,32 @@ impl Ctx {
             Block::Chart(chart) => self.write_chart(out, chart),
             Block::PageBreak => out.push_str(r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#),
             Block::SectionBreak(setup) => self.write_section_break(out, setup),
+        }
+    }
+
+    fn write_hf_block(&mut self, out: &mut String, b: &Block, rels: &mut Vec<Rel>) {
+        match b {
+            Block::Paragraph(p) => {
+                out.push_str("<w:p>");
+                self.write_ppr(out, &p.props);
+                for r in &p.runs {
+                    write_hf_run(self, rels, out, r);
+                }
+                out.push_str("</w:p>");
+            }
+            Block::Table(t) => self.write_table_inner(out, t, Some(rels)),
+            Block::Image(img) => {
+                out.push_str("<w:p>");
+                write_image_placeholder(out, img, "image unavailable");
+                out.push_str("</w:p>");
+            }
+            Block::Chart(chart) => {
+                out.push_str("<w:p><w:r>");
+                write_run_text(out, &chart_placeholder_text(chart));
+                out.push_str("</w:r></w:p>");
+            }
+            Block::PageBreak => out.push_str(r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#),
+            Block::SectionBreak(_) => {}
         }
     }
 
@@ -1173,6 +1158,19 @@ impl Ctx {
         }
     }
 
+    fn write_hf_cell_blocks(&mut self, out: &mut String, blocks: &[Block], rels: &mut Vec<Rel>) {
+        if blocks.is_empty() {
+            out.push_str("<w:p/>");
+            return;
+        }
+        for b in blocks {
+            self.write_hf_block(out, b, rels);
+        }
+        if matches!(blocks.last(), Some(Block::Table(_))) {
+            out.push_str("<w:p/>");
+        }
+    }
+
     fn write_cell_margins(out: &mut String, margins: CellMargins, bidi_visual: bool) {
         let (leading, trailing) = if bidi_visual {
             (margins.right, margins.left)
@@ -1193,6 +1191,15 @@ impl Ctx {
     /// Write a table, reconstructing the full grid (re-inserting the `vMerge`
     /// continuation cells the reader dropped) so merges round-trip.
     fn write_table(&mut self, out: &mut String, t: &Table) {
+        self.write_table_inner(out, t, None);
+    }
+
+    fn write_table_inner(
+        &mut self,
+        out: &mut String,
+        t: &Table,
+        mut hf_rels: Option<&mut Vec<Rel>>,
+    ) {
         struct Active {
             col: usize,
             span: usize,
@@ -1265,7 +1272,11 @@ impl Ctx {
                         crate::model::VCell::Top => {}
                     }
                     row_xml.push_str("</w:tcPr>");
-                    self.write_cell_blocks(&mut row_xml, &c.blocks);
+                    if let Some(rels) = hf_rels.as_deref_mut() {
+                        self.write_hf_cell_blocks(&mut row_xml, &c.blocks, rels);
+                    } else {
+                        self.write_cell_blocks(&mut row_xml, &c.blocks);
+                    }
                     row_xml.push_str("</w:tc>");
                     if rs > 1 {
                         carried.push(Active {

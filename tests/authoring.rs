@@ -2903,6 +2903,205 @@ fn write_docx_keeps_header_footer_table_text_visible() {
 }
 
 #[test]
+fn write_docx_emits_rich_header_footer_tables_with_local_relationships() {
+    let border = Color::rgb(0x1F, 0x4E, 0x78);
+    let shade = Color::rgb(0xDE, 0xEB, 0xF7);
+    let header_url = "https://example.com/header-table?a=1&b=2";
+    let header_table = TableBuilder::new()
+        .header_rows(1)
+        .col_widths_pct([0.4, 0.6])
+        .width_pct(0.8)
+        .fixed_layout()
+        .bidi_visual()
+        .indent_twips(240)
+        .align(Align::Center)
+        .border_color(border)
+        .border_size_eighths(12)
+        .border_style(TableBorderStyle::Double)
+        .row([CellBuilder::text("Header metrics").header().col_span(2)])
+        .row([
+            CellBuilder::new()
+                .rich_paragraph(
+                    ParagraphBuilder::new()
+                        .align(Align::Right)
+                        .runs([RunBuilder::new("Linked value")
+                            .hyperlink(header_url)
+                            .bold()
+                            .build()]),
+                )
+                .row_span(2)
+                .shading(shade)
+                .margins_twips(80, 120, 160, 200)
+                .valign(VCell::Bottom)
+                .width_pct(0.4),
+            CellBuilder::new()
+                .rich_table(TableBuilder::new().row([CellBuilder::text("Nested table")])),
+        ])
+        .row([CellBuilder::text("Tail cell")]);
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Table(header_table.into())],
+            footer: vec![Block::Table(
+                TableBuilder::new()
+                    .row([
+                        CellBuilder::new(),
+                        CellBuilder::new().push_block(Block::Image(
+                            ImageBuilder::new(tiny_png(), "image/png")
+                                .alt("Footer cell image")
+                                .into(),
+                        )),
+                        CellBuilder::new().push_block(Block::Chart(
+                            ChartBuilder::bar()
+                                .categories(["Q1"])
+                                .series("Revenue", [7.0])
+                                .alt("Footer cell chart")
+                                .into(),
+                        )),
+                    ])
+                    .into(),
+            )],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rwml::write_docx(&model);
+    assert_eq!(bytes, rwml::write_docx(&model));
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+    let header_rels = String::from_utf8(parts["word/_rels/header1.xml.rels"].clone()).unwrap();
+    let document_rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+
+    assert_eq!(header_xml.matches("<w:tbl>").count(), 2, "{header_xml}");
+    for expected in [
+        "<w:tblHeader/>",
+        r#"<w:tblW w:w="4000" w:type="pct"/>"#,
+        r#"<w:tblInd w:w="240" w:type="dxa"/>"#,
+        r#"<w:jc w:val="center"/>"#,
+        r#"<w:tblLayout w:type="fixed"/>"#,
+        r#"<w:gridSpan w:val="2"/>"#,
+        r#"<w:vMerge w:val="restart"/>"#,
+        "<w:vMerge/>",
+        r#"<w:shd w:val="clear" w:color="auto" w:fill="DEEBF7"/>"#,
+        r#"<w:top w:w="80" w:type="dxa"/>"#,
+        r#"<w:vAlign w:val="bottom"/>"#,
+        r#"<w:jc w:val="right"/>"#,
+        r#"<w:hyperlink r:id="rId1">"#,
+        "<w:b/>",
+        "Nested table",
+        "Tail cell",
+    ] {
+        assert!(
+            header_xml.contains(expected),
+            "missing {expected}: {header_xml}"
+        );
+    }
+    assert!(
+        header_xml.contains(r#"<w:top w:val="double" w:sz="12" w:space="0" w:color="1F4E78"/>"#),
+        "rich border missing: {header_xml}"
+    );
+    assert!(
+        header_xml.contains("</w:tbl><w:p/></w:tc>"),
+        "nested table terminal paragraph missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains("<w:tbl>")
+            && footer_xml.contains("<w:tcPr></w:tcPr><w:p/>")
+            && footer_xml.contains("[rwml image placeholder: Footer cell image]")
+            && footer_xml.contains("[rwml chart placeholder: Footer cell chart]"),
+        "empty footer table cell missing: {footer_xml}"
+    );
+    assert!(
+        !parts.keys().any(|path| path.starts_with("word/media/"))
+            && !parts.keys().any(|path| path.starts_with("word/charts/")),
+        "running-table placeholders emitted package parts: {:?}",
+        parts.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        header_rels.contains("relationships/hyperlink")
+            && header_rels.contains(r#"Target="https://example.com/header-table?a=1&amp;b=2""#)
+            && header_rels.contains(r#"TargetMode="External""#),
+        "header-local hyperlink relationship missing: {header_rels}"
+    );
+    assert!(!document_rels.contains(header_url), "{document_rels}");
+    assert!(
+        document_rels.contains(r#"Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml""#)
+            && document_rels.contains(r#"Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml""#),
+        "document relationship ids changed: {document_rels}"
+    );
+
+    let reopened = Document::open(&bytes).expect("rich header/footer table .docx reopens");
+    let Block::Table(header) = &reopened.model().setup.header[0] else {
+        panic!("expected reopened header table");
+    };
+    assert_eq!(header.header_rows, 1);
+    assert!(header.fixed_layout);
+    assert!(header.bidi_visual);
+    assert_eq!(header.rows[0].cells[0].col_span, 2);
+    assert_eq!(header.rows[1].cells[0].row_span, 2);
+    assert_eq!(header.rows[1].cells[0].shading, Some(shade));
+    assert_eq!(header.rows[1].cells[0].valign, VCell::Bottom);
+    assert!(matches!(
+        &header.rows[1].cells[1].blocks[0],
+        Block::Table(nested) if nested.rows[0].cells[0].text() == "Nested table"
+    ));
+}
+
+#[test]
+fn write_docx_emits_tables_in_all_header_footer_variants() {
+    let table =
+        |text: &str| Block::Table(TableBuilder::new().row([CellBuilder::text(text)]).into());
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![table("Default header table")],
+            first_header: vec![table("First header table")],
+            even_header: vec![table("Even header table")],
+            footer: vec![table("Default footer table")],
+            first_footer: vec![table("First footer table")],
+            even_footer: vec![table("Even footer table")],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rwml::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    for (path, text) in [
+        ("word/header1.xml", "Default header table"),
+        ("word/header2.xml", "First header table"),
+        ("word/header3.xml", "Even header table"),
+        ("word/footer1.xml", "Default footer table"),
+        ("word/footer2.xml", "First footer table"),
+        ("word/footer3.xml", "Even footer table"),
+    ] {
+        let xml = String::from_utf8(parts[path].clone()).unwrap();
+        assert!(
+            xml.contains("<w:tbl>") && xml.contains(text),
+            "running table missing from {path}: {xml}"
+        );
+    }
+
+    let reopened = Document::open(&bytes).expect("running table variants .docx reopens");
+    let setup = &reopened.model().setup;
+    for (blocks, text) in [
+        (&setup.header, "Default header table"),
+        (&setup.first_header, "First header table"),
+        (&setup.even_header, "Even header table"),
+        (&setup.footer, "Default footer table"),
+        (&setup.first_footer, "First footer table"),
+        (&setup.even_footer, "Even footer table"),
+    ] {
+        assert!(matches!(
+            blocks.as_slice(),
+            [Block::Table(table)] if table.rows[0].cells[0].text() == text
+        ));
+    }
+}
+
+#[test]
 fn write_docx_keeps_header_footer_chart_placeholders_visible() {
     let model = DocModel {
         blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
@@ -3469,7 +3668,7 @@ fn render_pdf_keeps_running_surface_hyperlink_annotations() {
     let reopened = Document::open(&bytes).expect("running-link DOCX reopens");
     let opened = reopened.to_pdf_with_report();
     assert_eq!(opened.report.pages, 1);
-    for target in [header_url, footer_url] {
+    for target in [header_url, footer_url, table_url] {
         assert!(
             contains_target(&opened.pdf, target),
             "reopened running target missing from PDF: {target}"

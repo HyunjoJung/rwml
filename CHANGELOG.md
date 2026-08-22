@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Emits full table structures in fresh DOCX default/first/even headers and
+  footers instead of flattening rows to delimiter-joined text. Running tables
+  reuse body-table grid-span, vertical-merge, repeated-header, width/fixed
+  layout, alignment/indentation, visual-RTL, border, column-grid, cell
+  width/shading/margin/vertical-alignment, paragraph, run-formatting, and nested-
+  table serialization. Cell hyperlinks use the owning header/footer
+  relationship file and survive native reopen into clickable PDF annotations;
+  image and chart content retains escaped visible placeholders without emitting
+  invalid document-level relationships. Empty cells and nested-table terminal
+  paragraphs remain schema-valid. Real fresh running-part media/charts,
+  arbitrary opened chart reconstruction, Word-exact table autofit, and Word-
+  exact pagination remain outside this bounded path.
 - Applies explicit unsigned opened-DOCX `w:pgMar` header and footer distances
   through a private section-aligned renderer sidecar. Headers start at the
   source offset from the physical top edge; footer content and generated page
@@ -65,8 +77,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   line or row fragment; nonfinite, empty, and fully clipped targets are dropped,
   so an over-tall clipped row cannot leave an active link over body content.
   Link order, running cursor movement, diagnostics, body annotations, and page
-  counts remain unchanged. Fresh DOCX's readable flattened running-table
-  fallback and Word-exact header/footer overlap remain outside this path.
+  counts remain unchanged. Fresh DOCX running-table hyperlinks now retain their
+  part-local relationships; Word-exact header/footer overlap remains outside
+  this path.
 - Paints non-empty model-authored charts in selected default/first/even running
   header and footer bands with the existing vector chart painter. Normalized
   chart dimensions are proportionally reduced, never enlarged, to the remaining
