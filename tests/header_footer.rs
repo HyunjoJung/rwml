@@ -288,6 +288,45 @@ fn running_surface_image_docx(header_image: bool, footer_image: bool) -> Vec<u8>
     ])
 }
 
+#[cfg(feature = "render")]
+fn running_surface_table_docx(header_table: bool, footer_table: bool) -> Vec<u8> {
+    let empty_header = r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p/></w:hdr>"#;
+    let table_header = r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:jc w:val="center"/><w:tblBorders><w:top w:val="single" w:sz="12" w:color="C00000"/><w:left w:val="single" w:sz="12" w:color="C00000"/><w:bottom w:val="single" w:sz="12" w:color="C00000"/><w:right w:val="single" w:sz="12" w:color="C00000"/><w:insideH w:val="single" w:sz="8" w:color="006000"/><w:insideV w:val="single" w:sz="8" w:color="006000"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="1800"/><w:gridCol w:w="1800"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:shd w:fill="FFF2CC"/></w:tcPr><w:p><w:r><w:t>HEADER A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>HEADER B</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>HEADER C</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:shd w:fill="DDEBF7"/></w:tcPr><w:p><w:r><w:t>HEADER D</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:hdr>"#;
+    let empty_footer = r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p/></w:ftr>"#;
+    let table_footer = r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:jc w:val="center"/><w:tblBorders><w:top w:val="single" w:sz="12" w:color="0000C0"/><w:left w:val="single" w:sz="12" w:color="0000C0"/><w:bottom w:val="single" w:sz="12" w:color="0000C0"/><w:right w:val="single" w:sz="12" w:color="0000C0"/><w:insideH w:val="single" w:sz="8" w:color="600060"/><w:insideV w:val="single" w:sz="8" w:color="600060"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="1800"/><w:gridCol w:w="1800"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:shd w:fill="E2F0D9"/></w:tcPr><w:p><w:r><w:t>FOOTER A</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>FOOTER B</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>FOOTER C</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:shd w:fill="FCE4D6"/></w:tcPr><w:p><w:r><w:t>FOOTER D</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:ftr>"#;
+    let header = if header_table {
+        table_header
+    } else {
+        empty_header
+    };
+    let footer = if footer_table {
+        table_footer
+    } else {
+        empty_footer
+    };
+
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="4400" w:h="6000"/><w:pgMar w:top="1600" w:right="400" w:bottom="1600" w:left="400"/><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        ("word/header1.xml", header),
+        ("word/footer1.xml", footer),
+    ])
+}
+
 fn single_paragraph_text(blocks: &[Block]) -> String {
     let [Block::Paragraph(paragraph)] = blocks else {
         panic!("expected exactly one paragraph block, got {blocks:?}");
@@ -559,6 +598,67 @@ fn opened_docx_render_paints_decoded_running_header_and_footer_images() {
         assert!(
             rendered != &baseline_pdf,
             "decoded running image was dropped"
+        );
+    }
+    assert_ne!(
+        header_pdf, footer_pdf,
+        "header and footer positions must differ"
+    );
+    assert_ne!(both_pdf, header_pdf);
+    assert_ne!(both_pdf, footer_pdf);
+    assert_eq!(header_pdf, header.to_pdf_with_fonts(&fonts));
+    assert_eq!(footer_pdf, footer.to_pdf_with_fonts(&fonts));
+    assert_eq!(both_pdf, both.to_pdf_with_fonts(&fonts));
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_paints_running_header_and_footer_tables() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let open = |header, footer| {
+        Document::open(&running_surface_table_docx(header, footer))
+            .expect("running-surface table fixture opens")
+    };
+    let baseline = open(false, false);
+    let header = open(true, false);
+    let footer = open(false, true);
+    let both = open(true, true);
+
+    let header_model = header.model();
+    let [Block::Table(header_table)] = header_model.setup.header.as_slice() else {
+        panic!("decoded header table must remain modeled");
+    };
+    assert_eq!(header_table.rows.len(), 2);
+    assert_eq!(header_table.rows[0].cells.len(), 2);
+    assert_eq!(header_table.rows[0].cells[0].text(), "HEADER A");
+    assert_eq!(header_table.rows[1].cells[1].text(), "HEADER D");
+    let footer_model = footer.model();
+    let [Block::Table(footer_table)] = footer_model.setup.footer.as_slice() else {
+        panic!("decoded footer table must remain modeled");
+    };
+    assert_eq!(footer_table.rows.len(), 2);
+    assert_eq!(footer_table.rows[0].cells.len(), 2);
+    assert_eq!(footer_table.rows[0].cells[0].text(), "FOOTER A");
+    assert_eq!(footer_table.rows[1].cells[1].text(), "FOOTER D");
+    for document in [&baseline, &header, &footer, &both] {
+        assert_eq!(
+            document
+                .layout_pages_with_fonts(&fonts)
+                .expect("running-surface table layout succeeds")
+                .pages,
+            1
+        );
+    }
+
+    let baseline_pdf = baseline.to_pdf_with_fonts(&fonts);
+    let header_pdf = header.to_pdf_with_fonts(&fonts);
+    let footer_pdf = footer.to_pdf_with_fonts(&fonts);
+    let both_pdf = both.to_pdf_with_fonts(&fonts);
+    for rendered in [&header_pdf, &footer_pdf, &both_pdf] {
+        assert!(rendered.starts_with(b"%PDF-"));
+        assert!(
+            rendered != &baseline_pdf,
+            "modeled running table was dropped"
         );
     }
     assert_ne!(

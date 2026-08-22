@@ -8,22 +8,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Paints ordinary modeled tables in selected default/first/even running header
+  and footer bands, including tables decoded from referenced DOCX parts. Rows
+  use the body table painter and retain model-backed width, alignment, visual
+  RTL placement, borders, cell shading, margins, and vertical alignment. Full
+  rows paint in source order; a first row taller than the remaining margin band
+  paints once under an explicit band clip and ends that surface without moving
+  body content or changing page counts. Running-table source-only paragraph
+  hints, nested-grid geometry, cell images, hyperlink annotations, charts, and
+  Word-exact overlap remain outside this bounded path.
 - Paints decoded block and reader-style inline raster images in the selected
   default/first/even running header and footer bands. Existing rotation-aware
   image bounds are proportionally reduced, never enlarged, to the remaining
   section-local margin band and centered within its content width; text order,
   page counts, missing/undecodable-image diagnostics, and body image behavior
-  remain unchanged. Running-surface tables and charts, relationship display
-  extents, crop/flip/effects, and Word-exact overlap remain outside this bounded
-  path.
+  remain unchanged. Running-surface charts, table-cell images, relationship
+  display extents, crop/flip/effects, and Word-exact overlap remain outside this
+  bounded path.
 - Applies opened legacy-DOC positive non-multiple minimum and negative encoded
   exact LSPD to ordinary paragraphs in section-linked even/default/first
   headers and footers. A section-and-variant-aligned private render sidecar
   mirrors the existing six-story `PlcfHdd` mapping, including the unindexed
   default-header fallback, and follows the running surface selected for each
   emitted page. Exact over-tall content uses the existing margin-band clip.
-  Running-surface tables and images, the public model, shared-model conversion,
-  and fresh DOCX output remain unchanged.
+  Line-rule recovery inside running-surface table cells, the public model,
+  shared-model conversion, and fresh DOCX output remain unchanged.
 - Extends opened legacy-DOC positive non-multiple minimum and negative encoded
   exact LSPD into ordinary main-story table-cell paragraphs. A row/cell/block-
   aligned private render sidecar follows paragraph content through horizontal
@@ -41,7 +50,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paragraphs in referenced default/first/even running header and footer parts.
   Section-aligned private render hints mirror default-surface inheritance and
   follow the variant selected for each emitted page; exact over-tall content is
-  clipped to its margin-band line box. Running-surface tables and images,
+  clipped to its margin-band line box. Running-surface table-cell line rules,
   model-authored content, and fresh conversion remain outside this source-only
   bridge.
 - Extends opened-DOCX `exact` and `atLeast` paragraph line spacing into real

@@ -316,11 +316,19 @@ opened-DOCX `tblGrid` column proportions, bounded preferred-percentage outer
 widths, logical leading/center/trailing placement, and non-negative leading
 indentation, top-level and run-attached body images with model-backed
 whole-degree clockwise rotation, and decoded block or reader-style inline
-raster images in selected default/first/even running headers and footers, and
-**clickable hyperlink annotations** are drawn. Running-surface images retain
+raster images plus ordinary modeled tables in selected default/first/even
+running headers and footers, and **clickable hyperlink annotations** are drawn.
+Running-surface images retain
 their rotation-aware bounds, are proportionally reduced without upscaling to
 the remaining section-local margin band, and are centered within its content
-width. Opened `.docx` tables materialize direct `dxa`/`nil` `w:tblCellMar`
+width. Running-surface tables use the body row painter for model-backed width,
+alignment, visual RTL placement, borders, cell shading, margins, and vertical
+alignment. Fitting rows paint in source order; a first row taller than the
+remaining band paints once under a vertical clip and ends that surface without
+moving body content or changing page counts. Source-only paragraph hints inside
+those cells, nested-grid geometry, cell images, hyperlink annotations, charts,
+and Word-exact overlap remain outside this bounded path. Opened `.docx` tables
+materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
 `start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own
 `w:tblCellMar` through its `w:basedOn` chain, plus its `wholeTable`
@@ -412,8 +420,8 @@ note separator records, and through section-specific default-surface
 inheritance and page-variant selection. Exact running-surface content is clipped
 to its margin-band line box. Notes retain the preview renderer's
 flattened end-of-flow placement; page-bottom note composition, running-surface
-tables, model-authored exact/minimum paragraph rules, and fresh conversion
-remain outside this absolute-spacing path.
+table-cell exact/minimum paragraph rules, model-authored exact/minimum paragraph
+rules, and fresh conversion remain outside this absolute-spacing path.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
 center/end/decimal stops. Supported LTR and RTL dot, hyphen, underscore,
 heavy, and middle-dot leaders plus bar tabs now paint through the same bounded

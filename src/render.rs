@@ -3912,11 +3912,14 @@ enum RunningSurfaceItem {
         image: PdfImage,
         layout: ImageLayout,
     },
+    Table {
+        rows: Vec<RowLayout>,
+    },
 }
 
-/// Lay out compact running-surface content while retaining decoded pictures.
-/// Tables, charts, pagination controls, and paragraph gaps remain outside this
-/// bounded margin-band path.
+/// Lay out compact running-surface content while retaining decoded pictures and
+/// modeled table rows. Charts, pagination controls, and paragraph gaps remain
+/// outside this bounded margin-band path.
 fn layout_running_surface_items(
     blocks: &[Block],
     line_spacing_hints: &[Option<LineSpacingHint>],
@@ -3943,6 +3946,7 @@ fn layout_running_surface_items(
             FlowItem::Picture { image, layout } => {
                 Some(RunningSurfaceItem::Picture { image, layout })
             }
+            FlowItem::Table { rows, .. } => Some(RunningSurfaceItem::Table { rows }),
             _ => None,
         })
         .collect()
@@ -4023,6 +4027,44 @@ fn draw_running_surface_items(
                     surface.draw_image(image, size);
                     surface.pop();
                     y += layout.bounds_h;
+                }
+            }
+            RunningSurfaceItem::Table { rows } => {
+                let mut previous_row_borders = None;
+                let mut ignored_links = Vec::new();
+                for row in rows {
+                    let remaining = limit_y - y;
+                    if !remaining.is_finite() || remaining <= 0.0 {
+                        break;
+                    }
+                    let clipped = row.height > remaining;
+                    let band_clip = if clipped {
+                        if !push_vertical_line_clip(surface, 0.0, y, remaining, geom.page_w) {
+                            break;
+                        }
+                        true
+                    } else {
+                        false
+                    };
+                    let row_height = row.height;
+                    previous_row_borders = draw_row_layout(
+                        surface,
+                        row,
+                        RowPaintPlacement {
+                            x_offset: geom.left,
+                            top: y,
+                            page_number,
+                        },
+                        cx,
+                        &mut ignored_links,
+                        previous_row_borders.as_ref(),
+                    );
+                    if band_clip {
+                        surface.pop();
+                        y = limit_y;
+                        break;
+                    }
+                    y += row_height;
                 }
             }
         }
@@ -4880,6 +4922,13 @@ struct CellContentPlacement {
     row_height: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RowPaintPlacement {
+    x_offset: f32,
+    top: f32,
+    page_number: usize,
+}
+
 fn cell_lines_extent(lines: &[LineLayout]) -> f32 {
     lines.iter().map(LineLayout::cell_extent).sum()
 }
@@ -4934,6 +4983,96 @@ fn draw_table_cell_content(
         }
         line_top += line_height + after;
     }
+}
+
+fn draw_row_layout(
+    surface: &mut Surface<'_>,
+    row: RowLayout,
+    placement: RowPaintPlacement,
+    cx: &mut TextCx<'_>,
+    page_links: &mut Vec<(f32, f32, f32, f32, Rc<str>)>,
+    previous: Option<&RenderedRowBorders>,
+) -> Option<RenderedRowBorders> {
+    let table_id = row.table_id;
+    let border = row.border;
+    let row_height = row.height;
+    let bottom = placement.top + row_height;
+    let current_vertical = row_vertical_border_lines(&row, placement.x_offset);
+    let junctions = match (table_id, previous) {
+        (Some(table_id), Some(previous))
+            if previous.table_id == table_id && (previous.bottom - placement.top).abs() < 0.01 =>
+        {
+            terminal_vertical_junctions(
+                &previous.vertical,
+                &row,
+                &current_vertical,
+                placement.x_offset,
+            )
+        }
+        _ => Vec::new(),
+    };
+    let cells = row.cells;
+    if junctions.is_empty() {
+        for cell in cells {
+            draw_table_cell_background_and_borders(
+                surface,
+                &cell,
+                placement.x_offset,
+                placement.top,
+                bottom,
+                row_height,
+                border,
+            );
+            let cell_x = placement.x_offset + cell.x;
+            draw_table_cell_content(
+                surface,
+                cell,
+                CellContentPlacement {
+                    x: cell_x,
+                    top: placement.top,
+                    row_height,
+                },
+                placement.page_number,
+                cx,
+                page_links,
+            );
+        }
+    } else {
+        for cell in &cells {
+            draw_table_cell_background_and_borders(
+                surface,
+                cell,
+                placement.x_offset,
+                placement.top,
+                bottom,
+                row_height,
+                border,
+            );
+        }
+        for (line, horizontal_width) in junctions {
+            draw_terminal_vertical_junction(surface, placement.top, line, horizontal_width);
+        }
+        for cell in cells {
+            let cell_x = placement.x_offset + cell.x;
+            draw_table_cell_content(
+                surface,
+                cell,
+                CellContentPlacement {
+                    x: cell_x,
+                    top: placement.top,
+                    row_height,
+                },
+                placement.page_number,
+                cx,
+                page_links,
+            );
+        }
+    }
+    table_id.map(|table_id| RenderedRowBorders {
+        table_id,
+        bottom,
+        vertical: current_vertical,
+    })
 }
 
 fn draw_line_background(surface: &mut Surface<'_>, line: &LineLayout, x_abs: f32, top: f32) {
@@ -8595,93 +8734,18 @@ fn render_pdf(
                     }
                 }
                 FlowItem::Row(row) => {
-                    let table_id = row.table_id;
-                    let border = row.border;
-                    let row_height = row.height;
-                    let bottom = top + row_height;
-                    let x_offset = page_geom.left + column_x;
-                    let current_vertical = row_vertical_border_lines(&row, x_offset);
-                    let junctions = match (table_id, previous_row_borders.as_ref()) {
-                        (Some(table_id), Some(previous))
-                            if previous.table_id == table_id
-                                && (previous.bottom - top).abs() < 0.01 =>
-                        {
-                            terminal_vertical_junctions(
-                                &previous.vertical,
-                                &row,
-                                &current_vertical,
-                                x_offset,
-                            )
-                        }
-                        _ => Vec::new(),
-                    };
-                    let cells = row.cells;
-                    if junctions.is_empty() {
-                        for cell in cells {
-                            draw_table_cell_background_and_borders(
-                                &mut surface,
-                                &cell,
-                                x_offset,
-                                top,
-                                bottom,
-                                row_height,
-                                border,
-                            );
-                            let cell_x = x_offset + cell.x;
-                            draw_table_cell_content(
-                                &mut surface,
-                                cell,
-                                CellContentPlacement {
-                                    x: cell_x,
-                                    top,
-                                    row_height,
-                                },
-                                page_number,
-                                &mut tcx,
-                                &mut page_links,
-                            );
-                        }
-                    } else {
-                        for cell in &cells {
-                            draw_table_cell_background_and_borders(
-                                &mut surface,
-                                cell,
-                                x_offset,
-                                top,
-                                bottom,
-                                row_height,
-                                border,
-                            );
-                        }
-                        for (line, horizontal_width) in junctions {
-                            draw_terminal_vertical_junction(
-                                &mut surface,
-                                top,
-                                line,
-                                horizontal_width,
-                            );
-                        }
-                        for cell in cells {
-                            let cell_x = x_offset + cell.x;
-                            draw_table_cell_content(
-                                &mut surface,
-                                cell,
-                                CellContentPlacement {
-                                    x: cell_x,
-                                    top,
-                                    row_height,
-                                },
-                                page_number,
-                                &mut tcx,
-                                &mut page_links,
-                            );
-                        }
-                    }
-                    previous_row_borders = table_id.map(|table_id| RenderedRowBorders {
-                        table_id,
-                        bottom,
-                        vertical: current_vertical,
-                    });
+                    previous_row_borders = draw_row_layout(
+                        &mut surface,
+                        row,
+                        RowPaintPlacement {
+                            x_offset: page_geom.left + column_x,
+                            top,
+                            page_number,
+                        },
+                        &mut tcx,
+                        &mut page_links,
+                        previous_row_borders.as_ref(),
+                    );
                 }
             }
         }
@@ -16009,6 +16073,81 @@ mod tests {
         assert_ne!(header, footer);
         assert_eq!(header, super::to_pdf(&header_model));
         assert_eq!(footer, super::to_pdf(&footer_model));
+    }
+
+    #[test]
+    fn running_surface_table_rows_clip_without_paginating_body() {
+        let first_row = Row {
+            cells: vec![Cell {
+                blocks: vec![para("clipped header row", None)],
+                shading: Some(Color {
+                    r: 0xFF,
+                    g: 0xE6,
+                    b: 0x99,
+                }),
+                ..Cell::default()
+            }],
+        };
+        let table = |include_second_row| Table {
+            rows: if include_second_row {
+                vec![
+                    first_row.clone(),
+                    Row {
+                        cells: vec![cell("must remain outside the clipped band")],
+                    },
+                ]
+            } else {
+                vec![first_row.clone()]
+            },
+            border_color: Some(Color {
+                r: 0x80,
+                g: 0x40,
+                b: 0x00,
+            }),
+            border_size_eighths: Some(8),
+            ..Table::default()
+        };
+        let model = |header| DocModel {
+            blocks: vec![para("body stays on its original page", None)],
+            setup: crate::model::DocSetup {
+                page: PageSetup {
+                    width_pt: 200.0,
+                    height_pt: 160.0,
+                    margin_pt: 30.0,
+                    ..PageSetup::default()
+                },
+                header,
+                ..crate::model::DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let baseline = super::to_pdf_with_fonts_and_report(
+            &model(Vec::new()),
+            &fonts,
+            FeatureInventory::default(),
+        );
+        let clipped = model(vec![Block::Table(table(false))]);
+        let clipped_render =
+            super::to_pdf_with_fonts_and_report(&clipped, &fonts, FeatureInventory::default());
+        let extra_row_render = super::to_pdf_with_fonts_and_report(
+            &model(vec![Block::Table(table(true))]),
+            &fonts,
+            FeatureInventory::default(),
+        );
+
+        assert_eq!(baseline.report.pages, 1);
+        assert_eq!(clipped_render.report.pages, 1);
+        assert_eq!(extra_row_render.report.pages, 1);
+        assert_ne!(clipped_render.pdf, baseline.pdf);
+        assert_eq!(
+            clipped_render.pdf, extra_row_render.pdf,
+            "rows after an over-tall first row must not paint outside the header band"
+        );
+        assert_eq!(
+            clipped_render.pdf,
+            super::to_pdf_with_fonts_and_report(&clipped, &fonts, FeatureInventory::default()).pdf
+        );
     }
 
     #[test]
