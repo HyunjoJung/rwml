@@ -26,7 +26,7 @@ use super::styles::{
 use super::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree};
 use super::{
     attr_f32, attr_i32, attr_i64, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8,
-    field_char_type, is_page_break_type, local, toggle_on,
+    field_char_type, is_column_break_type, is_page_break_type, local, toggle_on,
 };
 use crate::annotation::{
     barcode_field_syntax, direct_ref_field_syntax, instruction_parts, legacy_form_field_syntax,
@@ -71,11 +71,13 @@ type Xml<'a> = Reader<&'a [u8]>;
 const MAX_DEPTH: u32 = 128;
 const MAX_TABLE_GRID_COLS: usize = 1024;
 const PAGE_BREAK_MARKER: char = '\u{000C}';
+const COLUMN_BREAK_MARKER: char = '\u{000B}';
 
 #[derive(Default)]
 pub(super) struct PaginationCapture {
     hints: Vec<PaginationHint>,
     tab_stops: Vec<Vec<TabStop>>,
+    column_break_offsets: Vec<Vec<usize>>,
     section_column_gap_pt: Vec<Option<f32>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
@@ -89,6 +91,7 @@ pub(super) struct PaginationCapture {
 pub(super) struct BodyRenderHints {
     pub(super) pagination: Vec<PaginationHint>,
     pub(super) tab_stops: Vec<Vec<TabStop>>,
+    pub(super) column_break_offsets: Vec<Vec<usize>>,
     pub(super) section_column_gap_pt: Vec<Option<f32>>,
     pub(super) table_rows: Vec<Vec<TableRowPaginationHint>>,
     pub(super) table_cells: Vec<TableCellPaginationHints>,
@@ -154,6 +157,7 @@ impl Ctx<'_> {
             .map(|capture| BodyRenderHints {
                 pagination: capture.hints,
                 tab_stops: capture.tab_stops,
+                column_break_offsets: capture.column_break_offsets,
                 section_column_gap_pt: capture.section_column_gap_pt,
                 table_rows: capture.table_row_pagination,
                 table_cells: capture.table_cell_pagination,
@@ -180,11 +184,15 @@ impl Ctx<'_> {
         hint: PaginationHint,
         tab_stops: &[TabStop],
         section_column_gap_pt: Option<f32>,
+        column_break_offsets: &[usize],
     ) {
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
                 capture.hints.push(hint);
                 capture.tab_stops.push(tab_stops.to_vec());
+                capture
+                    .column_break_offsets
+                    .push(column_break_offsets.to_vec());
                 capture.section_column_gap_pt.push(section_column_gap_pt);
                 capture.table_row_pagination.push(Vec::new());
                 capture.table_cell_pagination.push(Vec::new());
@@ -199,6 +207,7 @@ impl Ctx<'_> {
             if capture.suspended == 0 {
                 capture.hints.push(PaginationHint::default());
                 capture.tab_stops.push(Vec::new());
+                capture.column_break_offsets.push(Vec::new());
                 capture.section_column_gap_pt.push(None);
                 capture.table_row_pagination.push(table.rows.clone());
                 capture.table_cell_pagination.push(table.cells.clone());
@@ -214,15 +223,19 @@ impl Ctx<'_> {
         hint: PaginationHint,
         tab_stops: &[TabStop],
         section_column_gap_pt: Option<f32>,
+        column_break_offsets: &[Vec<usize>],
     ) {
-        for block in blocks {
+        for (index, block) in blocks.iter().enumerate() {
+            let break_offsets = column_break_offsets
+                .get(index)
+                .map_or(&[][..], Vec::as_slice);
             if matches!(block, Block::Paragraph(_)) {
-                self.capture_block_hints(hint, tab_stops, None);
+                self.capture_block_hints(hint, tab_stops, None, break_offsets);
             } else {
                 let column_gap = matches!(block, Block::SectionBreak(_))
                     .then_some(section_column_gap_pt)
                     .flatten();
-                self.capture_block_hints(PaginationHint::default(), &[], column_gap);
+                self.capture_block_hints(PaginationHint::default(), &[], column_gap, &[]);
             }
         }
     }
@@ -2358,72 +2371,144 @@ fn mark_complex_field_result_runs(
     }
 }
 
-fn read_paragraph_blocks_data(
-    r: &mut Xml<'_>,
-    ctx: &Ctx<'_>,
-    depth: u32,
-) -> (Vec<Block>, PaginationHint, Vec<TabStop>, Option<f32>) {
+struct ParagraphBlockData {
+    blocks: Vec<Block>,
+    pagination: PaginationHint,
+    tab_stops: Vec<TabStop>,
+    section_column_gap_pt: Option<f32>,
+    column_break_offsets: Vec<Vec<usize>>,
+}
+
+fn read_paragraph_blocks_data(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> ParagraphBlockData {
     let (paragraph, section, pagination, tab_stops) = read_paragraph(r, ctx, depth);
-    let mut blocks = split_page_breaks(paragraph);
+    let mut split = split_page_breaks(paragraph);
     let mut section_column_gap_pt = None;
     if let Some(mut section) = section {
         if section.setup.section_break.is_none() {
             section.setup.section_break = Some(SectionBreakKind::NextPage);
         }
         section_column_gap_pt = section.column_gap_pt;
-        blocks.push(Block::SectionBreak(section.setup));
+        split.push(Block::SectionBreak(section.setup), Vec::new());
     }
-    (blocks, pagination, tab_stops, section_column_gap_pt)
+    ParagraphBlockData {
+        blocks: split.blocks,
+        pagination,
+        tab_stops,
+        section_column_gap_pt,
+        column_break_offsets: split.column_break_offsets,
+    }
 }
 
 fn read_paragraph_block_batch(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> BlockBatch {
-    let (blocks, pagination, tab_stops, section_column_gap_pt) =
-        read_paragraph_blocks_data(r, ctx, depth);
-    ctx.capture_paragraph_blocks(&blocks, pagination, &tab_stops, section_column_gap_pt);
-    let pagination = blocks
+    let data = read_paragraph_blocks_data(r, ctx, depth);
+    ctx.capture_paragraph_blocks(
+        &data.blocks,
+        data.pagination,
+        &data.tab_stops,
+        data.section_column_gap_pt,
+        &data.column_break_offsets,
+    );
+    let pagination = data
+        .blocks
         .iter()
         .map(|block| {
             if matches!(block, Block::Paragraph(_)) {
-                Some(pagination)
+                Some(data.pagination)
             } else {
                 None
             }
         })
         .collect();
-    let nested_tables = vec![None; blocks.len()];
-    let tab_stops = vec![tab_stops; blocks.len()];
+    let nested_tables = vec![None; data.blocks.len()];
+    let tab_stops = vec![data.tab_stops; data.blocks.len()];
     BlockBatch {
-        blocks,
+        blocks: data.blocks,
         pagination,
         nested_tables,
         tab_stops,
     }
 }
 
-fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
+#[derive(Default)]
+struct ParagraphBlockSplit {
+    blocks: Vec<Block>,
+    column_break_offsets: Vec<Vec<usize>>,
+}
+
+impl ParagraphBlockSplit {
+    fn push(&mut self, block: Block, offsets: Vec<usize>) {
+        self.blocks.push(block);
+        self.column_break_offsets.push(offsets);
+    }
+}
+
+fn flush_split_paragraph(
+    split: &mut ParagraphBlockSplit,
+    current: &mut Paragraph,
+    props: &ParaProps,
+    column_break_offsets: &mut Vec<usize>,
+) {
+    if !current.is_blank() || paragraph_has_field_runs(current) {
+        let paragraph = std::mem::replace(
+            current,
+            Paragraph {
+                props: props.clone(),
+                runs: Vec::new(),
+            },
+        );
+        split.push(
+            Block::Paragraph(paragraph),
+            std::mem::take(column_break_offsets),
+        );
+    } else {
+        current.runs.clear();
+        column_break_offsets.clear();
+    }
+}
+
+fn normalize_column_breaks(
+    text: &str,
+    visible: bool,
+    source_chars: &mut usize,
+    offsets: &mut Vec<usize>,
+) -> String {
+    let mut normalized = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if ch == COLUMN_BREAK_MARKER {
+            if visible {
+                offsets.push(*source_chars);
+            }
+            normalized.push('\n');
+        } else {
+            normalized.push(ch);
+        }
+        *source_chars = source_chars.saturating_add(1);
+    }
+    normalized
+}
+
+fn split_page_breaks(paragraph: Paragraph) -> ParagraphBlockSplit {
     if !paragraph
         .runs
         .iter()
-        .any(|run| run.text.contains(PAGE_BREAK_MARKER))
+        .any(|run| run.text.contains(PAGE_BREAK_MARKER) || run.text.contains(COLUMN_BREAK_MARKER))
     {
-        return if paragraph.is_blank() && !paragraph_has_field_runs(&paragraph) {
-            Vec::new()
-        } else {
-            vec![Block::Paragraph(paragraph)]
-        };
+        let mut split = ParagraphBlockSplit::default();
+        if !paragraph.is_blank() || paragraph_has_field_runs(&paragraph) {
+            split.push(Block::Paragraph(paragraph), Vec::new());
+        }
+        return split;
     }
 
     let props = paragraph.props;
-    let mut blocks = Vec::new();
+    let mut split = ParagraphBlockSplit::default();
     let mut current = Paragraph {
         props: props.clone(),
         runs: Vec::new(),
     };
+    let mut column_break_offsets = Vec::new();
+    let mut source_chars = 0usize;
     for run in paragraph.runs {
-        if !run.text.contains(PAGE_BREAK_MARKER) {
-            current.runs.push(run);
-            continue;
-        }
         let parts: Vec<_> = run
             .text
             .split(PAGE_BREAK_MARKER)
@@ -2431,19 +2516,16 @@ fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
             .collect();
         for (index, part) in parts.into_iter().enumerate() {
             if index > 0 {
-                if !current.is_blank() || paragraph_has_field_runs(&current) {
-                    blocks.push(Block::Paragraph(std::mem::replace(
-                        &mut current,
-                        Paragraph {
-                            props: props.clone(),
-                            runs: Vec::new(),
-                        },
-                    )));
-                } else {
-                    current.runs.clear();
-                }
-                blocks.push(Block::PageBreak);
+                flush_split_paragraph(&mut split, &mut current, &props, &mut column_break_offsets);
+                split.push(Block::PageBreak, Vec::new());
+                source_chars = 0;
             }
+            let part = normalize_column_breaks(
+                &part,
+                !run.props.hidden,
+                &mut source_chars,
+                &mut column_break_offsets,
+            );
             if !part.is_empty() {
                 let mut split_run = run.clone();
                 split_run.text = part;
@@ -2451,10 +2533,8 @@ fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
             }
         }
     }
-    if !current.is_blank() || paragraph_has_field_runs(&current) {
-        blocks.push(Block::Paragraph(current));
-    }
-    blocks
+    flush_split_paragraph(&mut split, &mut current, &props, &mut column_break_offsets);
+    split
 }
 
 fn paragraph_has_field_runs(paragraph: &Paragraph) -> bool {
@@ -3827,6 +3907,8 @@ fn append_run_inline_marker(
         b"tab" => Some('\t'),
         b"br" => Some(if is_page_break_type(e) {
             PAGE_BREAK_MARKER
+        } else if is_column_break_type(e) {
+            COLUMN_BREAK_MARKER
         } else {
             '\n'
         }),

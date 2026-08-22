@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Flows visible top-level body `w:br w:type="column"` markers from opened DOCX
+  files into the next active PDF preview column, advancing to a new page after
+  the final column. Renderer-only character offsets preserve the existing
+  newline-backed public model and remain aligned across explicit page-break
+  splits; marker-only paragraphs and repeated breaks make deterministic
+  progress. Ordinary line breaks, hidden runs, table cells, notes,
+  headers/footers, model-authored content, fresh conversion, and Word-exact
+  pagination remain outside this bounded path.
 - Applies legacy `.doc` `sprmSDxaColumns` spacing to opened-document PDF
   previews when a section has two or more evenly spaced columns. The parser
   bounds spacing to the specified nonnegative twip range, keeps zero and later

@@ -208,6 +208,9 @@ pub(crate) struct DocxState {
     /// Renderer-only resolved explicit tab stops aligned to body model blocks.
     #[cfg(feature = "render")]
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
+    /// Renderer-only manual column-break character offsets within body paragraphs.
+    #[cfg(feature = "render")]
+    pub column_break_offsets: Vec<Vec<usize>>,
     /// Renderer-only explicit equal-column gaps aligned to body model blocks.
     #[cfg(feature = "render")]
     pub section_column_gap_pt: Vec<Option<f32>>,
@@ -437,6 +440,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let body::BodyRenderHints {
         pagination: pagination_hints,
         tab_stops,
+        column_break_offsets,
         section_column_gap_pt,
         table_rows: table_row_pagination,
         table_cells: table_cell_pagination,
@@ -678,6 +682,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         pagination_hints,
         #[cfg(feature = "render")]
         tab_stops,
+        #[cfg(feature = "render")]
+        column_break_offsets,
         #[cfg(feature = "render")]
         section_column_gap_pt,
         #[cfg(feature = "render")]
@@ -4282,6 +4288,10 @@ pub(crate) fn attr_local_trimmed(e: &BytesStart<'_>, key: &[u8]) -> Option<Strin
 
 pub(crate) fn is_page_break_type(e: &BytesStart<'_>) -> bool {
     attr_local_trimmed(e, b"type").is_some_and(|value| value == "page")
+}
+
+pub(crate) fn is_column_break_type(e: &BytesStart<'_>) -> bool {
+    attr_local_trimmed(e, b"type").is_some_and(|value| value == "column")
 }
 
 pub(crate) fn field_char_type(e: &BytesStart<'_>) -> Option<String> {

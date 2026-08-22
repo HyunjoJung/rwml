@@ -341,7 +341,8 @@ Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,
 equal-width section columns, explicit opened-DOCX and legacy `.doc` inter-column
-spacing, and per-side margins come from the document;
+spacing, visible top-level opened-DOCX manual column breaks, and per-side margins
+come from the document;
 multi-page tables repeat their header rows without losing outer placement or
 border paint. Opened
 `.docx` rows, including recursively flattened nested rows, may split across

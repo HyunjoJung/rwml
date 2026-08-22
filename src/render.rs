@@ -159,6 +159,7 @@ const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
 pub(crate) struct SourceRenderHints<'a> {
     pub(crate) pagination: &'a [PaginationHint],
     pub(crate) tab_stops: &'a [Vec<TabStop>],
+    pub(crate) column_break_offsets: &'a [Vec<usize>],
     pub(crate) section_column_gap_pt: &'a [Option<f32>],
     pub(crate) final_section_column_gap_pt: Option<f32>,
     pub(crate) default_tab_stop_pt: Option<f32>,
@@ -496,6 +497,7 @@ enum FlowItem {
     Line(LineLayout),
     Row(RowLayout),
     PageBreak,
+    ColumnBreak,
     SectionColumnGap(f32),
     SectionBreak(SectionSetup),
     Table {
@@ -2910,6 +2912,7 @@ fn layout_paragraph(
     out: &mut Vec<FlowItem>,
     marker: Option<&str>,
     tab_stops: &[TabStop],
+    column_break_offsets: &[usize],
     default_tab_stop_pt: Option<f32>,
     geom: Geom,
     cx: &mut TextCx<'_>,
@@ -2925,7 +2928,20 @@ fn layout_paragraph(
         capture,
         true,
     );
-    out.extend(shaped.lines.into_iter().map(FlowItem::Line));
+    let mut column_breaks = column_break_offsets.iter().copied().peekable();
+    for line in shaped.lines {
+        if let Some(start) = line.char_range.map(|range| range.start) {
+            while column_breaks
+                .peek()
+                .is_some_and(|break_offset| *break_offset < start)
+            {
+                out.push(FlowItem::ColumnBreak);
+                column_breaks.next();
+            }
+        }
+        out.push(FlowItem::Line(line));
+    }
+    out.extend(column_breaks.map(|_| FlowItem::ColumnBreak));
     for img in shaped.images {
         if let Some(item) = image_flow_item(img, geom) {
             out.push(FlowItem::Gap(PARA_GAP));
@@ -3964,6 +3980,7 @@ struct BlockCollectionOptions<'a> {
     section_geometries: Option<&'a [Geom]>,
     pagination_hints: Option<&'a [PaginationHint]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
+    column_break_offsets: Option<&'a [Vec<usize>]>,
     default_tab_stop_pt: Option<f32>,
     table_row_pagination: Option<&'a [Vec<TableRowPaginationHint>]>,
     table_cell_pagination: Option<&'a [TableCellPaginationHints]>,
@@ -3978,6 +3995,7 @@ struct BodyCollectionSidecars<'a> {
     section_geometries: &'a [Geom],
     pagination_hints: &'a [PaginationHint],
     tab_stops: &'a [Vec<TabStop>],
+    column_break_offsets: &'a [Vec<usize>],
     default_tab_stop_pt: Option<f32>,
     table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     table_cell_pagination: &'a [TableCellPaginationHints],
@@ -4007,6 +4025,7 @@ fn collect_blocks_with_block_anchors(
             section_geometries: Some(sidecars.section_geometries),
             pagination_hints: Some(sidecars.pagination_hints),
             tab_stops: Some(sidecars.tab_stops),
+            column_break_offsets: Some(sidecars.column_break_offsets),
             default_tab_stop_pt: sidecars.default_tab_stop_pt,
             table_row_pagination: Some(sidecars.table_row_pagination),
             table_cell_pagination: Some(sidecars.table_cell_pagination),
@@ -4082,11 +4101,17 @@ fn collect_blocks_inner(
                     .and_then(|stops| stops.get(block_index))
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
+                let column_break_offsets = options
+                    .column_break_offsets
+                    .and_then(|breaks| breaks.get(block_index))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
                 layout_paragraph(
                     p,
                     out,
                     marker.as_deref(),
                     tab_stops,
+                    column_break_offsets,
                     options.default_tab_stop_pt,
                     block_geom,
                     cx,
@@ -7136,6 +7161,7 @@ fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMet
                 FlowItem::PaginationBoundary
                 | FlowItem::Row(_)
                 | FlowItem::PageBreak
+                | FlowItem::ColumnBreak
                 | FlowItem::SectionColumnGap(_)
                 | FlowItem::SectionBreak(_)
                 | FlowItem::Table { .. }
@@ -7528,6 +7554,14 @@ fn paginate_with_column_gap(
                     pages.len().saturating_sub(1),
                 );
             }
+            FlowItem::ColumnBreak => {
+                cursor.advance(&mut pages, active_geom);
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+            }
             FlowItem::SectionColumnGap(_) => {}
             FlowItem::SectionBreak(section) => {
                 let next_section_page =
@@ -7621,6 +7655,7 @@ fn collect_pdf_flow_items(
             section_geometries: &body_geometries,
             pagination_hints: source_hints.pagination,
             tab_stops: source_hints.tab_stops,
+            column_break_offsets: source_hints.column_break_offsets,
             default_tab_stop_pt: source_hints.default_tab_stop_pt,
             table_row_pagination: source_hints.table_row_pagination,
             table_cell_pagination: source_hints.table_cell_pagination,
@@ -7833,6 +7868,7 @@ fn record_page_fields(pages: &Pages, page_fields: &mut [Option<usize>]) {
                 | FlowItem::PaginationBoundary
                 | FlowItem::Gap(_)
                 | FlowItem::PageBreak
+                | FlowItem::ColumnBreak
                 | FlowItem::SectionColumnGap(_)
                 | FlowItem::SectionBreak(_)
                 | FlowItem::Table { .. }
@@ -8209,6 +8245,7 @@ fn render_pdf(
                 | FlowItem::PaginationBoundary
                 | FlowItem::Gap(_)
                 | FlowItem::PageBreak
+                | FlowItem::ColumnBreak
                 | FlowItem::SectionColumnGap(_)
                 | FlowItem::SectionBreak(_)
                 | FlowItem::Table { .. } => {}
@@ -8765,6 +8802,7 @@ mod tests {
             &mut flow,
             marker,
             tab_stops,
+            &[],
             None,
             geom,
             &mut tcx,
@@ -13502,6 +13540,43 @@ mod tests {
         assert_eq!(x_positions.len(), 8);
         assert!(x_positions[..6].iter().all(|x| x.abs() < 0.1));
         assert!(x_positions[6..].iter().all(|x| *x > 90.0));
+    }
+
+    #[test]
+    fn manual_column_breaks_advance_columns_before_pages() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate(items, geom, &setup);
+
+        assert_eq!(pagination.pages.len(), 2);
+        let first_page_lines = pagination.pages[0]
+            .iter()
+            .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .collect::<Vec<_>>();
+        assert_eq!(first_page_lines.len(), 2);
+        assert!(first_page_lines[0].x.abs() < 0.1);
+        assert!(first_page_lines[1].x > 90.0);
+        let second_page_line = pagination.pages[1]
+            .iter()
+            .find(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .expect("line after the second manual column break");
+        assert!(second_page_line.x.abs() < 0.1);
     }
 
     #[test]

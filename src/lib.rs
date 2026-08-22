@@ -2941,6 +2941,7 @@ impl Document {
                     render::SourceRenderHints {
                         pagination: &d.pagination_hints,
                         tab_stops: &d.tab_stops,
+                        column_break_offsets: &d.column_break_offsets,
                         section_column_gap_pt: &d.section_column_gap_pt,
                         final_section_column_gap_pt: d.final_section_column_gap_pt,
                         table_row_pagination: &d.table_row_pagination,
@@ -11039,6 +11040,67 @@ mod tests {
             assert_eq!(hints.section_column_gap_pt, &[None, Some(40.0), None]);
             assert_eq!(hints.final_section_column_gap_pt, Some(10.0));
         });
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_manual_column_breaks_reach_preview_flow() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:r><w:t>left</w:t><w:br w:type=" column "/><w:t>right</w:t><w:br w:type="column"/><w:t>page two</w:t></w:r></w:p>
+                <w:p><w:r><w:br w:type="column"/></w:r></w:p>
+                <w:p><w:r><w:t>after orphan</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(document.model().blocks.len(), 3);
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.column_break_offsets, &[vec![4, 10], vec![0], vec![]]);
+        });
+
+        let model_only = layout_pages_with_fonts(&document.model(), &fonts).unwrap();
+        let opened = document.layout_pages_with_fonts(&fonts).unwrap();
+        assert_eq!(model_only.pages, 1);
+        assert_eq!(model_only.block_pages, vec![Some(1), Some(1), Some(1)]);
+        assert_eq!(opened.pages, 2);
+        assert_eq!(opened.block_pages, vec![Some(1), Some(2), Some(2)]);
+        assert_eq!(opened, document.layout_pages_with_fonts(&fonts).unwrap());
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_column_break_capture_is_visible_top_level_body_only() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:r><w:t>A</w:t><w:br w:type="column"/><w:t>B</w:t></w:r></w:p>
+                <w:p><w:r><w:t>C</w:t><w:br/><w:t>D</w:t></w:r><w:r><w:rPr><w:vanish/></w:rPr><w:br w:type="column"/></w:r></w:p>
+                <w:tbl><w:tr><w:tc><w:p><w:r><w:t>E</w:t><w:br w:type="column"/><w:t>F</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:p><w:r><w:t>G</w:t><w:br w:type="column"/><w:t>H</w:t><w:br w:type="page"/><w:t>I</w:t><w:br w:type="column"/><w:t>J</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 6);
+            assert_eq!(
+                hints.column_break_offsets,
+                &[vec![1], vec![], vec![], vec![1], vec![], vec![1]]
+            );
+        });
+        let model = document.model();
+        let Block::Paragraph(first) = &model.blocks[0] else {
+            panic!("first body block must be a paragraph");
+        };
+        let Block::Paragraph(second) = &model.blocks[1] else {
+            panic!("second body block must be a paragraph");
+        };
+        assert_eq!(first.text(), "A\nB");
+        assert_eq!(second.text(), "C\nD\n");
     }
 
     #[cfg(all(feature = "docx", feature = "render"))]
