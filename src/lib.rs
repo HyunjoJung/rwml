@@ -568,6 +568,7 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
     let assemble::LegacyBuildOutput {
         model,
         pagination_hints: _pagination_hints,
+        line_spacing_hints: _line_spacing_hints,
         column_break_offsets: _column_break_offsets,
         section_column_gap_pt: _section_column_gap_pt,
         final_section_column_gap_pt: _final_section_column_gap_pt,
@@ -2925,6 +2926,7 @@ impl Document {
                     &assembled.model,
                     render::SourceRenderHints {
                         pagination: &assembled.pagination_hints,
+                        line_spacing: &assembled.line_spacing_hints,
                         column_break_offsets: &assembled.column_break_offsets,
                         section_column_gap_pt: &assembled.section_column_gap_pt,
                         final_section_column_gap_pt: assembled.final_section_column_gap_pt,
@@ -9669,6 +9671,23 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_retains_absolute_line_spacing_render_hints() {
+        let document = Document::open(&legacy_paragraph_spacing_doc()).unwrap();
+        let Backend::Doc(state) = &document.backend else {
+            panic!("synthetic legacy document must use the DOC backend");
+        };
+        let hints = legacy_build_output_from_doc_state(state).line_spacing_hints;
+
+        assert_eq!(hints.len(), document.model().blocks.len());
+        assert_eq!(hints[3], Some(crate::model::LineSpacingHint::AtLeast(12.0)));
+        assert_eq!(hints[6], Some(crate::model::LineSpacingHint::AtLeast(12.0)));
+        assert_eq!(hints[7], Some(crate::model::LineSpacingHint::Exact(12.0)));
+        assert_eq!(hints[8], None, "zero multiplier only clears inheritance");
+        assert_eq!(hints[9], None, "invalid direct LSPD keeps style multiplier");
+    }
+
     #[cfg(feature = "docx")]
     #[test]
     fn legacy_doc_bounded_paragraph_spacing_roundtrips_to_docx() {
@@ -9684,7 +9703,7 @@ mod tests {
     #[cfg(feature = "render")]
     fn legacy_paragraph_spacing_layout_doc(
         paragraph_count: usize,
-        line_twips: Option<u16>,
+        line_spacing: Option<(u16, u16)>,
     ) -> Vec<u8> {
         let mut text = String::new();
         for index in 0..paragraph_count {
@@ -9692,8 +9711,8 @@ mod tests {
         }
         let text_end = text.encode_utf16().count() as u32;
         let mut grpprl = Vec::new();
-        if let Some(line_twips) = line_twips {
-            push_paragraph_line_spacing(&mut grpprl, line_twips, 1);
+        if let Some((line_twips, multiple)) = line_spacing {
+            push_paragraph_line_spacing(&mut grpprl, line_twips, multiple);
         }
         let runs = [SyntheticPapxRun {
             cp_lim: text_end,
@@ -9723,7 +9742,7 @@ mod tests {
             .model();
         let double = Document::open(&legacy_paragraph_spacing_layout_doc(
             PARAGRAPH_COUNT,
-            Some(480),
+            Some((480, 1)),
         ))
         .unwrap()
         .model();
@@ -9751,6 +9770,41 @@ mod tests {
             ),
             (1, Some(1), 2, Some(2), 2, Some(2))
         );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_absolute_line_spacing_changes_preview_layout() {
+        const PARAGRAPH_COUNT: usize = 40;
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let exact = Document::open(&legacy_paragraph_spacing_layout_doc(
+            PARAGRAPH_COUNT,
+            Some((EXACT_FIVE_POINTS, 0)),
+        ))
+        .unwrap();
+        let minimum = Document::open(&legacy_paragraph_spacing_layout_doc(
+            PARAGRAPH_COUNT,
+            Some((800, 0)),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            exact.model(),
+            minimum.model(),
+            "legacy absolute line spacing must remain outside the public model"
+        );
+        let exact_layout = exact.layout_pages_with_fonts(&fonts).unwrap();
+        let minimum_layout = minimum.layout_pages_with_fonts(&fonts).unwrap();
+        assert!(minimum_layout.pages > exact_layout.pages);
+
+        let exact_pdf = exact.to_pdf_with_fonts(&fonts);
+        let minimum_pdf = minimum.to_pdf_with_fonts(&fonts);
+        assert!(exact_pdf.starts_with(b"%PDF-"));
+        assert!(minimum_pdf.starts_with(b"%PDF-"));
+        assert_ne!(exact_pdf, minimum_pdf);
+        assert_eq!(exact_pdf, exact.to_pdf_with_fonts(&fonts));
+        assert_eq!(minimum_pdf, minimum.to_pdf_with_fonts(&fonts));
     }
 
     fn push_legacy_paragraph_shd80(

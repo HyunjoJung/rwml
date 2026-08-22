@@ -202,14 +202,17 @@ impl ParagraphIndentOverrides {
     }
 }
 
-/// The bounded legacy line-spacing forms represented by the shared model.
+/// The bounded legacy line-spacing forms retained by the parser.
 ///
-/// At-least, exact, and zero-multiplier LSPD values cannot be expressed
-/// by `Spacing::line_pct`. The sentinel still has to override an inherited
+/// Exact, minimum, and zero-multiplier LSPD values cannot be expressed by
+/// `Spacing::line_pct`, but their distinct source semantics are retained for
+/// the renderer-only sidecar. The sentinel still has to override an inherited
 /// multiplier instead of silently retaining it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ParagraphLineSpacing {
     ProportionalTwips(u16),
+    ExactTwips(u16),
+    AtLeastTwips(u16),
     Unrepresentable,
 }
 
@@ -1044,9 +1047,11 @@ fn strict_line_spacing(operand: &[u8]) -> Option<ParagraphLineSpacing> {
     if multiple > 1 {
         return None;
     }
-    match dya_line {
-        1..=0x7BC0 if multiple == 1 => Some(ParagraphLineSpacing::ProportionalTwips(dya_line)),
-        0..=0x7BC0 | 0x8440..=u16::MAX => Some(ParagraphLineSpacing::Unrepresentable),
+    match (dya_line, multiple) {
+        (0x8440..=u16::MAX, _) => Some(ParagraphLineSpacing::ExactTwips(u16::MAX - dya_line + 1)),
+        (1..=0x7BC0, 0) => Some(ParagraphLineSpacing::AtLeastTwips(dya_line)),
+        (1..=0x7BC0, 1) => Some(ParagraphLineSpacing::ProportionalTwips(dya_line)),
+        (0, _) => Some(ParagraphLineSpacing::Unrepresentable),
         _ => None,
     }
 }
@@ -1511,18 +1516,24 @@ mod tests {
             }
         );
 
-        for operand in [
-            [0xF0, 0x00, 0x00, 0x00], // at least 240 twips
-            [0x40, 0x84, 0x00, 0x00], // exactly 31680 twips
-            [0x00, 0x00, 0x01, 0x00], // explicit zero multiplier
+        for (operand, expected) in [
+            (
+                [0xF0, 0x00, 0x00, 0x00],
+                ParagraphLineSpacing::AtLeastTwips(240),
+            ),
+            (
+                [0x40, 0x84, 0x00, 0x00],
+                ParagraphLineSpacing::ExactTwips(31_680),
+            ),
+            (
+                [0x00, 0x00, 0x01, 0x00],
+                ParagraphLineSpacing::Unrepresentable,
+            ),
         ] {
             let mut grpprl = vec![0x12, 0x64];
             grpprl.extend_from_slice(&operand);
             let (parsed, _) = scan_grpprl(&grpprl, 0);
-            assert_eq!(
-                parsed.spacing.line,
-                Some(ParagraphLineSpacing::Unrepresentable)
-            );
+            assert_eq!(parsed.spacing.line, Some(expected));
         }
 
         let (valid_prefix, _) = scan_grpprl(
@@ -1723,7 +1734,7 @@ mod tests {
                 spacing: ParagraphSpacingOverrides {
                     before_twips: Some(200),
                     after_twips: Some(100),
-                    line: Some(ParagraphLineSpacing::Unrepresentable),
+                    line: Some(ParagraphLineSpacing::ExactTwips(31_680)),
                 },
                 ..ParagraphStyleOverrides::default()
             })

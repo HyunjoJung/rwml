@@ -849,7 +849,7 @@ mod tests {
                 ParagraphSpacingOverrides {
                     before_twips: Some(240),
                     after_twips: Some(60),
-                    line: Some(ParagraphLineSpacing::Unrepresentable),
+                    line: Some(ParagraphLineSpacing::ExactTwips(31_680)),
                 }
             );
             assert_eq!(

@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies opened legacy-DOC positive non-multiple LSPD as minimum line spacing
+  and negative encoded LSPD as exact line spacing in top-level main-story PDF
+  preview paragraphs. Style and direct-PAPX cascading retains the distinct
+  source forms in a block-aligned private render sidecar, including both
+  fragments around a promoted manual page break; exact over-tall content uses
+  the existing vertical line clip. The public model, legacy table cells and
+  running surfaces, shared-model conversion, and fresh DOCX output remain
+  unchanged.
 - Applies opened-DOCX `exact` and `atLeast` paragraph line spacing to ordinary
   paragraphs in referenced default/first/even running header and footer parts.
   Section-aligned private render hints mirror default-surface inheritance and

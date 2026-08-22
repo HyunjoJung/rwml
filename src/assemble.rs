@@ -17,9 +17,10 @@ use crate::fib::{self, Fib};
 use crate::list::Numberer;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocGrid, DocGridType, DocMeta, DocModel,
-    DocSetup, FieldRole, Image, Indent, ListInfo, PageNumberFormat, PageSetup, PaginationHint,
-    ParaProps, Paragraph, SectionBreakKind, SectionSetup, SourceRegion, SourceRegionKind, Spacing,
-    Stats, TableCellPaginationHints, TableRowPaginationHint, TextDirection,
+    DocSetup, FieldRole, Image, Indent, LineSpacingHint, ListInfo, PageNumberFormat, PageSetup,
+    PaginationHint, ParaProps, Paragraph, SectionBreakKind, SectionSetup, SourceRegion,
+    SourceRegionKind, Spacing, Stats, TableCellPaginationHints, TableRowPaginationHint,
+    TextDirection,
 };
 use crate::papx::{
     PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
@@ -74,6 +75,7 @@ pub(crate) struct BuildInputs<'a> {
 pub(crate) struct LegacyBuildOutput {
     pub(crate) model: DocModel,
     pub(crate) pagination_hints: Vec<PaginationHint>,
+    pub(crate) line_spacing_hints: Vec<Option<LineSpacingHint>>,
     pub(crate) column_break_offsets: Vec<Vec<usize>>,
     pub(crate) section_column_gap_pt: Vec<Option<f32>>,
     pub(crate) final_section_column_gap_pt: Option<f32>,
@@ -115,6 +117,7 @@ pub(crate) fn build_model_with_render_hints(
         blocks,
         regions,
         pagination_hints,
+        line_spacing_hints,
         column_break_offsets,
         table_row_pagination,
         table_cell_pagination,
@@ -139,6 +142,7 @@ pub(crate) fn build_model_with_render_hints(
             setup,
         },
         pagination_hints,
+        line_spacing_hints,
         column_break_offsets,
         section_column_gap_pt,
         final_section_column_gap_pt,
@@ -389,6 +393,7 @@ fn push_legacy_main_section_regions(
                     span.columns,
                 )));
             output.pagination_hints.push(PaginationHint::default());
+            output.line_spacing_hints.push(None);
             output.column_break_offsets.push(Vec::new());
             output.table_row_pagination.push(Vec::new());
             output.table_cell_pagination.push(Vec::new());
@@ -465,6 +470,9 @@ fn push_legacy_region(
         .pagination_hints
         .append(&mut region_output.pagination_hints);
     output
+        .line_spacing_hints
+        .append(&mut region_output.line_spacing_hints);
+    output
         .column_break_offsets
         .append(&mut column_break_offsets);
     output
@@ -496,6 +504,7 @@ struct LegacyRegionOutput {
     blocks: Vec<Block>,
     regions: Vec<SourceRegion>,
     pagination_hints: Vec<PaginationHint>,
+    line_spacing_hints: Vec<Option<LineSpacingHint>>,
     column_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
@@ -1105,6 +1114,7 @@ struct Asm<'a, 'l> {
 
     blocks: Vec<Block>,
     pagination_hints: Vec<PaginationHint>,
+    line_spacing_hints: Vec<Option<LineSpacingHint>>,
     column_break_offsets: Vec<Vec<usize>>,
     page_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
@@ -1205,9 +1215,28 @@ fn resolve_paragraph_spacing(source: ParagraphSpacingOverrides) -> Spacing {
         after_pt: Some(source.after_twips.unwrap_or(0) as f32 / 20.0),
         line_pct: match source.line {
             Some(ParagraphLineSpacing::ProportionalTwips(value)) => Some(value as f32 / 240.0),
-            Some(ParagraphLineSpacing::Unrepresentable) => None,
+            Some(
+                ParagraphLineSpacing::ExactTwips(_)
+                | ParagraphLineSpacing::AtLeastTwips(_)
+                | ParagraphLineSpacing::Unrepresentable,
+            ) => None,
             None => Some(1.0),
         },
+    }
+}
+
+fn resolve_absolute_line_spacing(source: ParagraphSpacingOverrides) -> Option<LineSpacingHint> {
+    match source.line {
+        Some(ParagraphLineSpacing::ExactTwips(value)) => {
+            Some(LineSpacingHint::Exact(value as f32 / 20.0))
+        }
+        Some(ParagraphLineSpacing::AtLeastTwips(value)) => {
+            Some(LineSpacingHint::AtLeast(value as f32 / 20.0))
+        }
+        Some(
+            ParagraphLineSpacing::ProportionalTwips(_) | ParagraphLineSpacing::Unrepresentable,
+        )
+        | None => None,
     }
 }
 
@@ -1230,6 +1259,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             numberer,
             blocks: Vec::new(),
             pagination_hints: Vec::new(),
+            line_spacing_hints: Vec::new(),
             column_break_offsets: Vec::new(),
             page_break_offsets: Vec::new(),
             table_row_pagination: Vec::new(),
@@ -1478,7 +1508,16 @@ impl<'a, 'l> Asm<'a, 'l> {
     }
 
     /// Finalize the runs collected so far into a [`Paragraph`] with list info.
-    fn take_paragraph(&mut self, fc: u32) -> (Paragraph, PaginationHint, Vec<usize>, Vec<usize>) {
+    fn take_paragraph(
+        &mut self,
+        fc: u32,
+    ) -> (
+        Paragraph,
+        PaginationHint,
+        Option<LineSpacingHint>,
+        Vec<usize>,
+        Vec<usize>,
+    ) {
         self.flush_run();
         let runs = std::mem::take(&mut self.para_runs);
         self.para_text_chars = 0;
@@ -1508,11 +1547,12 @@ impl<'a, 'l> Asm<'a, 'l> {
                 .apply(self.papx.paragraph_indent_overrides_at(fc)),
             bidi,
         );
-        let spacing = resolve_paragraph_spacing(
-            self.stylesheet
-                .paragraph_spacing(istd)
-                .apply(self.papx.paragraph_spacing_overrides_at(fc)),
-        );
+        let source_spacing = self
+            .stylesheet
+            .paragraph_spacing(istd)
+            .apply(self.papx.paragraph_spacing_overrides_at(fc));
+        let spacing = resolve_paragraph_spacing(source_spacing);
+        let line_spacing_hint = resolve_absolute_line_spacing(source_spacing);
         let source_pagination = self
             .stylesheet
             .paragraph_pagination(istd)
@@ -1583,6 +1623,7 @@ impl<'a, 'l> Asm<'a, 'l> {
         (
             paragraph,
             pagination,
+            line_spacing_hint,
             column_break_offsets,
             page_break_offsets,
         )
@@ -1592,7 +1633,8 @@ impl<'a, 'l> Asm<'a, 'l> {
     /// and route it into the body or the current table.
     fn end_paragraph(&mut self, fc: u32, is_cell_mark: bool) {
         let (in_table, ttp) = self.papx.at(fc);
-        let (para, pagination, column_break_offsets, page_break_offsets) = self.take_paragraph(fc);
+        let (para, pagination, line_spacing_hint, column_break_offsets, page_break_offsets) =
+            self.take_paragraph(fc);
 
         if !in_table {
             self.flush_table();
@@ -1602,6 +1644,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             {
                 self.blocks.push(Block::Paragraph(para));
                 self.pagination_hints.push(pagination);
+                self.line_spacing_hints.push(line_spacing_hint);
                 self.column_break_offsets.push(column_break_offsets);
                 self.page_break_offsets.push(page_break_offsets);
                 self.table_row_pagination.push(Vec::new());
@@ -1681,6 +1724,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 debug_assert_eq!(built.cell_pagination.len(), built.table.rows.len());
                 self.blocks.push(Block::Table(built.table));
                 self.pagination_hints.push(PaginationHint::default());
+                self.line_spacing_hints.push(None);
                 self.column_break_offsets.push(Vec::new());
                 self.page_break_offsets.push(Vec::new());
                 self.table_row_pagination.push(row_pagination);
@@ -1693,7 +1737,7 @@ impl<'a, 'l> Asm<'a, 'l> {
     fn finish_with_render_hints(mut self) -> LegacyBlockOutput {
         // A trailing paragraph with no final mark.
         if !self.para_runs.is_empty() || !self.run_buf.is_empty() {
-            let (para, pagination, column_break_offsets, page_break_offsets) =
+            let (para, pagination, line_spacing_hint, column_break_offsets, page_break_offsets) =
                 self.take_paragraph(u32::MAX);
             if !para.is_blank()
                 || !column_break_offsets.is_empty()
@@ -1701,6 +1745,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             {
                 self.blocks.push(Block::Paragraph(para));
                 self.pagination_hints.push(pagination);
+                self.line_spacing_hints.push(line_spacing_hint);
                 self.column_break_offsets.push(column_break_offsets);
                 self.page_break_offsets.push(page_break_offsets);
                 self.table_row_pagination.push(Vec::new());
@@ -1709,6 +1754,7 @@ impl<'a, 'l> Asm<'a, 'l> {
         }
         self.flush_table();
         debug_assert_eq!(self.pagination_hints.len(), self.blocks.len());
+        debug_assert_eq!(self.line_spacing_hints.len(), self.blocks.len());
         debug_assert_eq!(self.column_break_offsets.len(), self.blocks.len());
         debug_assert_eq!(self.page_break_offsets.len(), self.blocks.len());
         debug_assert_eq!(self.table_row_pagination.len(), self.blocks.len());
@@ -1716,6 +1762,7 @@ impl<'a, 'l> Asm<'a, 'l> {
         LegacyBlockOutput {
             blocks: self.blocks,
             pagination_hints: self.pagination_hints,
+            line_spacing_hints: self.line_spacing_hints,
             column_break_offsets: self.column_break_offsets,
             page_break_offsets: self.page_break_offsets,
             table_row_pagination: self.table_row_pagination,
@@ -1733,6 +1780,7 @@ impl<'a, 'l> Asm<'a, 'l> {
 struct LegacyBlockOutput {
     blocks: Vec<Block>,
     pagination_hints: Vec<PaginationHint>,
+    line_spacing_hints: Vec<Option<LineSpacingHint>>,
     column_break_offsets: Vec<Vec<usize>>,
     page_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
@@ -1743,18 +1791,21 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
     let LegacyBlockOutput {
         blocks,
         pagination_hints,
+        line_spacing_hints,
         column_break_offsets,
         page_break_offsets,
         table_row_pagination,
         table_cell_pagination,
     } = output;
     debug_assert_eq!(pagination_hints.len(), blocks.len());
+    debug_assert_eq!(line_spacing_hints.len(), blocks.len());
     debug_assert_eq!(column_break_offsets.len(), blocks.len());
     debug_assert_eq!(page_break_offsets.len(), blocks.len());
     debug_assert_eq!(table_row_pagination.len(), blocks.len());
     debug_assert_eq!(table_cell_pagination.len(), blocks.len());
 
     let mut pagination_hints = pagination_hints.into_iter();
+    let mut line_spacing_hints = line_spacing_hints.into_iter();
     let mut column_break_offsets = column_break_offsets.into_iter();
     let mut page_break_offsets = page_break_offsets.into_iter();
     let mut table_row_pagination = table_row_pagination.into_iter();
@@ -1763,6 +1814,7 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
 
     for block in blocks {
         let pagination = pagination_hints.next().unwrap_or_default();
+        let line_spacing_hint = line_spacing_hints.next().unwrap_or_default();
         let column_offsets = column_break_offsets.next().unwrap_or_default();
         let page_offsets = page_break_offsets.next().unwrap_or_default();
         let row_pagination = table_row_pagination.next().unwrap_or_default();
@@ -1774,6 +1826,7 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
                 promote_legacy_paragraph_page_breaks(
                     paragraph,
                     pagination,
+                    line_spacing_hint,
                     &column_offsets,
                     &page_offsets,
                     &mut promoted,
@@ -1783,6 +1836,7 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
                 debug_assert!(page_offsets.is_empty());
                 promoted.blocks.push(block);
                 promoted.pagination_hints.push(pagination);
+                promoted.line_spacing_hints.push(line_spacing_hint);
                 promoted.column_break_offsets.push(column_offsets);
                 promoted.page_break_offsets.push(Vec::new());
                 promoted.table_row_pagination.push(row_pagination);
@@ -1796,6 +1850,7 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
 fn promote_legacy_paragraph_page_breaks(
     paragraph: Paragraph,
     pagination: PaginationHint,
+    line_spacing_hint: Option<LineSpacingHint>,
     column_break_offsets: &[usize],
     page_break_offsets: &[usize],
     output: &mut LegacyBlockOutput,
@@ -1824,11 +1879,13 @@ fn promote_legacy_paragraph_page_breaks(
                     &mut current,
                     &props,
                     pagination,
+                    line_spacing_hint,
                     column_break_offsets,
                     segment_start..source_chars,
                 );
                 output.blocks.push(Block::PageBreak);
                 output.pagination_hints.push(PaginationHint::default());
+                output.line_spacing_hints.push(None);
                 output.column_break_offsets.push(Vec::new());
                 output.page_break_offsets.push(Vec::new());
                 output.table_row_pagination.push(Vec::new());
@@ -1850,6 +1907,7 @@ fn promote_legacy_paragraph_page_breaks(
         &mut current,
         &props,
         pagination,
+        line_spacing_hint,
         column_break_offsets,
         segment_start..source_chars,
     );
@@ -1869,6 +1927,7 @@ fn push_legacy_page_break_segment(
     current: &mut Paragraph,
     props: &ParaProps,
     pagination: PaginationHint,
+    line_spacing_hint: Option<LineSpacingHint>,
     column_break_offsets: &[usize],
     segment: std::ops::Range<usize>,
 ) {
@@ -1884,6 +1943,7 @@ fn push_legacy_page_break_segment(
     );
     output.blocks.push(Block::Paragraph(paragraph));
     output.pagination_hints.push(pagination);
+    output.line_spacing_hints.push(line_spacing_hint);
     output.column_break_offsets.push(
         column_break_offsets
             .iter()
@@ -2096,9 +2156,10 @@ mod tests {
         let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
 
         asm.run(&units, &fcs);
-        let assembled = asm.finish_with_render_hints();
+        let mut assembled = asm.finish_with_render_hints();
         assert_eq!(assembled.column_break_offsets, vec![vec![1, 5]]);
         assert_eq!(assembled.page_break_offsets, vec![vec![3]]);
+        assembled.line_spacing_hints[0] = Some(LineSpacingHint::Exact(8.0));
 
         let promoted = promote_legacy_manual_page_breaks(assembled);
         let [Block::Paragraph(before), Block::PageBreak, Block::Paragraph(after)] =
@@ -2111,6 +2172,14 @@ mod tests {
         assert_eq!(
             promoted.column_break_offsets,
             vec![vec![1], vec![], vec![1]]
+        );
+        assert_eq!(
+            promoted.line_spacing_hints,
+            vec![
+                Some(LineSpacingHint::Exact(8.0)),
+                None,
+                Some(LineSpacingHint::Exact(8.0))
+            ]
         );
         assert!(promoted.page_break_offsets.iter().all(Vec::is_empty));
     }
@@ -3108,12 +3177,14 @@ mod tests {
             blocks,
             regions,
             pagination_hints,
+            line_spacing_hints,
             column_break_offsets,
             table_row_pagination,
             table_cell_pagination,
             text_start: _,
         } = build_legacy_region_blocks(&src, &mut numberer, &fib, &plcf_hdd, &[]);
         assert_eq!(pagination_hints.len(), blocks.len());
+        assert_eq!(line_spacing_hints.len(), blocks.len());
         assert_eq!(column_break_offsets.len(), blocks.len());
         assert_eq!(table_row_pagination.len(), blocks.len());
         assert_eq!(table_cell_pagination.len(), blocks.len());

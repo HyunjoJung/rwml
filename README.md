@@ -494,6 +494,11 @@ through the same style inheritance and final direct-PAPX precedence. Omitted
 values materialize the MS-DOC defaults of zero points before/after and single
 line spacing; supported values survive shared-model use, `.docx`
 conversion/reopen, and top-level or table-cell PDF preview layout.
+Opened legacy PDF previews additionally retain positive non-multiple LSPD as a
+minimum line box and negative encoded LSPD as an exact line box for top-level
+main-story paragraphs through block-aligned private render hints. Exact boxes
+use the same centered or bottom-aligned baseline and vertical clipping behavior
+as opened DOCX. The hints survive promoted manual page-break fragments.
 Direct and paragraph-style `sprmPShd80` and `sprmPShd` paragraph shading also
 reaches the shared model, `.docx` conversion/reopen, and PDF preview when the
 source result collapses exactly to one explicit RGB fill: clear uses its
@@ -506,9 +511,11 @@ A truncated or unsizeable direct shading modifier suppresses the effective
 fill and stops that PAPX scan; a structurally malformed style UPX invalidates
 its local style payload. A later paragraph-style modifier resets earlier
 direct shading.
-At-least/exact and explicit
-zero proportional LSPD values clear an inherited multiplier but remain unset
-because the shared model has no corresponding line-rule representation.
+At-least/exact and explicit zero proportional LSPD values clear an inherited
+multiplier but remain unset in the shared model because it has no corresponding
+line-rule representation. Exact/minimum spacing in legacy table cells, running
+surfaces, shared-model use, and fresh `.docx` conversion remains outside this
+source-only preview bridge.
 Paragraph direction does not imply table mirroring. Opened
 legacy tables preserve strict direct row-mark
 `sprmTFBiDi` and compatibility
