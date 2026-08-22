@@ -226,6 +226,9 @@ pub(crate) struct DocxState {
     /// Renderer-only direct table-cell paragraph controls aligned to body model blocks.
     #[cfg(feature = "render")]
     pub table_cell_pagination: Vec<crate::model::TableCellPaginationHints>,
+    /// Renderer-only table-cell exact/minimum line spacing aligned to body model blocks.
+    #[cfg(feature = "render")]
+    pub table_cell_line_spacing: Vec<crate::model::TableCellLineSpacingHints>,
     /// Renderer-only recursive nested-table controls aligned to body model blocks.
     #[cfg(feature = "render")]
     pub table_nested_pagination: Vec<crate::model::TableCellNestedPaginationHints>,
@@ -448,6 +451,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         section_column_gap_pt,
         table_rows: table_row_pagination,
         table_cells: table_cell_pagination,
+        table_cell_line_spacing,
         table_nested: table_nested_pagination,
         table_cell_tabs: table_cell_tab_stops,
     } = ctx.take_render_hints();
@@ -698,6 +702,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         table_row_pagination,
         #[cfg(feature = "render")]
         table_cell_pagination,
+        #[cfg(feature = "render")]
+        table_cell_line_spacing,
         #[cfg(feature = "render")]
         table_nested_pagination,
         #[cfg(feature = "render")]

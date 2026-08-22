@@ -352,6 +352,38 @@ fn paragraph_layout_render_variant_docx(style_properties: &str) -> Vec<u8> {
 }
 
 #[cfg(feature = "render")]
+fn table_cell_absolute_line_spacing_docx(paragraph_properties: &str, nested: bool) -> Vec<u8> {
+    let content_types = content_types(false);
+    let paragraph = format!(
+        r#"<w:p><w:pPr>{paragraph_properties}</w:pPr>
+            <w:r><w:t>table-cell absolute spacing</w:t></w:r></w:p>"#
+    );
+    let cell_content = if nested {
+        format!(r#"<w:tbl><w:tr><w:tc>{paragraph}</w:tc></w:tr></w:tbl><w:p/>"#)
+    } else {
+        paragraph
+    };
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:tbl><w:tr><w:tc>{cell_content}</w:tc></w:tr></w:tbl>
+            <w:p><w:r><w:t>following paragraph</w:t></w:r></w:p>
+            <w:sectPr><w:pgSz w:w="4400" w:h="6000"/>
+                <w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
+#[cfg(feature = "render")]
 fn table_pagination_docx(
     table_properties: &str,
     direct_row_props: &str,
@@ -977,6 +1009,45 @@ fn opened_docx_render_consumes_each_style_layout_value() {
         assert!(rendered.starts_with(b"%PDF-"), "{name}");
         assert_ne!(rendered, baseline, "{name} must affect PDF output");
         assert_eq!(rendered, render(properties), "{name} must be deterministic");
+    }
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_consumes_direct_and_nested_table_cell_absolute_line_spacing() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let render = |properties: &str, nested: bool| {
+        Document::open(&table_cell_absolute_line_spacing_docx(properties, nested))
+            .expect("table-cell line-spacing fixture opens")
+            .to_pdf_with_fonts(&fonts)
+    };
+
+    for (name, properties, nested) in [
+        (
+            "direct exact spacing",
+            r#"<w:spacing w:line="100" w:lineRule="exact"/>"#,
+            false,
+        ),
+        (
+            "direct minimum spacing",
+            r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#,
+            false,
+        ),
+        (
+            "nested exact spacing",
+            r#"<w:spacing w:line="800" w:lineRule="exact"/>"#,
+            true,
+        ),
+    ] {
+        let baseline = render("", nested);
+        let rendered = render(properties, nested);
+        assert!(rendered.starts_with(b"%PDF-"), "{name}");
+        assert_ne!(rendered, baseline, "{name} must affect PDF output");
+        assert_eq!(
+            rendered,
+            render(properties, nested),
+            "{name} must be deterministic"
+        );
     }
 }
 

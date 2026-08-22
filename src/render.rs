@@ -48,8 +48,9 @@ use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
     FieldRole, Image, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
     Run, SectionBreakKind, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
-    TableBorderSide, TableCellNestedPaginationHints, TableCellPaginationHints,
-    TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
+    TableBorderSide, TableCellLineSpacingHints, TableCellNestedPaginationHints,
+    TableCellPaginationHints, TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint,
+    VCell, VertAlign,
 };
 use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
 use crate::{Error, Result};
@@ -169,6 +170,7 @@ pub(crate) struct SourceRenderHints<'a> {
     pub(crate) default_tab_stop_pt: Option<f32>,
     pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     pub(crate) table_cell_pagination: &'a [TableCellPaginationHints],
+    pub(crate) table_cell_line_spacing: &'a [TableCellLineSpacingHints],
     pub(crate) table_nested_pagination: &'a [TableCellNestedPaginationHints],
     pub(crate) table_cell_tab_stops: &'a [TableCellTabStopHints],
 }
@@ -3147,7 +3149,9 @@ fn shape_cell(
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) -> Vec<LineLayout> {
-    shape_cell_with_pagination(cell, None, None, None, None, inner_w, depth, cx, capture)
+    shape_cell_with_pagination(
+        cell, None, None, None, None, None, inner_w, depth, cx, capture,
+    )
 }
 
 #[cfg(test)]
@@ -3155,6 +3159,7 @@ fn shape_cell(
 fn shape_cell_with_pagination(
     cell: &Cell,
     pagination: Option<&[Option<PaginationHint>]>,
+    line_spacing: Option<&[Option<LineSpacingHint>]>,
     tab_stops: Option<&[Vec<TabStop>]>,
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
     default_tab_stop_pt: Option<f32>,
@@ -3167,6 +3172,7 @@ fn shape_cell_with_pagination(
     shape_cell_with_pagination_and_lists(
         cell,
         pagination,
+        line_spacing,
         tab_stops,
         nested_pagination,
         default_tab_stop_pt,
@@ -3182,6 +3188,7 @@ fn shape_cell_with_pagination(
 fn shape_cell_with_pagination_and_lists(
     cell: &Cell,
     pagination: Option<&[Option<PaginationHint>]>,
+    line_spacing: Option<&[Option<LineSpacingHint>]>,
     tab_stops: Option<&[Vec<TabStop>]>,
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
     default_tab_stop_pt: Option<f32>,
@@ -3199,6 +3206,7 @@ fn shape_cell_with_pagination_and_lists(
     shape_cell_in_scope(
         cell,
         pagination,
+        line_spacing,
         tab_stops,
         nested_pagination,
         default_tab_stop_pt,
@@ -3261,6 +3269,7 @@ impl CellShapeState {
 fn shape_cell_in_scope(
     cell: &Cell,
     pagination: Option<&[Option<PaginationHint>]>,
+    line_spacing: Option<&[Option<LineSpacingHint>]>,
     tab_stops: Option<&[Vec<TabStop>]>,
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
     default_tab_stop_pt: Option<f32>,
@@ -3288,6 +3297,10 @@ fn shape_cell_in_scope(
                     .and_then(|stops| stops.get(block_index))
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
+                let line_spacing_hint = line_spacing
+                    .and_then(|hints| hints.get(block_index))
+                    .copied()
+                    .flatten();
                 let ShapedParagraph {
                     lines: mut paragraph_lines,
                     ..
@@ -3296,7 +3309,7 @@ fn shape_cell_in_scope(
                     marker.as_deref(),
                     paragraph_tab_stops,
                     default_tab_stop_pt,
-                    None,
+                    line_spacing_hint,
                     inner_w,
                     cx,
                     capture,
@@ -3341,6 +3354,10 @@ fn shape_cell_in_scope(
                             .and_then(|table| table.cell_tabs.get(row_index))
                             .and_then(|row| row.get(cell_index))
                             .map(Vec::as_slice);
+                        let nested_cell_line_spacing = table_pagination
+                            .and_then(|table| table.cell_line_spacing.get(row_index))
+                            .and_then(|row| row.get(cell_index))
+                            .map(Vec::as_slice);
                         let nested_cell_tables = table_pagination
                             .and_then(|table| table.nested.get(row_index))
                             .and_then(|row| row.get(cell_index))
@@ -3349,6 +3366,7 @@ fn shape_cell_in_scope(
                         lines.extend(shape_cell_in_scope(
                             c,
                             nested_cell_pagination,
+                            nested_cell_line_spacing,
                             nested_cell_tab_stops,
                             nested_cell_tables,
                             default_tab_stop_pt,
@@ -3400,6 +3418,7 @@ fn layout_table(
 struct TablePaginationView<'a> {
     rows: Option<&'a [TableRowPaginationHint]>,
     cells: Option<&'a TableCellPaginationHints>,
+    cell_line_spacing: Option<&'a TableCellLineSpacingHints>,
     nested: Option<&'a TableCellNestedPaginationHints>,
     cell_tabs: Option<&'a TableCellTabStopHints>,
     default_tab_stop_pt: Option<f32>,
@@ -3582,6 +3601,9 @@ fn layout_table_with_row_pagination_and_lists(
         let mut cells = Vec::with_capacity(placed_row.len());
         let mut row_h = 0.0_f32;
         let row_cell_pagination = pagination.cells.and_then(|rows| rows.get(row_index));
+        let row_cell_line_spacing = pagination
+            .cell_line_spacing
+            .and_then(|rows| rows.get(row_index));
         let row_nested_pagination = pagination.nested.and_then(|rows| rows.get(row_index));
         let row_cell_tab_stops = pagination.cell_tabs.and_then(|rows| rows.get(row_index));
         let mut source_cell_index = 0usize;
@@ -3632,28 +3654,41 @@ fn layout_table_with_row_pagination_and_lists(
                     TableBorderSide::InsideVertical
                 }),
             };
-            let (direct_pagination, direct_tab_stops, direct_nested_pagination) =
-                if pc.cell.is_some() {
-                    let paragraph_hints = row_cell_pagination
-                        .and_then(|cells| cells.get(source_cell_index))
-                        .map(Vec::as_slice);
-                    let paragraph_tab_stops = row_cell_tab_stops
-                        .and_then(|cells| cells.get(source_cell_index))
-                        .map(Vec::as_slice);
-                    let nested_hints = row_nested_pagination
-                        .and_then(|cells| cells.get(source_cell_index))
-                        .map(Vec::as_slice);
-                    source_cell_index += 1;
-                    (paragraph_hints, paragraph_tab_stops, nested_hints)
-                } else {
-                    (None, None, None)
-                };
+            let (
+                direct_pagination,
+                direct_line_spacing,
+                direct_tab_stops,
+                direct_nested_pagination,
+            ) = if pc.cell.is_some() {
+                let paragraph_hints = row_cell_pagination
+                    .and_then(|cells| cells.get(source_cell_index))
+                    .map(Vec::as_slice);
+                let paragraph_line_spacing = row_cell_line_spacing
+                    .and_then(|cells| cells.get(source_cell_index))
+                    .map(Vec::as_slice);
+                let paragraph_tab_stops = row_cell_tab_stops
+                    .and_then(|cells| cells.get(source_cell_index))
+                    .map(Vec::as_slice);
+                let nested_hints = row_nested_pagination
+                    .and_then(|cells| cells.get(source_cell_index))
+                    .map(Vec::as_slice);
+                source_cell_index += 1;
+                (
+                    paragraph_hints,
+                    paragraph_line_spacing,
+                    paragraph_tab_stops,
+                    nested_hints,
+                )
+            } else {
+                (None, None, None, None)
+            };
             let (lines, insets, shading, valign) = match pc.cell {
                 Some(c) => {
                     let insets = cell_insets(c.margins, width);
                     let lines = shape_cell_with_pagination_and_lists(
                         c,
                         direct_pagination,
+                        direct_line_spacing,
                         direct_tab_stops,
                         direct_nested_pagination,
                         pagination.default_tab_stop_pt,
@@ -4042,6 +4077,7 @@ struct BlockCollectionOptions<'a> {
     default_tab_stop_pt: Option<f32>,
     table_row_pagination: Option<&'a [Vec<TableRowPaginationHint>]>,
     table_cell_pagination: Option<&'a [TableCellPaginationHints]>,
+    table_cell_line_spacing: Option<&'a [TableCellLineSpacingHints]>,
     table_nested_pagination: Option<&'a [TableCellNestedPaginationHints]>,
     table_cell_tab_stops: Option<&'a [TableCellTabStopHints]>,
     top_bottom_bands: Option<&'a [Vec<TopBottomBand>]>,
@@ -4058,6 +4094,7 @@ struct BodyCollectionSidecars<'a> {
     default_tab_stop_pt: Option<f32>,
     table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     table_cell_pagination: &'a [TableCellPaginationHints],
+    table_cell_line_spacing: &'a [TableCellLineSpacingHints],
     table_nested_pagination: &'a [TableCellNestedPaginationHints],
     table_cell_tab_stops: &'a [TableCellTabStopHints],
     top_bottom_bands: &'a [Vec<TopBottomBand>],
@@ -4089,6 +4126,7 @@ fn collect_blocks_with_block_anchors(
             default_tab_stop_pt: sidecars.default_tab_stop_pt,
             table_row_pagination: Some(sidecars.table_row_pagination),
             table_cell_pagination: Some(sidecars.table_cell_pagination),
+            table_cell_line_spacing: Some(sidecars.table_cell_line_spacing),
             table_nested_pagination: Some(sidecars.table_nested_pagination),
             table_cell_tab_stops: Some(sidecars.table_cell_tab_stops),
             top_bottom_bands: Some(sidecars.top_bottom_bands),
@@ -4202,6 +4240,9 @@ fn collect_blocks_inner(
                 let cell_pagination = options
                     .table_cell_pagination
                     .and_then(|tables| tables.get(block_index));
+                let cell_line_spacing = options
+                    .table_cell_line_spacing
+                    .and_then(|tables| tables.get(block_index));
                 let nested_pagination = options
                     .table_nested_pagination
                     .and_then(|tables| tables.get(block_index));
@@ -4217,6 +4258,7 @@ fn collect_blocks_inner(
                     TablePaginationView {
                         rows: row_pagination,
                         cells: cell_pagination,
+                        cell_line_spacing,
                         nested: nested_pagination,
                         cell_tabs: cell_tab_stops,
                         default_tab_stop_pt: options.default_tab_stop_pt,
@@ -4273,8 +4315,15 @@ fn fill_rect_color(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32, co
     }
 }
 
-fn push_vertical_line_clip(surface: &mut Surface<'_>, top: f32, height: f32, width: f32) -> bool {
-    if !top.is_finite()
+fn push_vertical_line_clip(
+    surface: &mut Surface<'_>,
+    left: f32,
+    top: f32,
+    height: f32,
+    width: f32,
+) -> bool {
+    if !left.is_finite()
+        || !top.is_finite()
         || !height.is_finite()
         || !width.is_finite()
         || height <= 0.0
@@ -4283,10 +4332,10 @@ fn push_vertical_line_clip(surface: &mut Surface<'_>, top: f32, height: f32, wid
         return false;
     }
     let mut path = PathBuilder::new();
-    path.move_to(0.0, top);
-    path.line_to(width, top);
-    path.line_to(width, top + height);
-    path.line_to(0.0, top + height);
+    path.move_to(left, top);
+    path.line_to(left + width, top);
+    path.line_to(left + width, top + height);
+    path.line_to(left, top + height);
     path.close();
     let Some(path) = path.finish() else {
         return false;
@@ -4690,6 +4739,8 @@ fn draw_table_cell_content(
     page_links: &mut Vec<(f32, f32, f32, f32, Rc<str>)>,
 ) {
     let offset = cell_vertical_offset(&cell, placement.row_height);
+    let clip_left = placement.x;
+    let clip_width = cell.width;
     let mut line_top = placement.top + cell.insets.top + offset;
     for line in cell.lines {
         line_top += line.cell_spacing.before;
@@ -4697,6 +4748,8 @@ fn draw_table_cell_content(
         let line_height = line.height;
         let after = line.cell_spacing.after;
         let line_x = cell_line_origin(placement.x, cell.insets, &line);
+        let clip_content = line.clip_to_height
+            && push_vertical_line_clip(surface, clip_left, line_top, line_height, clip_width);
         draw_line_background(surface, &line, line_x, line_top);
         draw_line_leaders(surface, &line, line_x, line_top, baseline);
         for run in line.runs {
@@ -4711,6 +4764,9 @@ fn draw_table_cell_content(
                 ));
             }
             draw_run_with_page_context(surface, run, line_x, baseline, page_number, cx);
+        }
+        if clip_content {
+            surface.pop();
         }
         line_top += line_height + after;
     }
@@ -7748,6 +7804,7 @@ fn collect_pdf_flow_items(
             default_tab_stop_pt: source_hints.default_tab_stop_pt,
             table_row_pagination: source_hints.table_row_pagination,
             table_cell_pagination: source_hints.table_cell_pagination,
+            table_cell_line_spacing: source_hints.table_cell_line_spacing,
             table_nested_pagination: source_hints.table_nested_pagination,
             table_cell_tab_stops: source_hints.table_cell_tab_stops,
             top_bottom_bands: &top_bottom_bands,
@@ -8358,7 +8415,7 @@ fn render_pdf(
                     let x0 = page_geom.left + column_x + line.x_indent;
                     let lh = line.height;
                     let clip_content = line.clip_to_height
-                        && push_vertical_line_clip(&mut surface, top, lh, page_geom.page_w);
+                        && push_vertical_line_clip(&mut surface, 0.0, top, lh, page_geom.page_w);
                     draw_line_background(&mut surface, &line, x0, top);
                     draw_line_leaders(&mut surface, &line, x0, top, baseline);
                     for run in line.runs {
@@ -11589,6 +11646,83 @@ mod tests {
     }
 
     #[test]
+    fn table_cell_absolute_line_spacing_reaches_direct_and_nested_paragraphs() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let paragraph = |text: &str| {
+            Block::Paragraph(Paragraph {
+                runs: vec![Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                }],
+                ..Paragraph::default()
+            })
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        paragraph("direct"),
+                        Block::Table(Table {
+                            rows: vec![Row {
+                                cells: vec![Cell {
+                                    blocks: vec![paragraph("nested")],
+                                    ..Cell::default()
+                                }],
+                            }],
+                            ..Table::default()
+                        }),
+                    ],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let cell_line_spacing = vec![vec![vec![Some(LineSpacingHint::Exact(8.0)), None]]];
+        let nested_pagination = vec![vec![vec![
+            None,
+            Some(TablePaginationHints {
+                rows: vec![TableRowPaginationHint::default()],
+                cells: vec![vec![vec![None]]],
+                cell_line_spacing: vec![vec![vec![Some(LineSpacingHint::AtLeast(40.0))]]],
+                nested: vec![vec![vec![None]]],
+                cell_tabs: vec![vec![vec![Vec::new()]]],
+            }),
+        ]]];
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table_with_row_pagination(
+            &table,
+            &mut flow,
+            Geom::from_setup(&PageSetup::default()),
+            &mut tcx,
+            &mut capture,
+            TablePaginationView {
+                cell_line_spacing: Some(&cell_line_spacing),
+                nested: Some(&nested_pagination),
+                ..TablePaginationView::default()
+            },
+        );
+        let FlowItem::Table { rows, .. } = &flow[0] else {
+            panic!("table flow item");
+        };
+        let lines = &rows[0].cells[0].lines;
+
+        assert_eq!(lines.len(), 2);
+        assert_close(lines[0].height, 8.0);
+        assert!(lines[0].clip_to_height);
+        assert_close(lines[1].height, 40.0);
+        assert!(!lines[1].clip_to_height);
+    }
+
+    #[test]
     fn table_cell_explicit_paragraph_spacing_expands_row_not_line_box() {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
@@ -12358,6 +12492,10 @@ mod tests {
                         .collect::<Vec<_>>()
                 })
                 .collect()],
+            cell_line_spacing: vec![nested_cells
+                .iter()
+                .map(|paragraphs| vec![None; paragraphs.len()])
+                .collect()],
             nested: vec![nested_cells
                 .iter()
                 .map(|paragraphs| vec![None; paragraphs.len()])
@@ -12422,6 +12560,7 @@ mod tests {
             let table_hints = TablePaginationHints {
                 rows: vec![TableRowPaginationHint::default()],
                 cells: vec![vec![direct_hints]],
+                cell_line_spacing: vec![vec![vec![None]]],
                 nested: vec![vec![nested_hints]],
                 cell_tabs: vec![vec![vec![Vec::new()]]],
             };

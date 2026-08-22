@@ -2949,6 +2949,7 @@ impl Document {
                         final_section_column_gap_pt: d.final_section_column_gap_pt,
                         table_row_pagination: &d.table_row_pagination,
                         table_cell_pagination: &d.table_cell_pagination,
+                        table_cell_line_spacing: &d.table_cell_line_spacing,
                         table_nested_pagination: &d.table_nested_pagination,
                         table_cell_tab_stops: &d.table_cell_tab_stops,
                         default_tab_stop_pt: d.default_tab_stop_pt,

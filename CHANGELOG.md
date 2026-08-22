@@ -8,14 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Extends opened-DOCX `exact` and `atLeast` paragraph line spacing into ordinary
+  and recursively nested table cells through merge-owner- and block-aligned
+  private render hints. Explicit page-break fragments preserve their source
+  rule; selected compatibility wrappers and nested tables retain recursive
+  alignment; exact over-tall content is vertically clipped to its cell line
+  box; and at-least values only expand shorter natural lines. Notes, running
+  headers/footers, model-authored content, fresh conversion, nested grid
+  geometry, and nesting beyond the renderer's existing 32-level flattening
+  bound remain unchanged.
 - Applies resolved `w:spacing` `exact` and `atLeast` line rules to top-level
   body paragraphs in opened-DOCX PDF previews through block-aligned private
   render hints. Values use twentieths of a point after style/direct cascading;
   exact boxes center fitting text and bottom-align with vertical clipping when
   undersized, while at-least boxes only expand shorter natural lines. Explicit
-  page-break splits retain alignment. The public model, table-cell paragraphs,
-  notes, running surfaces, authored content, and fresh conversion remain
-  unchanged.
+  page-break splits retain alignment. The public model, notes, running
+  surfaces, authored content, and fresh conversion remain unchanged.
 - Computes `NOTEREF`/`FTNREF` fields that target a `w:customMarkFollows`
   footnote or endnote when its non-empty literal mark immediately follows the
   reference inside the bookmark. Ambiguous marks retain cached field text, and
