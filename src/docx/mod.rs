@@ -211,6 +211,9 @@ pub(crate) struct DocxState {
     /// Renderer-only exact/minimum line spacing aligned to `notes` blocks.
     #[cfg(feature = "render")]
     pub note_line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
+    /// Renderer-only exact/minimum line spacing for section running surfaces.
+    #[cfg(feature = "render")]
+    pub running_line_spacing_hints: Vec<crate::render::RunningSurfaceLineSpacingHints>,
     /// Renderer-only resolved explicit tab stops aligned to body model blocks.
     #[cfg(feature = "render")]
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
@@ -549,6 +552,9 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     );
     floating_shapes.extend(header_footer_floating_shapes);
     text_boxes.extend(header_footer_text_boxes);
+    #[cfg(feature = "render")]
+    let running_line_spacing_hints =
+        running_line_spacing_by_model_section(&blocks, &section_header_footers);
     apply_section_header_footers(&mut blocks, &section_header_footers);
     let comments_xml = part(&mut zip, "word/comments.xml");
     let comments_ext_xml = part(&mut zip, "word/commentsExtended.xml");
@@ -698,6 +704,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         #[cfg(feature = "render")]
         note_line_spacing_hints: note_part.line_spacing,
         #[cfg(feature = "render")]
+        running_line_spacing_hints,
+        #[cfg(feature = "render")]
         tab_stops,
         #[cfg(feature = "render")]
         column_break_offsets,
@@ -748,6 +756,8 @@ struct SectionHeaderFooter {
     footer: Vec<Block>,
     first_footer: Vec<Block>,
     even_footer: Vec<Block>,
+    #[cfg(feature = "render")]
+    line_spacing: crate::render::RunningSurfaceLineSpacingHints,
 }
 
 #[derive(Default)]
@@ -755,6 +765,14 @@ struct HeaderFooterBlocks {
     default: Vec<Block>,
     first: Vec<Block>,
     even: Vec<Block>,
+}
+
+#[cfg(feature = "render")]
+#[derive(Default)]
+struct HeaderFooterLineSpacing {
+    default: Vec<Option<crate::model::LineSpacingHint>>,
+    first: Vec<Option<crate::model::LineSpacingHint>>,
+    even: Vec<Option<crate::model::LineSpacingHint>>,
 }
 
 struct HeaderFooterRead {
@@ -770,6 +788,8 @@ struct HeaderFooterRead {
 
 struct HeaderFooterPartRead {
     blocks: HeaderFooterBlocks,
+    #[cfg(feature = "render")]
+    line_spacing: HeaderFooterLineSpacing,
     records: Vec<HeaderFooter>,
     comment_anchors: HashMap<String, TextAnchor>,
     text_boxes: Vec<TextBox>,
@@ -826,12 +846,18 @@ fn read_headers_footers(
     let mut seen_text_boxes = std::collections::HashSet::new();
     let mut inherited_header = Vec::new();
     let mut inherited_footer = Vec::new();
+    #[cfg(feature = "render")]
+    let mut inherited_header_line_spacing = Vec::new();
+    #[cfg(feature = "render")]
+    let mut inherited_footer_line_spacing = Vec::new();
 
     for refs in section_refs {
         let header_has_default = has_default_header_footer_ref(&refs.headers);
         let footer_has_default = has_default_header_footer_ref(&refs.footers);
         let HeaderFooterPartRead {
             blocks: header_blocks,
+            #[cfg(feature = "render")]
+                line_spacing: header_line_spacing,
             records: header_records,
             comment_anchors: header_comment_anchors,
             text_boxes: header_text_boxes,
@@ -852,17 +878,29 @@ fn read_headers_footers(
         extend_unique_floating_shape_records(&mut floating_shapes, header_floating_shapes);
         field_entries.extend(header_fields);
         let mut header = header_blocks.default;
+        #[cfg(feature = "render")]
+        let mut header_spacing = header_line_spacing.default;
         // Omitted odd/default refs inherit the previous section; an explicit
         // default ref, even when blank/unresolved, resets the inherited surface.
         if !header_has_default && !inherited_header.is_empty() {
             header = inherited_header.clone();
+            #[cfg(feature = "render")]
+            {
+                header_spacing = inherited_header_line_spacing.clone();
+            }
         }
         if header_has_default || !header.is_empty() {
             inherited_header = header.clone();
+            #[cfg(feature = "render")]
+            {
+                inherited_header_line_spacing = header_spacing.clone();
+            }
         }
 
         let HeaderFooterPartRead {
             blocks: footer_blocks,
+            #[cfg(feature = "render")]
+                line_spacing: footer_line_spacing,
             records: footer_records,
             comment_anchors: footer_comment_anchors,
             text_boxes: footer_text_boxes,
@@ -883,12 +921,22 @@ fn read_headers_footers(
         extend_unique_floating_shape_records(&mut floating_shapes, footer_floating_shapes);
         field_entries.extend(footer_fields);
         let mut footer = footer_blocks.default;
+        #[cfg(feature = "render")]
+        let mut footer_spacing = footer_line_spacing.default;
         // Same inheritance rule as headers.
         if !footer_has_default && !inherited_footer.is_empty() {
             footer = inherited_footer.clone();
+            #[cfg(feature = "render")]
+            {
+                footer_spacing = inherited_footer_line_spacing.clone();
+            }
         }
         if footer_has_default || !footer.is_empty() {
             inherited_footer = footer.clone();
+            #[cfg(feature = "render")]
+            {
+                inherited_footer_line_spacing = footer_spacing.clone();
+            }
         }
         sections.push(SectionHeaderFooter {
             header,
@@ -897,6 +945,15 @@ fn read_headers_footers(
             footer,
             first_footer: footer_blocks.first,
             even_footer: footer_blocks.even,
+            #[cfg(feature = "render")]
+            line_spacing: crate::render::RunningSurfaceLineSpacingHints {
+                header: header_spacing,
+                first_header: header_line_spacing.first,
+                even_header: header_line_spacing.even,
+                footer: footer_spacing,
+                first_footer: footer_line_spacing.first,
+                even_footer: footer_line_spacing.even,
+            },
         });
     }
 
@@ -985,6 +1042,30 @@ fn apply_section_header_footers(blocks: &mut [Block], sections: &[SectionHeaderF
     }
 }
 
+#[cfg(feature = "render")]
+fn running_line_spacing_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::render::RunningSurfaceLineSpacingHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::render::RunningSurfaceLineSpacingHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.line_spacing.clone();
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.line_spacing.clone();
+    }
+    aligned
+}
+
 fn has_default_header_footer_ref(refs: &[body::HeaderFooterRef]) -> bool {
     refs.iter()
         .any(|reference| normalized_header_footer_type(&reference.type_name) == "default")
@@ -1017,6 +1098,8 @@ fn read_hf_parts(
     let mut seen_revisions = std::collections::HashSet::new();
     let mut seen_floating_shapes = std::collections::HashSet::new();
     let mut blocks = HeaderFooterBlocks::default();
+    #[cfg(feature = "render")]
+    let mut line_spacing = HeaderFooterLineSpacing::default();
     let mut records = Vec::new();
     let mut comment_anchors = HashMap::new();
     let mut text_boxes = Vec::new();
@@ -1208,12 +1291,28 @@ fn read_hf_parts(
                 preserve_legacy_form_cache,
             ));
         }
+        #[cfg(feature = "render")]
+        hf_ctx.begin_pagination_capture();
         let part_blocks = body::parse_hdrftr(&xml, &hf_ctx);
+        #[cfg(feature = "render")]
+        let part_line_spacing = hf_ctx.take_render_hints().line_spacing;
         if seen_blocks.insert((path.clone(), type_name.to_string())) {
             match type_name {
-                "first" => blocks.first.extend(part_blocks.clone()),
-                "even" => blocks.even.extend(part_blocks.clone()),
-                _ => blocks.default.extend(part_blocks.clone()),
+                "first" => {
+                    blocks.first.extend(part_blocks.clone());
+                    #[cfg(feature = "render")]
+                    line_spacing.first.extend(part_line_spacing);
+                }
+                "even" => {
+                    blocks.even.extend(part_blocks.clone());
+                    #[cfg(feature = "render")]
+                    line_spacing.even.extend(part_line_spacing);
+                }
+                _ => {
+                    blocks.default.extend(part_blocks.clone());
+                    #[cfg(feature = "render")]
+                    line_spacing.default.extend(part_line_spacing);
+                }
             }
         }
         if seen_records.insert((path.clone(), type_name.to_string())) {
@@ -1230,6 +1329,8 @@ fn read_hf_parts(
     }
     HeaderFooterPartRead {
         blocks,
+        #[cfg(feature = "render")]
+        line_spacing,
         records,
         comment_anchors,
         text_boxes,

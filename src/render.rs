@@ -159,6 +159,16 @@ const RIGHT_TO_LEFT_MARK: char = '\u{200F}';
 const RIGHT_TO_LEFT_ISOLATE: char = '\u{2067}';
 const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceLineSpacingHints {
+    pub(crate) header: Vec<Option<LineSpacingHint>>,
+    pub(crate) first_header: Vec<Option<LineSpacingHint>>,
+    pub(crate) even_header: Vec<Option<LineSpacingHint>>,
+    pub(crate) footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) first_footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) even_footer: Vec<Option<LineSpacingHint>>,
+}
+
 #[derive(Clone, Copy, Default)]
 pub(crate) struct SourceRenderHints<'a> {
     pub(crate) pagination: &'a [PaginationHint],
@@ -173,6 +183,7 @@ pub(crate) struct SourceRenderHints<'a> {
     pub(crate) table_cell_line_spacing: &'a [TableCellLineSpacingHints],
     pub(crate) table_nested_pagination: &'a [TableCellNestedPaginationHints],
     pub(crate) table_cell_tab_stops: &'a [TableCellTabStopHints],
+    pub(crate) running_line_spacing: &'a [RunningSurfaceLineSpacingHints],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -558,6 +569,7 @@ impl LayoutCapture {
 struct RenderPageSection {
     setup: SectionSetup,
     first_page_index: usize,
+    section_index: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -3897,10 +3909,25 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
 /// Lay out blocks and keep only the text lines (used for running headers/footers,
 /// which are drawn compactly in the page margins; tables/images there are rare and
 /// dropped).
-fn layout_lines(blocks: &[Block], geom: Geom, cx: &mut TextCx<'_>) -> Vec<LineLayout> {
+fn layout_lines(
+    blocks: &[Block],
+    line_spacing_hints: &[Option<LineSpacingHint>],
+    geom: Geom,
+    cx: &mut TextCx<'_>,
+) -> Vec<LineLayout> {
     let mut items = Vec::new();
     let mut capture = LayoutCapture::default();
-    collect_blocks(blocks, &mut items, geom, cx, &mut capture);
+    collect_blocks_inner(
+        blocks,
+        &mut items,
+        geom,
+        cx,
+        &mut capture,
+        BlockCollectionOptions {
+            line_spacing_hints: Some(line_spacing_hints),
+            ..BlockCollectionOptions::default()
+        },
+    );
     items
         .into_iter()
         .filter_map(|i| match i {
@@ -3918,6 +3945,54 @@ trait RunningSurfaceSetup {
     fn first_footer(&self) -> &[Block];
     fn even_footer(&self) -> &[Block];
     fn title_page(&self) -> bool;
+}
+
+#[derive(Clone, Copy)]
+enum RunningSurfaceVariant {
+    Default,
+    First,
+    Even,
+}
+
+fn running_surface_variants_for_page<T: RunningSurfaceSetup + ?Sized>(
+    setup: &T,
+    page_number: usize,
+    is_first_section_page: bool,
+) -> (RunningSurfaceVariant, RunningSurfaceVariant) {
+    let title_page = is_first_section_page
+        && (setup.title_page()
+            || !setup.first_header().is_empty()
+            || !setup.first_footer().is_empty());
+    let header = if title_page {
+        RunningSurfaceVariant::First
+    } else if page_number % 2 == 0 && !setup.even_header().is_empty() {
+        RunningSurfaceVariant::Even
+    } else {
+        RunningSurfaceVariant::Default
+    };
+    let footer = if title_page {
+        RunningSurfaceVariant::First
+    } else if page_number % 2 == 0 && !setup.even_footer().is_empty() {
+        RunningSurfaceVariant::Even
+    } else {
+        RunningSurfaceVariant::Default
+    };
+    (header, footer)
+}
+
+fn running_surface_line_spacing(
+    hints: &RunningSurfaceLineSpacingHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[Option<LineSpacingHint>] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header,
+        (true, RunningSurfaceVariant::First) => &hints.first_header,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header,
+        (false, RunningSurfaceVariant::Default) => &hints.footer,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer,
+    }
 }
 
 impl RunningSurfaceSetup for crate::model::DocSetup {
@@ -3985,23 +4060,17 @@ fn running_header_footer_blocks_for_page<T: RunningSurfaceSetup + ?Sized>(
     page_number: usize,
     is_first_section_page: bool,
 ) -> (&[Block], &[Block]) {
-    let title_page = is_first_section_page
-        && (setup.title_page()
-            || !setup.first_header().is_empty()
-            || !setup.first_footer().is_empty());
-    let header = if title_page {
-        setup.first_header()
-    } else if page_number % 2 == 0 && !setup.even_header().is_empty() {
-        setup.even_header()
-    } else {
-        setup.header()
+    let (header_variant, footer_variant) =
+        running_surface_variants_for_page(setup, page_number, is_first_section_page);
+    let header = match header_variant {
+        RunningSurfaceVariant::Default => setup.header(),
+        RunningSurfaceVariant::First => setup.first_header(),
+        RunningSurfaceVariant::Even => setup.even_header(),
     };
-    let footer = if title_page {
-        setup.first_footer()
-    } else if page_number % 2 == 0 && !setup.even_footer().is_empty() {
-        setup.even_footer()
-    } else {
-        setup.footer()
+    let footer = match footer_variant {
+        RunningSurfaceVariant::Default => setup.footer(),
+        RunningSurfaceVariant::First => setup.first_footer(),
+        RunningSurfaceVariant::Even => setup.even_footer(),
     };
     (header, footer)
 }
@@ -4011,6 +4080,7 @@ fn assign_section_to_render_pages(
     start_page_index: usize,
     end_page_index: usize,
     setup: &SectionSetup,
+    section_index: usize,
 ) {
     if page_sections.is_empty() {
         return;
@@ -4025,6 +4095,7 @@ fn assign_section_to_render_pages(
         *page_section = Some(RenderPageSection {
             setup: setup.clone(),
             first_page_index: start,
+            section_index,
         });
     }
 }
@@ -7435,6 +7506,7 @@ fn paginate_with_column_gap(
     let mut pages: Pages = vec![Vec::new()];
     let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
     let mut section_start_page_index = 0usize;
+    let mut section_index = 0usize;
     let mut active_geom = geometries_by_item.first().copied().unwrap_or(geom);
     let mut active_columns = columns_by_item
         .first()
@@ -7719,6 +7791,7 @@ fn paginate_with_column_gap(
                     section_start_page_index,
                     next_section_page.saturating_sub(2),
                     &section,
+                    section_index,
                 );
                 record_pending_block_page(
                     &mut block_pages,
@@ -7726,6 +7799,7 @@ fn paginate_with_column_gap(
                     pages.len().saturating_sub(1),
                 );
                 section_start_page_index = next_section_page.saturating_sub(1);
+                section_index = section_index.saturating_add(1);
             }
             // Rows reach pagination only inside a Table; place defensively.
             FlowItem::Row(r) => {
@@ -7758,6 +7832,7 @@ fn paginate_with_column_gap(
         section_start_page_index,
         pages.len().saturating_sub(1),
         final_section_setup,
+        section_index,
     );
     Pagination {
         pages,
@@ -8295,6 +8370,7 @@ fn render_pdf(
                 fallback_page_section = RenderPageSection {
                     setup: final_section_setup.clone(),
                     first_page_index: section_start_page_index,
+                    section_index: source_hints.running_line_spacing.len().saturating_sub(1),
                 };
                 &fallback_page_section
             }
@@ -8312,8 +8388,22 @@ fn render_pdf(
             page_number,
             page_index == page_section.first_page_index,
         );
-        let header_lines = layout_lines(header_blocks, page_geom, &mut tcx);
-        let footer_lines = layout_lines(footer_blocks, page_geom, &mut tcx);
+        let (header_variant, footer_variant) = running_surface_variants_for_page(
+            &page_section.setup,
+            page_number,
+            page_index == page_section.first_page_index,
+        );
+        let running_spacing = source_hints
+            .running_line_spacing
+            .get(page_section.section_index);
+        let header_spacing = running_spacing
+            .map(|hints| running_surface_line_spacing(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_spacing = running_spacing
+            .map(|hints| running_surface_line_spacing(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_lines = layout_lines(header_blocks, header_spacing, page_geom, &mut tcx);
+        let footer_lines = layout_lines(footer_blocks, footer_spacing, page_geom, &mut tcx);
         let mut surface = page.surface();
         for overlay in floating_shape_overlays
             .iter()
@@ -8332,6 +8422,8 @@ fn render_pdf(
             }
             let baseline = hy + line.baseline;
             let x0 = page_geom.left + line.x_indent;
+            let clip_content = line.clip_to_height
+                && push_vertical_line_clip(&mut surface, 0.0, hy, line.height, page_geom.page_w);
             draw_line_background(&mut surface, line, x0, hy);
             draw_line_leaders(&mut surface, line, x0, hy, baseline);
             for run in &line.runs {
@@ -8344,6 +8436,9 @@ fn render_pdf(
                     &mut tcx,
                 );
             }
+            if clip_content {
+                surface.pop();
+            }
             hy += line.height;
         }
         let mut fy = page_geom.bottom() + FOOTER_GAP;
@@ -8354,6 +8449,8 @@ fn render_pdf(
             }
             let baseline = fy + line.baseline;
             let x0 = page_geom.left + line.x_indent;
+            let clip_content = line.clip_to_height
+                && push_vertical_line_clip(&mut surface, 0.0, fy, line.height, page_geom.page_w);
             draw_line_background(&mut surface, line, x0, fy);
             draw_line_leaders(&mut surface, line, x0, fy, baseline);
             for run in &line.runs {
@@ -8365,6 +8462,9 @@ fn render_pdf(
                     page_index + 1,
                     &mut tcx,
                 );
+            }
+            if clip_content {
+                surface.pop();
             }
             fy += line.height;
         }
@@ -13653,15 +13753,17 @@ mod tests {
         };
         let mut page_sections = vec![None, None, None, None];
 
-        assign_section_to_render_pages(&mut page_sections, 0, 1, &first);
-        assign_section_to_render_pages(&mut page_sections, 2, 3, &final_setup);
+        assign_section_to_render_pages(&mut page_sections, 0, 1, &first, 0);
+        assign_section_to_render_pages(&mut page_sections, 2, 3, &final_setup, 1);
 
         let first_page = page_sections[0].as_ref().expect("first page section");
         assert_eq!(first_page.first_page_index, 0);
+        assert_eq!(first_page.section_index, 0);
         let second_page = page_sections[1].as_ref().expect("second page section");
         assert_eq!(second_page.first_page_index, 0);
         let final_first_page = page_sections[2].as_ref().expect("final first page section");
         assert_eq!(final_first_page.first_page_index, 2);
+        assert_eq!(final_first_page.section_index, 1);
 
         let (header, _) = running_header_footer_blocks_for_page(
             &final_first_page.setup,

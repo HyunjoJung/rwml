@@ -8,29 +8,36 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies opened-DOCX `exact` and `atLeast` paragraph line spacing to ordinary
+  paragraphs in referenced default/first/even running header and footer parts.
+  Section-aligned private render hints mirror default-surface inheritance and
+  follow the variant selected for each emitted page; exact over-tall content is
+  clipped to its margin-band line box. Running-surface tables and images,
+  model-authored content, and fresh conversion remain outside this source-only
+  bridge.
 - Extends opened-DOCX `exact` and `atLeast` paragraph line spacing into real
   footnote and endnote blocks through a note-aligned private render sidecar.
   Separator and continuation records do not consume sidecar entries, and
   footnote/endnote concatenation preserves block order. Notes retain their
   existing flattened end-of-flow preview placement; page-bottom note
-  composition, running headers/footers, model-authored content, and fresh
-  conversion remain outside this source-only bridge.
+  composition, model-authored content, and fresh conversion remain outside this
+  source-only bridge.
 - Extends opened-DOCX `exact` and `atLeast` paragraph line spacing into ordinary
   and recursively nested table cells through merge-owner- and block-aligned
   private render hints. Explicit page-break fragments preserve their source
   rule; selected compatibility wrappers and nested tables retain recursive
   alignment; exact over-tall content is vertically clipped to its cell line
-  box; and at-least values only expand shorter natural lines. Running
-  headers/footers, model-authored content, fresh conversion, nested grid
-  geometry, and nesting beyond the renderer's existing 32-level flattening
+  box; and at-least values only expand shorter natural lines. Table content in
+  running headers/footers, model-authored content, fresh conversion, nested
+  grid geometry, and nesting beyond the renderer's existing 32-level flattening
   bound remain unchanged.
 - Applies resolved `w:spacing` `exact` and `atLeast` line rules to top-level
   body paragraphs in opened-DOCX PDF previews through block-aligned private
   render hints. Values use twentieths of a point after style/direct cascading;
   exact boxes center fitting text and bottom-align with vertical clipping when
   undersized, while at-least boxes only expand shorter natural lines. Explicit
-  page-break splits retain alignment. The public model, running surfaces,
-  authored content, and fresh conversion remain unchanged.
+  page-break splits retain alignment. The public model, authored content, and
+  fresh conversion remain unchanged.
 - Computes `NOTEREF`/`FTNREF` fields that target a `w:customMarkFollows`
   footnote or endnote when its non-empty literal mark immediately follows the
   reference inside the bookmark. Ambiguous marks retain cached field text, and

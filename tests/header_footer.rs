@@ -434,3 +434,104 @@ fn docx_multi_section_first_even_headers_attach_to_section_boundaries() {
     assert!(model.setup.first_header.is_empty());
     assert!(model.setup.even_header.is_empty());
 }
+
+#[cfg(feature = "render")]
+fn running_surface_line_spacing_docx(
+    ending_header_properties: &str,
+    final_header_properties: &str,
+    even_footer_properties: &str,
+) -> Vec<u8> {
+    let ending_header = format!(
+        r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr>{ending_header_properties}</w:pPr><w:r><w:t>SHARED RUNNING HEADER</w:t></w:r></w:p></w:hdr>"#
+    );
+    let final_header = format!(
+        r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr>{final_header_properties}</w:pPr><w:r><w:t>SHARED RUNNING HEADER</w:t></w:r></w:p></w:hdr>"#
+    );
+    let even_footer = format!(
+        r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr>{even_footer_properties}</w:pPr><w:r><w:t>EVEN RUNNING FOOTER</w:t></w:r></w:p></w:ftr>"#
+    );
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdEndingHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFinalHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/><Relationship Id="rIdEvenFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>
+                <w:p><w:r><w:t>ending section body</w:t></w:r></w:p>
+                <w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:w="4400" w:h="6000"/><w:pgMar w:top="1200" w:right="400" w:bottom="1200" w:left="400"/><w:headerReference w:type="default" r:id="rIdEndingHeader"/></w:sectPr></w:pPr></w:p>
+                <w:p><w:r><w:t>final section body</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="6000"/><w:pgMar w:top="1200" w:right="400" w:bottom="1200" w:left="400"/><w:headerReference w:type="default" r:id="rIdFinalHeader"/><w:footerReference w:type="even" r:id="rIdEvenFooter"/></w:sectPr>
+            </w:body></w:document>"#,
+        ),
+        ("word/header1.xml", &ending_header),
+        ("word/header2.xml", &final_header),
+        ("word/footer1.xml", &even_footer),
+    ])
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_consumes_section_and_variant_running_surface_absolute_spacing() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let baseline_model = Document::open(&running_surface_line_spacing_docx("", "", ""))
+        .expect("baseline running-surface fixture opens")
+        .model();
+    let render = |ending_header_properties: &str,
+                  final_header_properties: &str,
+                  even_footer_properties: &str| {
+        let document = Document::open(&running_surface_line_spacing_docx(
+            ending_header_properties,
+            final_header_properties,
+            even_footer_properties,
+        ))
+        .expect("running-surface fixture opens");
+        assert_eq!(
+            document.model(),
+            baseline_model,
+            "absolute running-surface spacing must remain outside the public model"
+        );
+        let layout = document
+            .layout_pages_with_fonts(&fonts)
+            .expect("running-surface layout succeeds");
+        assert_eq!(layout.pages, 2, "fixture must keep one page per section");
+        document.to_pdf_with_fonts(&fonts)
+    };
+
+    let baseline = render("", "", "");
+    let ending_exact = render(r#"<w:spacing w:line="100" w:lineRule="exact"/>"#, "", "");
+    let final_minimum = render("", r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#, "");
+    let even_footer_exact = render("", "", r#"<w:spacing w:line="100" w:lineRule="exact"/>"#);
+
+    for (name, rendered) in [
+        ("ending-section exact header", &ending_exact),
+        ("final-section minimum header", &final_minimum),
+        ("even-page exact footer", &even_footer_exact),
+    ] {
+        assert!(rendered.starts_with(b"%PDF-"), "{name}");
+        assert_ne!(rendered, &baseline, "{name} must affect PDF output");
+    }
+    assert_ne!(ending_exact, final_minimum);
+    assert_ne!(ending_exact, even_footer_exact);
+    assert_ne!(final_minimum, even_footer_exact);
+    assert_eq!(
+        ending_exact,
+        render(r#"<w:spacing w:line="100" w:lineRule="exact"/>"#, "", "")
+    );
+    assert_eq!(
+        final_minimum,
+        render("", r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#, "")
+    );
+    assert_eq!(
+        even_footer_exact,
+        render("", "", r#"<w:spacing w:line="100" w:lineRule="exact"/>"#)
+    );
+}
