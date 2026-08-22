@@ -3,6 +3,7 @@ use super::*;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct NoteRefContext {
     pub(crate) targets: HashMap<String, NoteRefTarget>,
+    custom_marks: HashMap<usize, String>,
     field_positions: Vec<NoteRefFieldPosition>,
     ref_field_positions: Vec<NoteRefFieldPosition>,
     markers: Vec<NoteRefMarker>,
@@ -31,7 +32,8 @@ impl NoteRefContext {
     }
 
     pub(super) fn target_reference_number(&self, name: &str) -> Option<usize> {
-        Some(self.target(name)?.number)
+        let target = self.target(name)?;
+        target.custom_mark_order.is_none().then_some(target.number)
     }
 
     pub(super) fn ref_note_number(
@@ -40,6 +42,9 @@ impl NoteRefContext {
         field_position: Option<NoteRefFieldPosition>,
     ) -> Option<usize> {
         let target = self.target(name)?;
+        if target.custom_mark_order.is_some() {
+            return None;
+        }
         let field = field_position?;
         let actual_before = self
             .markers
@@ -55,6 +60,12 @@ impl NoteRefContext {
             .count();
         Some(actual_before + generated_before + 1)
     }
+
+    fn custom_mark(&self, target: NoteRefTarget) -> Option<&str> {
+        self.custom_marks
+            .get(&target.custom_mark_order?)
+            .map(String::as_str)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,10 +74,9 @@ pub(crate) struct NoteRefTarget {
     number: usize,
     start: usize,
     end: usize,
-    // A note reference carrying `w:customMarkFollows` uses a custom glyph and is
-    // not auto-numbered, so its ordinal is meaningless. Ceiling: we do not yet
-    // surface the custom mark glyph text for a NOTEREF pointing straight at it.
-    custom_mark: bool,
+    // A note reference carrying `w:customMarkFollows` uses the immediately
+    // following literal mark instead of an auto-numbered ordinal.
+    custom_mark_order: Option<usize>,
     // Document-level `numFmt` for this note kind, used when the NOTEREF field
     // itself carries no explicit `\*` number-format switch.
     format: Option<PageNumberFormat>,
@@ -279,6 +289,7 @@ pub(crate) fn note_ref_context_with_numbering(
 ) -> NoteRefContext {
     let mut r = Reader::from_str(xml);
     let mut targets = HashMap::new();
+    let mut custom_marks = HashMap::new();
     let mut field_positions = Vec::new();
     let mut ref_field_positions = Vec::new();
     let mut markers = Vec::new();
@@ -287,6 +298,7 @@ pub(crate) fn note_ref_context_with_numbering(
     let mut active_comment_ranges = Vec::new();
     let mut comment_range_targets: HashMap<String, Vec<NoteRefCommentRangeTarget>> = HashMap::new();
     let mut source_order = 0usize;
+    let mut pending_custom_mark = None;
     // Seed the auto-counters so the first note lands on the document-level
     // `numStart` (default 1). numRestart="eachPage" is layout-dependent and not
     // modeled here.
@@ -307,6 +319,7 @@ pub(crate) fn note_ref_context_with_numbering(
                 let qname = e.name();
                 let name = local(qname.as_ref());
                 if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    pending_custom_mark = None;
                     skip_subtree(&mut r);
                     continue;
                 }
@@ -332,6 +345,7 @@ pub(crate) fn note_ref_context_with_numbering(
                 }
                 match name {
                     b"del" | b"moveFrom" => {
+                        pending_custom_mark = None;
                         skip_subtree(&mut r);
                         continue;
                     }
@@ -342,6 +356,7 @@ pub(crate) fn note_ref_context_with_numbering(
                         });
                     }
                     b"fldSimple" => {
+                        pending_custom_mark = None;
                         if let Some(text) = computed_note_ref_scan_field_result(
                             attr_local(&e, b"instr").as_deref(),
                             &mut computed_fields,
@@ -367,15 +382,18 @@ pub(crate) fn note_ref_context_with_numbering(
                             &mut generated_ref_note_fields,
                         );
                     }
-                    b"fldChar" => apply_note_ref_scan_fld_char(
-                        &e,
-                        &mut source_order,
-                        &mut current,
-                        &mut field_positions,
-                        &mut ref_field_positions,
-                        &mut generated_ref_note_fields,
-                        &mut computed_fields,
-                    ),
+                    b"fldChar" => {
+                        pending_custom_mark = None;
+                        apply_note_ref_scan_fld_char(
+                            &e,
+                            &mut source_order,
+                            &mut current,
+                            &mut field_positions,
+                            &mut ref_field_positions,
+                            &mut generated_ref_note_fields,
+                            &mut computed_fields,
+                        );
+                    }
                     b"instrText" => {
                         let text = read_text(&mut r);
                         if let Some(field) = current.as_mut() {
@@ -431,6 +449,7 @@ pub(crate) fn note_ref_context_with_numbering(
                     }
                     b"footnoteReference" => {
                         let custom_mark = note_reference_uses_custom_mark(&e);
+                        pending_custom_mark = custom_mark.then_some(source_order);
                         if !custom_mark {
                             footnote_number += 1;
                             markers.push(NoteRefMarker {
@@ -453,6 +472,7 @@ pub(crate) fn note_ref_context_with_numbering(
                     }
                     b"endnoteReference" => {
                         let custom_mark = note_reference_uses_custom_mark(&e);
+                        pending_custom_mark = custom_mark.then_some(source_order);
                         if !custom_mark {
                             endnote_number += 1;
                             markers.push(NoteRefMarker {
@@ -499,11 +519,19 @@ pub(crate) fn note_ref_context_with_numbering(
                         continue;
                     }
                     b"t" => {
-                        if !read_text(&mut r).is_empty() {
+                        let text = read_text(&mut r);
+                        if !text.is_empty() {
+                            capture_following_custom_mark(
+                                &mut pending_custom_mark,
+                                source_order,
+                                &text,
+                                &mut custom_marks,
+                            );
                             source_order += 1;
                         }
                         continue;
                     }
+                    b"p" => pending_custom_mark = None,
                     b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
                     | b"pict" | b"object" => {
                         source_order += 1;
@@ -516,6 +544,7 @@ pub(crate) fn note_ref_context_with_numbering(
                 let qname = e.name();
                 let name = local(qname.as_ref());
                 if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    pending_custom_mark = None;
                     continue;
                 }
                 if suppresses_note_ref_complex_result_scan(&current) {
@@ -534,6 +563,7 @@ pub(crate) fn note_ref_context_with_numbering(
                 }
                 match name {
                     b"fldSimple" => {
+                        pending_custom_mark = None;
                         if let Some(text) = computed_note_ref_scan_field_result(
                             attr_local(&e, b"instr").as_deref(),
                             &mut computed_fields,
@@ -558,15 +588,18 @@ pub(crate) fn note_ref_context_with_numbering(
                             );
                         }
                     }
-                    b"fldChar" => apply_note_ref_scan_fld_char(
-                        &e,
-                        &mut source_order,
-                        &mut current,
-                        &mut field_positions,
-                        &mut ref_field_positions,
-                        &mut generated_ref_note_fields,
-                        &mut computed_fields,
-                    ),
+                    b"fldChar" => {
+                        pending_custom_mark = None;
+                        apply_note_ref_scan_fld_char(
+                            &e,
+                            &mut source_order,
+                            &mut current,
+                            &mut field_positions,
+                            &mut ref_field_positions,
+                            &mut generated_ref_note_fields,
+                            &mut computed_fields,
+                        );
+                    }
                     b"bookmarkStart" => {
                         if let Some((id, name)) = bookmark_start(&e) {
                             active_bookmarks.push(NoteRefActiveBookmark {
@@ -613,6 +646,7 @@ pub(crate) fn note_ref_context_with_numbering(
                     }
                     b"footnoteReference" => {
                         let custom_mark = note_reference_uses_custom_mark(&e);
+                        pending_custom_mark = custom_mark.then_some(source_order);
                         if !custom_mark {
                             footnote_number += 1;
                             markers.push(NoteRefMarker {
@@ -633,6 +667,7 @@ pub(crate) fn note_ref_context_with_numbering(
                     }
                     b"endnoteReference" => {
                         let custom_mark = note_reference_uses_custom_mark(&e);
+                        pending_custom_mark = custom_mark.then_some(source_order);
                         if !custom_mark {
                             endnote_number += 1;
                             markers.push(NoteRefMarker {
@@ -686,6 +721,9 @@ pub(crate) fn note_ref_context_with_numbering(
                     xml_depth = xml_depth.saturating_sub(1);
                     continue;
                 }
+                if local(e.name().as_ref()) == b"p" {
+                    pending_custom_mark = None;
+                }
                 if local(e.name().as_ref()) == b"AlternateContent" {
                     alternate_content_stack.pop();
                 }
@@ -697,6 +735,7 @@ pub(crate) fn note_ref_context_with_numbering(
     }
     NoteRefContext {
         targets,
+        custom_marks,
         field_positions,
         ref_field_positions,
         markers,
@@ -865,6 +904,22 @@ fn note_reference_uses_custom_mark(e: &BytesStart<'_>) -> bool {
     attr_local(e, b"customMarkFollows").is_some_and(|value| toggle_on(Some(value)))
 }
 
+fn capture_following_custom_mark(
+    pending_order: &mut Option<usize>,
+    source_order: usize,
+    text: &str,
+    custom_marks: &mut HashMap<usize, String>,
+) {
+    let Some(marker_order) = pending_order.take() else {
+        return;
+    };
+    if marker_order.checked_add(1) == Some(source_order) {
+        custom_marks
+            .entry(marker_order)
+            .or_insert_with(|| text.to_string());
+    }
+}
+
 fn record_note_ref_target(
     active_bookmarks: &[NoteRefActiveBookmark],
     kind: NoteRefKind,
@@ -882,7 +937,7 @@ fn record_note_ref_target(
                 number,
                 start: bookmark.start,
                 end: order,
-                custom_mark,
+                custom_mark_order: custom_mark.then_some(order),
                 format,
             });
     }
@@ -959,7 +1014,7 @@ fn record_note_ref_comment_range_targets(
             number,
             start: range.start,
             end: range.end,
-            custom_mark: false,
+            custom_mark_order: None,
             format: None,
         });
     }
@@ -1135,11 +1190,8 @@ pub(crate) fn computed_note_ref_result(
     }
     let text = if spec.relative {
         computed_relative_note_ref_result(target, field_position)?
-    } else if target.custom_mark {
-        // A NOTEREF pointing straight at a custom-mark note has no auto-number to
-        // emit; keep the cached display text. Ceiling: the custom glyph itself is
-        // not yet materialized here.
-        return None;
+    } else if target.custom_mark_order.is_some() {
+        note_refs.custom_mark(target)?.to_string()
     } else {
         // An explicit `\*` number-format switch on the field wins; otherwise fall
         // back to the note kind's document-level `numFmt`.

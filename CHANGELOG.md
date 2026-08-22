@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Computes `NOTEREF`/`FTNREF` fields that target a `w:customMarkFollows`
+  footnote or endnote when its non-empty literal mark immediately follows the
+  reference inside the bookmark. Ambiguous marks retain cached field text, and
+  `REF \\f` no longer invents an auto-number for a custom-mark target.
 - Preserves each opened DOCX drawing's non-empty `wp:docPr/@descr` alternative
   text on its cloned image occurrence, including the selected Markup
   Compatibility branch and shared-media relationships with different
