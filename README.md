@@ -72,7 +72,7 @@ items, generated core metadata (title, subject, creator, description, keywords,
 category, content status, last modified by, created, modified, last printed,
 revision, and version), explicit Word document ids, web-extension task pane package shells, page setup with section columns, document grids, text direction, title pages, and page-number restarts/formats, explicit page breaks and next/even/odd section breaks,
 styled default/first/even running headers/footers (including nested rich tables
-with local hyperlinks, real raster images, and visible missing-image/chart
+with local hyperlinks, real raster images and charts, and visible missing-image
 fallbacks), and page numbers all round-trip. Content controls can include tag/alias and
 data-binding metadata.
 
@@ -94,6 +94,11 @@ payloads serialize generated numeric x-values rather than the public string
 category labels, so `categories` normalizes to empty for those families on
 reopen. Formula/reference-backed, combination, and otherwise arbitrary Office
 chart payloads remain package-preserved and explicitly reported as unsupported.
+Generated charts use part-local relationships in default/first/even headers and
+footers, including ordinary and nested running-table cells, and survive native
+reopen into the same model and PDF path. A running chart without a serialized
+series retains an escaped visible fallback and emits no orphan chart package
+parts.
 See [`examples/report.rs`](examples/report.rs).
 
 ```rust
@@ -340,8 +345,8 @@ the remaining section-local margin band, and are centered within its content
 width. Non-empty running-surface model charts use the body vector painter and
 are proportionally reduced without upscaling to the remaining band, centered,
 and clipped at their fitted bounds; labels, strokes, and geometry scale together.
-Arbitrary opened Office chart-part modeling and generated DOCX header/footer
-chart placeholders remain outside this path. Running-surface tables use the body
+Arbitrary opened Office chart-part modeling remains outside this path.
+Running-surface tables use the body
 row painter for model-backed width,
 alignment, visual RTL placement, borders, cell shading, margins, and vertical
 alignment. Fitting rows paint in source order; a first row taller than the

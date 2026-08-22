@@ -3192,12 +3192,15 @@ fn write_docx_emits_rich_header_footer_tables_with_local_relationships() {
             && footer_xml.contains("<w:tcPr></w:tcPr><w:p/>")
             && footer_xml.contains("<w:drawing>")
             && footer_xml.contains("Footer cell image")
-            && footer_xml.contains("[rwml chart placeholder: Footer cell chart]"),
+            && footer_xml.contains(r#"<c:chart r:id="rId2"/>"#)
+            && footer_xml.contains("Footer cell chart"),
         "empty footer table cell missing: {footer_xml}"
     );
     assert!(
         parts.contains_key("word/media/image1.png")
-            && !parts.keys().any(|path| path.starts_with("word/charts/")),
+            && parts.contains_key("word/charts/chart1.xml")
+            && parts.contains_key("word/charts/_rels/chart1.xml.rels")
+            && parts.contains_key("word/embeddings/Microsoft_Excel_Worksheet1.xlsx"),
         "running-table raster/chart package parts are wrong: {:?}",
         parts.keys().collect::<Vec<_>>()
     );
@@ -3209,12 +3212,18 @@ fn write_docx_emits_rich_header_footer_tables_with_local_relationships() {
     );
     assert!(
         footer_rels.contains("relationships/image")
-            && footer_rels.contains(r#"Target="media/image1.png""#),
-        "footer-local image relationship missing: {footer_rels}"
+            && footer_rels.contains(r#"Target="media/image1.png""#)
+            && footer_rels.contains("relationships/chart")
+            && footer_rels.contains(r#"Target="charts/chart1.xml""#),
+        "footer-local media relationships missing: {footer_rels}"
     );
     assert!(!document_rels.contains(header_url), "{document_rels}");
     assert!(
         !document_rels.contains("relationships/image"),
+        "{document_rels}"
+    );
+    assert!(
+        !document_rels.contains("relationships/chart"),
         "{document_rels}"
     );
     assert!(
@@ -3251,9 +3260,11 @@ fn write_docx_emits_rich_header_footer_tables_with_local_relationships() {
             .and_then(|image| image.alt.as_deref()),
         Some("Footer cell image")
     );
-    assert!(footer.rows[0].cells[2]
-        .text()
-        .contains("[rwml chart placeholder: Footer cell chart]"));
+    let Block::Chart(chart) = &footer.rows[0].cells[2].blocks[0] else {
+        panic!("expected reopened footer chart");
+    };
+    assert_eq!(chart.alt.as_deref(), Some("Footer cell chart"));
+    assert_eq!(chart.kind, ChartKind::Bar);
 }
 
 #[test]
@@ -3409,7 +3420,7 @@ fn write_docx_emits_images_in_all_header_footer_variants() {
 }
 
 #[test]
-fn write_docx_keeps_header_footer_chart_placeholders_visible() {
+fn write_docx_emits_header_footer_charts_with_local_relationships() {
     let model = DocModel {
         blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
         setup: DocSetup {
@@ -3437,28 +3448,53 @@ fn write_docx_keeps_header_footer_chart_placeholders_visible() {
     let parts = unzip_parts(&bytes);
     let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
     let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+    let header_rels = String::from_utf8(parts["word/_rels/header1.xml.rels"].clone()).unwrap();
+    let footer_rels = String::from_utf8(parts["word/_rels/footer1.xml.rels"].clone()).unwrap();
+    let document_rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
 
     assert!(
-        header_xml.contains("[rwml chart placeholder: Header &lt;chart&gt;]"),
-        "header chart placeholder missing: {header_xml}"
+        header_xml.contains(r#"<c:chart r:id="rId1"/>"#)
+            && header_xml.contains(r#"descr="Header &lt;chart&gt;""#),
+        "header chart drawing missing: {header_xml}"
     );
     assert!(
-        footer_xml.contains("[rwml chart placeholder: Footer chart]"),
-        "footer chart placeholder missing: {footer_xml}"
+        footer_xml.contains(r#"<c:chart r:id="rId1"/>"#),
+        "footer chart drawing missing: {footer_xml}"
     );
     assert!(
-        !parts.keys().any(|part| part.starts_with("word/charts/")),
-        "header/footer chart placeholders should not emit chart parts: {:?}",
+        parts.contains_key("word/charts/chart1.xml")
+            && parts.contains_key("word/charts/chart2.xml")
+            && parts.contains_key("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+            && parts.contains_key("word/embeddings/Microsoft_Excel_Worksheet2.xlsx"),
+        "header/footer chart package parts missing: {:?}",
         parts.keys().collect::<Vec<_>>()
     );
-
-    let reopened = Document::open(&bytes).expect("header/footer chart placeholder .docx reopens");
-    let text = reopened.text();
     assert!(
-        text.contains("[rwml chart placeholder: Header <chart>]")
-            && text.contains("[rwml chart placeholder: Footer chart]"),
-        "header/footer chart placeholders not readable after reopen: {text:?}"
+        header_rels.contains("relationships/chart")
+            && header_rels.contains(r#"Target="charts/chart1.xml""#),
+        "header-local chart relationship missing: {header_rels}"
     );
+    assert!(
+        footer_rels.contains("relationships/chart")
+            && footer_rels.contains(r#"Target="charts/chart2.xml""#),
+        "footer-local chart relationship missing: {footer_rels}"
+    );
+    assert!(
+        !document_rels.contains("relationships/chart"),
+        "{document_rels}"
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer chart .docx reopens");
+    let reopened_model = reopened.model();
+    let [Block::Chart(header)] = reopened_model.setup.header.as_slice() else {
+        panic!("expected reopened header chart");
+    };
+    let [Block::Chart(footer)] = reopened_model.setup.footer.as_slice() else {
+        panic!("expected reopened footer chart");
+    };
+    assert_eq!(header.alt.as_deref(), Some("Header <chart>"));
+    assert_eq!(footer.title.as_deref(), Some("Footer chart"));
+    assert_eq!(reopened.report().features.unsupported_charts, 0);
 }
 
 #[test]

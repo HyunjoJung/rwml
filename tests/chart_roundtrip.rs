@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
 use rwml::{
-    Block, Cell, Chart, ChartKind, ChartSeries, ChartShape, DocModel, Document, Row, Table,
+    Block, Cell, Chart, ChartKind, ChartSeries, ChartShape, DocModel, DocSetup, Document, Row,
+    Table,
 };
 
 fn package_parts(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
@@ -241,6 +242,212 @@ fn non_authored_chart_payload_stays_explicitly_unsupported() {
     assert_eq!(reopened.report().features.unsupported_charts, 1);
 }
 
+fn running_chart_document() -> (DocModel, [Chart; 6]) {
+    let expected = [
+        chart(ChartKind::Bar, "Default header"),
+        chart(ChartKind::Waterfall, "First header"),
+        chart(ChartKind::Column3D, "Even header"),
+        chart(ChartKind::Funnel, "Default footer"),
+        chart(ChartKind::Line, "First footer"),
+        chart(ChartKind::Treemap, "Even footer"),
+    ];
+    let model = DocModel {
+        setup: DocSetup {
+            header: vec![Block::Chart(expected[0].clone())],
+            first_header: vec![Block::Chart(expected[1].clone())],
+            even_header: vec![Block::Chart(expected[2].clone())],
+            footer: vec![Block::Chart(expected[3].clone())],
+            first_footer: vec![Block::Chart(expected[4].clone())],
+            even_footer: vec![Block::Chart(expected[5].clone())],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+    (model, expected)
+}
+
+#[test]
+fn authored_charts_use_local_relationships_in_every_running_variant() {
+    let (model, expected) = running_chart_document();
+    let bytes = rwml::write_docx(&model);
+    assert_eq!(bytes, rwml::write_docx(&model));
+    let parts = package_parts(&bytes);
+
+    for (part_path, rels_path, chart_tag, chart_target, alt) in [
+        (
+            "word/header1.xml",
+            "word/_rels/header1.xml.rels",
+            "c:chart",
+            "charts/chart1.xml",
+            "Default header alt",
+        ),
+        (
+            "word/header2.xml",
+            "word/_rels/header2.xml.rels",
+            "cx:chart",
+            "charts/chartEx2.xml",
+            "First header alt",
+        ),
+        (
+            "word/header3.xml",
+            "word/_rels/header3.xml.rels",
+            "c:chart",
+            "charts/chart3.xml",
+            "Even header alt",
+        ),
+        (
+            "word/footer1.xml",
+            "word/_rels/footer1.xml.rels",
+            "cx:chart",
+            "charts/chartEx4.xml",
+            "Default footer alt",
+        ),
+        (
+            "word/footer2.xml",
+            "word/_rels/footer2.xml.rels",
+            "c:chart",
+            "charts/chart5.xml",
+            "First footer alt",
+        ),
+        (
+            "word/footer3.xml",
+            "word/_rels/footer3.xml.rels",
+            "cx:chart",
+            "charts/chartEx6.xml",
+            "Even footer alt",
+        ),
+    ] {
+        let xml = String::from_utf8(parts[part_path].clone()).expect("running XML is UTF-8");
+        let rels = String::from_utf8(parts[rels_path].clone()).expect("rels XML is UTF-8");
+        assert!(
+            xml.contains(&format!("<{chart_tag} r:id=\"rId1\"/>"))
+                && xml.contains(&format!("descr=\"{alt}\""))
+                && !xml.contains("rwml chart placeholder"),
+            "running chart drawing missing from {part_path}: {xml}"
+        );
+        let namespace = if chart_tag == "c:chart" {
+            "xmlns:c=\"http://schemas.openxmlformats.org/drawingml/2006/chart\""
+        } else {
+            "xmlns:cx=\"http://schemas.microsoft.com/office/drawing/2014/chartex\""
+        };
+        assert!(xml.contains(namespace), "missing {namespace}: {xml}");
+        let relationship_type = if chart_tag == "c:chart" {
+            "relationships/chart"
+        } else {
+            "relationships/chartEx"
+        };
+        assert!(
+            rels.contains(r#"Id="rId1""#)
+                && rels.contains(relationship_type)
+                && rels.contains(chart_target),
+            "part-local chart relationship missing from {rels_path}: {rels}"
+        );
+    }
+
+    let document_rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone())
+        .expect("document rels are UTF-8");
+    assert!(
+        !document_rels.contains("relationships/chart"),
+        "{document_rels}"
+    );
+    assert_eq!(
+        parts
+            .keys()
+            .filter(|path| { path.starts_with("word/charts/chart") && path.ends_with(".xml") })
+            .count(),
+        6
+    );
+    for chart_id in [1, 3, 5] {
+        assert!(parts.contains_key(&format!("word/charts/chart{chart_id}.xml")));
+        assert!(parts.contains_key(&format!("word/charts/_rels/chart{chart_id}.xml.rels")));
+        assert!(parts.contains_key(&format!(
+            "word/embeddings/Microsoft_Excel_Worksheet{chart_id}.xlsx"
+        )));
+    }
+
+    let reopened = Document::open(&bytes).expect("running chart document reopens");
+    let reopened_model = reopened.model();
+    for (blocks, chart) in [
+        (&reopened_model.setup.header, &expected[0]),
+        (&reopened_model.setup.first_header, &expected[1]),
+        (&reopened_model.setup.even_header, &expected[2]),
+        (&reopened_model.setup.footer, &expected[3]),
+        (&reopened_model.setup.first_footer, &expected[4]),
+        (&reopened_model.setup.even_footer, &expected[5]),
+    ] {
+        assert_eq!(blocks, &[Block::Chart(chart.clone())]);
+    }
+    assert_eq!(reopened.report().features.charts, 6);
+    assert_eq!(reopened.report().features.unsupported_charts, 0);
+}
+
+#[test]
+fn authored_running_chart_reopens_through_nested_table_cells() {
+    let expected = chart(ChartKind::Sunburst, "Nested running");
+    let nested = Table {
+        rows: vec![Row {
+            cells: vec![Cell {
+                blocks: vec![Block::Table(Table {
+                    rows: vec![Row {
+                        cells: vec![Cell {
+                            blocks: vec![Block::Chart(expected.clone())],
+                            ..Cell::default()
+                        }],
+                    }],
+                    ..Table::default()
+                })],
+                ..Cell::default()
+            }],
+        }],
+        ..Table::default()
+    };
+    let model = DocModel {
+        setup: DocSetup {
+            header: vec![Block::Table(nested)],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rwml::write_docx(&model);
+    let parts = package_parts(&bytes);
+    assert!(parts.contains_key("word/charts/chartEx1.xml"));
+    let reopened = Document::open(&bytes).expect("nested running chart reopens");
+    let Block::Table(outer) = &reopened.model().setup.header[0] else {
+        panic!("expected outer running table");
+    };
+    let Block::Table(inner) = &outer.rows[0].cells[0].blocks[0] else {
+        panic!("expected nested running table");
+    };
+    assert_eq!(inner.rows[0].cells[0].blocks, [Block::Chart(expected)]);
+}
+
+#[test]
+fn zero_series_running_chart_keeps_visible_fallback_without_package_parts() {
+    let mut empty = chart(ChartKind::Waterfall, "Empty running");
+    empty.series.clear();
+    let model = DocModel {
+        setup: DocSetup {
+            header: vec![Block::Chart(empty)],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rwml::write_docx(&model);
+    let parts = package_parts(&bytes);
+    let header = String::from_utf8(parts["word/header1.xml"].clone()).expect("header is UTF-8");
+    assert!(header.contains("[rwml chart placeholder: Empty running alt]"));
+    assert!(!header.contains("<w:drawing>"));
+    assert!(!parts.contains_key("word/_rels/header1.xml.rels"));
+    assert!(!parts
+        .keys()
+        .any(|path| path.starts_with("word/charts/") || path.starts_with("word/embeddings/")));
+
+    let reopened = Document::open(&bytes).expect("empty running fallback reopens");
+    assert!(reopened.text().contains("Empty running alt"));
+}
+
 #[cfg(feature = "render")]
 #[test]
 fn reopened_nested_chart_renders_deterministically() {
@@ -263,6 +470,22 @@ fn reopened_nested_chart_renders_deterministically() {
     let blank = rwml::render_pdf_with_report(&DocModel::default());
     assert!(rendered.pdf.starts_with(b"%PDF"));
     assert_eq!(rendered.pdf, repeated.pdf);
+    assert_ne!(rendered.pdf, blank.pdf);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn reopened_running_charts_render_deterministically() {
+    let (model, _) = running_chart_document();
+    let reopened = Document::open(&rwml::write_docx(&model)).expect("running charts reopen");
+    let rendered = reopened.to_pdf_with_report();
+    let blank = Document::open(&rwml::write_docx(&DocModel::default()))
+        .expect("blank document reopens")
+        .to_pdf_with_report();
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.pdf, reopened.to_pdf_with_report().pdf);
     assert_ne!(rendered.pdf, blank.pdf);
     assert_eq!(rendered.report.unsupported.charts, 0);
 }

@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Emits model-authored core and chart-ex drawings in fresh DOCX
+  default/first/even headers and footers, including charts nested through
+  ordinary running-table cells. Each running part owns its chart relationship;
+  chart payloads, embedded core-chart workbooks, chart-package relationships,
+  global chart/drawing ids, extents, and alternative text reuse the body writer.
+  Roots add only the required `c`/`cx` chart namespace, document relationship
+  ids remain isolated, and all six variants survive native reopen into the
+  existing running-surface vector PDF painter. A zero-series running chart keeps
+  the previous escaped visible fallback and emits no orphan chart relationship
+  or part. Arbitrary opened Office charts, formula/reference-backed or
+  combination import, theme/style/data-label fidelity, external refresh, and
+  Word-exact chart layout remain outside this bounded path.
 - Reconstructs fresh rwml-generated core and chart-ex DOCX payloads as modeled
   `Chart` blocks on native reopen instead of preserving them as opaque chart
   parts. All 52 currently authored kinds retain their kind, title, serialized
@@ -28,8 +40,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reader now preserves an enclosing hyperlink on drawing runs, so reopened
   linked running images remain actionable in PDF output. Images without bytes
   keep escaped visible placeholders and emit no media relationship. Generated
-  running-part charts, crop/flip/effects, image hyperlink annotation geometry,
-  and Word-exact floating wrap remain outside this bounded path.
+  crop/flip/effects, image hyperlink annotation geometry, and Word-exact
+  floating wrap remain outside this bounded path.
 - Emits full table structures in fresh DOCX default/first/even headers and
   footers instead of flattening rows to delimiter-joined text. Running tables
   reuse body-table grid-span, vertical-merge, repeated-header, width/fixed
@@ -37,11 +49,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   width/shading/margin/vertical-alignment, paragraph, run-formatting, and nested-
   table serialization. Cell hyperlinks use the owning header/footer
   relationship file and survive native reopen into clickable PDF annotations;
-  raster images use the same part-local relationship scope, while chart content
-  retains an escaped visible placeholder. Empty cells and nested-table terminal
-  paragraphs remain schema-valid. Fresh running-part charts, arbitrary opened
-  chart reconstruction, Word-exact table autofit, and Word-exact pagination
-  remain outside this bounded path.
+  raster images and model-authored charts use the same part-local relationship
+  scope. Empty cells and nested-table terminal paragraphs remain schema-valid.
+  Arbitrary opened chart reconstruction, Word-exact table autofit, and
+  Word-exact pagination remain outside this bounded path.
 - Applies explicit unsigned opened-DOCX `w:pgMar` header and footer distances
   through a private section-aligned renderer sidecar. Headers start at the
   source offset from the physical top edge; footer content and generated page
@@ -109,8 +120,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the fitted bounds; one transform scales labels, strokes, and geometry
   together. Source order, deterministic output, diagnostics, and body page
   counts remain unchanged. Arbitrary opened Office chart-part modeling,
-  generated DOCX header/footer chart placeholders, theme/external-data parity,
-  and Word-exact overlap remain outside this bounded path.
+  theme/external-data parity, and Word-exact overlap remain outside this bounded
+  path.
 - Applies model-backed paragraph before/after gaps in selected
   default/first/even running header and footer bands, including resolved
   `w:spacing` values decoded from referenced DOCX parts. Finite positive gaps

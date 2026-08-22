@@ -132,9 +132,8 @@ const WEB_EXTENSION_TASKPANES_NS: &str =
 
 /// Build a `word/header1.xml` / `footer1.xml` part body from running blocks.
 /// Tables reuse the body table geometry while their cell content keeps
-/// header/footer-local relationships. Images and charts remain visible
-/// placeholders. Appends a centered `PAGE` field when `page_numbers`. A
-/// header/footer must contain at least one paragraph.
+/// header/footer-local relationships. Appends a centered `PAGE` field when
+/// `page_numbers`. A header/footer must contain at least one paragraph.
 fn render_hf_body(
     ctx: &mut Ctx,
     blocks: &[crate::model::Block],
@@ -263,8 +262,18 @@ fn content_control_wrapper(control: Option<&AuthoredContentControl>, run_xml: &s
 /// Wrap a header/footer body in its root element + namespaces.
 fn hf_part(tag: &str, body: &str) -> Vec<u8> {
     if body.contains("<w:drawing>") {
+        let chart_ns = if body.contains("<c:chart") {
+            format!(r#" xmlns:c="{C_NS}""#)
+        } else {
+            String::new()
+        };
+        let chart_ex_ns = if body.contains("<cx:chart") {
+            format!(r#" xmlns:cx="{CX_NS}""#)
+        } else {
+            String::new()
+        };
         format!(
-            r#"{XML_DECL}<w:{tag} xmlns:w="{W_NS}" xmlns:r="{R_NS}" xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:pic="{PIC_NS}">{body}</w:{tag}>"#
+            r#"{XML_DECL}<w:{tag} xmlns:w="{W_NS}" xmlns:r="{R_NS}" xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:pic="{PIC_NS}"{chart_ns}{chart_ex_ns}>{body}</w:{tag}>"#
         )
         .into_bytes()
     } else {
@@ -664,9 +673,13 @@ impl Ctx {
                 out.push_str("</w:p>");
             }
             Block::Chart(chart) => {
-                out.push_str("<w:p><w:r>");
-                write_run_text(out, &chart_placeholder_text(chart));
-                out.push_str("</w:r></w:p>");
+                if chart.series.is_empty() {
+                    out.push_str("<w:p><w:r>");
+                    write_run_text(out, &chart_placeholder_text(chart));
+                    out.push_str("</w:r></w:p>");
+                } else {
+                    self.write_chart_inner(out, chart, Some(rels));
+                }
             }
             Block::PageBreak => out.push_str(r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#),
             Block::SectionBreak(_) => {}
@@ -1130,22 +1143,29 @@ impl Ctx {
     }
 
     fn write_chart(&mut self, out: &mut String, chart: &Chart) {
+        self.write_chart_inner(out, chart, None);
+    }
+
+    fn write_chart_inner(
+        &mut self,
+        out: &mut String,
+        chart: &Chart,
+        part_rels: Option<&mut Vec<Rel>>,
+    ) {
         self.chart_id += 1;
         let chart_id = self.chart_id;
         self.drawing_id += 1;
         let drawing_id = self.drawing_id;
-        let (rid, graphic_tag, graphic_uri) = if is_chart_ex_kind(chart.kind) {
+        let (target, rel_type, graphic_tag, graphic_uri) = if is_chart_ex_kind(chart.kind) {
             let target = format!("charts/chartEx{chart_id}.xml");
-            let rid = self.add_rel(REL_CHART_EX, &target, false);
             self.chart_parts.push((
                 format!("word/{target}"),
                 CT_CHART_EX,
                 chart_ex_xml(chart, chart_id).into_bytes(),
             ));
-            (rid, "cx:chart", CX_NS)
+            (target, REL_CHART_EX, "cx:chart", CX_NS)
         } else {
             let target = format!("charts/chart{chart_id}.xml");
-            let rid = self.add_rel(REL_CHART, &target, false);
             let workbook_name = format!("Microsoft_Excel_Worksheet{chart_id}.xlsx");
             let workbook_rid = "rId1".to_string();
             self.chart_rels.push((
@@ -1166,7 +1186,12 @@ impl Ctx {
                 CT_CHART,
                 chart_xml(chart, chart_id, Some(&workbook_rid)).into_bytes(),
             ));
-            (rid, "c:chart", C_NS)
+            (target, REL_CHART, "c:chart", C_NS)
+        };
+        let rid = if let Some(rels) = part_rels {
+            add_part_rel(rels, rel_type, &target, false)
+        } else {
+            self.add_rel(rel_type, &target, false)
         };
 
         let (cx, cy) = image_extent_emu(chart.width_px, chart.height_px);
