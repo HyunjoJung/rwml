@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Flows visible top-level main-story end-of-column characters (`0x0E`) from
+  opened legacy `.doc` files into the next active PDF preview column, advancing
+  to a new page after the final column. Renderer-only character offsets retain
+  the newline-backed public model, preserve marker-only progress, and exclude
+  hidden characters, table cells, and non-main stories. Fresh conversion,
+  manual page breaks, RTL column ordering, and Word-exact pagination remain
+  outside this bounded path.
 - Flows visible top-level body `w:br w:type="column"` markers from opened DOCX
   files into the next active PDF preview column, advancing to a new page after
   the final column. Renderer-only character offsets preserve the existing

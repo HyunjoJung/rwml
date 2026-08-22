@@ -568,6 +568,7 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
     let assemble::LegacyBuildOutput {
         model,
         pagination_hints: _pagination_hints,
+        column_break_offsets: _column_break_offsets,
         section_column_gap_pt: _section_column_gap_pt,
         final_section_column_gap_pt: _final_section_column_gap_pt,
         table_row_pagination: _table_row_pagination,
@@ -2924,6 +2925,7 @@ impl Document {
                     &assembled.model,
                     render::SourceRenderHints {
                         pagination: &assembled.pagination_hints,
+                        column_break_offsets: &assembled.column_break_offsets,
                         section_column_gap_pt: &assembled.section_column_gap_pt,
                         final_section_column_gap_pt: assembled.final_section_column_gap_pt,
                         table_row_pagination: &assembled.table_row_pagination,
@@ -11039,6 +11041,100 @@ mod tests {
             assert_eq!(model.blocks.len(), 3);
             assert_eq!(hints.section_column_gap_pt, &[None, Some(40.0), None]);
             assert_eq!(hints.final_section_column_gap_pt, Some(10.0));
+        });
+    }
+
+    #[cfg(feature = "render")]
+    fn legacy_manual_column_break_layout_doc() -> Vec<u8> {
+        let text = "left\u{000e}right\u{000e}page two\r\u{000e}\rafter orphan\r";
+        let text_end = text.encode_utf16().count() as u32;
+        let mut section = section_page_grpprl(4400, 3000, 400, 400, 400, 400, false);
+        push_section_column_count(&mut section, 1);
+        legacy_doc_with_section_page_grpprls(text, &[0, text_end], &[&section])
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_manual_column_breaks_reach_preview_flow() {
+        let document = Document::open(&legacy_manual_column_break_layout_doc()).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(document.model().blocks.len(), 3);
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.column_break_offsets, &[vec![4, 10], vec![0], vec![]]);
+        });
+
+        let model_only = layout_pages_with_fonts(&document.model(), &fonts).unwrap();
+        let opened = document.layout_pages_with_fonts(&fonts).unwrap();
+        assert_eq!(model_only.pages, 1);
+        assert_eq!(model_only.block_pages, vec![Some(1), Some(1), Some(1)]);
+        assert_eq!(opened.pages, 2);
+        assert_eq!(opened.block_pages, vec![Some(1), Some(2), Some(2)]);
+        assert_eq!(opened, document.layout_pages_with_fonts(&fonts).unwrap());
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_column_break_capture_is_visible_main_story_only() {
+        let hidden_text = "A\u{000e}B\u{000e}C\r";
+        let hidden_text_end = hidden_text.encode_utf16().count() as u32;
+        let mut section = section_page_grpprl(4400, 3000, 400, 400, 400, 400, false);
+        push_section_column_count(&mut section, 1);
+        let section_cps = [0, hidden_text_end];
+        let section_grpprls = [section.as_slice()];
+        let chpx_runs = [
+            SyntheticChpxRun {
+                cp_lim: 3,
+                grpprl: Vec::new(),
+            },
+            SyntheticChpxRun {
+                cp_lim: 4,
+                grpprl: vec![0x3C, 0x08, 0x01],
+            },
+            SyntheticChpxRun {
+                cp_lim: hidden_text_end,
+                grpprl: Vec::new(),
+            },
+        ];
+        let hidden = Document::open(&synth_doc_with_ccp_and_tables(
+            hidden_text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [hidden_text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_sed_cps: Some(&section_cps),
+                plcf_sed_sepx_grpprls: Some(&section_grpprls),
+                chpx_runs: Some(&chpx_runs),
+                ..SyntheticDocTables::default()
+            },
+        ))
+        .unwrap();
+        hidden.with_render_model_and_hints(|model, hints| {
+            assert_eq!(single_paragraph_text(&model.blocks), "A\nB\nC");
+            assert_eq!(hints.column_break_offsets, &[vec![1]]);
+        });
+
+        let main = "M\u{000e}N\r";
+        let footnote = "F\u{000e}G\r";
+        let combined = format!("{main}{footnote}");
+        let main_len = main.encode_utf16().count() as u32;
+        let footnote_len = footnote.encode_utf16().count() as u32;
+        let stories = Document::open(&synth_doc_with_ccp_and_tables(
+            &combined,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, footnote_len, 0, 0, 0, 0],
+            SyntheticDocTables::default(),
+        ))
+        .unwrap();
+        stories.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 2);
+            assert_eq!(hints.column_break_offsets, &[vec![1], vec![]]);
         });
     }
 

@@ -341,7 +341,8 @@ Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,
 equal-width section columns, explicit opened-DOCX and legacy `.doc` inter-column
-spacing, visible top-level opened-DOCX manual column breaks, and per-side margins
+spacing, visible top-level opened-DOCX and legacy `.doc` manual column breaks,
+and per-side margins
 come from the document;
 multi-page tables repeat their header rows without losing outer placement or
 border paint. Opened
@@ -1024,8 +1025,14 @@ code points.
   spacing selector restores the last valid count. Malformed local SEPX data
   keeps that section's deterministic default without discarding valid
   neighboring sections.
+  A visible end-of-column character (`0x0E`) in a top-level main-story
+  paragraph advances an opened-document PDF preview to the next active column,
+  or to a new page after the final column, through private source-aligned
+  offsets. The public model retains its newline representation. Hidden
+  characters, table cells, non-main stories, and fresh conversion do not
+  activate that preview hint.
   Continuous/new-column section marks normalize to the shared model's
-  next-page fallback. Custom column widths/gaps, separator lines, manual column
+  next-page fallback. Custom column widths/gaps, separator lines, manual page
   breaks, RTL column ordering, gutters/facing pages, header/footer distances,
   page borders, vertical justification, signed negative document-grid
   character-pitch deltas, negative fixed-position top/bottom semantics,
