@@ -512,10 +512,11 @@ bridges.
 > layout engine. It is faithful to the model and produces selectable text, but
 > does **not** claim Word- or LibreOffice-exact pagination, floating-object
 > layout, end-to-end RTL typography, page-bottom footnote composition, unequal
-> section columns, or Word-exact section-local horizontal geometry. Supported
-> section breaks now apply each section's modeled page height and top/bottom
-> margins to native pagination and emitted PDF pages; unequal widths/orientation
-> remain outside this bounded bridge. Unknown fields, remaining
+> section columns, or Word-exact section-local geometry. Supported section
+> breaks apply each section's modeled physical page width and height, including
+> landscape layouts, plus per-side margins to native shaping, pagination,
+> running surfaces, anchored overlays, and emitted PDF pages. Unequal column
+> tracks remain outside this bounded bridge. Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
 > `w:tblPrEx` remains a table-property exception path for the supported
@@ -616,8 +617,9 @@ live in a separate `LayoutPages` record and never overwrite reader-path
 least one physical page; even/odd starts add one body-empty filler when needed
 to reach the requested 1-based physical parity. Section display-number
 restarts/formats do not affect that preview parity. Word-exact filler-page
-running surfaces, section-relative odd/even header selection, and mixed
-section-local geometry remain outside this bounded behavior.
+running surfaces and section-relative odd/even header selection remain outside
+this bounded behavior; modeled section-local page geometry is applied, while
+unequal column tracks remain outside it.
 
 You can also convert a parsed document straight to PDF:
 `Document::open(&bytes)?.to_pdf()` / `try_to_pdf()`, pass font blobs with

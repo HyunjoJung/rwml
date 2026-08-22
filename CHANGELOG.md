@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies each modeled section's physical page width and height, including
+  landscape layouts, plus per-side margins to PDF body shaping and pagination,
+  running headers and footers, anchored floating-shape coordinates,
+  top-and-bottom wrap bands, and emitted page media boxes. Unequal column tracks
+  and Word-exact pagination remain outside this bounded renderer bridge.
 - Prunes an unreferenced internal image relationship and unreachable `word/media/*`
   target when `remove_body_block` removes the last retained reference, while
   preserving shared media, other relationship kinds, and unrelated package parts.
@@ -379,9 +384,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fallback. Custom or unequal column widths/gaps, separator lines, manual column
   breaks, RTL column ordering, gutters/facing pages, header/footer distances,
   page borders/grids, vertical justification, negative fixed-position
-  top/bottom semantics, mixed section-local render geometry, section-relative
-  odd/even running-surface selection, and Word-exact filler surfaces remain
-  unsupported.
+  top/bottom semantics, section-relative odd/even running-surface selection,
+  and Word-exact filler surfaces remain unsupported.
 - Opened `.docx` tables now preserve a complete positive direct `w:tblGrid` as
   normalized `Table::col_widths_pct` when its column count matches the
   reconstructed cell/span grid. Revision-history grids, omitted/zero/invalid

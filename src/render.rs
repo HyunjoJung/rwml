@@ -116,17 +116,8 @@ impl Geom {
         }
     }
 
-    /// Apply a section's vertical page geometry while retaining the current
-    /// horizontal geometry. Unequal widths and orientation remain a separate
-    /// renderer ceiling because shaped line widths are already section-wide.
-    fn with_section_vertical(self, setup: &SectionSetup) -> Self {
-        let section = Self::from_setup(&setup.page);
-        Self {
-            page_h: section.page_h,
-            top_m: section.top_m,
-            bottom_m: section.bottom_m,
-            ..self
-        }
+    fn from_section(setup: &SectionSetup) -> Self {
+        Self::from_setup(&setup.page)
     }
 }
 
@@ -1389,9 +1380,10 @@ fn nonnegative_emu_pt(value: Option<i64>) -> f32 {
 fn top_bottom_bands_by_block(
     model: &DocModel,
     shapes: &[FloatingShape],
-    geom: Geom,
+    base_geom: Geom,
 ) -> Vec<Vec<TopBottomBand>> {
     let mut bands = vec![Vec::new(); model.blocks.len()];
+    let geometries = section_geometries_by_block(&model.blocks, base_geom);
     for shape in shapes.iter().take(MAX_FLOATING_SHAPE_OVERLAYS) {
         let Some(wrapping) = shape
             .wrapping
@@ -1409,6 +1401,7 @@ fn top_bottom_bands_by_block(
         else {
             continue;
         };
+        let geom = geometries.get(block_index).copied().unwrap_or(base_geom);
         let Some(extent) = shape
             .extent
             .filter(|extent| extent.cx_emu > 0 && extent.cy_emu > 0)
@@ -1442,7 +1435,8 @@ fn top_bottom_bands_by_block(
 
 fn floating_shape_overlays_for_pages(
     shapes: &[FloatingShape],
-    geom: Geom,
+    base_geom: Geom,
+    page_geometries: &[Geom],
     block_pages: &HashMap<usize, usize>,
     block_line_pages: &HashMap<usize, Vec<BlockLinePage>>,
 ) -> Vec<FloatingShapeOverlay> {
@@ -1462,6 +1456,12 @@ fn floating_shape_overlays_for_pages(
         .into_iter()
         .map(|(i, shape)| {
             let index = i + 1;
+            let page_index =
+                floating_shape_anchor_page(shape, block_pages, block_line_pages).unwrap_or(0);
+            let geom = page_geometries
+                .get(page_index)
+                .copied()
+                .unwrap_or(base_geom);
             let (w, h) = floating_shape_size(shape, geom);
             let x = floating_shape_simple_coordinate(shape, ShapeAxis::Horizontal, w, geom)
                 .unwrap_or_else(|| {
@@ -1481,8 +1481,6 @@ fn floating_shape_overlays_for_pages(
                         h,
                     )
                 });
-            let page_index =
-                floating_shape_anchor_page(shape, block_pages, block_line_pages).unwrap_or(0);
             FloatingShapeOverlay {
                 page_index,
                 behind_doc: shape.behind_doc == Some(true),
@@ -7616,7 +7614,7 @@ fn section_geometries_by_item(items: &[FlowItem], base: Geom) -> Vec<Geom> {
     let mut current = items
         .iter()
         .find_map(|item| match item {
-            FlowItem::SectionBreak(setup) => Some(base.with_section_vertical(setup)),
+            FlowItem::SectionBreak(setup) => Some(Geom::from_section(setup)),
             _ => None,
         })
         .unwrap_or(base);
@@ -7627,7 +7625,7 @@ fn section_geometries_by_item(items: &[FlowItem], base: Geom) -> Vec<Geom> {
             current = items[index + 1..]
                 .iter()
                 .find_map(|next| match next {
-                    FlowItem::SectionBreak(setup) => Some(base.with_section_vertical(setup)),
+                    FlowItem::SectionBreak(setup) => Some(Geom::from_section(setup)),
                     _ => None,
                 })
                 .unwrap_or(base);
@@ -7640,7 +7638,7 @@ fn section_geometries_by_block(blocks: &[Block], base: Geom) -> Vec<Geom> {
     let mut current = blocks
         .iter()
         .find_map(|block| match block {
-            Block::SectionBreak(setup) => Some(base.with_section_vertical(setup)),
+            Block::SectionBreak(setup) => Some(Geom::from_section(setup)),
             _ => None,
         })
         .unwrap_or(base);
@@ -7651,7 +7649,7 @@ fn section_geometries_by_block(blocks: &[Block], base: Geom) -> Vec<Geom> {
             current = blocks[index + 1..]
                 .iter()
                 .find_map(|next| match next {
-                    Block::SectionBreak(setup) => Some(base.with_section_vertical(setup)),
+                    Block::SectionBreak(setup) => Some(Geom::from_section(setup)),
                     _ => None,
                 })
                 .unwrap_or(base);
@@ -7971,12 +7969,23 @@ fn render_pdf(
     );
     let final_section_setup = SectionSetup::from(&model.setup);
     let pagination = paginate(items, geom, &final_section_setup);
+    let page_geometries = pagination
+        .page_sections
+        .iter()
+        .map(|section| {
+            section
+                .as_ref()
+                .map(|section| Geom::from_section(&section.setup))
+                .unwrap_or(geom)
+        })
+        .collect::<Vec<_>>();
     let pages = pagination.pages;
     let page_sections = pagination.page_sections;
     let section_start_page_index = pagination.final_section_start_page_index;
     let floating_shape_overlays = floating_shape_overlays_for_pages(
         floating_shapes,
         geom,
+        &page_geometries,
         &pagination.block_pages,
         &pagination.block_line_pages,
     );
@@ -7997,7 +8006,7 @@ fn render_pdf(
                 &fallback_page_section
             }
         };
-        let page_geom = geom.with_section_vertical(&page_section.setup);
+        let page_geom = page_geometries.get(page_index).copied().unwrap_or(geom);
         let Some(settings) = PageSettings::from_wh(page_geom.page_w, page_geom.page_h) else {
             continue;
         };
@@ -8010,8 +8019,8 @@ fn render_pdf(
             page_number,
             page_index == page_section.first_page_index,
         );
-        let header_lines = layout_lines(header_blocks, geom, &mut tcx);
-        let footer_lines = layout_lines(footer_blocks, geom, &mut tcx);
+        let header_lines = layout_lines(header_blocks, page_geom, &mut tcx);
+        let footer_lines = layout_lines(footer_blocks, page_geom, &mut tcx);
         let mut surface = page.surface();
         for overlay in floating_shape_overlays
             .iter()
@@ -8029,7 +8038,7 @@ fn render_pdf(
                 break;
             }
             let baseline = hy + line.baseline;
-            let x0 = geom.left + line.x_indent;
+            let x0 = page_geom.left + line.x_indent;
             draw_line_background(&mut surface, line, x0, hy);
             draw_line_leaders(&mut surface, line, x0, hy, baseline);
             for run in &line.runs {
@@ -8051,7 +8060,7 @@ fn render_pdf(
                 break;
             }
             let baseline = fy + line.baseline;
-            let x0 = geom.left + line.x_indent;
+            let x0 = page_geom.left + line.x_indent;
             draw_line_background(&mut surface, line, x0, fy);
             draw_line_leaders(&mut surface, line, x0, fy, baseline);
             for run in &line.runs {
@@ -8067,10 +8076,10 @@ fn render_pdf(
             fy += line.height;
         }
         if page_section.setup.page_numbers {
-            if let Some(line) = layout_page_number_line(page_index + 1, geom, &mut tcx) {
+            if let Some(line) = layout_page_number_line(page_index + 1, page_geom, &mut tcx) {
                 if fy + line.height <= page_geom.page_h {
                     let baseline = fy + line.baseline;
-                    let x0 = geom.left + line.x_indent;
+                    let x0 = page_geom.left + line.x_indent;
                     draw_line_background(&mut surface, &line, x0, fy);
                     draw_line_leaders(&mut surface, &line, x0, fy, baseline);
                     for run in line.runs {
@@ -8093,8 +8102,9 @@ fn render_pdf(
                 | FlowItem::Table { .. } => {}
                 FlowItem::Picture { image, layout } => {
                     // Center the rotated visual bounds within the active body column.
-                    let bounds_x =
-                        geom.left + column_x + ((placed.width - layout.bounds_w) * 0.5).max(0.0);
+                    let bounds_x = page_geom.left
+                        + column_x
+                        + ((placed.width - layout.bounds_w) * 0.5).max(0.0);
                     if let Some(sz) = Size::from_wh(layout.image_w, layout.image_h) {
                         surface.push_transform(&image_paint_transform(layout, bounds_x, top));
                         surface.draw_image(image, sz);
@@ -8102,12 +8112,12 @@ fn render_pdf(
                     }
                 }
                 FlowItem::Chart { chart, w, h } => {
-                    let x = geom.left + column_x + ((placed.width - w) * 0.5).max(0.0);
+                    let x = page_geom.left + column_x + ((placed.width - w) * 0.5).max(0.0);
                     draw_authored_chart(&mut surface, &chart, x, top, w, h, &mut tcx);
                 }
                 FlowItem::Line(line) => {
                     let baseline = top + line.baseline;
-                    let x0 = geom.left + column_x + line.x_indent;
+                    let x0 = page_geom.left + column_x + line.x_indent;
                     let lh = line.height;
                     draw_line_background(&mut surface, &line, x0, top);
                     draw_line_leaders(&mut surface, &line, x0, top, baseline);
@@ -8131,7 +8141,7 @@ fn render_pdf(
                     let border = row.border;
                     let row_height = row.height;
                     let bottom = top + row_height;
-                    let x_offset = geom.left + column_x;
+                    let x_offset = page_geom.left + column_x;
                     let current_vertical = row_vertical_border_lines(&row, x_offset);
                     let junctions = match (table_id, previous_row_borders.as_ref()) {
                         (Some(table_id), Some(previous))
@@ -12797,6 +12807,7 @@ mod tests {
                 }),
             }],
             geom,
+            &[],
             &HashMap::new(),
             &HashMap::new(),
         );
@@ -12929,6 +12940,7 @@ mod tests {
                 },
             ],
             geom,
+            &[],
             &HashMap::new(),
             &HashMap::new(),
         );
@@ -12943,6 +12955,13 @@ mod tests {
     #[test]
     fn floating_shape_overlays_use_anchor_block_page() {
         let geom = Geom::from_setup(&PageSetup::default());
+        let page_two_geom = Geom::from_setup(&PageSetup {
+            width_pt: 300.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            landscape: true,
+            ..PageSetup::default()
+        });
         let mut block_pages = HashMap::new();
         block_pages.insert(2, 1);
         let overlays = super::floating_shape_overlays_for_pages(
@@ -12960,8 +12979,15 @@ mod tests {
                 anchor_block_index: Some(2),
                 anchor_text: None,
                 anchor_char_offset: None,
-                extent: None,
-                horizontal_position: None,
+                extent: Some(ShapeExtent {
+                    cx_emu: 304_800,
+                    cy_emu: 304_800,
+                }),
+                horizontal_position: Some(ShapePosition {
+                    relative_from: Some("page".to_string()),
+                    offset_emu: None,
+                    align: Some("right".to_string()),
+                }),
                 vertical_position: None,
                 relative_height: None,
                 behind_doc: None,
@@ -12972,12 +12998,14 @@ mod tests {
                 wrapping: None,
             }],
             geom,
+            &[geom, page_two_geom],
             &block_pages,
             &HashMap::new(),
         );
 
         assert_eq!(overlays.len(), 1);
         assert_eq!(overlays[0].page_index, 1);
+        assert_close(overlays[0].x, 276.0);
     }
 
     #[test]
@@ -13059,6 +13087,7 @@ mod tests {
                 wrapping: None,
             }],
             geom,
+            &[],
             &pagination.block_pages,
             &pagination.block_line_pages,
         );
@@ -14243,6 +14272,89 @@ mod tests {
     }
 
     #[test]
+    fn top_and_bottom_bands_use_anchor_section_geometry() {
+        let first_page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let final_page = PageSetup {
+            width_pt: 300.0,
+            height_pt: 200.0,
+            margin_pt: 20.0,
+            landscape: true,
+            ..PageSetup::default()
+        };
+        let model = DocModel {
+            blocks: vec![
+                para("first anchor", None),
+                Block::SectionBreak(SectionSetup {
+                    page: first_page,
+                    ..SectionSetup::default()
+                }),
+                para("final anchor", None),
+            ],
+            setup: crate::model::DocSetup {
+                page: final_page,
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let shape = FloatingShape {
+            id: "section-wrap".to_string(),
+            name: None,
+            description: None,
+            text: None,
+            preset_geometry: None,
+            fill_color: None,
+            outline_color: None,
+            simple_position_enabled: Some(false),
+            simple_position: None,
+            effect_extent: None,
+            anchor_block_index: Some(0),
+            anchor_text: Some("first anchor".to_string()),
+            anchor_char_offset: Some(0),
+            extent: Some(ShapeExtent {
+                cx_emu: 254_000,
+                cy_emu: 254_000,
+            }),
+            horizontal_position: None,
+            vertical_position: Some(ShapePosition {
+                relative_from: Some("page".to_string()),
+                offset_emu: None,
+                align: Some("center".to_string()),
+            }),
+            relative_height: None,
+            behind_doc: Some(false),
+            layout_in_cell: Some(false),
+            locked: None,
+            allow_overlap: None,
+            distance: crate::ShapeDistance::default(),
+            wrapping: Some(crate::ShapeWrapping {
+                kind: "topAndBottom".to_string(),
+                text: None,
+                distance: crate::ShapeDistance::default(),
+                polygon: Vec::new(),
+            }),
+        };
+        let mut final_shape = shape.clone();
+        final_shape.id = "final-section-wrap".to_string();
+        final_shape.anchor_block_index = Some(2);
+        final_shape.anchor_text = Some("final anchor".to_string());
+        let bands = super::top_bottom_bands_by_block(
+            &model,
+            &[shape, final_shape],
+            Geom::from_setup(&final_page),
+        );
+
+        assert_close(bands[0][0].top, 40.0);
+        assert_close(bands[0][0].bottom, 60.0);
+        assert_close(bands[2][0].top, 90.0);
+        assert_close(bands[2][0].bottom, 110.0);
+    }
+
+    #[test]
     fn keep_lines_moves_a_bounded_paragraph_to_a_fresh_page() {
         let geom = Geom::from_setup(&PageSetup {
             width_pt: 220.0,
@@ -14503,6 +14615,122 @@ mod tests {
         let pagination = paginate(items, Geom::from_setup(&final_setup.page), &final_setup);
 
         assert_eq!(pagination.pages.len(), 3);
+    }
+
+    #[test]
+    fn section_break_uses_ending_section_horizontal_geometry() {
+        let first = SectionSetup {
+            page: PageSetup {
+                width_pt: 140.0,
+                height_pt: 220.0,
+                margin_pt: 20.0,
+                margin_left_pt: Some(10.0),
+                margin_right_pt: Some(30.0),
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            page: PageSetup {
+                width_pt: 300.0,
+                height_pt: 140.0,
+                margin_pt: 20.0,
+                margin_left_pt: Some(40.0),
+                margin_right_pt: Some(20.0),
+                landscape: true,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(20.0),
+            FlowItem::SectionBreak(first),
+            pagination_line(20.0),
+        ];
+        let geometries =
+            super::section_geometries_by_item(&items, Geom::from_setup(&final_setup.page));
+
+        assert_close(geometries[0].page_w, 140.0);
+        assert_close(geometries[0].left, 10.0);
+        assert_close(geometries[0].right, 30.0);
+        assert_close(geometries[1].page_w, 140.0);
+        assert_close(geometries[2].page_w, 300.0);
+        assert_close(geometries[2].left, 40.0);
+        assert_close(geometries[2].right, 20.0);
+    }
+
+    #[test]
+    fn body_paragraphs_shape_to_their_section_page_width() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let narrow_page = PageSetup {
+            width_pt: 140.0,
+            height_pt: 220.0,
+            margin_pt: 20.0,
+            margin_left_pt: Some(10.0),
+            margin_right_pt: Some(30.0),
+            ..PageSetup::default()
+        };
+        let wide_page = PageSetup {
+            width_pt: 300.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            margin_left_pt: Some(40.0),
+            margin_right_pt: Some(20.0),
+            landscape: true,
+            ..PageSetup::default()
+        };
+        let text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi";
+        let model = DocModel {
+            blocks: vec![
+                para(text, None),
+                Block::SectionBreak(SectionSetup {
+                    page: narrow_page,
+                    ..SectionSetup::default()
+                }),
+                para(text, None),
+            ],
+            setup: crate::model::DocSetup {
+                page: wide_page,
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let geom = Geom::from_setup(&wide_page);
+        let mut capture = LayoutCapture::default();
+        let items = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            &[],
+            None,
+        );
+        let section_break = items
+            .iter()
+            .position(|item| matches!(item, FlowItem::SectionBreak(_)))
+            .expect("section break flow item");
+        let narrow_lines = items[..section_break]
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+        let wide_lines = items[section_break + 1..]
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+
+        assert!(
+            narrow_lines > wide_lines,
+            "narrow section should wrap more: narrow={narrow_lines}, wide={wide_lines}"
+        );
     }
 
     #[test]
