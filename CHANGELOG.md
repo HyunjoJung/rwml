@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies model-backed paragraph before/after gaps in selected
+  default/first/even running header and footer bands, including resolved
+  `w:spacing` values decoded from referenced DOCX parts. Finite positive gaps
+  advance later text, pictures, and tables in source order; explicit zero keeps
+  no gap, while an unset paragraph-after value retains the renderer's existing
+  default trailing gap. A gap that consumes the remaining margin band ends that
+  surface, and footer page numbers follow the bounded cursor without changing
+  body page counts. Adjacent gaps remain additive; Word-exact collapse,
+  contextual/automatic spacing, and header/footer distance semantics remain
+  outside this bounded path.
 - Paints ordinary modeled tables in selected default/first/even running header
   and footer bands, including tables decoded from referenced DOCX parts. Rows
   use the body table painter and retain model-backed width, alignment, visual

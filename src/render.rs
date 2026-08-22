@@ -3907,6 +3907,7 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
 }
 
 enum RunningSurfaceItem {
+    Gap(f32),
     Line(LineLayout),
     Picture {
         image: PdfImage,
@@ -3917,9 +3918,9 @@ enum RunningSurfaceItem {
     },
 }
 
-/// Lay out compact running-surface content while retaining decoded pictures and
-/// modeled table rows. Charts, pagination controls, and paragraph gaps remain
-/// outside this bounded margin-band path.
+/// Lay out compact running-surface content while retaining paragraph gaps,
+/// decoded pictures, and modeled table rows. Charts and pagination controls
+/// remain outside this bounded margin-band path.
 fn layout_running_surface_items(
     blocks: &[Block],
     line_spacing_hints: &[Option<LineSpacingHint>],
@@ -3942,6 +3943,9 @@ fn layout_running_surface_items(
     items
         .into_iter()
         .filter_map(|i| match i {
+            FlowItem::Gap(gap) if gap.is_finite() && gap > 0.0 => {
+                Some(RunningSurfaceItem::Gap(gap))
+            }
             FlowItem::Line(line) => Some(RunningSurfaceItem::Line(line)),
             FlowItem::Picture { image, layout } => {
                 Some(RunningSurfaceItem::Picture { image, layout })
@@ -3998,6 +4002,17 @@ fn draw_running_surface_items(
 ) -> f32 {
     for item in items {
         match item {
+            RunningSurfaceItem::Gap(gap) => {
+                let remaining = limit_y - y;
+                if !remaining.is_finite() || remaining <= 0.0 {
+                    break;
+                }
+                if gap >= remaining {
+                    y = limit_y;
+                    break;
+                }
+                y += gap;
+            }
             RunningSurfaceItem::Line(line) => {
                 if y + line.height > limit_y {
                     break;
@@ -16148,6 +16163,79 @@ mod tests {
             clipped_render.pdf,
             super::to_pdf_with_fonts_and_report(&clipped, &fonts, FeatureInventory::default()).pdf
         );
+    }
+
+    #[test]
+    fn running_surface_paragraph_gaps_are_bounded_and_do_not_paginate_body() {
+        let running_paragraph = |text: &str, before_pt| {
+            let Block::Paragraph(mut paragraph) = para(text, None) else {
+                unreachable!()
+            };
+            paragraph.props.spacing = Spacing {
+                before_pt: Some(before_pt),
+                after_pt: Some(0.0),
+                ..Spacing::default()
+            };
+            Block::Paragraph(paragraph)
+        };
+        let model = |header, footer| DocModel {
+            blocks: vec![para("body stays on its original page", None)],
+            setup: crate::model::DocSetup {
+                page: PageSetup {
+                    width_pt: 200.0,
+                    height_pt: 200.0,
+                    margin_pt: 60.0,
+                    ..PageSetup::default()
+                },
+                header,
+                footer,
+                page_numbers: true,
+                ..crate::model::DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let paired = |second_gap| {
+            vec![
+                running_paragraph("FIRST", 0.0),
+                running_paragraph("SECOND", second_gap),
+            ]
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let render = |model: &DocModel| {
+            super::to_pdf_with_fonts_and_report(model, &fonts, FeatureInventory::default())
+        };
+        let baseline = model(paired(0.0), paired(0.0));
+        let header_gap = model(paired(10.0), paired(0.0));
+        let footer_gap = model(paired(0.0), paired(10.0));
+        let overflow_first = model(vec![running_paragraph("HEADER", 0.0)], Vec::new());
+        let overflow_gap = model(
+            vec![
+                running_paragraph("HEADER", 0.0),
+                running_paragraph("HEADER", 100.0),
+            ],
+            Vec::new(),
+        );
+
+        let baseline_render = render(&baseline);
+        let header_render = render(&header_gap);
+        let footer_render = render(&footer_gap);
+        let overflow_first_render = render(&overflow_first);
+        let overflow_gap_render = render(&overflow_gap);
+        for rendered in [
+            &baseline_render,
+            &header_render,
+            &footer_render,
+            &overflow_first_render,
+            &overflow_gap_render,
+        ] {
+            assert_eq!(rendered.report.pages, 1);
+        }
+        assert_ne!(header_render.pdf, baseline_render.pdf);
+        assert_ne!(footer_render.pdf, baseline_render.pdf);
+        assert_ne!(header_render.pdf, footer_render.pdf);
+        assert_eq!(overflow_gap_render.pdf, overflow_first_render.pdf);
+        assert_eq!(header_render.pdf, render(&header_gap).pdf);
+        assert_eq!(footer_render.pdf, render(&footer_gap).pdf);
     }
 
     #[test]

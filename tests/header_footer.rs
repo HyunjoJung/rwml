@@ -327,6 +327,37 @@ fn running_surface_table_docx(header_table: bool, footer_table: bool) -> Vec<u8>
     ])
 }
 
+#[cfg(feature = "render")]
+fn running_surface_paragraph_gap_docx(header_before: u32, footer_before: u32) -> Vec<u8> {
+    let header = format!(
+        r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>HEADER TOP</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:before="{header_before}" w:after="0"/></w:pPr><w:r><w:t>HEADER BOTTOM</w:t></w:r></w:p></w:hdr>"#
+    );
+    let footer = format!(
+        r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:t>FOOTER TOP</w:t></w:r></w:p><w:p><w:pPr><w:spacing w:before="{footer_before}" w:after="0"/></w:pPr><w:r><w:t>FOOTER BOTTOM</w:t></w:r></w:p></w:ftr>"#
+    );
+
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="4400" w:h="6000"/><w:pgMar w:top="1600" w:right="400" w:bottom="1600" w:left="400"/><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        ("word/header1.xml", &header),
+        ("word/footer1.xml", &footer),
+    ])
+}
+
 fn single_paragraph_text(blocks: &[Block]) -> String {
     let [Block::Paragraph(paragraph)] = blocks else {
         panic!("expected exactly one paragraph block, got {blocks:?}");
@@ -665,6 +696,62 @@ fn opened_docx_render_paints_running_header_and_footer_tables() {
         header_pdf, footer_pdf,
         "header and footer positions must differ"
     );
+    assert_ne!(both_pdf, header_pdf);
+    assert_ne!(both_pdf, footer_pdf);
+    assert_eq!(header_pdf, header.to_pdf_with_fonts(&fonts));
+    assert_eq!(footer_pdf, footer.to_pdf_with_fonts(&fonts));
+    assert_eq!(both_pdf, both.to_pdf_with_fonts(&fonts));
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_applies_running_header_and_footer_paragraph_gaps() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let open = |header_before, footer_before| {
+        Document::open(&running_surface_paragraph_gap_docx(
+            header_before,
+            footer_before,
+        ))
+        .expect("running-surface paragraph-gap fixture opens")
+    };
+    let baseline = open(0, 0);
+    let header = open(240, 0);
+    let footer = open(0, 240);
+    let both = open(240, 240);
+
+    let header_model = header.model();
+    let [Block::Paragraph(_), Block::Paragraph(header_second)] =
+        header_model.setup.header.as_slice()
+    else {
+        panic!("decoded header must retain both paragraphs");
+    };
+    assert_eq!(header_second.props.spacing.before_pt, Some(12.0));
+    assert_eq!(header_second.props.spacing.after_pt, Some(0.0));
+    let footer_model = footer.model();
+    let [Block::Paragraph(_), Block::Paragraph(footer_second)] =
+        footer_model.setup.footer.as_slice()
+    else {
+        panic!("decoded footer must retain both paragraphs");
+    };
+    assert_eq!(footer_second.props.spacing.before_pt, Some(12.0));
+    assert_eq!(footer_second.props.spacing.after_pt, Some(0.0));
+    for document in [&baseline, &header, &footer, &both] {
+        assert_eq!(
+            document
+                .layout_pages_with_fonts(&fonts)
+                .expect("running-surface paragraph-gap layout succeeds")
+                .pages,
+            1
+        );
+    }
+
+    let baseline_pdf = baseline.to_pdf_with_fonts(&fonts);
+    let header_pdf = header.to_pdf_with_fonts(&fonts);
+    let footer_pdf = footer.to_pdf_with_fonts(&fonts);
+    let both_pdf = both.to_pdf_with_fonts(&fonts);
+    assert_ne!(header_pdf, baseline_pdf, "header gap was dropped");
+    assert_ne!(footer_pdf, baseline_pdf, "footer gap was dropped");
+    assert_ne!(header_pdf, footer_pdf);
     assert_ne!(both_pdf, header_pdf);
     assert_ne!(both_pdf, footer_pdf);
     assert_eq!(header_pdf, header.to_pdf_with_fonts(&fonts));

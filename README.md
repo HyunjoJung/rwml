@@ -327,7 +327,13 @@ alignment. Fitting rows paint in source order; a first row taller than the
 remaining band paints once under a vertical clip and ends that surface without
 moving body content or changing page counts. Source-only paragraph hints inside
 those cells, nested-grid geometry, cell images, hyperlink annotations, charts,
-and Word-exact overlap remain outside this bounded path. Opened `.docx` tables
+and Word-exact overlap remain outside this bounded path. Finite positive
+paragraph before/after gaps advance later running text, pictures, and tables in
+source order; explicit zero suppresses a gap, and an unset after value retains
+the renderer's established default trailing gap. Gaps are bounded to the
+remaining margin band, footer page numbers follow the resulting cursor, and
+body page counts do not change. Adjacent gaps are additive rather than
+Word-exact collapsed. Opened `.docx` tables
 materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
 `start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own
@@ -612,8 +618,9 @@ bridges.
 > decoded raster around its center. Running-surface pictures use decoded/model
 > raster dimensions rather than relationship display extents. Source-authored
 > display extents, crop/flip/effects, floating-anchor offsets, exclusion-zone
-> reflow, table-cell images, running-surface tables/charts, and Word-exact inline
-> baseline or header/footer overlap remain outside this bounded image bridge.
+> reflow, table-cell images (including images inside running tables), running-
+> surface charts, and Word-exact inline baseline or header/footer overlap remain
+> outside this bounded image bridge.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
