@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies opened legacy-DOC positive non-multiple minimum and negative encoded
+  exact LSPD inside modeled table cells in section-linked even/default/first
+  running headers and footers. The existing block-aligned table-cell sidecar
+  now follows the same six-story, section, and unindexed default-header mapping
+  as top-level running paragraphs, then reaches the unchanged shared table
+  shaper for row measurement, vertical alignment, and visible-fragment clipping.
+  All six placements preserve public-model equality, page count, and
+  deterministic PDF bytes. Legacy running-table tabs/media, shared-model line
+  rules, fresh conversion, nested-grid geometry, and Word-exact overlap remain
+  outside this bounded path.
 - Applies opened-DOCX table-cell tab stops in selected default/first/even
   running headers and footers through the existing table shaper. Resolved
   explicit stops retain the supported LTR/RTL alignment, reachability, leader,
@@ -16,7 +26,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   follow default-surface inheritance and page-variant selection without entering
   the public model or changing body pagination. Implicit list-marker tabs,
   post-tab field containment, Word-exact custom-tab reflow/pagination, legacy
-  running tables, fresh conversion, media, and nested-grid geometry remain
+  running-table tabs, fresh conversion, media, and nested-grid geometry remain
   outside this bounded path.
 - Applies opened-DOCX `exact` and `atLeast` paragraph line rules inside modeled
   table cells in selected default/first/even running headers and footers. The
@@ -78,8 +88,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   mirrors the existing six-story `PlcfHdd` mapping, including the unindexed
   default-header fallback, and follows the running surface selected for each
   emitted page. Exact over-tall content uses the existing margin-band clip.
-  Line-rule recovery inside running-surface table cells, the public model,
-  shared-model conversion, and fresh DOCX output remain unchanged.
+  Legacy running-table tabs/media, the public model, shared-model conversion,
+  and fresh DOCX output remain unchanged.
 - Extends opened legacy-DOC positive non-multiple minimum and negative encoded
   exact LSPD into ordinary main-story table-cell paragraphs. A row/cell/block-
   aligned private render sidecar follows paragraph content through horizontal

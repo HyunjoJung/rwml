@@ -130,8 +130,12 @@ pub(crate) fn build_model_with_render_hints(
         text_start: _,
     } = build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
     #[cfg(feature = "render")]
-    let running_line_spacing_hints =
-        legacy_running_line_spacing_from_regions(&blocks, &regions, &line_spacing_hints);
+    let running_line_spacing_hints = legacy_running_line_spacing_from_regions(
+        &blocks,
+        &regions,
+        &line_spacing_hints,
+        &table_cell_line_spacing,
+    );
     let mut blocks = blocks;
     let stats = compute_stats(&blocks);
     let setup = legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
@@ -607,8 +611,10 @@ fn legacy_running_line_spacing_from_regions(
     blocks: &[Block],
     regions: &[SourceRegion],
     line_spacing_hints: &[Option<LineSpacingHint>],
+    table_cell_line_spacing: &[TableCellLineSpacingHints],
 ) -> Vec<RunningSurfaceLineSpacingHints> {
     debug_assert_eq!(blocks.len(), line_spacing_hints.len());
+    debug_assert_eq!(blocks.len(), table_cell_line_spacing.len());
     let section_count = blocks
         .iter()
         .filter(|block| matches!(block, Block::SectionBreak(_)))
@@ -627,15 +633,22 @@ fn legacy_running_line_spacing_from_regions(
         else {
             continue;
         };
+        let Some(table_cell_spacing) = table_cell_line_spacing
+            .get(start..end)
+            .map(|slice| slice.to_vec())
+        else {
+            continue;
+        };
         if spacing.is_empty() {
             continue;
         }
 
         if section_count == 1 {
-            let slot =
-                legacy_running_line_spacing_slot(&mut sections[0], region.source_story_index);
+            let (slot, table_cell_slot) =
+                legacy_running_line_spacing_slots(&mut sections[0], region.source_story_index);
             if slot.is_empty() {
                 *slot = spacing;
+                *table_cell_slot = table_cell_spacing;
             }
             continue;
         }
@@ -643,6 +656,7 @@ fn legacy_running_line_spacing_from_regions(
             for section in &mut sections {
                 if section.header.is_empty() {
                     section.header = spacing.clone();
+                    section.header_table_cells = table_cell_spacing.clone();
                 }
             }
             continue;
@@ -654,13 +668,14 @@ fn legacy_running_line_spacing_from_regions(
         let Some(section) = sections.get_mut(section_index) else {
             continue;
         };
-        let Some(slot) =
-            legacy_running_line_spacing_section_slot(section, region.source_story_index)
+        let Some((slot, table_cell_slot)) =
+            legacy_running_line_spacing_section_slots(section, region.source_story_index)
         else {
             continue;
         };
         if slot.is_empty() {
             *slot = spacing;
+            *table_cell_slot = table_cell_spacing;
         }
     }
 
@@ -668,35 +683,41 @@ fn legacy_running_line_spacing_from_regions(
 }
 
 #[cfg(feature = "render")]
-fn legacy_running_line_spacing_slot(
+fn legacy_running_line_spacing_slots(
     hints: &mut RunningSurfaceLineSpacingHints,
     story_index: Option<usize>,
-) -> &mut Vec<Option<LineSpacingHint>> {
+) -> (
+    &mut Vec<Option<LineSpacingHint>>,
+    &mut Vec<TableCellLineSpacingHints>,
+) {
     let Some(position) = legacy_header_footer_story_position(story_index) else {
-        return &mut hints.header;
+        return (&mut hints.header, &mut hints.header_table_cells);
     };
     match position {
-        0 => &mut hints.even_header,
-        1 => &mut hints.header,
-        2 => &mut hints.even_footer,
-        3 => &mut hints.footer,
-        4 => &mut hints.first_header,
-        _ => &mut hints.first_footer,
+        0 => (&mut hints.even_header, &mut hints.even_header_table_cells),
+        1 => (&mut hints.header, &mut hints.header_table_cells),
+        2 => (&mut hints.even_footer, &mut hints.even_footer_table_cells),
+        3 => (&mut hints.footer, &mut hints.footer_table_cells),
+        4 => (&mut hints.first_header, &mut hints.first_header_table_cells),
+        _ => (&mut hints.first_footer, &mut hints.first_footer_table_cells),
     }
 }
 
 #[cfg(feature = "render")]
-fn legacy_running_line_spacing_section_slot(
+fn legacy_running_line_spacing_section_slots(
     hints: &mut RunningSurfaceLineSpacingHints,
     story_index: Option<usize>,
-) -> Option<&mut Vec<Option<LineSpacingHint>>> {
+) -> Option<(
+    &mut Vec<Option<LineSpacingHint>>,
+    &mut Vec<TableCellLineSpacingHints>,
+)> {
     match legacy_header_footer_story_position(story_index)? {
-        0 => Some(&mut hints.even_header),
-        1 => Some(&mut hints.header),
-        2 => Some(&mut hints.even_footer),
-        3 => Some(&mut hints.footer),
-        4 => Some(&mut hints.first_header),
-        _ => Some(&mut hints.first_footer),
+        0 => Some((&mut hints.even_header, &mut hints.even_header_table_cells)),
+        1 => Some((&mut hints.header, &mut hints.header_table_cells)),
+        2 => Some((&mut hints.even_footer, &mut hints.even_footer_table_cells)),
+        3 => Some((&mut hints.footer, &mut hints.footer_table_cells)),
+        4 => Some((&mut hints.first_header, &mut hints.first_header_table_cells)),
+        _ => Some((&mut hints.first_footer, &mut hints.first_footer_table_cells)),
     }
 }
 
@@ -3281,10 +3302,14 @@ mod tests {
         ];
         blocks.extend((0..12).map(|_| Block::PageBreak));
         let mut line_spacing = vec![None; blocks.len()];
+        let mut table_cell_line_spacing = vec![Vec::new(); blocks.len()];
         let mut regions = Vec::new();
         for story_offset in 0..12 {
             let block_index = story_offset + 3;
             line_spacing[block_index] = Some(LineSpacingHint::Exact((story_offset + 1) as f32));
+            table_cell_line_spacing[block_index] = vec![vec![vec![Some(
+                LineSpacingHint::AtLeast((story_offset + 101) as f32),
+            )]]];
             regions.push(SourceRegion {
                 kind: SourceRegionKind::HeaderFooter,
                 source_story_index: Some(HEADER_FOOTER_STORY_BASE + story_offset),
@@ -3297,7 +3322,12 @@ mod tests {
             });
         }
 
-        let mapped = legacy_running_line_spacing_from_regions(&blocks, &regions, &line_spacing);
+        let mapped = legacy_running_line_spacing_from_regions(
+            &blocks,
+            &regions,
+            &line_spacing,
+            &table_cell_line_spacing,
+        );
         let values = |hints: &RunningSurfaceLineSpacingHints| {
             [
                 hints.even_header.first().copied().flatten(),
@@ -3307,6 +3337,17 @@ mod tests {
                 hints.first_header.first().copied().flatten(),
                 hints.first_footer.first().copied().flatten(),
             ]
+        };
+        let table_values = |hints: &RunningSurfaceLineSpacingHints| {
+            [
+                &hints.even_header_table_cells,
+                &hints.header_table_cells,
+                &hints.even_footer_table_cells,
+                &hints.footer_table_cells,
+                &hints.first_header_table_cells,
+                &hints.first_footer_table_cells,
+            ]
+            .map(|blocks| blocks[0][0][0][0])
         };
 
         assert_eq!(mapped.len(), 2);
@@ -3332,6 +3373,28 @@ mod tests {
                 Some(LineSpacingHint::Exact(12.0)),
             ]
         );
+        assert_eq!(
+            table_values(&mapped[0]),
+            [
+                Some(LineSpacingHint::AtLeast(101.0)),
+                Some(LineSpacingHint::AtLeast(102.0)),
+                Some(LineSpacingHint::AtLeast(103.0)),
+                Some(LineSpacingHint::AtLeast(104.0)),
+                Some(LineSpacingHint::AtLeast(105.0)),
+                Some(LineSpacingHint::AtLeast(106.0)),
+            ]
+        );
+        assert_eq!(
+            table_values(&mapped[1]),
+            [
+                Some(LineSpacingHint::AtLeast(107.0)),
+                Some(LineSpacingHint::AtLeast(108.0)),
+                Some(LineSpacingHint::AtLeast(109.0)),
+                Some(LineSpacingHint::AtLeast(110.0)),
+                Some(LineSpacingHint::AtLeast(111.0)),
+                Some(LineSpacingHint::AtLeast(112.0)),
+            ]
+        );
     }
 
     #[cfg(feature = "render")]
@@ -3352,17 +3415,35 @@ mod tests {
             text_len: 0,
         }];
         let line_spacing = vec![None, Some(LineSpacingHint::AtLeast(24.0))];
+        let table_cell_line_spacing = vec![
+            Vec::new(),
+            vec![vec![vec![Some(LineSpacingHint::Exact(7.0))]]],
+        ];
 
-        let mapped = legacy_running_line_spacing_from_regions(&blocks, &regions, &line_spacing);
+        let mapped = legacy_running_line_spacing_from_regions(
+            &blocks,
+            &regions,
+            &line_spacing,
+            &table_cell_line_spacing,
+        );
 
         assert_eq!(mapped.len(), 2);
         for section in mapped {
             assert_eq!(section.header, vec![Some(LineSpacingHint::AtLeast(24.0))]);
+            assert_eq!(
+                section.header_table_cells,
+                vec![vec![vec![vec![Some(LineSpacingHint::Exact(7.0))]]]]
+            );
             assert!(section.even_header.is_empty());
+            assert!(section.even_header_table_cells.is_empty());
             assert!(section.first_header.is_empty());
+            assert!(section.first_header_table_cells.is_empty());
             assert!(section.footer.is_empty());
+            assert!(section.footer_table_cells.is_empty());
             assert!(section.even_footer.is_empty());
+            assert!(section.even_footer_table_cells.is_empty());
             assert!(section.first_footer.is_empty());
+            assert!(section.first_footer_table_cells.is_empty());
         }
     }
 

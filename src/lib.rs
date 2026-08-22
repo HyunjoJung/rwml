@@ -5955,6 +5955,70 @@ mod tests {
     }
 
     #[cfg(feature = "render")]
+    fn legacy_running_table_absolute_spacing_doc(
+        story_position: usize,
+        line_spacing: (u16, u16),
+    ) -> Vec<u8> {
+        assert!(story_position < 6);
+        let mut text = "PAGE1\u{c}PAGE2\u{c}PAGE3\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: main_len,
+            grpprl: Vec::new(),
+        }];
+        for (index, label) in ["EH", "OH", "EF", "OF", "FH", "FF"].into_iter().enumerate() {
+            if index == story_position {
+                text.push('T');
+                text.push('\u{7}');
+                let mut cell_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                ];
+                push_paragraph_line_spacing(&mut cell_grpprl, line_spacing.0, line_spacing.1);
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: cell_grpprl,
+                });
+
+                text.push('\u{7}');
+                let mut row_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                    0x17, 0x24, 0x01, // sprmPFTtp
+                    0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+                    0x01, // one cell
+                    0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+                ];
+                row_grpprl.extend_from_slice(&[0u8; 20]);
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: row_grpprl,
+                });
+            } else {
+                text.push_str(label);
+                text.push('\r');
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: Vec::new(),
+                });
+            }
+        }
+        let plcf_hdd = [0, 0, 0, 0, 0, 0, 0, 3, 6, 9, 12, 15, 18, 18];
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, 0, 18, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_hdd_cps: Some(&plcf_hdd),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
     fn render_opened_document_without_body_line_spacing(
         document: &Document,
         fonts: &[Vec<u8>],
@@ -5985,6 +6049,21 @@ mod tests {
             3 => &hints.footer,
             4 => &hints.first_header,
             _ => &hints.first_footer,
+        }
+    }
+
+    #[cfg(feature = "render")]
+    fn legacy_running_table_spacing_at(
+        hints: &render::RunningSurfaceLineSpacingHints,
+        story_position: usize,
+    ) -> &[crate::model::TableCellLineSpacingHints] {
+        match story_position {
+            0 => &hints.even_header_table_cells,
+            1 => &hints.header_table_cells,
+            2 => &hints.even_footer_table_cells,
+            3 => &hints.footer_table_cells,
+            4 => &hints.first_header_table_cells,
+            _ => &hints.first_footer_table_cells,
         }
     }
 
@@ -6942,6 +7021,77 @@ mod tests {
             assert_eq!(
                 legacy_running_spacing_at(&minimum_running[0], story_position),
                 &[Some(crate::model::LineSpacingHint::AtLeast(40.0))]
+            );
+            assert_eq!(exact.layout_pages_with_fonts(&fonts).unwrap().pages, 3);
+            assert_eq!(minimum.layout_pages_with_fonts(&fonts).unwrap().pages, 3);
+            let exact_pdf = render_opened_document_without_body_line_spacing(&exact, &fonts);
+            let minimum_pdf = render_opened_document_without_body_line_spacing(&minimum, &fonts);
+            assert_ne!(exact_pdf, minimum_pdf, "legacy {variant} hint was ignored");
+            assert_eq!(
+                exact_pdf,
+                render_opened_document_without_body_line_spacing(&exact, &fonts)
+            );
+            assert_eq!(
+                minimum_pdf,
+                render_opened_document_without_body_line_spacing(&minimum, &fonts)
+            );
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_running_table_cells_consume_absolute_line_spacing() {
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let variants = [
+            "even header table",
+            "default header table",
+            "even footer table",
+            "default footer table",
+            "first header table",
+            "first footer table",
+        ];
+
+        for (story_position, variant) in variants.into_iter().enumerate() {
+            let exact = Document::open(&legacy_running_table_absolute_spacing_doc(
+                story_position,
+                (EXACT_FIVE_POINTS, 0),
+            ))
+            .unwrap();
+            let minimum = Document::open(&legacy_running_table_absolute_spacing_doc(
+                story_position,
+                (800, 0),
+            ))
+            .unwrap();
+
+            assert_eq!(
+                exact.model(),
+                minimum.model(),
+                "legacy {variant} absolute spacing must remain outside the public model"
+            );
+            let Backend::Doc(exact_state) = &exact.backend else {
+                panic!("synthetic legacy document must use the DOC backend");
+            };
+            let Backend::Doc(minimum_state) = &minimum.backend else {
+                panic!("synthetic legacy document must use the DOC backend");
+            };
+            let exact_running =
+                legacy_build_output_from_doc_state(exact_state).running_line_spacing_hints;
+            let minimum_running =
+                legacy_build_output_from_doc_state(minimum_state).running_line_spacing_hints;
+            assert_eq!(exact_running.len(), 1);
+            assert_eq!(minimum_running.len(), 1);
+            assert_eq!(
+                legacy_running_table_spacing_at(&exact_running[0], story_position),
+                &[vec![vec![vec![Some(
+                    crate::model::LineSpacingHint::Exact(5.0)
+                )]]]]
+            );
+            assert_eq!(
+                legacy_running_table_spacing_at(&minimum_running[0], story_position),
+                &[vec![vec![vec![Some(
+                    crate::model::LineSpacingHint::AtLeast(40.0)
+                )]]]]
             );
             assert_eq!(exact.layout_pages_with_fonts(&fonts).unwrap().pages, 3);
             assert_eq!(minimum.layout_pages_with_fonts(&fonts).unwrap().pages, 3);
