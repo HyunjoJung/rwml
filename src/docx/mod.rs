@@ -205,6 +205,9 @@ pub(crate) struct DocxState {
     /// Renderer-only paragraph pagination controls aligned to body model blocks.
     #[cfg(feature = "render")]
     pub pagination_hints: Vec<crate::model::PaginationHint>,
+    /// Renderer-only exact/minimum line spacing aligned to body model blocks.
+    #[cfg(feature = "render")]
+    pub line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
     /// Renderer-only resolved explicit tab stops aligned to body model blocks.
     #[cfg(feature = "render")]
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
@@ -439,6 +442,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     #[cfg(feature = "render")]
     let body::BodyRenderHints {
         pagination: pagination_hints,
+        line_spacing: line_spacing_hints,
         tab_stops,
         column_break_offsets,
         section_column_gap_pt,
@@ -680,6 +684,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         floating_shapes,
         #[cfg(feature = "render")]
         pagination_hints,
+        #[cfg(feature = "render")]
+        line_spacing_hints,
         #[cfg(feature = "render")]
         tab_stops,
         #[cfg(feature = "render")]

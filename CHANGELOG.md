@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies resolved `w:spacing` `exact` and `atLeast` line rules to top-level
+  body paragraphs in opened-DOCX PDF previews through block-aligned private
+  render hints. Values use twentieths of a point after style/direct cascading;
+  exact boxes center fitting text and bottom-align with vertical clipping when
+  undersized, while at-least boxes only expand shorter natural lines. Explicit
+  page-break splits retain alignment. The public model, table-cell paragraphs,
+  notes, running surfaces, authored content, and fresh conversion remain
+  unchanged.
 - Computes `NOTEREF`/`FTNREF` fields that target a `w:customMarkFollows`
   footnote or endnote when its non-empty literal mark immediately follows the
   reference inside the bookmark. Ambiguous marks retain cached field text, and
@@ -597,10 +605,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paragraph style for unstyled paragraphs, and bounded explicit paragraph-style
   chains for before/after spacing, proportional automatic line spacing,
   first-line/hanging indents, flat RGB shading, and
-  `pageBreakBefore`, with direct zero/off precedence. Unsupported nearer
-  exact/at-least line-rule, nonzero line-unit spacing, nonzero character-unit
-  indent, enabled automatic spacing, theme, pattern, nil, or malformed forms
-  suppress representable inherited values instead of leaking base formatting;
+  `pageBreakBefore`, with direct zero/off precedence. Exact/at-least line rules
+  remain unset in the public proportional-spacing model; unsupported nearer
+  nonzero line-unit spacing, nonzero character-unit indent, enabled automatic
+  spacing, theme, pattern, nil, or malformed forms suppress representable
+  inherited values instead of leaking base formatting;
   paragraph-style chain limits are evaluated independently of map iteration
   order. Zero line- and character-unit attributes clear related inherited unit
   overrides; nonzero unit values remain outside the represented subset.

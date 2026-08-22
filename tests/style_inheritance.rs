@@ -360,7 +360,7 @@ fn table_pagination_docx(
     let content_types = content_types(true);
     let document_xml = format!(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
-            <w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr><w:r><w:t>seed</w:t></w:r></w:p>
+            <w:p><w:r><w:t>seed</w:t></w:r></w:p>
             <w:tbl><w:tblPr>{table_properties}</w:tblPr><w:tr>{direct_row_props}<w:tc>
                 <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p>
                 <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>
@@ -368,7 +368,7 @@ fn table_pagination_docx(
                 <w:p><w:r><w:t>four</w:t></w:r></w:p>
                 <w:p><w:r><w:t>five</w:t></w:r></w:p>
             </w:tc></w:tr></w:tbl>
-            <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>after</w:t></w:r></w:p>
+            <w:p><w:r><w:t>after</w:t></w:r></w:p>
             <w:sectPr><w:pgSz w:w="4400" w:h="2400"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
         </w:body></w:document>"#
     );
@@ -961,6 +961,14 @@ fn opened_docx_render_consumes_each_style_layout_value() {
         (
             "proportional line spacing",
             r#"<w:spacing w:line="480" w:lineRule="auto"/>"#,
+        ),
+        (
+            "exact line spacing",
+            r#"<w:spacing w:line="800" w:lineRule="exact"/>"#,
+        ),
+        (
+            "minimum line spacing",
+            r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#,
         ),
         ("first-line indent", r#"<w:ind w:firstLine="360"/>"#),
         ("flat shading", r#"<w:shd w:val="clear" w:fill="DDEEFF"/>"#),

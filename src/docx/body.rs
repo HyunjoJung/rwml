@@ -35,12 +35,12 @@ use crate::annotation::{
 };
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
-    DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, ListInfo, PageNumberFormat,
-    PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup,
-    TabAlignment, TabStop, Table, TableBorderColors, TableBorderSide, TableBorderSizes,
-    TableBorderStyle, TableBorderStyles, TableCellNestedPaginationHints, TableCellPaginationHints,
-    TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, TextDirection, VCell,
-    MAX_TAB_STOPS,
+    DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, LineSpacingHint, ListInfo,
+    PageNumberFormat, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind,
+    SectionSetup, TabAlignment, TabStop, Table, TableBorderColors, TableBorderSide,
+    TableBorderSizes, TableBorderStyle, TableBorderStyles, TableCellNestedPaginationHints,
+    TableCellPaginationHints, TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint,
+    TextDirection, VCell, MAX_TAB_STOPS,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -76,6 +76,7 @@ const COLUMN_BREAK_MARKER: char = '\u{000B}';
 #[derive(Default)]
 pub(super) struct PaginationCapture {
     hints: Vec<PaginationHint>,
+    line_spacing: Vec<Option<LineSpacingHint>>,
     tab_stops: Vec<Vec<TabStop>>,
     column_break_offsets: Vec<Vec<usize>>,
     section_column_gap_pt: Vec<Option<f32>>,
@@ -90,6 +91,7 @@ pub(super) struct PaginationCapture {
 #[derive(Default)]
 pub(super) struct BodyRenderHints {
     pub(super) pagination: Vec<PaginationHint>,
+    pub(super) line_spacing: Vec<Option<LineSpacingHint>>,
     pub(super) tab_stops: Vec<Vec<TabStop>>,
     pub(super) column_break_offsets: Vec<Vec<usize>>,
     pub(super) section_column_gap_pt: Vec<Option<f32>>,
@@ -156,6 +158,7 @@ impl Ctx<'_> {
             .take()
             .map(|capture| BodyRenderHints {
                 pagination: capture.hints,
+                line_spacing: capture.line_spacing,
                 tab_stops: capture.tab_stops,
                 column_break_offsets: capture.column_break_offsets,
                 section_column_gap_pt: capture.section_column_gap_pt,
@@ -182,6 +185,7 @@ impl Ctx<'_> {
     fn capture_block_hints(
         &self,
         hint: PaginationHint,
+        line_spacing: Option<LineSpacingHint>,
         tab_stops: &[TabStop],
         section_column_gap_pt: Option<f32>,
         column_break_offsets: &[usize],
@@ -189,6 +193,7 @@ impl Ctx<'_> {
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
                 capture.hints.push(hint);
+                capture.line_spacing.push(line_spacing);
                 capture.tab_stops.push(tab_stops.to_vec());
                 capture
                     .column_break_offsets
@@ -206,6 +211,7 @@ impl Ctx<'_> {
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
                 capture.hints.push(PaginationHint::default());
+                capture.line_spacing.push(None);
                 capture.tab_stops.push(Vec::new());
                 capture.column_break_offsets.push(Vec::new());
                 capture.section_column_gap_pt.push(None);
@@ -221,6 +227,7 @@ impl Ctx<'_> {
         &self,
         blocks: &[Block],
         hint: PaginationHint,
+        line_spacing: Option<LineSpacingHint>,
         tab_stops: &[TabStop],
         section_column_gap_pt: Option<f32>,
         column_break_offsets: &[Vec<usize>],
@@ -230,12 +237,12 @@ impl Ctx<'_> {
                 .get(index)
                 .map_or(&[][..], Vec::as_slice);
             if matches!(block, Block::Paragraph(_)) {
-                self.capture_block_hints(hint, tab_stops, None, break_offsets);
+                self.capture_block_hints(hint, line_spacing, tab_stops, None, break_offsets);
             } else {
                 let column_gap = matches!(block, Block::SectionBreak(_))
                     .then_some(section_column_gap_pt)
                     .flatten();
-                self.capture_block_hints(PaginationHint::default(), &[], column_gap, &[]);
+                self.capture_block_hints(PaginationHint::default(), None, &[], column_gap, &[]);
             }
         }
     }
@@ -2202,6 +2209,7 @@ fn read_paragraph(
     Option<ParsedSectionSetup>,
     PaginationHint,
     Vec<TabStop>,
+    Option<LineSpacingHint>,
 ) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
@@ -2210,6 +2218,7 @@ fn read_paragraph(
             None,
             PaginationHint::default(),
             Vec::new(),
+            None,
         );
     }
     let mut runs: Vec<Run> = Vec::new();
@@ -2319,8 +2328,8 @@ fn read_paragraph(
     }
     apply_sequence_heading_scope(&pp, ctx, &mut sequence_heading_applied);
     let section = pp.section.take();
-    let (paragraph, pagination, tab_stops) = finalize_paragraph(runs, pp, ctx);
-    (paragraph, section, pagination, tab_stops)
+    let (paragraph, pagination, tab_stops, line_spacing) = finalize_paragraph(runs, pp, ctx);
+    (paragraph, section, pagination, tab_stops, line_spacing)
 }
 
 fn push_active_bookmark(bookmarks: &mut Vec<(String, String)>, e: &BytesStart<'_>) {
@@ -2374,13 +2383,14 @@ fn mark_complex_field_result_runs(
 struct ParagraphBlockData {
     blocks: Vec<Block>,
     pagination: PaginationHint,
+    line_spacing: Option<LineSpacingHint>,
     tab_stops: Vec<TabStop>,
     section_column_gap_pt: Option<f32>,
     column_break_offsets: Vec<Vec<usize>>,
 }
 
 fn read_paragraph_blocks_data(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> ParagraphBlockData {
-    let (paragraph, section, pagination, tab_stops) = read_paragraph(r, ctx, depth);
+    let (paragraph, section, pagination, tab_stops, line_spacing) = read_paragraph(r, ctx, depth);
     let mut split = split_page_breaks(paragraph);
     let mut section_column_gap_pt = None;
     if let Some(mut section) = section {
@@ -2393,6 +2403,7 @@ fn read_paragraph_blocks_data(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Par
     ParagraphBlockData {
         blocks: split.blocks,
         pagination,
+        line_spacing,
         tab_stops,
         section_column_gap_pt,
         column_break_offsets: split.column_break_offsets,
@@ -2404,6 +2415,7 @@ fn read_paragraph_block_batch(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Blo
     ctx.capture_paragraph_blocks(
         &data.blocks,
         data.pagination,
+        data.line_spacing,
         &data.tab_stops,
         data.section_column_gap_pt,
         &data.column_break_offsets,
@@ -5495,7 +5507,12 @@ fn finalize_paragraph(
     runs: Vec<Run>,
     pp: PPr,
     ctx: &Ctx<'_>,
-) -> (Paragraph, PaginationHint, Vec<TabStop>) {
+) -> (
+    Paragraph,
+    PaginationHint,
+    Vec<TabStop>,
+    Option<LineSpacingHint>,
+) {
     let PPr {
         style_id,
         num,
@@ -5607,6 +5624,7 @@ fn finalize_paragraph(
         }
     };
     let spacing = resolved_layout.spacing();
+    let line_spacing = resolved_layout.line_spacing_hint();
     let shading = resolved_layout.shading();
     let page_break_before = resolved_layout.page_break_before();
     let paragraph = Paragraph {
@@ -5625,7 +5643,7 @@ fn finalize_paragraph(
         },
         runs,
     };
-    (paragraph, pagination, resolved_tab_stops)
+    (paragraph, pagination, resolved_tab_stops, line_spacing)
 }
 
 const DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS: u32 = 115;

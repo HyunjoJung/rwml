@@ -2942,6 +2942,7 @@ impl Document {
                     &model,
                     render::SourceRenderHints {
                         pagination: &d.pagination_hints,
+                        line_spacing: &d.line_spacing_hints,
                         tab_stops: &d.tab_stops,
                         column_break_offsets: &d.column_break_offsets,
                         section_column_gap_pt: &d.section_column_gap_pt,
@@ -11298,6 +11299,56 @@ mod tests {
 
     #[cfg(all(feature = "docx", feature = "render"))]
     #[test]
+    fn opened_docx_absolute_line_spacing_reaches_preview_flow() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr><w:r><w:t>exact</w:t></w:r></w:p>
+                <w:p><w:pPr><w:spacing w:line="600" w:lineRule="atLeast"/></w:pPr><w:r><w:t>minimum</w:t></w:r></w:p>
+                <w:tbl><w:tr><w:tc><w:p><w:pPr><w:spacing w:line="1000" w:lineRule="exact"/></w:pPr><w:r><w:t>cell ceiling</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>before</w:t><w:br w:type="page"/><w:t>after</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 6);
+            assert_eq!(
+                hints.line_spacing,
+                &[
+                    Some(crate::model::LineSpacingHint::Exact(40.0)),
+                    Some(crate::model::LineSpacingHint::AtLeast(30.0)),
+                    None,
+                    Some(crate::model::LineSpacingHint::Exact(20.0)),
+                    None,
+                    Some(crate::model::LineSpacingHint::Exact(20.0)),
+                ]
+            );
+            for paragraph in model.blocks.iter().filter_map(|block| match block {
+                Block::Paragraph(paragraph) => Some(paragraph),
+                _ => None,
+            }) {
+                assert_eq!(paragraph.props.spacing.line_pct, None);
+            }
+        });
+
+        let opened_pdf = document.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert!(opened_pdf.starts_with(b"%PDF-"));
+        assert_eq!(opened_pdf, document.try_to_pdf_with_fonts(&fonts).unwrap());
+        assert_ne!(
+            opened_pdf,
+            render_pdf_with_fonts(&document.model(), &fonts),
+            "the public model intentionally has no absolute line-spacing representation"
+        );
+        assert_eq!(
+            document.layout_pages_with_fonts(&fonts).unwrap(),
+            document.layout_pages_with_fonts(&fonts).unwrap()
+        );
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
     fn opened_docx_tabs_keep_page_margin_coordinates_under_paragraph_indents() {
         let make_document = |indent: &str| {
             let xml = format!(
@@ -12031,7 +12082,7 @@ mod tests {
         let make_document = |row_properties: &str| {
             let xml = format!(
                 r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
-                    <w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr><w:r><w:t>seed</w:t></w:r></w:p>
+                    <w:p><w:r><w:t>seed</w:t></w:r></w:p>
                     <w:tbl><w:tr>{row_properties}<w:tc>
                         <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p>
                         <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>
@@ -12039,7 +12090,7 @@ mod tests {
                         <w:p><w:r><w:t>four</w:t></w:r></w:p>
                         <w:p><w:r><w:t>five</w:t></w:r></w:p>
                     </w:tc></w:tr></w:tbl>
-                    <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>after</w:t></w:r></w:p>
+                    <w:p><w:r><w:t>after</w:t></w:r></w:p>
                     <w:sectPr><w:pgSz w:w="4400" w:h="2400"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
                 </w:body></w:document>"#
             );

@@ -16,7 +16,8 @@ use super::{
     attr_local, attr_local_trimmed, attr_u16, attr_u8, local, parse_rgb_hex_color, toggle_on,
 };
 use crate::model::{
-    CharProps, Color, Indent, Spacing, TabAlignment, TabLeader, TabStop, VertAlign, MAX_TAB_STOPS,
+    CharProps, Color, Indent, LineSpacingHint, Spacing, TabAlignment, TabLeader, TabStop,
+    VertAlign, MAX_TAB_STOPS,
 };
 use crate::stsh::heading_from_name;
 
@@ -285,7 +286,8 @@ impl<T: Copy> CascadedValue<T> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ParagraphLineRule {
     Auto,
-    Unsupported,
+    Exact,
+    AtLeast,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -351,6 +353,25 @@ impl ParagraphLayoutProps {
                 }
                 _ => None,
             },
+        }
+    }
+
+    pub(crate) fn line_spacing_hint(self) -> Option<LineSpacingHint> {
+        let CascadedValue::Value(line) = self.line else {
+            return None;
+        };
+        let points = line / 20.0;
+        if !points.is_finite() || points <= 0.0 {
+            return None;
+        }
+        match self.line_rule {
+            CascadedValue::Value(ParagraphLineRule::Exact) => Some(LineSpacingHint::Exact(points)),
+            CascadedValue::Value(ParagraphLineRule::AtLeast) => {
+                Some(LineSpacingHint::AtLeast(points))
+            }
+            CascadedValue::Inherit
+            | CascadedValue::Value(ParagraphLineRule::Auto)
+            | CascadedValue::Suppress => None,
         }
     }
 
@@ -538,7 +559,8 @@ fn line_rule(value: Option<String>) -> CascadedValue<ParagraphLineRule> {
     };
     match value.trim() {
         "auto" => CascadedValue::Value(ParagraphLineRule::Auto),
-        "exact" | "atLeast" => CascadedValue::Value(ParagraphLineRule::Unsupported),
+        "exact" => CascadedValue::Value(ParagraphLineRule::Exact),
+        "atLeast" => CascadedValue::Value(ParagraphLineRule::AtLeast),
         _ => CascadedValue::Suppress,
     }
 }
@@ -2576,7 +2598,7 @@ mod tests {
     }
 
     #[test]
-    fn paragraph_layout_suppresses_unsupported_nearer_values() {
+    fn paragraph_layout_suppresses_unrepresented_nearer_values() {
         let xml = r#"<w:styles>
             <w:style w:type="paragraph" w:styleId="Base"><w:pPr>
                 <w:spacing w:before="120" w:after="240" w:line="360"/>
@@ -2837,6 +2859,59 @@ mod tests {
         assert_eq!(props.layout.spacing(), Spacing::default());
         assert_eq!(indent.first_line_pt, None);
         assert_eq!(indent.hanging_pt, None);
+    }
+
+    #[test]
+    fn paragraph_absolute_line_spacing_resolves_twips_after_style_cascade() {
+        let styles = parse(
+            r#"<w:styles>
+                <w:style w:type="paragraph" w:styleId="Exact"><w:pPr>
+                    <w:spacing w:line="360" w:lineRule="exact"/>
+                </w:pPr></w:style>
+                <w:style w:type="paragraph" w:styleId="InheritedAtLeast">
+                    <w:basedOn w:val="Exact"/><w:pPr>
+                        <w:spacing w:lineRule="atLeast"/>
+                    </w:pPr>
+                </w:style>
+                <w:style w:type="paragraph" w:styleId="DirectLineDefaultsAuto">
+                    <w:basedOn w:val="Exact"/><w:pPr>
+                        <w:spacing w:line="480"/>
+                    </w:pPr>
+                </w:style>
+                <w:style w:type="paragraph" w:styleId="Malformed"><w:pPr>
+                    <w:spacing w:line="-20" w:lineRule="exact"/>
+                </w:pPr></w:style>
+            </w:styles>"#,
+        );
+
+        assert_eq!(
+            styles
+                .paragraph_props(Some("Exact"))
+                .layout
+                .line_spacing_hint(),
+            Some(crate::model::LineSpacingHint::Exact(18.0))
+        );
+        assert_eq!(
+            styles
+                .paragraph_props(Some("InheritedAtLeast"))
+                .layout
+                .line_spacing_hint(),
+            Some(crate::model::LineSpacingHint::AtLeast(18.0))
+        );
+        assert_eq!(
+            styles
+                .paragraph_props(Some("DirectLineDefaultsAuto"))
+                .layout
+                .line_spacing_hint(),
+            None
+        );
+        assert_eq!(
+            styles
+                .paragraph_props(Some("Malformed"))
+                .layout
+                .line_spacing_hint(),
+            None
+        );
     }
 
     #[test]

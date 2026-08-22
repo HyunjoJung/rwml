@@ -46,8 +46,8 @@ use parley::{FontContext, Layout, LayoutContext};
 
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
-    FieldRole, Image, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Run,
-    SectionBreakKind, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
+    FieldRole, Image, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
+    Run, SectionBreakKind, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
     TableBorderSide, TableCellNestedPaginationHints, TableCellPaginationHints,
     TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
 };
@@ -151,6 +151,9 @@ const DEFAULT_TAB_STOP_PT: f32 = 36.0;
 const COLUMN_GAP_PT: f32 = 18.0;
 const MIN_COLUMN_WIDTH_PT: f32 = 20.0;
 const MAX_SECTION_COLUMNS: usize = 64;
+// Keep hostile numeric attributes away from PDF-coordinate overflow while
+// leaving every practical document value untouched.
+const MAX_ABSOLUTE_LINE_HEIGHT_PT: f32 = 1_000_000.0;
 const RIGHT_TO_LEFT_MARK: char = '\u{200F}';
 const RIGHT_TO_LEFT_ISOLATE: char = '\u{2067}';
 const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
@@ -158,6 +161,7 @@ const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
 #[derive(Clone, Copy, Default)]
 pub(crate) struct SourceRenderHints<'a> {
     pub(crate) pagination: &'a [PaginationHint],
+    pub(crate) line_spacing: &'a [Option<LineSpacingHint>],
     pub(crate) tab_stops: &'a [Vec<TabStop>],
     pub(crate) column_break_offsets: &'a [Vec<usize>],
     pub(crate) section_column_gap_pt: &'a [Option<f32>],
@@ -247,6 +251,7 @@ impl RunDraw {
 struct LineLayout {
     height: f32,
     baseline: f32,
+    clip_to_height: bool,
     x_indent: f32,
     char_range: Option<LineCharRange>,
     background: Option<LineBackground>,
@@ -2065,6 +2070,52 @@ fn shape_with_options(
     out
 }
 
+fn apply_line_spacing_hint(lines: &mut [LineLayout], hint: Option<LineSpacingHint>) {
+    let Some(hint) = hint else {
+        return;
+    };
+    let requested = match hint {
+        LineSpacingHint::Exact(value) | LineSpacingHint::AtLeast(value) => value,
+    };
+    if !requested.is_finite() || requested <= 0.0 {
+        return;
+    }
+    let requested = requested.min(MAX_ABSOLUTE_LINE_HEIGHT_PT);
+    for line in lines {
+        match hint {
+            LineSpacingHint::AtLeast(_) if requested > line.height => {
+                line.baseline += (requested - line.height) * 0.5;
+                line.height = requested;
+            }
+            LineSpacingHint::AtLeast(_) => {}
+            LineSpacingHint::Exact(_) => {
+                line.clip_to_height = true;
+                let content_bounds = line.runs.iter().fold(None, |bounds, run| {
+                    let top = run.baseline_shift - run.ascent;
+                    let bottom = run.baseline_shift + run.descent;
+                    Some(match bounds {
+                        Some((current_top, current_bottom)) => {
+                            (f32::min(current_top, top), f32::max(current_bottom, bottom))
+                        }
+                        None => (top, bottom),
+                    })
+                });
+                if let Some((top, bottom)) = content_bounds {
+                    let content_height = bottom - top;
+                    line.baseline = if content_height <= requested {
+                        (requested - content_height) * 0.5 - top
+                    } else {
+                        requested - bottom
+                    };
+                } else {
+                    line.baseline += (requested - line.height) * 0.5;
+                }
+                line.height = requested;
+            }
+        }
+    }
+}
+
 /// Build the drawable lines for an already-broken layout.
 fn shape_extract_lines(
     layout: &Layout<rgb::Color>,
@@ -2218,6 +2269,7 @@ fn shape_extract_lines(
         out.push(LineLayout {
             height,
             baseline,
+            clip_to_height: false,
             x_indent: 0.0,
             char_range,
             background: None,
@@ -2732,6 +2784,7 @@ fn shape_paragraph_content<'a>(
     marker: Option<&str>,
     tab_stops: &[TabStop],
     default_tab_stop_pt: Option<f32>,
+    line_spacing_hint: Option<LineSpacingHint>,
     available_width: f32,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
@@ -2903,6 +2956,7 @@ fn shape_paragraph_content<'a>(
             lines.push(line);
         }
     }
+    apply_line_spacing_hint(&mut lines, line_spacing_hint);
     ShapedParagraph { lines, images }
 }
 
@@ -2914,6 +2968,7 @@ fn layout_paragraph(
     tab_stops: &[TabStop],
     column_break_offsets: &[usize],
     default_tab_stop_pt: Option<f32>,
+    line_spacing_hint: Option<LineSpacingHint>,
     geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
@@ -2923,6 +2978,7 @@ fn layout_paragraph(
         marker,
         tab_stops,
         default_tab_stop_pt,
+        line_spacing_hint,
         geom.content_w(),
         cx,
         capture,
@@ -3240,6 +3296,7 @@ fn shape_cell_in_scope(
                     marker.as_deref(),
                     paragraph_tab_stops,
                     default_tab_stop_pt,
+                    None,
                     inner_w,
                     cx,
                     capture,
@@ -3979,6 +4036,7 @@ struct BlockCollectionOptions<'a> {
     section_column_gap_pt: Option<&'a [Option<f32>]>,
     section_geometries: Option<&'a [Geom]>,
     pagination_hints: Option<&'a [PaginationHint]>,
+    line_spacing_hints: Option<&'a [Option<LineSpacingHint>]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
     column_break_offsets: Option<&'a [Vec<usize>]>,
     default_tab_stop_pt: Option<f32>,
@@ -3994,6 +4052,7 @@ struct BodyCollectionSidecars<'a> {
     section_column_gap_pt: &'a [Option<f32>],
     section_geometries: &'a [Geom],
     pagination_hints: &'a [PaginationHint],
+    line_spacing_hints: &'a [Option<LineSpacingHint>],
     tab_stops: &'a [Vec<TabStop>],
     column_break_offsets: &'a [Vec<usize>],
     default_tab_stop_pt: Option<f32>,
@@ -4024,6 +4083,7 @@ fn collect_blocks_with_block_anchors(
             section_column_gap_pt: Some(sidecars.section_column_gap_pt),
             section_geometries: Some(sidecars.section_geometries),
             pagination_hints: Some(sidecars.pagination_hints),
+            line_spacing_hints: Some(sidecars.line_spacing_hints),
             tab_stops: Some(sidecars.tab_stops),
             column_break_offsets: Some(sidecars.column_break_offsets),
             default_tab_stop_pt: sidecars.default_tab_stop_pt,
@@ -4106,6 +4166,11 @@ fn collect_blocks_inner(
                     .and_then(|breaks| breaks.get(block_index))
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
+                let line_spacing_hint = options
+                    .line_spacing_hints
+                    .and_then(|hints| hints.get(block_index))
+                    .copied()
+                    .flatten();
                 layout_paragraph(
                     p,
                     out,
@@ -4113,6 +4178,7 @@ fn collect_blocks_inner(
                     tab_stops,
                     column_break_offsets,
                     options.default_tab_stop_pt,
+                    line_spacing_hint,
                     block_geom,
                     cx,
                     capture,
@@ -4205,6 +4271,28 @@ fn fill_rect_color(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32, co
         }));
         surface.draw_path(&path);
     }
+}
+
+fn push_vertical_line_clip(surface: &mut Surface<'_>, top: f32, height: f32, width: f32) -> bool {
+    if !top.is_finite()
+        || !height.is_finite()
+        || !width.is_finite()
+        || height <= 0.0
+        || width <= 0.0
+    {
+        return false;
+    }
+    let mut path = PathBuilder::new();
+    path.move_to(0.0, top);
+    path.line_to(width, top);
+    path.line_to(width, top + height);
+    path.line_to(0.0, top + height);
+    path.close();
+    let Some(path) = path.finish() else {
+        return false;
+    };
+    surface.push_clip_path(&path, &FillRule::NonZero);
+    true
 }
 
 fn fill_circle_color(surface: &mut Surface<'_>, cx: f32, cy: f32, radius: f32, color: rgb::Color) {
@@ -7654,6 +7742,7 @@ fn collect_pdf_flow_items(
             section_column_gap_pt: &body_column_gaps,
             section_geometries: &body_geometries,
             pagination_hints: source_hints.pagination,
+            line_spacing_hints: source_hints.line_spacing,
             tab_stops: source_hints.tab_stops,
             column_break_offsets: source_hints.column_break_offsets,
             default_tab_stop_pt: source_hints.default_tab_stop_pt,
@@ -8268,6 +8357,8 @@ fn render_pdf(
                     let baseline = top + line.baseline;
                     let x0 = page_geom.left + column_x + line.x_indent;
                     let lh = line.height;
+                    let clip_content = line.clip_to_height
+                        && push_vertical_line_clip(&mut surface, top, lh, page_geom.page_w);
                     draw_line_background(&mut surface, &line, x0, top);
                     draw_line_leaders(&mut surface, &line, x0, top, baseline);
                     for run in line.runs {
@@ -8283,6 +8374,9 @@ fn render_pdf(
                             page_index + 1,
                             &mut tcx,
                         );
+                    }
+                    if clip_content {
+                        surface.pop();
                     }
                 }
                 FlowItem::Row(row) => {
@@ -8420,9 +8514,9 @@ mod tests {
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
-        ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind,
-        SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table, TableBorderSide,
-        TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
+        LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run,
+        SectionBreakKind, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
+        TableBorderSide, TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
     };
     use crate::report::FeatureInventory;
     use crate::{FloatingShape, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition};
@@ -8803,6 +8897,7 @@ mod tests {
             marker,
             tab_stops,
             &[],
+            None,
             None,
             geom,
             &mut tcx,
@@ -10240,6 +10335,59 @@ mod tests {
             single[0].0,
             double[0].0
         );
+    }
+
+    #[test]
+    fn absolute_line_spacing_exactly_sizes_and_at_least_expands_line_boxes() {
+        let natural = paragraph_lines(
+            ParaProps::default(),
+            vec![Run {
+                text: "Absolute spacing".to_string(),
+                ..Run::default()
+            }],
+        );
+        assert_eq!(natural.len(), 1);
+
+        let mut expanded = natural.clone();
+        let minimum = natural[0].height + 20.0;
+        super::apply_line_spacing_hint(&mut expanded, Some(LineSpacingHint::AtLeast(minimum)));
+        assert_close(expanded[0].height, minimum);
+        assert_close(expanded[0].baseline, natural[0].baseline + 10.0);
+        assert!(!expanded[0].clip_to_height);
+
+        let mut unchanged = natural.clone();
+        super::apply_line_spacing_hint(
+            &mut unchanged,
+            Some(LineSpacingHint::AtLeast(natural[0].height / 2.0)),
+        );
+        assert_close(unchanged[0].height, natural[0].height);
+        assert_close(unchanged[0].baseline, natural[0].baseline);
+
+        let mut centered = natural.clone();
+        super::apply_line_spacing_hint(&mut centered, Some(LineSpacingHint::Exact(40.0)));
+        assert_close(centered[0].height, 40.0);
+        assert!(centered[0].clip_to_height);
+        let centered_top = centered[0]
+            .runs
+            .iter()
+            .map(|run| centered[0].baseline + run.baseline_shift - run.ascent)
+            .fold(f32::INFINITY, f32::min);
+        let centered_bottom = centered[0]
+            .runs
+            .iter()
+            .map(|run| centered[0].baseline + run.baseline_shift + run.descent)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert_close(centered_top, centered[0].height - centered_bottom);
+
+        let mut clipped = natural;
+        super::apply_line_spacing_hint(&mut clipped, Some(LineSpacingHint::Exact(8.0)));
+        assert_close(clipped[0].height, 8.0);
+        let clipped_bottom = clipped[0]
+            .runs
+            .iter()
+            .map(|run| clipped[0].baseline + run.baseline_shift + run.descent)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert_close(clipped_bottom, clipped[0].height);
     }
 
     #[test]
@@ -13515,6 +13663,7 @@ mod tests {
             FlowItem::Line(LineLayout {
                 height: 10.0,
                 baseline: 8.0,
+                clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
@@ -13640,6 +13789,7 @@ mod tests {
         FlowItem::Line(LineLayout {
             height,
             baseline: height * 0.8,
+            clip_to_height: false,
             x_indent: 0.0,
             char_range: None,
             background: None,
@@ -13668,6 +13818,7 @@ mod tests {
             .map(|_| LineLayout {
                 height: 10.0,
                 baseline: 8.0,
+                clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
@@ -14776,6 +14927,7 @@ mod tests {
             FlowItem::Line(LineLayout {
                 height: 20.0,
                 baseline: 15.0,
+                clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
@@ -14844,6 +14996,7 @@ mod tests {
             FlowItem::Line(LineLayout {
                 height: 20.0,
                 baseline: 15.0,
+                clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,
                 background: None,

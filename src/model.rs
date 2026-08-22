@@ -280,6 +280,13 @@ pub struct Spacing {
     pub line_pct: Option<f32>,
 }
 
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum LineSpacingHint {
+    Exact(f32),
+    AtLeast(f32),
+}
+
 /// Paragraph indentation in points; `None` = unset.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Indent {

@@ -396,6 +396,13 @@ render hints to the public `DocModel`. Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
 justified-aligned paragraphs use that path when the resolved stop is reachable.
+Top-level opened-DOCX body paragraphs also consume resolved `exact` and
+`atLeast` `w:lineRule` values as twentieths of a point through source-only
+render hints. Exact boxes center fitting text, bottom-align and vertically clip
+over-tall text, while at-least boxes only expand shorter natural lines. The
+hints remain aligned when a source paragraph is split by an explicit page
+break. Table-cell paragraphs, notes, running headers/footers, model-authored
+content, and fresh conversion remain outside this absolute-spacing path.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
 center/end/decimal stops. Supported LTR and RTL dot, hyphen, underscore,
 heavy, and middle-dot leaders plus bar tabs now paint through the same bounded
@@ -530,8 +537,9 @@ bridges.
 > `w:tblPrEx` remains a table-property exception path for the supported
 > row-local `w:tblCellMar` behavior; other `w:tblPrEx` properties are outside
 > this renderer slice, and `w:cantSplit` remains a `w:trPr` property.
-> Exact/at-least line rules, nonzero line-unit before/after spacing,
-> enabled automatic/contextual paragraph spacing, nonzero character-unit indents,
+> Exact/at-least line rules outside the bounded top-level opened-DOCX body path,
+> nonzero line-unit before/after spacing, enabled automatic/contextual paragraph
+> spacing, nonzero character-unit indents,
 > theme/automatic/pattern paragraph shading, and table/list/conditional-style
 > paragraph properties remain outside the bounded style-derived layout subset.
 > Nested-table paragraph and row controls retain the renderer's 32-level
