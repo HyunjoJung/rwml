@@ -315,10 +315,11 @@ physical cell margins, authored and
 opened-DOCX `tblGrid` column proportions, bounded preferred-percentage outer
 widths, logical leading/center/trailing placement, and non-negative leading
 indentation, top-level and run-attached body images with model-backed
-whole-degree clockwise rotation, and decoded block or reader-style inline
-raster images plus model-authored charts and ordinary modeled tables in selected
-default/first/even running headers and footers, and **clickable hyperlink
-annotations** are drawn.
+whole-degree clockwise rotation, decoded block or reader-style inline raster
+images plus non-empty model-authored charts inside ordinary modeled table cells,
+and decoded raster images, model-authored charts, and ordinary modeled tables in
+selected default/first/even running headers and footers are drawn. PDF hyperlinks
+emit **clickable annotations**.
 Running paragraph and table-cell hyperlink annotations follow the selected
 surface variant and are clipped to the physical page plus the visible
 margin-band line or row fragment, so clipped table content cannot leave an
@@ -338,8 +339,14 @@ remaining band paints once under a vertical clip and ends that surface without
 moving body content or changing page counts. Opened-DOCX running-table cells
 consume the same resolved explicit LTR/RTL tab-stop, leader, and bar-tab subset
 as body table cells, together with a finite positive settings-defined default
-interval. Source-only pagination hints inside those cells, nested-grid geometry,
-cell images/charts, and Word-exact overlap remain outside this bounded path.
+interval. Decoded block and reader-style inline rasters plus non-empty
+model-authored charts paint in cell source order, center within the inner cell,
+fit proportionally without upscaling to the inner width and active page content
+height, contribute to row measurement and vertical alignment, and stay atomic
+across row splits and repeated headers. Source-only pagination hints inside those
+cells, nested-grid geometry, inline media baseline/crop/flip/effects, arbitrary
+opened Office chart parts, and Word-exact overlap remain outside this bounded
+path.
 Finite positive
 paragraph before/after gaps advance later running text, pictures,
 model-authored charts, and tables in source order; explicit zero suppresses a
@@ -502,9 +509,9 @@ Word-exact list-level alignment, punctuation, or table typography.
 restart/start overrides, marker fonts or glyph metadata, or marker
 tabs/alignment/exact hanging indents. Independent or restarted empty-label
 lists therefore use deterministic preview numbering rather than Word-exact
-numbering. Marker-aware table autofit, nested-grid geometry, table-cell images,
-legacy nested-table recovery, and Word-exact RTL list typography remain outside
-this preview.
+numbering. Marker-aware table autofit, nested-grid geometry, Word-exact inline
+media placement/effects, legacy nested-table recovery, and Word-exact RTL list
+typography remain outside this preview.
 Opened legacy `.doc` runs additionally preserve literal direct
 `sprmCFBiDi` on/off values from complete FKP/CHPX payloads through `.docx`
 conversion and PDF run isolation. Opened legacy paragraphs preserve valid
@@ -632,10 +639,11 @@ bridges.
 > PDF image rotation normalizes direct-model angles modulo 360 and rotates the
 > decoded raster around its center. Running-surface pictures use decoded/model
 > raster dimensions rather than relationship display extents. Source-authored
-> display extents, crop/flip/effects, floating-anchor offsets, exclusion-zone
-> reflow, table-cell images (including images inside running tables), arbitrary
-> opened Office chart parts in running surfaces, and Word-exact inline baseline
-> or header/footer overlap remain outside this bounded image bridge.
+> table-cell rasters and model-authored charts use atomic centered records fitted
+> to the inner cell and active page content box. Source-authored display extents,
+> crop/flip/effects, floating-anchor offsets, exclusion-zone reflow, arbitrary
+> opened Office chart parts, and Word-exact inline baseline or header/footer
+> overlap remain outside this bounded image bridge.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A

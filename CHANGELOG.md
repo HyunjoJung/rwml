@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Paints decoded block and reader-style inline raster images plus non-empty
+  model-authored charts inside ordinary modeled table cells in body content and
+  selected default/first/even running headers and footers. Supported cell media
+  stays in source order, is centered and proportionally reduced without
+  upscaling to the cell's inner width and active page content height, contributes
+  to row height and vertical alignment, and remains atomic across row splits and
+  repeated headers. Missing or undecodable rasters and empty charts are skipped;
+  nested tables retain the same bounded flattened-content behavior. Inline
+  baseline placement, relationship display extents, crop/flip/effects, arbitrary
+  opened Office chart parts, nested-grid geometry, and Word-exact pagination
+  remain outside this bounded path.
 - Applies opened legacy-DOC positive non-multiple minimum and negative encoded
   exact LSPD inside modeled table cells in section-linked even/default/first
   running headers and footers. The existing block-aligned table-cell sidecar
@@ -72,16 +83,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rows paint in source order; a first row taller than the remaining margin band
   paints once under an explicit band clip and ends that surface without moving
   body content or changing page counts. Running-table source-only paragraph
-  hints, nested-grid geometry, cell images/charts, and Word-exact overlap remain
-  outside this bounded path.
+  pagination hints, nested-grid geometry, inline media baseline/crop/effects,
+  arbitrary opened Office chart parts, and Word-exact overlap remain outside this
+  bounded path.
 - Paints decoded block and reader-style inline raster images in the selected
   default/first/even running header and footer bands. Existing rotation-aware
   image bounds are proportionally reduced, never enlarged, to the remaining
   section-local margin band and centered within its content width; text order,
   page counts, missing/undecodable-image diagnostics, and body image behavior
-  remain unchanged. Arbitrary opened Office chart parts, table-cell images,
-  relationship display extents, crop/flip/effects, and Word-exact overlap remain
-  outside this bounded path.
+  remain unchanged. Arbitrary opened Office chart parts, relationship display
+  extents, crop/flip/effects, and Word-exact overlap remain outside this bounded
+  path.
 - Applies opened legacy-DOC positive non-multiple minimum and negative encoded
   exact LSPD to ordinary paragraphs in section-linked even/default/first
   headers and footers. A section-and-variant-aligned private render sidecar

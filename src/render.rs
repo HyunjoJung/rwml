@@ -290,6 +290,7 @@ struct LineLayout {
     cell_spacing: CellLineSpacing,
     cell_paragraph: Option<CellParagraphLine>,
     cell_cant_split_group: Option<NonZeroUsize>,
+    cell_visual: Option<CellVisual>,
     leaders: Vec<TabLeaderSpan>,
     runs: Vec<RunDraw>,
 }
@@ -514,6 +515,42 @@ struct ImageLayout {
     bounds_w: f32,
     bounds_h: f32,
     rotation_degrees: i32,
+}
+
+#[derive(Clone)]
+enum CellVisual {
+    Picture {
+        image: PdfImage,
+        layout: ImageLayout,
+    },
+    Chart {
+        chart: Chart,
+        width: f32,
+        height: f32,
+        layout: ScaledChartLayout,
+    },
+}
+
+impl CellVisual {
+    fn fit_to_height(&mut self, max_height: f32) -> Option<f32> {
+        match self {
+            Self::Picture { layout, .. } => {
+                let fitted = fit_image_layout_to_box(*layout, layout.bounds_w, max_height)?;
+                *layout = fitted;
+                Some(fitted.bounds_h)
+            }
+            Self::Chart {
+                width,
+                height,
+                layout,
+                ..
+            } => {
+                let fitted = fit_chart_layout_to_box(*width, *height, layout.bounds_w, max_height)?;
+                *layout = fitted;
+                Some(fitted.bounds_h)
+            }
+        }
+    }
 }
 
 /// A unit of block flow, paginated top-to-bottom. `Table` groups its rows (with the
@@ -818,28 +855,24 @@ fn render_warnings_for_model(
 /// Size an authored chart block for PDF flow (96-dpi px -> PDF points, fit to
 /// the content box and one page). Empty charts are skipped rather than rendered
 /// as misleading empty axes.
-fn chart_flow_item(chart: &Chart, geom: Geom) -> Option<FlowItem> {
+fn authored_chart_dimensions(chart: &Chart) -> Option<(f32, f32)> {
     if chart.categories.is_empty() || chart.series.is_empty() {
         return None;
     }
-    let mut w = chart.width_px.unwrap_or(480) as f32 * 0.75;
-    let mut h = chart.height_px.unwrap_or(320) as f32 * 0.75;
-    let content_w = geom.content_w();
-    if w > content_w {
-        let s = content_w / w;
-        w = content_w;
-        h *= s;
-    }
-    let max_h = geom.bottom() - geom.top();
-    if h > max_h {
-        let s = max_h / h;
-        h = max_h;
-        w *= s;
-    }
-    (w > 0.0 && h > 0.0).then_some(FlowItem::Chart {
+    let width = chart.width_px.unwrap_or(480) as f32 * 0.75;
+    let height = chart.height_px.unwrap_or(320) as f32 * 0.75;
+    (width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0)
+        .then_some((width, height))
+}
+
+fn chart_flow_item(chart: &Chart, geom: Geom) -> Option<FlowItem> {
+    let (width, height) = authored_chart_dimensions(chart)?;
+    let layout =
+        fit_chart_layout_to_box(width, height, geom.content_w(), geom.bottom() - geom.top())?;
+    Some(FlowItem::Chart {
         chart: chart.clone(),
-        w,
-        h,
+        w: layout.bounds_w,
+        h: layout.bounds_h,
     })
 }
 
@@ -2309,6 +2342,7 @@ fn shape_extract_lines(
             cell_spacing: CellLineSpacing::default(),
             cell_paragraph: None,
             cell_cant_split_group: None,
+            cell_visual: None,
             leaders: Vec::new(),
             runs,
         });
@@ -3168,10 +3202,67 @@ fn natural_width(text: &str, cx: &mut TextCx<'_>) -> f32 {
 
 /// Shape a cell's paragraph blocks into wrapped, richly-styled lines (each
 /// paragraph keeps its own runs' bold/italic/color/size/font and alignment).
-/// Nested tables/images in a cell are not laid out as grids — only their text was
-/// ever surfaced. A **nested table** inside a cell is flattened to its cells'
-/// lines (no nested grid), recursively — so a document wrapped in an outer table
-/// of inner tables still renders its text. Recursion is depth-capped.
+/// Raster images and model-authored charts become atomic row-splitting records.
+/// A **nested table** inside a cell is flattened to its cells' content lines (no
+/// nested grid), recursively, so wrapper tables still surface text and supported
+/// media. Recursion is depth-capped.
+fn cell_visual_line(visual: CellVisual, height: f32, before: f32) -> LineLayout {
+    LineLayout {
+        height,
+        baseline: 0.0,
+        clip_to_height: false,
+        x_indent: 0.0,
+        char_range: None,
+        background: None,
+        cell_spacing: CellLineSpacing { before, after: 0.0 },
+        cell_paragraph: None,
+        cell_cant_split_group: None,
+        cell_visual: Some(visual),
+        leaders: Vec::new(),
+        runs: Vec::new(),
+    }
+}
+
+fn cell_picture_line(
+    image: &Image,
+    inner_width: f32,
+    max_height: f32,
+    before: f32,
+) -> Option<LineLayout> {
+    let available_height = max_height - before;
+    let (decoded, width_px, height_px) = decode_model_image(image)?;
+    let layout = image_layout(
+        width_px,
+        height_px,
+        image.rotation_degrees,
+        inner_width,
+        available_height,
+    )?;
+    Some(cell_visual_line(
+        CellVisual::Picture {
+            image: decoded,
+            layout,
+        },
+        layout.bounds_h,
+        before,
+    ))
+}
+
+fn cell_chart_line(chart: &Chart, inner_width: f32, max_height: f32) -> Option<LineLayout> {
+    let (width, height) = authored_chart_dimensions(chart)?;
+    let layout = fit_chart_layout_to_box(width, height, inner_width, max_height)?;
+    Some(cell_visual_line(
+        CellVisual::Chart {
+            chart: chart.clone(),
+            width,
+            height,
+            layout,
+        },
+        layout.bounds_h,
+        0.0,
+    ))
+}
+
 #[cfg(test)]
 fn shape_cell(
     cell: &Cell,
@@ -3208,6 +3299,7 @@ fn shape_cell_with_pagination(
         nested_pagination,
         default_tab_stop_pt,
         inner_w,
+        (PAGE_H - 2.0 * MARGIN).max(1.0),
         depth,
         cx,
         capture,
@@ -3224,6 +3316,7 @@ fn shape_cell_with_pagination_and_lists(
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
     default_tab_stop_pt: Option<f32>,
     inner_w: f32,
+    max_visual_height: f32,
     depth: u32,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
@@ -3242,6 +3335,7 @@ fn shape_cell_with_pagination_and_lists(
         nested_pagination,
         default_tab_stop_pt,
         inner_w,
+        max_visual_height,
         depth,
         cx,
         capture,
@@ -3305,6 +3399,7 @@ fn shape_cell_in_scope(
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
     default_tab_stop_pt: Option<f32>,
     inner_w: f32,
+    max_visual_height: f32,
     depth: u32,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
@@ -3334,7 +3429,7 @@ fn shape_cell_in_scope(
                     .flatten();
                 let ShapedParagraph {
                     lines: mut paragraph_lines,
-                    ..
+                    images: paragraph_images,
                 } = shape_paragraph_content(
                     p,
                     marker.as_deref(),
@@ -3346,29 +3441,41 @@ fn shape_cell_in_scope(
                     capture,
                     false,
                 );
-                if paragraph_lines.is_empty() {
+                if paragraph_lines.is_empty() && paragraph_images.is_empty() {
                     continue;
                 }
                 let remaining = MAX_CELL_LINES.saturating_sub(lines.len());
                 truncate_cell_paragraph_lines(&mut paragraph_lines, remaining, p.props.spacing);
-                if let Some(hint) = pagination
-                    .and_then(|hints| hints.get(block_index))
-                    .copied()
-                    .flatten()
-                {
-                    let paragraph_id = state.allocate_paragraph();
-                    let line_count = paragraph_lines.len();
-                    for (line_index, line) in paragraph_lines.iter_mut().enumerate() {
-                        line.cell_paragraph = Some(CellParagraphLine {
-                            scope_id,
-                            paragraph_id,
-                            line_index,
-                            line_count,
-                            pagination: hint,
-                        });
+                if !paragraph_lines.is_empty() {
+                    if let Some(hint) = pagination
+                        .and_then(|hints| hints.get(block_index))
+                        .copied()
+                        .flatten()
+                    {
+                        let paragraph_id = state.allocate_paragraph();
+                        let line_count = paragraph_lines.len();
+                        for (line_index, line) in paragraph_lines.iter_mut().enumerate() {
+                            line.cell_paragraph = Some(CellParagraphLine {
+                                scope_id,
+                                paragraph_id,
+                                line_index,
+                                line_count,
+                                pagination: hint,
+                            });
+                        }
                     }
                 }
                 lines.extend(paragraph_lines);
+                for image in paragraph_images {
+                    if lines.len() >= MAX_CELL_LINES {
+                        break;
+                    }
+                    if let Some(line) =
+                        cell_picture_line(image, inner_w, max_visual_height, PARA_GAP)
+                    {
+                        lines.push(line);
+                    }
+                }
             }
             Block::Table(t) => {
                 let table_pagination = nested_pagination
@@ -3402,6 +3509,7 @@ fn shape_cell_in_scope(
                             nested_cell_tables,
                             default_tab_stop_pt,
                             inner_w,
+                            max_visual_height,
                             depth + 1,
                             cx,
                             capture,
@@ -3423,7 +3531,17 @@ fn shape_cell_in_scope(
                     }
                 }
             }
-            Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
+            Block::Image(image) => {
+                if let Some(line) = cell_picture_line(image, inner_w, max_visual_height, 0.0) {
+                    lines.push(line);
+                }
+            }
+            Block::Chart(chart) => {
+                if let Some(line) = cell_chart_line(chart, inner_w, max_visual_height) {
+                    lines.push(line);
+                }
+            }
+            Block::PageBreak | Block::SectionBreak(_) => {}
         }
     }
     lines.truncate(MAX_CELL_LINES);
@@ -3724,6 +3842,7 @@ fn layout_table_with_row_pagination_and_lists(
                         direct_nested_pagination,
                         pagination.default_tab_stop_pt,
                         (width - insets.left - insets.right).max(1.0),
+                        (geom.bottom() - geom.top() - insets.top - insets.bottom).max(1.0),
                         0,
                         cx,
                         capture,
@@ -3834,6 +3953,27 @@ fn fitting_cell_split(lines: &[LineLayout], budget: f32) -> usize {
         .unwrap_or(greedy)
 }
 
+fn fit_forced_cell_visual_to_budget(lines: &mut [LineLayout], budget: f32) {
+    if lines.len() != 1 || !budget.is_finite() || budget <= 0.0 || lines[0].cell_extent() <= budget
+    {
+        return;
+    }
+    let line = &mut lines[0];
+    let Some(visual) = line.cell_visual.as_mut() else {
+        return;
+    };
+    let before = if line.cell_spacing.before < budget {
+        line.cell_spacing.before
+    } else {
+        0.0
+    };
+    let Some(height) = visual.fit_to_height(budget - before) else {
+        return;
+    };
+    line.height = height;
+    line.cell_spacing.before = before;
+}
+
 fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
     let cant_split = row.cant_split;
     let border = row.border;
@@ -3856,6 +3996,7 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
         let cut = fitting_cell_split(&lines, budget);
         let mut head = lines;
         let tail = head.split_off(cut);
+        fit_forced_cell_visual_to_budget(&mut head, budget);
         if !tail.is_empty() {
             any_rest = true;
         }
@@ -5165,18 +5306,59 @@ fn draw_table_cell_content(
             && push_vertical_line_clip(surface, clip_left, line_top, line_height, clip_width);
         draw_line_background(surface, &line, line_x, line_top);
         draw_line_leaders(surface, &line, line_x, line_top, baseline);
-        for run in line.runs {
-            if let Some(url) = run.link.clone() {
-                let left = line_x + run.x;
-                page_links.push((
-                    left,
-                    line_top,
-                    left + run.width(),
-                    line_top + line_height,
-                    url,
-                ));
+        match line.cell_visual {
+            Some(CellVisual::Picture { image, layout }) => {
+                let inner_width =
+                    (cell.width - cell.insets.left - cell.insets.right).max(layout.bounds_w);
+                let x = placement.x
+                    + cell.insets.left
+                    + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
+                if let Some(size) = Size::from_wh(layout.image_w, layout.image_h) {
+                    surface.push_transform(&image_paint_transform(layout, x, line_top));
+                    surface.draw_image(image, size);
+                    surface.pop();
+                }
             }
-            draw_run_with_page_context(surface, run, line_x, baseline, page_number, cx);
+            Some(CellVisual::Chart {
+                chart,
+                width,
+                height,
+                layout,
+            }) => {
+                let inner_width =
+                    (cell.width - cell.insets.left - cell.insets.right).max(layout.bounds_w);
+                let x = placement.x
+                    + cell.insets.left
+                    + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
+                if push_vertical_line_clip(surface, x, line_top, layout.bounds_h, layout.bounds_w) {
+                    surface.push_transform(&Transform::from_row(
+                        layout.scale,
+                        0.0,
+                        0.0,
+                        layout.scale,
+                        x,
+                        line_top,
+                    ));
+                    draw_authored_chart(surface, &chart, 0.0, 0.0, width, height, cx);
+                    surface.pop();
+                    surface.pop();
+                }
+            }
+            None => {
+                for run in line.runs {
+                    if let Some(url) = run.link.clone() {
+                        let left = line_x + run.x;
+                        page_links.push((
+                            left,
+                            line_top,
+                            left + run.width(),
+                            line_top + line_height,
+                            url,
+                        ));
+                    }
+                    draw_run_with_page_context(surface, run, line_x, baseline, page_number, cx);
+                }
+            }
         }
         if clip_content {
             surface.pop();
@@ -7682,12 +7864,11 @@ fn place_table(
     geom: Geom,
 ) -> Option<usize> {
     let mut headers: Vec<RowLayout> = rows.iter().take(header_rows).cloned().collect();
-    // Only repeat headers that fit a page. A header taller than the content box would overflow
-    // on every page (place_item does not split it), forcing each following body row to break to
-    // a fresh page and re-clone the whole header — O(rows × header_lines). Dropping the repeat
-    // for an over-tall header keeps pagination linear (the header still renders inline once).
+    // Only repeat headers that leave body space. A header that fills or exceeds the content box
+    // would overflow or force a zero-height body fragment on every page. Dropping the repeat keeps
+    // pagination linear; the header still renders inline once.
     let page_h = geom.bottom() - geom.top();
-    if headers.iter().map(|h| h.height).sum::<f32>() > page_h {
+    if headers.iter().map(|h| h.height).sum::<f32>() >= page_h {
         headers.clear();
     }
     let mut first_page = None;
@@ -9023,9 +9204,9 @@ mod tests {
         TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
     };
     use crate::model::{
-        Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
-        LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run,
-        SectionBreakKind, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
+        Align, Block, Cell, CellMargins, CharProps, Chart, ChartSeries, Color, DocModel, FieldRole,
+        Image, Indent, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
+        Row, Run, SectionBreakKind, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
         TableBorderSide, TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
     };
     use crate::report::FeatureInventory;
@@ -14338,6 +14519,7 @@ mod tests {
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
                 cell_cant_split_group: None,
+                cell_visual: None,
                 leaders: Vec::new(),
                 runs: Vec::new(),
             })
@@ -14464,6 +14646,7 @@ mod tests {
             cell_spacing: Default::default(),
             cell_paragraph: None,
             cell_cant_split_group: None,
+            cell_visual: None,
             leaders: Vec::new(),
             runs: Vec::new(),
         })
@@ -14493,6 +14676,7 @@ mod tests {
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
                 cell_cant_split_group: None,
+                cell_visual: None,
                 leaders: Vec::new(),
                 runs: Vec::new(),
             })
@@ -15602,6 +15786,7 @@ mod tests {
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
                 cell_cant_split_group: None,
+                cell_visual: None,
                 leaders: Vec::new(),
                 runs: Vec::new(),
             })
@@ -15671,6 +15856,7 @@ mod tests {
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
                 cell_cant_split_group: None,
+                cell_visual: None,
                 leaders: Vec::new(),
                 runs: Vec::new(),
             })
@@ -16320,6 +16506,448 @@ mod tests {
             ..DocModel::default()
         };
         assert!(super::to_pdf(&bad).starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn renders_rasters_and_authored_charts_inside_body_and_running_table_cells() {
+        let image = Image {
+            bytes: Some([0, 64, 128, 255].repeat(80 * 40)),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(80),
+            height_px: Some(40),
+            rotation_degrees: Some(90),
+            ..Image::default()
+        };
+        let chart = Chart {
+            categories: vec!["A".to_string(), "B".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![1.0, 3.0],
+                ..ChartSeries::default()
+            }],
+            width_px: Some(120),
+            height_px: Some(80),
+            ..Chart::default()
+        };
+        let table = |blocks| {
+            Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks,
+                        valign: VCell::Center,
+                        ..Cell::default()
+                    }],
+                }],
+                border_size_eighths: Some(8),
+                ..Table::default()
+            })
+        };
+        let body_model = |blocks| DocModel {
+            blocks: vec![table(blocks)],
+            ..DocModel::default()
+        };
+        let running_model = |blocks| DocModel {
+            setup: crate::model::DocSetup {
+                header: vec![table(blocks)],
+                ..crate::model::DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let inline_image = vec![Block::Paragraph(Paragraph {
+            runs: vec![Run {
+                image: Some(image.clone()),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        })];
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let render = |model: &DocModel| super::to_pdf_with_fonts(model, &fonts);
+
+        let body_baseline_model = body_model(Vec::new());
+        let body_image_model = body_model(vec![Block::Image(image.clone())]);
+        let body_inline_model = body_model(inline_image.clone());
+        let body_chart_model = body_model(vec![Block::Chart(chart.clone())]);
+        let body_baseline = render(&body_baseline_model);
+        let body_image = render(&body_image_model);
+        let body_inline = render(&body_inline_model);
+        let body_chart = render(&body_chart_model);
+        assert_ne!(body_image, body_baseline, "block cell raster was dropped");
+        assert_ne!(body_inline, body_baseline, "inline cell raster was dropped");
+        assert_ne!(body_chart, body_baseline, "cell chart was dropped");
+        assert_ne!(body_image, body_inline);
+        assert_ne!(body_image, body_chart);
+        assert_ne!(body_inline, body_chart);
+
+        let running_baseline_model = running_model(Vec::new());
+        let running_image_model = running_model(vec![Block::Image(image)]);
+        let running_inline_model = running_model(inline_image);
+        let running_chart_model = running_model(vec![Block::Chart(chart)]);
+        let running_baseline = render(&running_baseline_model);
+        let running_image = render(&running_image_model);
+        let running_inline = render(&running_inline_model);
+        let running_chart = render(&running_chart_model);
+        assert_ne!(
+            running_image, running_baseline,
+            "running cell raster was dropped"
+        );
+        assert_ne!(
+            running_inline, running_baseline,
+            "running inline cell raster was dropped"
+        );
+        assert_ne!(
+            running_chart, running_baseline,
+            "running cell chart was dropped"
+        );
+        assert_eq!(body_image, render(&body_image_model));
+        assert_eq!(body_inline, render(&body_inline_model));
+        assert_eq!(body_chart, render(&body_chart_model));
+        assert_eq!(running_image, render(&running_image_model));
+        assert_eq!(running_inline, render(&running_inline_model));
+        assert_eq!(running_chart, render(&running_chart_model));
+    }
+
+    #[test]
+    fn table_cell_media_preserve_source_order_bounds_and_atomic_row_splits() {
+        let image = Image {
+            bytes: Some([16, 64, 128, 255].repeat(200 * 100)),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(200),
+            height_px: Some(100),
+            rotation_degrees: Some(90),
+            ..Image::default()
+        };
+        let chart = Chart {
+            categories: vec!["A".to_string(), "B".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![2.0, 5.0],
+                ..ChartSeries::default()
+            }],
+            width_px: Some(300),
+            height_px: Some(200),
+            ..Chart::default()
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        para("before", None),
+                        Block::Image(image.clone()),
+                        Block::Chart(chart),
+                        Block::Paragraph(Paragraph {
+                            runs: vec![Run {
+                                text: "after".to_string(),
+                                image: Some(image),
+                                ..Run::default()
+                            }],
+                            ..Paragraph::default()
+                        }),
+                    ],
+                    margins: Some(CellMargins {
+                        top: 100,
+                        right: 100,
+                        bottom: 100,
+                        left: 100,
+                    }),
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        let row = rows.remove(0);
+        let cell = &row.cells[0];
+
+        assert_eq!(cell.lines.len(), 5);
+        assert_eq!(shaped_line_text(&cell.lines[0]), "before");
+        assert!(matches!(
+            cell.lines[1].cell_visual,
+            Some(super::CellVisual::Picture { .. })
+        ));
+        assert!(matches!(
+            cell.lines[2].cell_visual,
+            Some(super::CellVisual::Chart { .. })
+        ));
+        assert_eq!(shaped_line_text(&cell.lines[3]), "after");
+        assert!(matches!(
+            cell.lines[4].cell_visual,
+            Some(super::CellVisual::Picture { .. })
+        ));
+
+        let inner_width = cell.width - cell.insets.left - cell.insets.right;
+        let max_visual_height = geom.bottom() - geom.top() - cell.insets.top - cell.insets.bottom;
+        let Some(super::CellVisual::Picture { layout, .. }) = &cell.lines[1].cell_visual else {
+            unreachable!()
+        };
+        assert_eq!(layout.rotation_degrees, 90);
+        assert!(layout.bounds_w <= inner_width);
+        assert_close(layout.bounds_h, max_visual_height);
+        let block_picture_height = layout.bounds_h;
+        let Some(super::CellVisual::Chart { layout, .. }) = &cell.lines[2].cell_visual else {
+            unreachable!()
+        };
+        assert!(layout.bounds_w <= inner_width);
+        assert_close(layout.bounds_h, max_visual_height);
+        let Some(super::CellVisual::Picture { layout, .. }) = &cell.lines[4].cell_visual else {
+            unreachable!()
+        };
+        assert!(layout.bounds_w <= inner_width);
+        assert_close(layout.bounds_h + super::PARA_GAP, max_visual_height);
+        assert_close(
+            row.height,
+            super::cell_lines_extent(&cell.lines) + cell.insets.top + cell.insets.bottom,
+        );
+
+        let first_budget = cell.insets.top
+            + cell.lines[0].cell_extent()
+            + block_picture_height * 0.5
+            + cell.insets.bottom;
+        let (first, rest) = split_row(row, first_budget);
+        assert_eq!(first.cells[0].lines.len(), 1);
+        let rest = rest.expect("media remains after the first split");
+        assert_eq!(rest.cells[0].lines.len(), 4);
+        let picture_budget = rest.cells[0].lines[0].cell_extent() + rest.cells[0].insets.bottom;
+        let (picture, rest) = split_row(rest, picture_budget);
+        assert_eq!(picture.cells[0].lines.len(), 1);
+        let Some(super::CellVisual::Picture { layout, .. }) =
+            &picture.cells[0].lines[0].cell_visual
+        else {
+            panic!("the second fragment must retain the complete picture")
+        };
+        assert_close(layout.bounds_h, block_picture_height);
+        assert_eq!(rest.expect("later records remain").cells[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn repeated_header_refits_atomic_cell_media_to_the_remaining_page_box() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("header image"), cell("header chart")],
+                },
+                Row {
+                    cells: vec![
+                        Cell {
+                            blocks: vec![Block::Image(Image {
+                                bytes: Some([16, 64, 128, 255].repeat(200 * 100)),
+                                mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+                                width_px: Some(200),
+                                height_px: Some(100),
+                                rotation_degrees: Some(90),
+                                ..Image::default()
+                            })],
+                            margins: Some(CellMargins {
+                                top: 100,
+                                right: 100,
+                                bottom: 100,
+                                left: 100,
+                            }),
+                            ..Cell::default()
+                        },
+                        Cell {
+                            blocks: vec![Block::Chart(Chart {
+                                categories: vec!["A".to_string(), "B".to_string()],
+                                series: vec![ChartSeries {
+                                    name: "Series".to_string(),
+                                    values: vec![1.0, 3.0],
+                                    ..ChartSeries::default()
+                                }],
+                                width_px: Some(80),
+                                height_px: Some(300),
+                                ..Chart::default()
+                            })],
+                            margins: Some(CellMargins {
+                                top: 100,
+                                right: 100,
+                                bottom: 100,
+                                left: 100,
+                            }),
+                            ..Cell::default()
+                        },
+                    ],
+                },
+            ],
+            header_rows: 1,
+            ..Table::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let pagination = paginate(flow, geom, &SectionSetup::default());
+
+        assert_eq!(pagination.pages.len(), 2);
+        let body = pagination.pages[1]
+            .iter()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some((placed.top, row)),
+                _ => None,
+            })
+            .next_back()
+            .expect("second page contains the body row after its repeated header");
+        let picture_line = &body.1.cells[0].lines[0];
+        let Some(super::CellVisual::Picture {
+            layout: picture_layout,
+            ..
+        }) = &picture_line.cell_visual
+        else {
+            panic!("body row retains its picture")
+        };
+        let picture_height =
+            body.1.height - body.1.cells[0].insets.top - body.1.cells[0].insets.bottom;
+        assert!(picture_layout.bounds_h <= picture_height);
+        let chart_line = &body.1.cells[1].lines[0];
+        let Some(super::CellVisual::Chart {
+            layout: chart_layout,
+            ..
+        }) = &chart_line.cell_visual
+        else {
+            panic!("body row retains its chart")
+        };
+        let chart_height =
+            body.1.height - body.1.cells[1].insets.top - body.1.cells[1].insets.bottom;
+        assert!(chart_layout.bounds_h <= chart_height);
+        assert!(body.0 + body.1.height <= geom.bottom());
+    }
+
+    #[test]
+    fn page_filling_table_header_is_not_repeated_ahead_of_body_rows() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Image(Image {
+                            bytes: Some([16, 64, 128, 255].repeat(200 * 100)),
+                            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+                            width_px: Some(200),
+                            height_px: Some(100),
+                            rotation_degrees: Some(90),
+                            ..Image::default()
+                        })],
+                        margins: Some(CellMargins {
+                            top: 100,
+                            right: 100,
+                            bottom: 100,
+                            left: 100,
+                        }),
+                        ..Cell::default()
+                    }],
+                },
+                Row {
+                    cells: vec![cell("body")],
+                },
+            ],
+            header_rows: 1,
+            ..Table::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let pagination = paginate(flow, geom, &SectionSetup::default());
+
+        assert_eq!(pagination.pages.len(), 2);
+        let second_page_rows = pagination.pages[1]
+            .iter()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some((placed.top, row)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(second_page_rows.len(), 1);
+        let (top, body) = second_page_rows[0];
+        assert!(body.height > 0.0);
+        assert_eq!(shaped_line_text(&body.cells[0].lines[0]), "body");
+        assert!(top + body.height <= geom.bottom());
+    }
+
+    #[test]
+    fn table_cells_skip_missing_and_undecodable_media_and_empty_charts() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let lines = shape_cell(
+            &Cell {
+                blocks: vec![
+                    Block::Image(Image::default()),
+                    Block::Image(Image {
+                        bytes: Some(vec![1, 2, 3]),
+                        mime: Some("image/png".to_string()),
+                        ..Image::default()
+                    }),
+                    Block::Image(Image {
+                        bytes: Some(vec![0, 0, 0, 255]),
+                        mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+                        width_px: Some(2),
+                        height_px: Some(2),
+                        ..Image::default()
+                    }),
+                    Block::Chart(Chart::default()),
+                ],
+                ..Cell::default()
+            },
+            160.0,
+            0,
+            &mut tcx,
+            &mut capture,
+        );
+
+        assert!(lines.is_empty());
     }
 
     #[test]
