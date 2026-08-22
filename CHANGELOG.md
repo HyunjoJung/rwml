@@ -8,19 +8,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies opened legacy-DOC positive non-multiple minimum and negative encoded
+  exact LSPD to ordinary paragraphs in section-linked even/default/first
+  headers and footers. A section-and-variant-aligned private render sidecar
+  mirrors the existing six-story `PlcfHdd` mapping, including the unindexed
+  default-header fallback, and follows the running surface selected for each
+  emitted page. Exact over-tall content uses the existing margin-band clip.
+  Running-surface tables and images, the public model, shared-model conversion,
+  and fresh DOCX output remain unchanged.
 - Extends opened legacy-DOC positive non-multiple minimum and negative encoded
   exact LSPD into ordinary main-story table-cell paragraphs. A row/cell/block-
   aligned private render sidecar follows paragraph content through horizontal
   folds and retains only surviving vertical-merge owners; exact over-tall
-  content uses the existing vertical line clip. The public model, running
-  surfaces, shared-model conversion, and fresh DOCX output remain unchanged.
+  content uses the existing vertical line clip. The public model, shared-model
+  conversion, and fresh DOCX output remain unchanged.
 - Applies opened legacy-DOC positive non-multiple LSPD as minimum line spacing
   and negative encoded LSPD as exact line spacing in top-level main-story PDF
   preview paragraphs. Style and direct-PAPX cascading retains the distinct
   source forms in a block-aligned private render sidecar, including both
   fragments around a promoted manual page break; exact over-tall content uses
-  the existing vertical line clip. The public model, running surfaces,
-  shared-model conversion, and fresh DOCX output remain unchanged.
+  the existing vertical line clip. The public model, shared-model conversion,
+  and fresh DOCX output remain unchanged.
 - Applies opened-DOCX `exact` and `atLeast` paragraph line spacing to ordinary
   paragraphs in referenced default/first/even running header and footer parts.
   Section-aligned private render hints mirror default-surface inheritance and

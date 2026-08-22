@@ -496,11 +496,14 @@ line spacing; supported values survive shared-model use, `.docx`
 conversion/reopen, and top-level or table-cell PDF preview layout.
 Opened legacy PDF previews additionally retain positive non-multiple LSPD as a
 minimum line box and negative encoded LSPD as an exact line box for top-level
-main-story paragraphs and ordinary main-story table-cell paragraphs through
-block-aligned private render hints. Exact boxes use the same centered or
-bottom-aligned baseline and vertical clipping behavior as opened DOCX. The
-hints survive promoted manual page-break fragments and remain aligned through
-horizontal cell folds and surviving vertical-merge owners.
+main-story paragraphs, ordinary main-story table-cell paragraphs, and ordinary
+paragraphs in section-linked even/default/first headers and footers through
+private render hints. Exact boxes use the same centered or bottom-aligned
+baseline and vertical clipping behavior as opened DOCX. The hints survive
+promoted manual page-break fragments, remain aligned through horizontal cell
+folds and surviving vertical-merge owners, and mirror the existing six-story
+legacy running-surface mapping and unindexed default-header fallback. Exact
+running-surface content is clipped to its margin-band line box.
 Direct and paragraph-style `sprmPShd80` and `sprmPShd` paragraph shading also
 reaches the shared model, `.docx` conversion/reopen, and PDF preview when the
 source result collapses exactly to one explicit RGB fill: clear uses its
@@ -515,8 +518,8 @@ its local style payload. A later paragraph-style modifier resets earlier
 direct shading.
 At-least/exact and explicit zero proportional LSPD values clear an inherited
 multiplier but remain unset in the shared model because it has no corresponding
-line-rule representation. Exact/minimum spacing in legacy running surfaces,
-shared-model use, and fresh `.docx` conversion remains outside this source-only
+line-rule representation. Tables and images in legacy running surfaces,
+shared-model use, and fresh `.docx` conversion remain outside this source-only
 preview bridge.
 Paragraph direction does not imply table mirroring. Opened
 legacy tables preserve strict direct row-mark
