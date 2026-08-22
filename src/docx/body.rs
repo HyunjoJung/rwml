@@ -3950,6 +3950,13 @@ fn read_run(
             }
         }
     }
+    if let Some(url) = link {
+        for run in &mut images {
+            run.field = FieldRole::Hyperlink {
+                url: url.to_string(),
+            };
+        }
+    }
     runs.extend(images);
     runs
 }

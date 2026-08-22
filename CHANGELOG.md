@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Emits present raster image bytes in fresh DOCX default/first/even headers and
+  footers with relationships scoped to each owning running part. Top-level,
+  paragraph-run, ordinary-table-cell, and nested-table-cell images retain
+  deterministic media parts, DrawingML extents, rotation, alternative text,
+  inline/floating placement, and image hyperlinks across native reopen; the
+  reader now preserves an enclosing hyperlink on drawing runs, so reopened
+  linked running images remain actionable in PDF output. Images without bytes
+  keep escaped visible placeholders and emit no media relationship. Generated
+  running-part charts, crop/flip/effects, image hyperlink annotation geometry,
+  and Word-exact floating wrap remain outside this bounded path.
 - Emits full table structures in fresh DOCX default/first/even headers and
   footers instead of flattening rows to delimiter-joined text. Running tables
   reuse body-table grid-span, vertical-merge, repeated-header, width/fixed
@@ -15,11 +25,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   width/shading/margin/vertical-alignment, paragraph, run-formatting, and nested-
   table serialization. Cell hyperlinks use the owning header/footer
   relationship file and survive native reopen into clickable PDF annotations;
-  image and chart content retains escaped visible placeholders without emitting
-  invalid document-level relationships. Empty cells and nested-table terminal
-  paragraphs remain schema-valid. Real fresh running-part media/charts,
-  arbitrary opened chart reconstruction, Word-exact table autofit, and Word-
-  exact pagination remain outside this bounded path.
+  raster images use the same part-local relationship scope, while chart content
+  retains an escaped visible placeholder. Empty cells and nested-table terminal
+  paragraphs remain schema-valid. Fresh running-part charts, arbitrary opened
+  chart reconstruction, Word-exact table autofit, and Word-exact pagination
+  remain outside this bounded path.
 - Applies explicit unsigned opened-DOCX `w:pgMar` header and footer distances
   through a private section-aligned renderer sidecar. Headers start at the
   source offset from the physical top edge; footer content and generated page

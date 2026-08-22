@@ -162,34 +162,37 @@ fn write_hf_run(ctx: &mut Ctx, rels: &mut Vec<Rel>, out: &mut String, r: &crate:
         r.revision.as_ref().map(|revision| revision.kind),
         Some(RevisionKind::Deletion)
     );
+    let hyperlink_rid = match &r.field {
+        FieldRole::Hyperlink { url } => Some(add_part_rel(rels, REL_HYPERLINK, url, true)),
+        _ => None,
+    };
     let mut run_xml = String::new();
-    run_xml.push_str("<w:r>");
-    write_rpr(&mut run_xml, &r.props);
-    if let Some(img) = &r.image {
-        let text = image_placeholder_text(img, "image unavailable");
-        if deleted {
-            write_run_deleted_text(&mut run_xml, &text);
-        } else {
-            write_run_text(&mut run_xml, &text);
-        }
-    }
-    if deleted {
-        write_run_deleted_text(&mut run_xml, &r.text);
+    if let Some(img) = r.image.as_ref().filter(|img| img.bytes.is_some()) {
+        ctx.write_image_inner(&mut run_xml, img, Some(rels));
     } else {
-        write_run_text(&mut run_xml, &r.text);
+        run_xml.push_str("<w:r>");
+        write_rpr(&mut run_xml, &r.props);
+        if let Some(img) = &r.image {
+            let text = image_placeholder_text(img, "image unavailable");
+            if deleted {
+                write_run_deleted_text(&mut run_xml, &text);
+            } else {
+                write_run_text(&mut run_xml, &text);
+            }
+        }
+        if deleted {
+            write_run_deleted_text(&mut run_xml, &r.text);
+        } else {
+            write_run_text(&mut run_xml, &r.text);
+        }
+        run_xml.push_str("</w:r>");
     }
-    run_xml.push_str("</w:r>");
 
     match &r.field {
-        FieldRole::Hyperlink { url } => {
-            let rid = format!("rId{}", rels.len() + 1);
-            rels.push(Rel {
-                id: rid.clone(),
-                rel_type: REL_HYPERLINK.to_string(),
-                target: url.clone(),
-                external: true,
-            });
-            run_xml = format!(r#"<w:hyperlink r:id="{rid}">{run_xml}</w:hyperlink>"#);
+        FieldRole::Hyperlink { .. } => {
+            if let Some(rid) = hyperlink_rid {
+                run_xml = format!(r#"<w:hyperlink r:id="{rid}">{run_xml}</w:hyperlink>"#);
+            }
         }
         FieldRole::Simple { instruction } => {
             let instruction = normalize_field_instruction(instruction);
@@ -212,6 +215,17 @@ fn write_hf_run(ctx: &mut Ctx, rels: &mut Vec<Rel>, out: &mut String, r: &crate:
     let run_xml = ctx.bookmark_wrapper(r.bookmark.as_deref(), &run_xml);
     ctx.write_revision_wrapper(out, r.revision.as_ref(), &run_xml);
     ctx.end_comment(out, comment_id);
+}
+
+fn add_part_rel(rels: &mut Vec<Rel>, rel_type: &str, target: &str, external: bool) -> String {
+    let id = format!("rId{}", rels.len() + 1);
+    rels.push(Rel {
+        id: id.clone(),
+        rel_type: rel_type.to_string(),
+        target: target.to_string(),
+        external,
+    });
+    id
 }
 
 fn content_control_wrapper(control: Option<&AuthoredContentControl>, run_xml: &str) -> String {
@@ -248,7 +262,15 @@ fn content_control_wrapper(control: Option<&AuthoredContentControl>, run_xml: &s
 
 /// Wrap a header/footer body in its root element + namespaces.
 fn hf_part(tag: &str, body: &str) -> Vec<u8> {
-    format!(r#"{XML_DECL}<w:{tag} xmlns:w="{W_NS}" xmlns:r="{R_NS}">{body}</w:{tag}>"#).into_bytes()
+    if body.contains("<w:drawing>") {
+        format!(
+            r#"{XML_DECL}<w:{tag} xmlns:w="{W_NS}" xmlns:r="{R_NS}" xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:pic="{PIC_NS}">{body}</w:{tag}>"#
+        )
+        .into_bytes()
+    } else {
+        format!(r#"{XML_DECL}<w:{tag} xmlns:w="{W_NS}" xmlns:r="{R_NS}">{body}</w:{tag}>"#)
+            .into_bytes()
+    }
 }
 
 fn rels_path_for_part(path: &str) -> String {
@@ -638,7 +660,7 @@ impl Ctx {
             Block::Table(t) => self.write_table_inner(out, t, Some(rels)),
             Block::Image(img) => {
                 out.push_str("<w:p>");
-                write_image_placeholder(out, img, "image unavailable");
+                self.write_hf_image_or_placeholder(out, img, rels);
                 out.push_str("</w:p>");
             }
             Block::Chart(chart) => {
@@ -1004,7 +1026,29 @@ impl Ctx {
         }
     }
 
+    fn write_hf_image_or_placeholder(
+        &mut self,
+        out: &mut String,
+        img: &Image,
+        rels: &mut Vec<Rel>,
+    ) {
+        if img.bytes.is_some() {
+            self.write_image_inner(out, img, Some(rels));
+        } else {
+            write_image_placeholder(out, img, "image unavailable");
+        }
+    }
+
     fn write_image(&mut self, out: &mut String, img: &Image) {
+        self.write_image_inner(out, img, None);
+    }
+
+    fn write_image_inner(
+        &mut self,
+        out: &mut String,
+        img: &Image,
+        part_rels: Option<&mut Vec<Rel>>,
+    ) {
         let Some(bytes) = img.bytes.clone() else {
             return;
         };
@@ -1014,7 +1058,11 @@ impl Ctx {
         self.drawing_id += 1;
         let drawing_id = self.drawing_id;
         let target = format!("media/image{n}.{ext}");
-        let rid = self.add_rel(REL_IMAGE, &target, false);
+        let rid = if let Some(rels) = part_rels {
+            add_part_rel(rels, REL_IMAGE, &target, false)
+        } else {
+            self.add_rel(REL_IMAGE, &target, false)
+        };
         self.media.push((format!("word/{target}"), bytes, ext, ct));
         // Extent (EMU) from the image's intrinsic pixels at 96 dpi (1px = 9525
         // EMU), clamped to the ~6in content width; falls back to 2in² if the
