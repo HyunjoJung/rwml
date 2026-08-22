@@ -368,16 +368,19 @@ model-authored charts, and tables in source order; explicit zero suppresses a
 gap, and an unset after value retains the renderer's established default
 trailing gap. Gaps are bounded to the remaining margin band, footer page numbers
 follow the resulting cursor, and body page counts do not change. Adjacent gaps
-are additive rather than Word-exact collapsed. Opened `.docx` sections also
-apply explicit unsigned `w:pgMar` header and footer distances through a private
-section-aligned render sidecar. Headers start at the requested offset from the
-physical top edge; footer content, including generated page numbers, is
-bottom-aligned to the requested offset from the physical bottom edge. Both
-surfaces clamp at the body margin rather than overlap body content, and missing
-or malformed values retain the existing fixed preview bands. Legacy `.doc`
-distances, public authoring of distances, automatic margin-conflict resolution,
-and Word-exact overlap remain outside this bounded source-only path. Opened
-`.docx` tables
+are additive rather than Word-exact collapsed. Opened `.docx` sections apply
+explicit unsigned `w:pgMar` header and footer distances, and opened legacy
+`.doc` sections apply validated unsigned `sprmSDyaHdrTop` and
+`sprmSDyaHdrBottom` values, through a private section-aligned render sidecar.
+Headers start at the requested offset from the physical top edge; footer
+content is bottom-aligned to the requested offset from the physical bottom
+edge; generated DOCX page numbers follow that same path. Both surfaces clamp at
+the body margin rather than overlap body content, and missing or malformed
+values retain the existing fixed preview bands. Public authoring of distances,
+reconstruction of legacy installation-language defaults, automatic margin-
+conflict resolution, conversion round-trip of private source hints, and Word-
+exact overlap remain outside this bounded source-only path. Opened `.docx`
+tables
 materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
 `start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own
@@ -1136,7 +1139,7 @@ code points.
   representation.
   Continuous/new-column section marks normalize to the shared model's
   next-page fallback. Custom column widths/gaps, separator lines, RTL column
-  ordering, gutters/facing pages, header/footer distances,
+  ordering, gutters/facing pages, header/footer margin-growth semantics,
   page borders, vertical justification, signed negative document-grid
   character-pitch deltas, negative fixed-position top/bottom semantics,
   display-number effects on physical pagination, and page-number footer

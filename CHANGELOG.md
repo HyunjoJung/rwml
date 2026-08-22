@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies validated legacy `.doc` `sprmSDyaHdrTop` and
+  `sprmSDyaHdrBottom` section distances to PDF running surfaces through the
+  existing private section-aligned renderer sidecar. Unsigned twip operands
+  from zero through 31,680 retain source-order precedence; invalid later values
+  leave the last valid value intact, malformed section data remains isolated,
+  and absent values preserve the fixed preview fallback. Header and footer
+  placement reuses the opened-DOCX physical-edge anchoring, body-margin clamp,
+  and deterministic non-overlap policy without changing the public model or
+  body page count. Public distance authoring,
+  installation-language default reconstruction, positive-margin auto-growth,
+  negative fixed-margin semantics, conversion round-trip of this private hint,
+  and Word-exact overlap/pagination remain outside this bounded path.
 - Emits model-authored core and chart-ex drawings in fresh DOCX
   default/first/even headers and footers, including charts nested through
   ordinary running-table cells. Each running part owns its chart relationship;

@@ -577,6 +577,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         table_cell_line_spacing: _table_cell_line_spacing,
         #[cfg(feature = "render")]
             running_line_spacing_hints: _running_line_spacing_hints,
+        #[cfg(feature = "render")]
+            running_surface_distances: _running_surface_distances,
     } = legacy_build_output_from_doc_state(state);
     model
 }
@@ -2937,6 +2939,7 @@ impl Document {
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
                         running_line_spacing: &assembled.running_line_spacing_hints,
+                        running_surface_distances: &assembled.running_surface_distances,
                         ..render::SourceRenderHints::default()
                     },
                 )
@@ -5956,6 +5959,46 @@ mod tests {
     }
 
     #[cfg(feature = "render")]
+    fn legacy_running_surface_distance_doc(
+        header_twips: Option<u16>,
+        footer_twips: Option<u16>,
+    ) -> Vec<u8> {
+        let mut text = "PAGE1\u{c}PAGE2\u{c}PAGE3\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        for label in ["EH", "OH", "EF", "OF", "FH", "FF"] {
+            text.push_str(label);
+            text.push('\r');
+        }
+        let plcf_hdd = [0, 0, 0, 0, 0, 0, 0, 3, 6, 9, 12, 15, 18, 18];
+        let plcf_sed = [0, main_len];
+        let mut grpprl = Vec::new();
+        if let Some(value) = header_twips {
+            grpprl.extend_from_slice(&0xB017u16.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        }
+        if let Some(value) = footer_twips {
+            grpprl.extend_from_slice(&0xB018u16.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        }
+        let sepx_grpprls = [&grpprl[..]];
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, 0, 18, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_hdd_cps: Some(&plcf_hdd),
+                plcf_sed_cps: Some(&plcf_sed),
+                plcf_sed_sepx_grpprls: Some(&sepx_grpprls),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
     fn legacy_running_table_absolute_spacing_doc(
         story_position: usize,
         line_spacing: (u16, u16),
@@ -7110,6 +7153,56 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_running_surface_distances_change_preview_only() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let baseline = Document::open(&legacy_running_surface_distance_doc(None, None)).unwrap();
+        let header =
+            Document::open(&legacy_running_surface_distance_doc(Some(1_000), None)).unwrap();
+        let footer =
+            Document::open(&legacy_running_surface_distance_doc(None, Some(1_000))).unwrap();
+        let both = Document::open(&legacy_running_surface_distance_doc(
+            Some(1_000),
+            Some(1_000),
+        ))
+        .unwrap();
+        let invalid =
+            Document::open(&legacy_running_surface_distance_doc(Some(u16::MAX), None)).unwrap();
+
+        for document in [&header, &footer, &both, &invalid] {
+            assert_eq!(
+                baseline.model(),
+                document.model(),
+                "legacy running distances must remain outside the public model"
+            );
+            assert_eq!(
+                baseline.layout_pages_with_fonts(&fonts).unwrap().pages,
+                document.layout_pages_with_fonts(&fonts).unwrap().pages,
+                "legacy running distances must not repaginate the body"
+            );
+        }
+
+        let baseline_pdf = baseline.to_pdf_with_fonts(&fonts);
+        let header_pdf = header.to_pdf_with_fonts(&fonts);
+        let footer_pdf = footer.to_pdf_with_fonts(&fonts);
+        let both_pdf = both.to_pdf_with_fonts(&fonts);
+        assert_ne!(
+            header_pdf, baseline_pdf,
+            "legacy header distance was ignored"
+        );
+        assert_ne!(
+            footer_pdf, baseline_pdf,
+            "legacy footer distance was ignored"
+        );
+        assert_ne!(both_pdf, header_pdf);
+        assert_ne!(both_pdf, footer_pdf);
+        assert_eq!(invalid.to_pdf_with_fonts(&fonts), baseline_pdf);
+        assert_eq!(header_pdf, header.to_pdf_with_fonts(&fonts));
+        assert_eq!(footer_pdf, footer.to_pdf_with_fonts(&fonts));
+        assert_eq!(both_pdf, both.to_pdf_with_fonts(&fonts));
+    }
+
     #[test]
     fn legacy_doc_plcfhdd_disambiguates_header_footer_sections() {
         let plcf_hdd = [
@@ -7228,6 +7321,51 @@ mod tests {
         assert_eq!(final_page.margin_top_pt, Some(72.0));
         assert_eq!(final_page.margin_bottom_pt, Some(36.0));
         assert!(final_page.landscape);
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn legacy_doc_sepx_aligns_running_surface_distances_and_isolates_malformed_sections() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = Vec::new();
+        first.extend_from_slice(&0xB017u16.to_le_bytes());
+        first.extend_from_slice(&0u16.to_le_bytes());
+        first.extend_from_slice(&0xB018u16.to_le_bytes());
+        first.extend_from_slice(&31_680u16.to_le_bytes());
+        let malformed = [0x17];
+        let mut final_section = Vec::new();
+        final_section.extend_from_slice(&0xB017u16.to_le_bytes());
+        final_section.extend_from_slice(&2_000u16.to_le_bytes());
+        final_section.extend_from_slice(&0xB018u16.to_le_bytes());
+        final_section.extend_from_slice(&3_000u16.to_le_bytes());
+        let sepx_grpprls = [
+            first.as_slice(),
+            malformed.as_slice(),
+            final_section.as_slice(),
+        ];
+        let bytes =
+            legacy_doc_with_section_page_grpprls("AAAAABBBBBCCCCC", &section_cps, &sepx_grpprls);
+
+        let document = Document::open(&bytes).unwrap();
+        let Backend::Doc(state) = &document.backend else {
+            panic!("synthetic legacy document must use the DOC backend");
+        };
+        let hints = legacy_build_output_from_doc_state(state).running_surface_distances;
+
+        assert_eq!(
+            hints,
+            vec![
+                render::RunningSurfaceDistanceHints {
+                    header_pt: Some(0.0),
+                    footer_pt: Some(1_584.0),
+                },
+                render::RunningSurfaceDistanceHints::default(),
+                render::RunningSurfaceDistanceHints {
+                    header_pt: Some(100.0),
+                    footer_pt: Some(150.0),
+                },
+            ]
+        );
     }
 
     #[test]

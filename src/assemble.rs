@@ -27,7 +27,7 @@ use crate::papx::{
     ParagraphSpacingOverrides,
 };
 #[cfg(feature = "render")]
-use crate::render::RunningSurfaceLineSpacingHints;
+use crate::render::{RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints};
 use crate::stsh::StyleSheet;
 use crate::table::{self, CellBuild, RowBuild};
 use crate::util::{u16le, u32le};
@@ -86,6 +86,8 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
     #[cfg(feature = "render")]
     pub(crate) running_line_spacing_hints: Vec<RunningSurfaceLineSpacingHints>,
+    #[cfg(feature = "render")]
+    pub(crate) running_surface_distances: Vec<RunningSurfaceDistanceHints>,
 }
 
 pub(crate) fn build_model_with_render_hints(
@@ -141,6 +143,8 @@ pub(crate) fn build_model_with_render_hints(
     let setup = legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
     let (section_column_gap_pt, final_section_column_gap_pt) =
         legacy_section_column_gap_hints(&blocks, &section_spans);
+    #[cfg(feature = "render")]
+    let running_surface_distances = legacy_running_surface_distance_hints(&section_spans);
     LegacyBuildOutput {
         model: DocModel {
             blocks,
@@ -164,7 +168,22 @@ pub(crate) fn build_model_with_render_hints(
         table_cell_line_spacing,
         #[cfg(feature = "render")]
         running_line_spacing_hints,
+        #[cfg(feature = "render")]
+        running_surface_distances,
     }
+}
+
+#[cfg(feature = "render")]
+fn legacy_running_surface_distance_hints(
+    section_spans: &[LegacySectionSpan],
+) -> Vec<RunningSurfaceDistanceHints> {
+    section_spans
+        .iter()
+        .map(|span| RunningSurfaceDistanceHints {
+            header_pt: span.header_distance_pt,
+            footer_pt: span.footer_distance_pt,
+        })
+        .collect()
 }
 
 fn legacy_section_column_gap_hints(
@@ -549,6 +568,8 @@ const SPRM_S_C_COLUMNS: u16 = 0x500B;
 const SPRM_S_DXA_COLUMNS: u16 = 0x900C;
 const SPRM_S_NFC_PGN: u16 = 0x300E;
 const SPRM_S_F_PGN_RESTART: u16 = 0x3011;
+const SPRM_S_DYA_HDR_TOP: u16 = 0xB017;
+const SPRM_S_DYA_HDR_BOTTOM: u16 = 0xB018;
 const SPRM_S_PGN_START_97: u16 = 0x501C;
 const SPRM_S_B_ORIENTATION: u16 = 0x301D;
 const SPRM_S_XA_PAGE: u16 = 0xB01F;
@@ -764,6 +785,8 @@ struct LegacySectionSpan {
     page_number_format: Option<PageNumberFormat>,
     text_direction: Option<TextDirection>,
     doc_grid: Option<DocGrid>,
+    header_distance_pt: Option<f32>,
+    footer_distance_pt: Option<f32>,
     section_break: SectionBreakKind,
 }
 
@@ -777,6 +800,8 @@ struct LegacySectionProperties {
     page_number_format: Option<PageNumberFormat>,
     text_direction: Option<TextDirection>,
     doc_grid: Option<DocGrid>,
+    header_distance_pt: Option<f32>,
+    footer_distance_pt: Option<f32>,
     section_break: SectionBreakKind,
 }
 
@@ -845,6 +870,8 @@ fn parse_legacy_section_spans(
             page_number_format: properties.page_number_format,
             text_direction: properties.text_direction,
             doc_grid: properties.doc_grid,
+            header_distance_pt: properties.header_distance_pt,
+            footer_distance_pt: properties.footer_distance_pt,
             section_break: properties.section_break,
         });
     }
@@ -929,6 +956,16 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
                 Some(1) => page_number_restart = true,
                 _ => {}
             },
+            SPRM_S_DYA_HDR_TOP => {
+                if let Some(value @ 0..=31_680) = u16le(operand, 0) {
+                    properties.header_distance_pt = Some(twips_to_points(value));
+                }
+            }
+            SPRM_S_DYA_HDR_BOTTOM => {
+                if let Some(value @ 0..=31_680) = u16le(operand, 0) {
+                    properties.footer_distance_pt = Some(twips_to_points(value));
+                }
+            }
             SPRM_S_PGN_START_97 => {
                 if let Some(value) = u16le(operand, 0) {
                     page_number_start = Some(u32::from(value));
@@ -1084,6 +1121,8 @@ fn legacy_section_properties_default() -> LegacySectionProperties {
         page_number_format: None,
         text_direction: None,
         doc_grid: None,
+        header_distance_pt: None,
+        footer_distance_pt: None,
         section_break: SectionBreakKind::NextPage,
     }
 }
@@ -2905,6 +2944,41 @@ mod tests {
     }
 
     #[test]
+    fn legacy_sepx_scanner_preserves_bounded_running_surface_distances() {
+        let mut grpprl = Vec::new();
+        let push_distance = |grpprl: &mut Vec<u8>, sprm: u16, value: u16| {
+            grpprl.extend_from_slice(&sprm.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        };
+
+        let defaults = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(defaults.header_distance_pt, None);
+        assert_eq!(defaults.footer_distance_pt, None);
+
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_TOP, 0);
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_BOTTOM, 31_680);
+        let bounds = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(bounds.header_distance_pt, Some(0.0));
+        assert_eq!(bounds.footer_distance_pt, Some(1_584.0));
+
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_TOP, 720);
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_BOTTOM, 1_440);
+        for invalid in [31_681, u16::MAX] {
+            push_distance(&mut grpprl, SPRM_S_DYA_HDR_TOP, invalid);
+            push_distance(&mut grpprl, SPRM_S_DYA_HDR_BOTTOM, invalid);
+        }
+        let last_valid = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(last_valid.header_distance_pt, Some(36.0));
+        assert_eq!(last_valid.footer_distance_pt, Some(72.0));
+
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_TOP, 2_000);
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_BOTTOM, 3_000);
+        let replaced = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(replaced.header_distance_pt, Some(100.0));
+        assert_eq!(replaced.footer_distance_pt, Some(150.0));
+    }
+
+    #[test]
     fn legacy_sepx_scanner_preserves_bounded_column_counts() {
         let mut grpprl = Vec::new();
         let push_columns = |grpprl: &mut Vec<u8>, value: u16| {
@@ -3201,6 +3275,8 @@ mod tests {
                     page_number_format: None,
                     text_direction: None,
                     doc_grid: None,
+                    header_distance_pt: None,
+                    footer_distance_pt: None,
                     section_break: SectionBreakKind::NextPage,
                 },
                 LegacySectionSpan {
@@ -3214,6 +3290,8 @@ mod tests {
                     page_number_format: None,
                     text_direction: None,
                     doc_grid: None,
+                    header_distance_pt: None,
+                    footer_distance_pt: None,
                     section_break: SectionBreakKind::NextPage,
                 },
             ],
