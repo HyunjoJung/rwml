@@ -208,6 +208,9 @@ pub(crate) struct DocxState {
     /// Renderer-only exact/minimum line spacing aligned to body model blocks.
     #[cfg(feature = "render")]
     pub line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
+    /// Renderer-only exact/minimum line spacing aligned to `notes` blocks.
+    #[cfg(feature = "render")]
+    pub note_line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
     /// Renderer-only resolved explicit tab stops aligned to body model blocks.
     #[cfg(feature = "render")]
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
@@ -479,6 +482,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         part_env,
     );
     note_part.blocks.extend(endnote_part.blocks);
+    #[cfg(feature = "render")]
+    note_part.line_spacing.extend(endnote_part.line_spacing);
     note_part.records.append(&mut endnote_part.records);
     note_part.revisions.extend(endnote_part.revisions);
     note_part
@@ -690,6 +695,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         pagination_hints,
         #[cfg(feature = "render")]
         line_spacing_hints,
+        #[cfg(feature = "render")]
+        note_line_spacing_hints: note_part.line_spacing,
         #[cfg(feature = "render")]
         tab_stops,
         #[cfg(feature = "render")]
@@ -1264,6 +1271,8 @@ fn header_footer_kind(part_kind: HeaderFooterPartKind, type_name: &str) -> Heade
 #[derive(Default)]
 struct NotePartRead {
     blocks: Vec<Block>,
+    #[cfg(feature = "render")]
+    line_spacing: Vec<Option<crate::model::LineSpacingHint>>,
     records: Vec<Note>,
     comment_anchors: HashMap<String, TextAnchor>,
     revisions: Vec<Revision>,
@@ -1449,7 +1458,12 @@ fn read_notes(
         },
         preserve_legacy_form_cache,
     );
-    for (id, note_blocks) in body::parse_note_entries(&xml, &ctx, tag) {
+    #[cfg(feature = "render")]
+    ctx.begin_pagination_capture();
+    let note_entries = body::parse_note_entries(&xml, &ctx, tag);
+    #[cfg(feature = "render")]
+    let line_spacing = ctx.take_render_hints().line_spacing;
+    for (id, note_blocks) in note_entries {
         let text = blocks_text(&note_blocks);
         records.push(Note {
             id,
@@ -1461,6 +1475,8 @@ fn read_notes(
     }
     NotePartRead {
         blocks,
+        #[cfg(feature = "render")]
+        line_spacing,
         records,
         comment_anchors,
         revisions,

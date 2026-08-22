@@ -396,14 +396,17 @@ render hints to the public `DocModel`. Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
 justified-aligned paragraphs use that path when the resolved stop is reachable.
-Top-level opened-DOCX body paragraphs and ordinary or recursively nested
-table-cell paragraphs also consume resolved `exact` and `atLeast` `w:lineRule`
-values as twentieths of a point through source-only render hints. Exact boxes
-center fitting text, bottom-align and vertically clip over-tall text, while
-at-least boxes only expand shorter natural lines. The hints remain aligned when
-a source paragraph is split by an explicit page break and with surviving
-vertical-merge owner cells. Notes, running headers/footers, model-authored
-content, and fresh conversion remain outside this absolute-spacing path.
+Top-level opened-DOCX body paragraphs, ordinary or recursively nested
+table-cell paragraphs, and real footnote/endnote paragraphs also consume
+resolved `exact` and `atLeast` `w:lineRule` values as twentieths of a point
+through source-only render hints. Exact boxes center fitting text, bottom-align
+and vertically clip over-tall text, while at-least boxes only expand shorter
+natural lines. The hints remain aligned when a source paragraph is split by an
+explicit page break, with surviving vertical-merge owner cells, and across
+skipped note separator records. Notes retain the preview renderer's flattened
+end-of-flow placement; page-bottom note composition, running headers/footers,
+model-authored content, and fresh conversion remain outside this
+absolute-spacing path.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
 center/end/decimal stops. Supported LTR and RTL dot, hyphen, underscore,
 heavy, and middle-dot leaders plus bar tabs now paint through the same bounded
