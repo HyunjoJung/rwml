@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies legacy `.doc` `sprmSDxaColumns` spacing to opened-document PDF
+  previews when a section has two or more evenly spaced columns. The parser
+  bounds spacing to the specified nonnegative twip range, keeps zero and later
+  valid values in source order, and preserves section-local boundaries. Unequal
+  or malformed sections keep the existing fallback; fresh `.docx` conversion
+  remains count-only because the public section model has no gap field.
 - Applies an opened DOCX section's explicit `w:cols/@w:space` value to both
   equal-column paragraph shaping and the corresponding PDF column origins,
   including section-local values selected through accepted-current Markup

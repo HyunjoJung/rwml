@@ -568,6 +568,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
     let assemble::LegacyBuildOutput {
         model,
         pagination_hints: _pagination_hints,
+        section_column_gap_pt: _section_column_gap_pt,
+        final_section_column_gap_pt: _final_section_column_gap_pt,
         table_row_pagination: _table_row_pagination,
         table_cell_pagination: _table_cell_pagination,
     } = legacy_build_output_from_doc_state(state);
@@ -2922,6 +2924,8 @@ impl Document {
                     &assembled.model,
                     render::SourceRenderHints {
                         pagination: &assembled.pagination_hints,
+                        section_column_gap_pt: &assembled.section_column_gap_pt,
+                        final_section_column_gap_pt: assembled.final_section_column_gap_pt,
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         ..render::SourceRenderHints::default()
@@ -5931,6 +5935,12 @@ mod tests {
         grpprl.extend_from_slice(&columns_minus_one.to_le_bytes());
     }
 
+    #[cfg(feature = "render")]
+    fn push_section_column_spacing(grpprl: &mut Vec<u8>, spacing_twips: u16) {
+        grpprl.extend_from_slice(&0x900Cu16.to_le_bytes());
+        grpprl.extend_from_slice(&spacing_twips.to_le_bytes());
+    }
+
     fn push_section_evenly_spaced(grpprl: &mut Vec<u8>, evenly_spaced: u8) {
         grpprl.extend_from_slice(&0x3005u16.to_le_bytes());
         grpprl.push(evenly_spaced);
@@ -7451,6 +7461,44 @@ mod tests {
         );
         assert_eq!(single_layout.block_pages.last(), Some(&Some(2)));
         assert_eq!(double_layout.block_pages.last(), Some(&Some(1)));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_section_column_spacing_reaches_preview_hints_and_flow() {
+        let section_cps = [0, 5, 10];
+        let mut first = section_page_grpprl(4_400, 2_000, 400, 400, 400, 400, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_spacing(&mut first, 800);
+        let mut final_section = first.clone();
+        push_section_column_spacing(&mut final_section, 200);
+        let sepx_grpprls = [first.as_slice(), final_section.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("FIRSTFINAL", &section_cps, &sepx_grpprls);
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.section_column_gap_pt, &[None, Some(40.0), None]);
+            assert_eq!(hints.final_section_column_gap_pt, Some(10.0));
+        });
+
+        let text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi \
+            omicron pi rho sigma tau upsilon phi chi psi omega";
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let mut section = section_page_grpprl(4_400, 2_000, 400, 400, 400, 400, false);
+        push_section_column_count(&mut section, 1);
+        push_section_column_spacing(&mut section, 2_000);
+        let section_grpprls = [section.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls(text, &section_cps, &section_grpprls);
+        let document = Document::open(&bytes).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        let model_only = layout_pages_with_fonts(&document.model(), &fonts).unwrap();
+        let opened = document.layout_pages_with_fonts(&fonts).unwrap();
+        assert!(
+            opened.pages > model_only.pages,
+            "explicit legacy spacing must narrow equal columns: model={model_only:?}, opened={opened:?}"
+        );
     }
 
     #[cfg(feature = "render")]

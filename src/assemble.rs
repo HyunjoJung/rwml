@@ -73,6 +73,8 @@ pub(crate) struct BuildInputs<'a> {
 pub(crate) struct LegacyBuildOutput {
     pub(crate) model: DocModel,
     pub(crate) pagination_hints: Vec<PaginationHint>,
+    pub(crate) section_column_gap_pt: Vec<Option<f32>>,
+    pub(crate) final_section_column_gap_pt: Option<f32>,
     pub(crate) table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     pub(crate) table_cell_pagination: Vec<TableCellPaginationHints>,
 }
@@ -118,6 +120,8 @@ pub(crate) fn build_model_with_render_hints(
     let mut blocks = blocks;
     let stats = compute_stats(&blocks);
     let setup = legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
+    let (section_column_gap_pt, final_section_column_gap_pt) =
+        legacy_section_column_gap_hints(&blocks, &section_spans);
     LegacyBuildOutput {
         model: DocModel {
             blocks,
@@ -132,9 +136,26 @@ pub(crate) fn build_model_with_render_hints(
             setup,
         },
         pagination_hints,
+        section_column_gap_pt,
+        final_section_column_gap_pt,
         table_row_pagination,
         table_cell_pagination,
     }
+}
+
+fn legacy_section_column_gap_hints(
+    blocks: &[Block],
+    section_spans: &[LegacySectionSpan],
+) -> (Vec<Option<f32>>, Option<f32>) {
+    let mut hints = vec![None; blocks.len()];
+    let mut ending_sections = section_spans.iter();
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            hints[index] = ending_sections.next().and_then(|span| span.column_gap_pt);
+        }
+    }
+    let final_gap = section_spans.last().and_then(|span| span.column_gap_pt);
+    (hints, final_gap)
 }
 
 fn legacy_doc_setup_from_regions(
@@ -473,6 +494,7 @@ const SPRM_S_F_EVENLY_SPACED: u16 = 0x3005;
 const SPRM_S_BKC: u16 = 0x3009;
 const SPRM_S_F_TITLE_PAGE: u16 = 0x300A;
 const SPRM_S_C_COLUMNS: u16 = 0x500B;
+const SPRM_S_DXA_COLUMNS: u16 = 0x900C;
 const SPRM_S_NFC_PGN: u16 = 0x300E;
 const SPRM_S_F_PGN_RESTART: u16 = 0x3011;
 const SPRM_S_PGN_START_97: u16 = 0x501C;
@@ -569,6 +591,7 @@ struct LegacySectionSpan {
     end_cp: usize,
     page: PageSetup,
     columns: Option<u16>,
+    column_gap_pt: Option<f32>,
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
@@ -581,6 +604,7 @@ struct LegacySectionSpan {
 struct LegacySectionProperties {
     page: PageSetup,
     columns: Option<u16>,
+    column_gap_pt: Option<f32>,
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
@@ -648,6 +672,7 @@ fn parse_legacy_section_spans(
             end_cp: bounded_end_cp,
             page: properties.page,
             columns: properties.columns,
+            column_gap_pt: properties.column_gap_pt,
             title_page: properties.title_page,
             page_number_start: properties.page_number_start,
             page_number_format: properties.page_number_format,
@@ -682,6 +707,7 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
     let mut properties = legacy_section_properties_default();
     // [MS-DOC] 2.6.4 defaults to equal spacing and stores the count minus one.
     let mut column_count = None;
+    let mut column_gap_pt = None;
     let mut columns_evenly_spaced = true;
     let mut page_number_restart = false;
     let mut page_number_start = None;
@@ -718,6 +744,12 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
             SPRM_S_C_COLUMNS => {
                 if let Some(value @ 0..=43) = u16le(operand, 0) {
                     column_count = value.checked_add(1);
+                }
+            }
+            SPRM_S_DXA_COLUMNS => {
+                let value = u16le(operand, 0)? as i16;
+                if (0..=31_680).contains(&value) {
+                    column_gap_pt = Some(f32::from(value) / 20.0);
                 }
             }
             SPRM_S_NFC_PGN => {
@@ -812,6 +844,10 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
         pos = operand_end;
     }
     properties.columns = columns_evenly_spaced.then_some(column_count).flatten();
+    properties.column_gap_pt = (columns_evenly_spaced
+        && column_count.is_some_and(|count| count > 1))
+    .then_some(column_gap_pt)
+    .flatten();
     properties.page_number_start =
         page_number_restart.then_some(page_number_start.unwrap_or(0).max(1));
     properties.doc_grid = doc_grid_type
@@ -875,6 +911,7 @@ fn legacy_section_properties_default() -> LegacySectionProperties {
     LegacySectionProperties {
         page: legacy_section_page_setup_default(),
         columns: None,
+        column_gap_pt: None,
         title_page: false,
         page_number_start: None,
         page_number_format: None,
@@ -2290,6 +2327,61 @@ mod tests {
     }
 
     #[test]
+    fn legacy_sepx_scanner_preserves_bounded_equal_column_spacing() {
+        let mut grpprl = Vec::new();
+        let push_columns = |grpprl: &mut Vec<u8>, value: u16| {
+            grpprl.extend_from_slice(&SPRM_S_C_COLUMNS.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        };
+        let push_spacing = |grpprl: &mut Vec<u8>, value: u16| {
+            grpprl.extend_from_slice(&SPRM_S_DXA_COLUMNS.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        };
+        let push_evenly_spaced = |grpprl: &mut Vec<u8>, value| {
+            grpprl.extend_from_slice(&SPRM_S_F_EVENLY_SPACED.to_le_bytes());
+            grpprl.push(value);
+        };
+
+        push_spacing(&mut grpprl, 720);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+            None
+        );
+
+        push_columns(&mut grpprl, 1);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+            Some(36.0)
+        );
+
+        for invalid in [31_681, u16::MAX] {
+            push_spacing(&mut grpprl, invalid);
+            assert_eq!(
+                scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+                Some(36.0)
+            );
+        }
+
+        push_evenly_spaced(&mut grpprl, 0);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+            None
+        );
+        push_evenly_spaced(&mut grpprl, 1);
+        push_spacing(&mut grpprl, 0);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+            Some(0.0)
+        );
+
+        push_columns(&mut grpprl, 0);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+            None
+        );
+    }
+
+    #[test]
     fn legacy_sepx_scanner_preserves_bounded_document_grid_state() {
         let mut grpprl = Vec::new();
         let push_mode = |grpprl: &mut Vec<u8>, value: u16| {
@@ -2461,6 +2553,7 @@ mod tests {
                     end_cp: 2,
                     page: PageSetup::default(),
                     columns: Some(2),
+                    column_gap_pt: None,
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,
@@ -2473,6 +2566,7 @@ mod tests {
                     end_cp: 4,
                     page: PageSetup::default(),
                     columns: Some(3),
+                    column_gap_pt: None,
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,
