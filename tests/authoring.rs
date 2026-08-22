@@ -8010,6 +8010,79 @@ fn render_pdf_draws_authored_bar_chart_without_unsupported_chart_warning() {
 
 #[cfg(feature = "render")]
 #[test]
+fn render_pdf_draws_authored_charts_in_running_surface_bands() {
+    let chart = ChartBuilder::bar()
+        .title("Quarterly revenue")
+        .categories(["Q1", "Q2", "Q3"])
+        .series("Revenue", [42.0, 51.5, 63.0])
+        .size_px(160, 80)
+        .alt("Running revenue chart")
+        .build();
+    let page = PageSetup {
+        width_pt: 240.0,
+        height_pt: 200.0,
+        margin_pt: 60.0,
+        ..PageSetup::default()
+    };
+    let model = |header, footer, page| DocModel {
+        blocks: vec![Block::Paragraph(
+            ParagraphBuilder::new()
+                .runs([RunBuilder::new("Body").build()])
+                .build(),
+        )],
+        setup: DocSetup {
+            page,
+            header,
+            footer,
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+    let baseline = model(Vec::new(), Vec::new(), page);
+    let header = model(vec![Block::Chart(chart.clone())], Vec::new(), page);
+    let footer = model(Vec::new(), vec![Block::Chart(chart.clone())], page);
+    let both = model(
+        vec![Block::Chart(chart.clone())],
+        vec![Block::Chart(chart.clone())],
+        page,
+    );
+    let tiny_page = PageSetup {
+        margin_top_pt: Some(30.0),
+        ..page
+    };
+    let tiny_baseline = model(Vec::new(), Vec::new(), tiny_page);
+    let tiny_header = model(vec![Block::Chart(chart)], Vec::new(), tiny_page);
+
+    let baseline_render = rwml::render_pdf_with_report(&baseline);
+    let header_render = rwml::render_pdf_with_report(&header);
+    let footer_render = rwml::render_pdf_with_report(&footer);
+    let both_render = rwml::render_pdf_with_report(&both);
+    let tiny_baseline_render = rwml::render_pdf_with_report(&tiny_baseline);
+    let tiny_header_render = rwml::render_pdf_with_report(&tiny_header);
+    for rendered in [
+        &baseline_render,
+        &header_render,
+        &footer_render,
+        &both_render,
+        &tiny_baseline_render,
+        &tiny_header_render,
+    ] {
+        assert_eq!(rendered.report.pages, 1);
+        assert_eq!(rendered.report.unsupported.charts, 0);
+    }
+    assert_ne!(header_render.pdf, baseline_render.pdf);
+    assert_ne!(footer_render.pdf, baseline_render.pdf);
+    assert_ne!(header_render.pdf, footer_render.pdf);
+    assert_ne!(both_render.pdf, header_render.pdf);
+    assert_ne!(both_render.pdf, footer_render.pdf);
+    assert_ne!(tiny_header_render.pdf, tiny_baseline_render.pdf);
+    assert_eq!(header_render.pdf, rwml::render_pdf_with_report(&header).pdf);
+    assert_eq!(footer_render.pdf, rwml::render_pdf_with_report(&footer).pdf);
+    assert_eq!(both_render.pdf, rwml::render_pdf_with_report(&both).pdf);
+}
+
+#[cfg(feature = "render")]
+#[test]
 fn render_pdf_draws_authored_waterfall_chart_ex() {
     let model = DocBuilder::new()
         .chart(

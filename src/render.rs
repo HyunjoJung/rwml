@@ -3913,14 +3913,19 @@ enum RunningSurfaceItem {
         image: PdfImage,
         layout: ImageLayout,
     },
+    Chart {
+        chart: Chart,
+        w: f32,
+        h: f32,
+    },
     Table {
         rows: Vec<RowLayout>,
     },
 }
 
 /// Lay out compact running-surface content while retaining paragraph gaps,
-/// decoded pictures, and modeled table rows. Charts and pagination controls
-/// remain outside this bounded margin-band path.
+/// decoded pictures, model-authored charts, and modeled table rows. Pagination
+/// controls remain outside this bounded margin-band path.
 fn layout_running_surface_items(
     blocks: &[Block],
     line_spacing_hints: &[Option<LineSpacingHint>],
@@ -3950,10 +3955,54 @@ fn layout_running_surface_items(
             FlowItem::Picture { image, layout } => {
                 Some(RunningSurfaceItem::Picture { image, layout })
             }
+            FlowItem::Chart { chart, w, h } => Some(RunningSurfaceItem::Chart { chart, w, h }),
             FlowItem::Table { rows, .. } => Some(RunningSurfaceItem::Table { rows }),
             _ => None,
         })
         .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ScaledChartLayout {
+    scale: f32,
+    bounds_w: f32,
+    bounds_h: f32,
+}
+
+fn fit_chart_layout_to_box(
+    width: f32,
+    height: f32,
+    max_width: f32,
+    max_height: f32,
+) -> Option<ScaledChartLayout> {
+    if !width.is_finite()
+        || !height.is_finite()
+        || !max_width.is_finite()
+        || !max_height.is_finite()
+        || width <= 0.0
+        || height <= 0.0
+        || max_width <= 0.0
+        || max_height <= 0.0
+    {
+        return None;
+    }
+    let scale = (max_width / width).min(max_height / height).min(1.0);
+    let bounds_w = width * scale;
+    let bounds_h = height * scale;
+    if !scale.is_finite()
+        || !bounds_w.is_finite()
+        || !bounds_h.is_finite()
+        || scale <= 0.0
+        || bounds_w <= 0.0
+        || bounds_h <= 0.0
+    {
+        return None;
+    }
+    Some(ScaledChartLayout {
+        scale,
+        bounds_w,
+        bounds_h,
+    })
 }
 
 fn fit_image_layout_to_box(
@@ -4043,6 +4092,28 @@ fn draw_running_surface_items(
                     surface.pop();
                     y += layout.bounds_h;
                 }
+            }
+            RunningSurfaceItem::Chart { chart, w, h } => {
+                let Some(layout) = fit_chart_layout_to_box(w, h, geom.content_w(), limit_y - y)
+                else {
+                    break;
+                };
+                let x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
+                if !push_vertical_line_clip(surface, x, y, layout.bounds_h, layout.bounds_w) {
+                    break;
+                }
+                surface.push_transform(&Transform::from_row(
+                    layout.scale,
+                    0.0,
+                    0.0,
+                    layout.scale,
+                    x,
+                    y,
+                ));
+                draw_authored_chart(surface, &chart, 0.0, 0.0, w, h, cx);
+                surface.pop();
+                surface.pop();
+                y += layout.bounds_h;
             }
             RunningSurfaceItem::Table { rows } => {
                 let mut previous_row_borders = None;
@@ -8799,12 +8870,12 @@ mod tests {
 
     use super::{
         assign_section_to_render_pages, cell_insets, cell_line_origin, count_missing_image_bytes,
-        display_text, first_row_fragment_height, fit_image_layout_to_box, image_layout,
-        image_paint_transform, layout_page_number_line, layout_paragraph, layout_table,
-        layout_table_with_row_pagination, page_field_text, paginate, paginate_with_column_gap, rgb,
-        running_header_footer_blocks_for_page, shape, shape_cell, split_row,
-        unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout, StyledText,
-        TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
+        display_text, first_row_fragment_height, fit_chart_layout_to_box, fit_image_layout_to_box,
+        image_layout, image_paint_transform, layout_page_number_line, layout_paragraph,
+        layout_table, layout_table_with_row_pagination, page_field_text, paginate,
+        paginate_with_column_gap, rgb, running_header_footer_blocks_for_page, shape, shape_cell,
+        split_row, unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout,
+        StyledText, TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
@@ -9041,6 +9112,29 @@ mod tests {
         );
         assert!(fit_image_layout_to_box(rotated, 60.0, 0.0).is_none());
         assert!(fit_image_layout_to_box(rotated, f32::NAN, 30.0).is_none());
+    }
+
+    #[test]
+    fn running_surface_chart_fit_preserves_aspect_ratio_without_upscaling() {
+        let height_limited = fit_chart_layout_to_box(120.0, 60.0, 80.0, 30.0).unwrap();
+        assert_close(height_limited.scale, 0.5);
+        assert_close(height_limited.bounds_w, 60.0);
+        assert_close(height_limited.bounds_h, 30.0);
+
+        let unchanged = fit_chart_layout_to_box(120.0, 60.0, 200.0, 200.0).unwrap();
+        assert_close(unchanged.scale, 1.0);
+        assert_close(unchanged.bounds_w, 120.0);
+        assert_close(unchanged.bounds_h, 60.0);
+    }
+
+    #[test]
+    fn running_surface_chart_fit_rejects_invalid_bounds() {
+        for value in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert!(fit_chart_layout_to_box(value, 60.0, 80.0, 30.0).is_none());
+            assert!(fit_chart_layout_to_box(120.0, value, 80.0, 30.0).is_none());
+            assert!(fit_chart_layout_to_box(120.0, 60.0, value, 30.0).is_none());
+            assert!(fit_chart_layout_to_box(120.0, 60.0, 80.0, value).is_none());
+        }
     }
 
     #[test]

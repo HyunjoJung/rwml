@@ -8,16 +8,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Paints non-empty model-authored charts in selected default/first/even running
+  header and footer bands with the existing vector chart painter. Normalized
+  chart dimensions are proportionally reduced, never enlarged, to the remaining
+  section-local margin band, centered within its content width, and clipped at
+  the fitted bounds; one transform scales labels, strokes, and geometry
+  together. Source order, deterministic output, diagnostics, and body page
+  counts remain unchanged. Arbitrary opened Office chart-part modeling,
+  generated DOCX header/footer chart placeholders, theme/external-data parity,
+  and Word-exact overlap remain outside this bounded path.
 - Applies model-backed paragraph before/after gaps in selected
   default/first/even running header and footer bands, including resolved
   `w:spacing` values decoded from referenced DOCX parts. Finite positive gaps
-  advance later text, pictures, and tables in source order; explicit zero keeps
-  no gap, while an unset paragraph-after value retains the renderer's existing
-  default trailing gap. A gap that consumes the remaining margin band ends that
-  surface, and footer page numbers follow the bounded cursor without changing
-  body page counts. Adjacent gaps remain additive; Word-exact collapse,
-  contextual/automatic spacing, and header/footer distance semantics remain
-  outside this bounded path.
+  advance later text, pictures, model-authored charts, and tables in source
+  order; explicit zero keeps no gap, while an unset paragraph-after value
+  retains the renderer's existing default trailing gap. A gap that consumes the
+  remaining margin band ends that surface, and footer page numbers follow the
+  bounded cursor without changing body page counts. Adjacent gaps remain
+  additive; Word-exact collapse, contextual/automatic spacing, and
+  header/footer distance semantics remain outside this bounded path.
 - Paints ordinary modeled tables in selected default/first/even running header
   and footer bands, including tables decoded from referenced DOCX parts. Rows
   use the body table painter and retain model-backed width, alignment, visual
@@ -25,16 +34,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rows paint in source order; a first row taller than the remaining margin band
   paints once under an explicit band clip and ends that surface without moving
   body content or changing page counts. Running-table source-only paragraph
-  hints, nested-grid geometry, cell images, hyperlink annotations, charts, and
+  hints, nested-grid geometry, cell images/charts, hyperlink annotations, and
   Word-exact overlap remain outside this bounded path.
 - Paints decoded block and reader-style inline raster images in the selected
   default/first/even running header and footer bands. Existing rotation-aware
   image bounds are proportionally reduced, never enlarged, to the remaining
   section-local margin band and centered within its content width; text order,
   page counts, missing/undecodable-image diagnostics, and body image behavior
-  remain unchanged. Running-surface charts, table-cell images, relationship
-  display extents, crop/flip/effects, and Word-exact overlap remain outside this
-  bounded path.
+  remain unchanged. Arbitrary opened Office chart parts, table-cell images,
+  relationship display extents, crop/flip/effects, and Word-exact overlap remain
+  outside this bounded path.
 - Applies opened legacy-DOC positive non-multiple minimum and negative encoded
   exact LSPD to ordinary paragraphs in section-linked even/default/first
   headers and footers. A section-and-variant-aligned private render sidecar

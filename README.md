@@ -316,24 +316,30 @@ opened-DOCX `tblGrid` column proportions, bounded preferred-percentage outer
 widths, logical leading/center/trailing placement, and non-negative leading
 indentation, top-level and run-attached body images with model-backed
 whole-degree clockwise rotation, and decoded block or reader-style inline
-raster images plus ordinary modeled tables in selected default/first/even
-running headers and footers, and **clickable hyperlink annotations** are drawn.
+raster images plus model-authored charts and ordinary modeled tables in selected
+default/first/even running headers and footers, and **clickable hyperlink
+annotations** are drawn.
 Running-surface images retain
 their rotation-aware bounds, are proportionally reduced without upscaling to
 the remaining section-local margin band, and are centered within its content
-width. Running-surface tables use the body row painter for model-backed width,
+width. Non-empty running-surface model charts use the body vector painter and
+are proportionally reduced without upscaling to the remaining band, centered,
+and clipped at their fitted bounds; labels, strokes, and geometry scale together.
+Arbitrary opened Office chart-part modeling and generated DOCX header/footer
+chart placeholders remain outside this path. Running-surface tables use the body
+row painter for model-backed width,
 alignment, visual RTL placement, borders, cell shading, margins, and vertical
 alignment. Fitting rows paint in source order; a first row taller than the
 remaining band paints once under a vertical clip and ends that surface without
 moving body content or changing page counts. Source-only paragraph hints inside
-those cells, nested-grid geometry, cell images, hyperlink annotations, charts,
+those cells, nested-grid geometry, cell images/charts, hyperlink annotations,
 and Word-exact overlap remain outside this bounded path. Finite positive
-paragraph before/after gaps advance later running text, pictures, and tables in
-source order; explicit zero suppresses a gap, and an unset after value retains
-the renderer's established default trailing gap. Gaps are bounded to the
-remaining margin band, footer page numbers follow the resulting cursor, and
-body page counts do not change. Adjacent gaps are additive rather than
-Word-exact collapsed. Opened `.docx` tables
+paragraph before/after gaps advance later running text, pictures,
+model-authored charts, and tables in source order; explicit zero suppresses a
+gap, and an unset after value retains the renderer's established default
+trailing gap. Gaps are bounded to the remaining margin band, footer page numbers
+follow the resulting cursor, and body page counts do not change. Adjacent gaps
+are additive rather than Word-exact collapsed. Opened `.docx` tables
 materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
 `start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own
@@ -618,9 +624,9 @@ bridges.
 > decoded raster around its center. Running-surface pictures use decoded/model
 > raster dimensions rather than relationship display extents. Source-authored
 > display extents, crop/flip/effects, floating-anchor offsets, exclusion-zone
-> reflow, table-cell images (including images inside running tables), running-
-> surface charts, and Word-exact inline baseline or header/footer overlap remain
-> outside this bounded image bridge.
+> reflow, table-cell images (including images inside running tables), arbitrary
+> opened Office chart parts in running surfaces, and Word-exact inline baseline
+> or header/footer overlap remain outside this bounded image bridge.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
