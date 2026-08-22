@@ -11044,6 +11044,103 @@ mod tests {
         });
     }
 
+    #[test]
+    fn legacy_doc_promotes_internal_page_breaks_without_duplicating_section_breaks() {
+        let single_text = "before\u{000c}after\r";
+        let single_end = single_text.encode_utf16().count() as u32;
+        let single = Document::open(&legacy_doc_with_section_page_grpprls(
+            single_text,
+            &[0, single_end],
+            &[&[]],
+        ))
+        .unwrap()
+        .model();
+        let [Block::Paragraph(before), Block::PageBreak, Block::Paragraph(after)] =
+            single.blocks.as_slice()
+        else {
+            panic!(
+                "manual page break must split the legacy paragraph: {:?}",
+                single.blocks
+            );
+        };
+        assert_eq!(before.text(), "before");
+        assert_eq!(after.text(), "after");
+
+        let first_section = "first\u{000c}";
+        let final_section = "second\u{000c}third\r";
+        let combined = format!("{first_section}{final_section}");
+        let first_end = first_section.encode_utf16().count() as u32;
+        let combined_end = combined.encode_utf16().count() as u32;
+        let sectioned = Document::open(&legacy_doc_with_section_page_grpprls(
+            &combined,
+            &[0, first_end, combined_end],
+            &[&[], &[]],
+        ))
+        .unwrap()
+        .model();
+        let [Block::Paragraph(first), Block::SectionBreak(_), Block::Paragraph(second), Block::PageBreak, Block::Paragraph(third)] =
+            sectioned.blocks.as_slice()
+        else {
+            panic!(
+                "section terminator and manual page break must stay distinct: {:?}",
+                sectioned.blocks
+            );
+        };
+        assert_eq!(first.text(), "first");
+        assert_eq!(second.text(), "second");
+        assert_eq!(third.text(), "third");
+
+        let main = "main\u{000c}body\r";
+        let footnote = "note\u{000c}body\r";
+        let stories_text = format!("{main}{footnote}");
+        let main_len = main.encode_utf16().count() as u32;
+        let footnote_len = footnote.encode_utf16().count() as u32;
+        let stories = Document::open(&synth_doc_with_ccp_and_tables(
+            &stories_text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, footnote_len, 0, 0, 0, 0],
+            SyntheticDocTables::default(),
+        ))
+        .unwrap()
+        .model();
+        let [Block::Paragraph(main_before), Block::PageBreak, Block::Paragraph(main_after), Block::Paragraph(note)] =
+            stories.blocks.as_slice()
+        else {
+            panic!(
+                "only the main story page break may be promoted: {:?}",
+                stories.blocks
+            );
+        };
+        assert_eq!(main_before.text(), "main");
+        assert_eq!(main_after.text(), "body");
+        assert_eq!(note.text(), "note\nbody");
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_manual_page_breaks_survive_fresh_docx_conversion() {
+        let text = "before\u{000c}after\r";
+        let text_end = text.encode_utf16().count() as u32;
+        let legacy = Document::open(&legacy_doc_with_section_page_grpprls(
+            text,
+            &[0, text_end],
+            &[&[]],
+        ))
+        .unwrap();
+
+        let reopened = Document::open(&legacy.to_docx()).unwrap().model();
+        let [Block::Paragraph(before), Block::PageBreak, Block::Paragraph(after)] =
+            reopened.blocks.as_slice()
+        else {
+            panic!("fresh DOCX conversion must retain the promoted page break");
+        };
+        assert_eq!(before.text(), "before");
+        assert_eq!(after.text(), "after");
+    }
+
     #[cfg(feature = "render")]
     fn legacy_manual_column_break_layout_doc() -> Vec<u8> {
         let text = "left\u{000e}right\u{000e}page two\r\u{000e}\rafter orphan\r";

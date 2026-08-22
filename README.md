@@ -1031,9 +1031,15 @@ code points.
   offsets. The public model retains its newline representation. Hidden
   characters, table cells, non-main stories, and fresh conversion do not
   activate that preview hint.
+  An internal main-story end-of-section character (`0x0C`) becomes the shared
+  `PageBreak` block for native preview, export, and fresh `.docx` conversion.
+  The final `0x0C` in each non-final `PlcfSed` range is consumed only as that
+  section's terminator; repeated and marker-only manual page breaks remain
+  explicit. Table-cell and non-main-story occurrences retain their newline
+  representation.
   Continuous/new-column section marks normalize to the shared model's
-  next-page fallback. Custom column widths/gaps, separator lines, manual page
-  breaks, RTL column ordering, gutters/facing pages, header/footer distances,
+  next-page fallback. Custom column widths/gaps, separator lines, RTL column
+  ordering, gutters/facing pages, header/footer distances,
   page borders, vertical justification, signed negative document-grid
   character-pitch deltas, negative fixed-position top/bottom semantics,
   display-number effects on physical pagination, and page-number footer

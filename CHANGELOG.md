@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Promotes an internal main-story end-of-section character (`0x0C`) from an
+  opened legacy `.doc` file to the shared `PageBreak` block, so native preview,
+  Markdown/HTML export, and fresh DOCX conversion retain the manual page break.
+  The final `0x0C` in each non-final `PlcfSed` range is consumed only as its
+  section terminator, preventing duplicate page movement. Repeated and
+  marker-only breaks remain deterministic, while table cells and non-main
+  stories retain their established newline representation.
 - Flows visible top-level main-story end-of-column characters (`0x0E`) from
   opened legacy `.doc` files into the next active PDF preview column, advancing
   to a new page after the final column. Renderer-only character offsets retain
