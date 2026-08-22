@@ -1055,3 +1055,125 @@ fn opened_docx_render_consumes_running_table_cell_absolute_spacing() {
         render("", "", r#"<w:spacing w:line="100" w:lineRule="exact"/>"#)
     );
 }
+
+#[cfg(feature = "render")]
+fn running_surface_table_tab_docx(
+    header_tabs: &str,
+    even_footer_tabs: &str,
+    default_tab_stop_twips: u32,
+) -> Vec<u8> {
+    let table = |tabs: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr>{tabs}</w:pPr><w:r><w:t>A</w:t><w:tab/><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let header = format!(
+        r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>HEADER PREFIX</w:t></w:r></w:p>{}</w:hdr>"#,
+        table(header_tabs)
+    );
+    let footer = format!(
+        r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>FOOTER PREFIX</w:t></w:r></w:p>{}</w:ftr>"#,
+        table("")
+    );
+    let even_footer = format!(
+        r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>EVEN FOOTER PREFIX</w:t></w:r></w:p>{}</w:ftr>"#,
+        table(even_footer_tabs)
+    );
+    let settings = format!(
+        r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="{default_tab_stop_twips}"/></w:settings>"#
+    );
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/footer2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rIdEvenFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>PAGE ONE</w:t></w:r></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:t>PAGE TWO</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="4400" w:h="7000"/><w:pgMar w:top="1800" w:right="400" w:bottom="1800" w:left="400"/><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/><w:footerReference w:type="even" r:id="rIdEvenFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        ("word/settings.xml", &settings),
+        ("word/header1.xml", &header),
+        ("word/footer1.xml", &footer),
+        ("word/footer2.xml", &even_footer),
+    ])
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_consumes_running_table_cell_tab_stops() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let baseline_model = Document::open(&running_surface_table_tab_docx("", "", 720))
+        .expect("baseline running-table tab fixture opens")
+        .model();
+    let render = |header_tabs: &str, even_footer_tabs: &str, default_stop: u32| {
+        let document = Document::open(&running_surface_table_tab_docx(
+            header_tabs,
+            even_footer_tabs,
+            default_stop,
+        ))
+        .expect("running-table tab fixture opens");
+        assert_eq!(
+            document.model(),
+            baseline_model,
+            "running-table tab stops must remain outside the public model"
+        );
+        assert_eq!(
+            document
+                .layout_pages_with_fonts(&fonts)
+                .expect("running-table tab layout succeeds")
+                .pages,
+            2
+        );
+        document.to_pdf_with_fonts(&fonts)
+    };
+
+    let baseline = render("", "", 720);
+    let header_explicit = render(
+        r#"<w:tabs><w:tab w:val="left" w:pos="1440" w:leader="dot"/></w:tabs>"#,
+        "",
+        720,
+    );
+    let even_footer_explicit = render(
+        "",
+        r#"<w:tabs><w:tab w:val="left" w:pos="1200" w:leader="hyphen"/></w:tabs>"#,
+        720,
+    );
+    let wider_default = render("", "", 1440);
+
+    for (name, rendered) in [
+        ("default-header explicit tab", &header_explicit),
+        ("even-footer explicit tab", &even_footer_explicit),
+        ("settings default interval", &wider_default),
+    ] {
+        assert!(rendered.starts_with(b"%PDF-"), "{name}");
+        assert_ne!(rendered, &baseline, "{name} must affect PDF output");
+    }
+    assert_ne!(header_explicit, even_footer_explicit);
+    assert_ne!(header_explicit, wider_default);
+    assert_ne!(even_footer_explicit, wider_default);
+    assert_eq!(
+        header_explicit,
+        render(
+            r#"<w:tabs><w:tab w:val="left" w:pos="1440" w:leader="dot"/></w:tabs>"#,
+            "",
+            720,
+        )
+    );
+    assert_eq!(
+        even_footer_explicit,
+        render(
+            "",
+            r#"<w:tabs><w:tab w:val="left" w:pos="1200" w:leader="hyphen"/></w:tabs>"#,
+            720,
+        )
+    );
+    assert_eq!(wider_default, render("", "", 1440));
+}

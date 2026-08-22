@@ -175,6 +175,16 @@ pub(crate) struct RunningSurfaceLineSpacingHints {
     pub(crate) even_footer_table_cells: Vec<TableCellLineSpacingHints>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceTableCellTabStopHints {
+    pub(crate) header: Vec<TableCellTabStopHints>,
+    pub(crate) first_header: Vec<TableCellTabStopHints>,
+    pub(crate) even_header: Vec<TableCellTabStopHints>,
+    pub(crate) footer: Vec<TableCellTabStopHints>,
+    pub(crate) first_footer: Vec<TableCellTabStopHints>,
+    pub(crate) even_footer: Vec<TableCellTabStopHints>,
+}
+
 #[derive(Clone, Copy, Default)]
 pub(crate) struct SourceRenderHints<'a> {
     pub(crate) pagination: &'a [PaginationHint],
@@ -190,6 +200,7 @@ pub(crate) struct SourceRenderHints<'a> {
     pub(crate) table_nested_pagination: &'a [TableCellNestedPaginationHints],
     pub(crate) table_cell_tab_stops: &'a [TableCellTabStopHints],
     pub(crate) running_line_spacing: &'a [RunningSurfaceLineSpacingHints],
+    pub(crate) running_table_cell_tab_stops: &'a [RunningSurfaceTableCellTabStopHints],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3938,6 +3949,8 @@ fn layout_running_surface_items(
     blocks: &[Block],
     line_spacing_hints: &[Option<LineSpacingHint>],
     table_cell_line_spacing: &[TableCellLineSpacingHints],
+    table_cell_tab_stops: &[TableCellTabStopHints],
+    default_tab_stop_pt: Option<f32>,
     geom: Geom,
     cx: &mut TextCx<'_>,
 ) -> Vec<RunningSurfaceItem> {
@@ -3952,6 +3965,8 @@ fn layout_running_surface_items(
         BlockCollectionOptions {
             line_spacing_hints: Some(line_spacing_hints),
             table_cell_line_spacing: Some(table_cell_line_spacing),
+            table_cell_tab_stops: Some(table_cell_tab_stops),
+            default_tab_stop_pt,
             ..BlockCollectionOptions::default()
         },
     );
@@ -4297,6 +4312,21 @@ fn running_surface_table_cell_line_spacing(
         (false, RunningSurfaceVariant::Default) => &hints.footer_table_cells,
         (false, RunningSurfaceVariant::First) => &hints.first_footer_table_cells,
         (false, RunningSurfaceVariant::Even) => &hints.even_footer_table_cells,
+    }
+}
+
+fn running_surface_table_cell_tab_stops(
+    hints: &RunningSurfaceTableCellTabStopHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[TableCellTabStopHints] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header,
+        (true, RunningSurfaceVariant::First) => &hints.first_header,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header,
+        (false, RunningSurfaceVariant::Default) => &hints.footer,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer,
     }
 }
 
@@ -8798,6 +8828,9 @@ fn render_pdf(
         let running_spacing = source_hints
             .running_line_spacing
             .get(page_section.section_index);
+        let running_table_tabs = source_hints
+            .running_table_cell_tab_stops
+            .get(page_section.section_index);
         let header_spacing = running_spacing
             .map(|hints| running_surface_line_spacing(hints, header_variant, true))
             .unwrap_or_default();
@@ -8810,10 +8843,18 @@ fn render_pdf(
         let footer_table_cell_spacing = running_spacing
             .map(|hints| running_surface_table_cell_line_spacing(hints, footer_variant, false))
             .unwrap_or_default();
+        let header_table_cell_tabs = running_table_tabs
+            .map(|hints| running_surface_table_cell_tab_stops(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_table_cell_tabs = running_table_tabs
+            .map(|hints| running_surface_table_cell_tab_stops(hints, footer_variant, false))
+            .unwrap_or_default();
         let header_items = layout_running_surface_items(
             header_blocks,
             header_spacing,
             header_table_cell_spacing,
+            header_table_cell_tabs,
+            source_hints.default_tab_stop_pt,
             page_geom,
             &mut tcx,
         );
@@ -8821,6 +8862,8 @@ fn render_pdf(
             footer_blocks,
             footer_spacing,
             footer_table_cell_spacing,
+            footer_table_cell_tabs,
+            source_hints.default_tab_stop_pt,
             page_geom,
             &mut tcx,
         );

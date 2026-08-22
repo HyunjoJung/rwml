@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies opened-DOCX table-cell tab stops in selected default/first/even
+  running headers and footers through the existing table shaper. Resolved
+  explicit stops retain the supported LTR/RTL alignment, reachability, leader,
+  and bar-tab behavior, while cells without a reachable explicit stop use the
+  document's finite positive `w:defaultTabStop` interval. Per-block vectors
+  follow default-surface inheritance and page-variant selection without entering
+  the public model or changing body pagination. Implicit list-marker tabs,
+  post-tab field containment, Word-exact custom-tab reflow/pagination, legacy
+  running tables, fresh conversion, media, and nested-grid geometry remain
+  outside this bounded path.
 - Applies opened-DOCX `exact` and `atLeast` paragraph line rules inside modeled
   table cells in selected default/first/even running headers and footers. The
   reader-retained per-block sidecar follows default-surface inheritance and

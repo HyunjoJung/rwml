@@ -335,9 +335,12 @@ row painter for model-backed width,
 alignment, visual RTL placement, borders, cell shading, margins, and vertical
 alignment. Fitting rows paint in source order; a first row taller than the
 remaining band paints once under a vertical clip and ends that surface without
-moving body content or changing page counts. Source-only pagination and tab
-hints inside those cells, nested-grid geometry, cell images/charts, and
-Word-exact overlap remain outside this bounded path. Finite positive
+moving body content or changing page counts. Opened-DOCX running-table cells
+consume the same resolved explicit LTR/RTL tab-stop, leader, and bar-tab subset
+as body table cells, together with a finite positive settings-defined default
+interval. Source-only pagination hints inside those cells, nested-grid geometry,
+cell images/charts, and Word-exact overlap remain outside this bounded path.
+Finite positive
 paragraph before/after gaps advance later running text, pictures,
 model-authored charts, and tables in source order; explicit zero suppresses a
 gap, and an unset after value retains the renderer's established default

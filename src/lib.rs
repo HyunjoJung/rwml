@@ -2962,6 +2962,7 @@ impl Document {
                         table_nested_pagination: &d.table_nested_pagination,
                         table_cell_tab_stops: &d.table_cell_tab_stops,
                         running_line_spacing: &d.running_line_spacing_hints,
+                        running_table_cell_tab_stops: &d.running_table_cell_tab_stops,
                         default_tab_stop_pt: d.default_tab_stop_pt,
                     },
                 )
