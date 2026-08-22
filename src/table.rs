@@ -6,8 +6,8 @@
 //! 2.9.330 (TC80).
 
 use crate::model::{
-    Block, Cell, Color, PaginationHint, Row, Table, TableBorderSide, TableBorderStyle,
-    TableCellPaginationHints,
+    Block, Cell, Color, LineSpacingHint, PaginationHint, Row, Table, TableBorderSide,
+    TableBorderStyle, TableCellLineSpacingHints, TableCellPaginationHints,
 };
 
 const F_MERGED: u16 = 0x0002; // cell folds into the one to its left
@@ -238,6 +238,7 @@ fn parse_row_borders(
 pub(crate) struct CellBuild {
     pub blocks: Vec<Block>,
     pub pagination: Vec<Option<PaginationHint>>,
+    pub line_spacing: Vec<Option<LineSpacingHint>>,
 }
 
 /// One streamed row: its cells + the row definition + header flag.
@@ -250,12 +251,14 @@ pub(crate) struct RowBuild {
 pub(crate) struct TableBuildOutput {
     pub table: Table,
     pub cell_pagination: TableCellPaginationHints,
+    pub cell_line_spacing: TableCellLineSpacingHints,
 }
 
 /// An output cell during merge resolution.
 struct Out {
     blocks: Vec<Block>,
     pagination: Vec<Option<PaginationHint>>,
+    line_spacing: Vec<Option<LineSpacingHint>>,
     /// Starting column over the table's global boundary set.
     col: usize,
     colspan: u16,
@@ -526,12 +529,14 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
                         last.colspan = (col_of(right).saturating_sub(last.col)).max(1) as u16;
                         last.blocks.extend(cell.blocks);
                         last.pagination.extend(cell.pagination);
+                        last.line_spacing.extend(cell.line_spacing);
                     } else {
                         let col = col_of(left);
                         let colspan = (col_of(right).saturating_sub(col)).max(1) as u16;
                         out.push(Out {
                             blocks: cell.blocks,
                             pagination: cell.pagination,
+                            line_spacing: cell.line_spacing,
                             col,
                             colspan,
                             rowspan: 1,
@@ -545,6 +550,7 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
                     if let Some(last) = out.last_mut() {
                         last.blocks.extend(cell.blocks);
                         last.pagination.extend(cell.pagination);
+                        last.line_spacing.extend(cell.line_spacing);
                     }
                 }
             }
@@ -553,6 +559,7 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
                     out.push(Out {
                         blocks: cell.blocks,
                         pagination: cell.pagination,
+                        line_spacing: cell.line_spacing,
                         col: k,
                         colspan: 1,
                         rowspan: 1,
@@ -591,12 +598,21 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
     // Emit, skipping merged-away cells.
     let mut model_rows = Vec::with_capacity(grid.len());
     let mut cell_pagination = Vec::with_capacity(grid.len());
+    let mut cell_line_spacing = Vec::with_capacity(grid.len());
     for (r, row) in grid.into_iter().enumerate() {
         let is_header = r < header_rows;
         let mut cells = Vec::with_capacity(row.len());
         let mut row_pagination = Vec::with_capacity(row.len());
+        let mut row_line_spacing = Vec::with_capacity(row.len());
         for output in row.into_iter().filter(|output| !output.dropped) {
+            debug_assert!(
+                output.pagination.is_empty() || output.blocks.len() == output.pagination.len()
+            );
+            debug_assert!(
+                output.line_spacing.is_empty() || output.blocks.len() == output.line_spacing.len()
+            );
             row_pagination.push(output.pagination);
+            row_line_spacing.push(output.line_spacing);
             cells.push(Cell {
                 blocks: output.blocks,
                 col_span: output.colspan,
@@ -607,6 +623,7 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
         }
         model_rows.push(Row { cells });
         cell_pagination.push(row_pagination);
+        cell_line_spacing.push(row_line_spacing);
     }
     let mut table = Table {
         rows: model_rows,
@@ -621,6 +638,7 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
     TableBuildOutput {
         table,
         cell_pagination,
+        cell_line_spacing,
     }
 }
 
@@ -1158,18 +1176,19 @@ mod tests {
             keep_lines: true,
             widow_control: true,
         };
-        let built_cell = |text: &str, pagination| CellBuild {
+        let built_cell = |text: &str, pagination, line_spacing| CellBuild {
             blocks: cell(text),
             pagination: vec![Some(pagination)],
+            line_spacing: vec![Some(line_spacing)],
         };
 
         let built = build(vec![
             RowBuild {
                 cells: vec![
-                    built_cell("A", a),
-                    built_cell("B", b),
-                    built_cell("C", c),
-                    built_cell("extra", extra),
+                    built_cell("A", a, LineSpacingHint::Exact(1.0)),
+                    built_cell("B", b, LineSpacingHint::AtLeast(2.0)),
+                    built_cell("C", c, LineSpacingHint::Exact(3.0)),
+                    built_cell("extra", extra, LineSpacingHint::AtLeast(4.0)),
                 ],
                 def: Some(TableDef {
                     rgdxa: vec![0, 100, 200, 300],
@@ -1180,9 +1199,9 @@ mod tests {
             },
             RowBuild {
                 cells: vec![
-                    built_cell("D", d),
-                    built_cell("E", e),
-                    built_cell("dropped", dropped),
+                    built_cell("D", d, LineSpacingHint::Exact(5.0)),
+                    built_cell("E", e, LineSpacingHint::AtLeast(6.0)),
+                    built_cell("dropped", dropped, LineSpacingHint::Exact(7.0)),
                 ],
                 def: Some(TableDef {
                     rgdxa: vec![0, 100, 200, 300],
@@ -1202,6 +1221,25 @@ mod tests {
             vec![
                 vec![vec![Some(a), Some(b)], vec![Some(c), Some(extra)]],
                 vec![vec![Some(d)], vec![Some(e)]],
+            ]
+        );
+        assert_eq!(
+            built.cell_line_spacing,
+            vec![
+                vec![
+                    vec![
+                        Some(LineSpacingHint::Exact(1.0)),
+                        Some(LineSpacingHint::AtLeast(2.0)),
+                    ],
+                    vec![
+                        Some(LineSpacingHint::Exact(3.0)),
+                        Some(LineSpacingHint::AtLeast(4.0)),
+                    ],
+                ],
+                vec![
+                    vec![Some(LineSpacingHint::Exact(5.0))],
+                    vec![Some(LineSpacingHint::AtLeast(6.0))],
+                ],
             ]
         );
     }

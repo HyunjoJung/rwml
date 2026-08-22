@@ -574,6 +574,7 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         final_section_column_gap_pt: _final_section_column_gap_pt,
         table_row_pagination: _table_row_pagination,
         table_cell_pagination: _table_cell_pagination,
+        table_cell_line_spacing: _table_cell_line_spacing,
     } = legacy_build_output_from_doc_state(state);
     model
 }
@@ -2932,6 +2933,7 @@ impl Document {
                         final_section_column_gap_pt: assembled.final_section_column_gap_pt,
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
+                        table_cell_line_spacing: &assembled.table_cell_line_spacing,
                         ..render::SourceRenderHints::default()
                     },
                 )
@@ -10419,6 +10421,58 @@ mod tests {
     }
 
     #[cfg(feature = "render")]
+    fn legacy_absolute_table_cell_spacing_doc(
+        paragraph_count: usize,
+        line_spacing: (u16, u16),
+    ) -> Vec<u8> {
+        let mut text = String::new();
+        for index in 0..paragraph_count {
+            text.push_str(&format!("cell paragraph {index}"));
+            text.push(if index + 1 == paragraph_count {
+                '\u{7}'
+            } else {
+                '\r'
+            });
+        }
+        let cell_end = text.encode_utf16().count() as u32;
+        let mut cell_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+        ];
+        push_paragraph_line_spacing(&mut cell_grpprl, line_spacing.0, line_spacing.1);
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: cell_end,
+            grpprl: cell_grpprl,
+        }];
+        text.push('\u{7}');
+        let row_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        runs.push(SyntheticPapxRun {
+            cp_lim: row_end,
+            grpprl: row_grpprl,
+        });
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [row_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
     #[test]
     fn opened_legacy_doc_inherited_cell_spacing_changes_preview_deterministically() {
         const PARAGRAPH_COUNT: usize = 40;
@@ -10469,6 +10523,64 @@ mod tests {
         let recovered_pdf = render_pdf_with_fonts(&recovered, &fonts);
         assert_ne!(recovered_pdf, compact_pdf);
         assert_eq!(recovered_pdf, render_pdf_with_fonts(&recovered, &fonts));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_absolute_table_cell_spacing_changes_preview_layout() {
+        const PARAGRAPH_COUNT: usize = 40;
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let exact = Document::open(&legacy_absolute_table_cell_spacing_doc(
+            PARAGRAPH_COUNT,
+            (EXACT_FIVE_POINTS, 0),
+        ))
+        .unwrap();
+        let minimum = Document::open(&legacy_absolute_table_cell_spacing_doc(
+            PARAGRAPH_COUNT,
+            (800, 0),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            exact.model(),
+            minimum.model(),
+            "legacy table-cell absolute spacing must remain outside the public model"
+        );
+        let Backend::Doc(exact_state) = &exact.backend else {
+            panic!("synthetic legacy document must use the DOC backend");
+        };
+        let Backend::Doc(minimum_state) = &minimum.backend else {
+            panic!("synthetic legacy document must use the DOC backend");
+        };
+        let exact_hints = legacy_build_output_from_doc_state(exact_state).table_cell_line_spacing;
+        let minimum_hints =
+            legacy_build_output_from_doc_state(minimum_state).table_cell_line_spacing;
+        assert_eq!(exact_hints.len(), 1);
+        assert_eq!(exact_hints[0].len(), 1);
+        assert_eq!(exact_hints[0][0].len(), 1);
+        assert_eq!(exact_hints[0][0][0].len(), PARAGRAPH_COUNT);
+        assert_eq!(minimum_hints.len(), 1);
+        assert_eq!(minimum_hints[0].len(), 1);
+        assert_eq!(minimum_hints[0][0].len(), 1);
+        assert_eq!(minimum_hints[0][0][0].len(), PARAGRAPH_COUNT);
+        assert!(exact_hints[0][0][0]
+            .iter()
+            .all(|hint| *hint == Some(crate::model::LineSpacingHint::Exact(5.0))));
+        assert!(minimum_hints[0][0][0]
+            .iter()
+            .all(|hint| *hint == Some(crate::model::LineSpacingHint::AtLeast(40.0))));
+        let exact_layout = exact.layout_pages_with_fonts(&fonts).unwrap();
+        let minimum_layout = minimum.layout_pages_with_fonts(&fonts).unwrap();
+        assert!(minimum_layout.pages > exact_layout.pages);
+
+        let exact_pdf = exact.to_pdf_with_fonts(&fonts);
+        let minimum_pdf = minimum.to_pdf_with_fonts(&fonts);
+        assert!(exact_pdf.starts_with(b"%PDF-"));
+        assert!(minimum_pdf.starts_with(b"%PDF-"));
+        assert_ne!(exact_pdf, minimum_pdf);
+        assert_eq!(exact_pdf, exact.to_pdf_with_fonts(&fonts));
+        assert_eq!(minimum_pdf, minimum.to_pdf_with_fonts(&fonts));
     }
 
     fn legacy_table_bidi_doc() -> Vec<u8> {

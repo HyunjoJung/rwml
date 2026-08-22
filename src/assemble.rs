@@ -19,8 +19,8 @@ use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocGrid, DocGridType, DocMeta, DocModel,
     DocSetup, FieldRole, Image, Indent, LineSpacingHint, ListInfo, PageNumberFormat, PageSetup,
     PaginationHint, ParaProps, Paragraph, SectionBreakKind, SectionSetup, SourceRegion,
-    SourceRegionKind, Spacing, Stats, TableCellPaginationHints, TableRowPaginationHint,
-    TextDirection,
+    SourceRegionKind, Spacing, Stats, TableCellLineSpacingHints, TableCellPaginationHints,
+    TableRowPaginationHint, TextDirection,
 };
 use crate::papx::{
     PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
@@ -81,6 +81,7 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) final_section_column_gap_pt: Option<f32>,
     pub(crate) table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     pub(crate) table_cell_pagination: Vec<TableCellPaginationHints>,
+    pub(crate) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
 }
 
 pub(crate) fn build_model_with_render_hints(
@@ -121,6 +122,7 @@ pub(crate) fn build_model_with_render_hints(
         column_break_offsets,
         table_row_pagination,
         table_cell_pagination,
+        table_cell_line_spacing,
         text_start: _,
     } = build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
     let mut blocks = blocks;
@@ -148,6 +150,7 @@ pub(crate) fn build_model_with_render_hints(
         final_section_column_gap_pt,
         table_row_pagination,
         table_cell_pagination,
+        table_cell_line_spacing,
     }
 }
 
@@ -397,6 +400,7 @@ fn push_legacy_main_section_regions(
             output.column_break_offsets.push(Vec::new());
             output.table_row_pagination.push(Vec::new());
             output.table_cell_pagination.push(Vec::new());
+            output.table_cell_line_spacing.push(Vec::new());
         }
     }
 }
@@ -481,6 +485,9 @@ fn push_legacy_region(
     output
         .table_cell_pagination
         .append(&mut region_output.table_cell_pagination);
+    output
+        .table_cell_line_spacing
+        .append(&mut region_output.table_cell_line_spacing);
     let block_end = output.blocks.len();
 
     if source_len_cp > 0 || include_empty {
@@ -508,6 +515,7 @@ struct LegacyRegionOutput {
     column_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
+    table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
     text_start: usize,
 }
 
@@ -1119,6 +1127,7 @@ struct Asm<'a, 'l> {
     page_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
+    table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
 
     // Current run being coalesced. `run_chp` is the (cheap, `Copy`) source the current
     // `run_props` was built from — comparing it per code unit avoids rebuilding the owned
@@ -1146,6 +1155,7 @@ struct Asm<'a, 'l> {
     cur_row_cells: Vec<CellBuild>,
     cell_blocks: Vec<Block>,
     cell_pagination: Vec<Option<PaginationHint>>,
+    cell_line_spacing: Vec<Option<LineSpacingHint>>,
 
     // Field state. `field_stack` holds one entry per currently-open field
     // (`0x13`..`0x15`), each recording whether that field has passed its `0x14`
@@ -1264,6 +1274,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             page_break_offsets: Vec::new(),
             table_row_pagination: Vec::new(),
             table_cell_pagination: Vec::new(),
+            table_cell_line_spacing: Vec::new(),
             run_buf: Vec::new(),
             run_chp: Chp::default(),
             run_props: CharProps::default(),
@@ -1279,6 +1290,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             cur_row_cells: Vec::new(),
             cell_blocks: Vec::new(),
             cell_pagination: Vec::new(),
+            cell_line_spacing: Vec::new(),
             field_stack: Vec::new(),
             unseparated: 0,
             img_cache: HashMap::new(),
@@ -1649,6 +1661,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 self.page_break_offsets.push(page_break_offsets);
                 self.table_row_pagination.push(Vec::new());
                 self.table_cell_pagination.push(Vec::new());
+                self.table_cell_line_spacing.push(Vec::new());
             }
             return;
         }
@@ -1658,6 +1671,7 @@ impl<'a, 'l> Asm<'a, 'l> {
         if !is_cell_mark {
             self.cell_blocks.push(Block::Paragraph(para));
             self.cell_pagination.push(Some(pagination));
+            self.cell_line_spacing.push(line_spacing_hint);
             return;
         }
         // The row-terminating paragraph (`fTtp`) is an empty marker, not a real
@@ -1666,13 +1680,16 @@ impl<'a, 'l> Asm<'a, 'l> {
         if !blank_terminator {
             self.cell_blocks.push(Block::Paragraph(para));
             self.cell_pagination.push(Some(pagination));
+            self.cell_line_spacing.push(line_spacing_hint);
             self.cur_row_cells.push(CellBuild {
                 blocks: std::mem::take(&mut self.cell_blocks),
                 pagination: std::mem::take(&mut self.cell_pagination),
+                line_spacing: std::mem::take(&mut self.cell_line_spacing),
             });
         } else {
             self.cell_blocks.clear();
             self.cell_pagination.clear();
+            self.cell_line_spacing.clear();
         }
         if ttp {
             // The row definition (column geometry + merge flags) is carried on the
@@ -1714,6 +1731,7 @@ impl<'a, 'l> Asm<'a, 'l> {
         }
         self.cell_blocks.clear();
         self.cell_pagination.clear();
+        self.cell_line_spacing.clear();
         let bidi_visual = self.cur_table_bidi_visual.take().unwrap_or(false);
         if !self.cur_rows.is_empty() {
             let built =
@@ -1722,6 +1740,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             if !built.table.rows.is_empty() {
                 debug_assert_eq!(row_pagination.len(), built.table.rows.len());
                 debug_assert_eq!(built.cell_pagination.len(), built.table.rows.len());
+                debug_assert_eq!(built.cell_line_spacing.len(), built.table.rows.len());
                 self.blocks.push(Block::Table(built.table));
                 self.pagination_hints.push(PaginationHint::default());
                 self.line_spacing_hints.push(None);
@@ -1729,6 +1748,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 self.page_break_offsets.push(Vec::new());
                 self.table_row_pagination.push(row_pagination);
                 self.table_cell_pagination.push(built.cell_pagination);
+                self.table_cell_line_spacing.push(built.cell_line_spacing);
             }
         }
     }
@@ -1750,6 +1770,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 self.page_break_offsets.push(page_break_offsets);
                 self.table_row_pagination.push(Vec::new());
                 self.table_cell_pagination.push(Vec::new());
+                self.table_cell_line_spacing.push(Vec::new());
             }
         }
         self.flush_table();
@@ -1759,6 +1780,7 @@ impl<'a, 'l> Asm<'a, 'l> {
         debug_assert_eq!(self.page_break_offsets.len(), self.blocks.len());
         debug_assert_eq!(self.table_row_pagination.len(), self.blocks.len());
         debug_assert_eq!(self.table_cell_pagination.len(), self.blocks.len());
+        debug_assert_eq!(self.table_cell_line_spacing.len(), self.blocks.len());
         LegacyBlockOutput {
             blocks: self.blocks,
             pagination_hints: self.pagination_hints,
@@ -1767,6 +1789,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             page_break_offsets: self.page_break_offsets,
             table_row_pagination: self.table_row_pagination,
             table_cell_pagination: self.table_cell_pagination,
+            table_cell_line_spacing: self.table_cell_line_spacing,
         }
     }
 
@@ -1785,6 +1808,7 @@ struct LegacyBlockOutput {
     page_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
+    table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
 }
 
 fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOutput {
@@ -1796,6 +1820,7 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
         page_break_offsets,
         table_row_pagination,
         table_cell_pagination,
+        table_cell_line_spacing,
     } = output;
     debug_assert_eq!(pagination_hints.len(), blocks.len());
     debug_assert_eq!(line_spacing_hints.len(), blocks.len());
@@ -1803,6 +1828,7 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
     debug_assert_eq!(page_break_offsets.len(), blocks.len());
     debug_assert_eq!(table_row_pagination.len(), blocks.len());
     debug_assert_eq!(table_cell_pagination.len(), blocks.len());
+    debug_assert_eq!(table_cell_line_spacing.len(), blocks.len());
 
     let mut pagination_hints = pagination_hints.into_iter();
     let mut line_spacing_hints = line_spacing_hints.into_iter();
@@ -1810,6 +1836,7 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
     let mut page_break_offsets = page_break_offsets.into_iter();
     let mut table_row_pagination = table_row_pagination.into_iter();
     let mut table_cell_pagination = table_cell_pagination.into_iter();
+    let mut table_cell_line_spacing = table_cell_line_spacing.into_iter();
     let mut promoted = LegacyBlockOutput::default();
 
     for block in blocks {
@@ -1819,10 +1846,12 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
         let page_offsets = page_break_offsets.next().unwrap_or_default();
         let row_pagination = table_row_pagination.next().unwrap_or_default();
         let cell_pagination = table_cell_pagination.next().unwrap_or_default();
+        let cell_line_spacing = table_cell_line_spacing.next().unwrap_or_default();
         match block {
             Block::Paragraph(paragraph) if !page_offsets.is_empty() => {
                 debug_assert!(row_pagination.is_empty());
                 debug_assert!(cell_pagination.is_empty());
+                debug_assert!(cell_line_spacing.is_empty());
                 promote_legacy_paragraph_page_breaks(
                     paragraph,
                     pagination,
@@ -1841,6 +1870,7 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
                 promoted.page_break_offsets.push(Vec::new());
                 promoted.table_row_pagination.push(row_pagination);
                 promoted.table_cell_pagination.push(cell_pagination);
+                promoted.table_cell_line_spacing.push(cell_line_spacing);
             }
         }
     }
@@ -1890,6 +1920,7 @@ fn promote_legacy_paragraph_page_breaks(
                 output.page_break_offsets.push(Vec::new());
                 output.table_row_pagination.push(Vec::new());
                 output.table_cell_pagination.push(Vec::new());
+                output.table_cell_line_spacing.push(Vec::new());
                 page_breaks.next();
                 source_chars = source_chars.saturating_add(1);
                 segment_start = source_chars;
@@ -1955,6 +1986,7 @@ fn push_legacy_page_break_segment(
     output.page_break_offsets.push(Vec::new());
     output.table_row_pagination.push(Vec::new());
     output.table_cell_pagination.push(Vec::new());
+    output.table_cell_line_spacing.push(Vec::new());
 }
 
 /// Extract the target URL from a `HYPERLINK` field instruction, e.g.
@@ -3181,6 +3213,7 @@ mod tests {
             column_break_offsets,
             table_row_pagination,
             table_cell_pagination,
+            table_cell_line_spacing,
             text_start: _,
         } = build_legacy_region_blocks(&src, &mut numberer, &fib, &plcf_hdd, &[]);
         assert_eq!(pagination_hints.len(), blocks.len());
@@ -3188,6 +3221,7 @@ mod tests {
         assert_eq!(column_break_offsets.len(), blocks.len());
         assert_eq!(table_row_pagination.len(), blocks.len());
         assert_eq!(table_cell_pagination.len(), blocks.len());
+        assert_eq!(table_cell_line_spacing.len(), blocks.len());
 
         let header_region = regions
             .iter()

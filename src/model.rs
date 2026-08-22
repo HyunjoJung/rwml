@@ -340,7 +340,6 @@ pub(crate) struct TableRowPaginationHint {
 
 pub(crate) type TableCellPaginationHints = Vec<Vec<Vec<Option<PaginationHint>>>>;
 
-#[cfg(any(feature = "docx", feature = "render"))]
 pub(crate) type TableCellLineSpacingHints = Vec<Vec<Vec<Option<LineSpacingHint>>>>;
 
 #[cfg(any(feature = "docx", feature = "render"))]
