@@ -162,11 +162,17 @@ const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct RunningSurfaceLineSpacingHints {
     pub(crate) header: Vec<Option<LineSpacingHint>>,
+    pub(crate) header_table_cells: Vec<TableCellLineSpacingHints>,
     pub(crate) first_header: Vec<Option<LineSpacingHint>>,
+    pub(crate) first_header_table_cells: Vec<TableCellLineSpacingHints>,
     pub(crate) even_header: Vec<Option<LineSpacingHint>>,
+    pub(crate) even_header_table_cells: Vec<TableCellLineSpacingHints>,
     pub(crate) footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) footer_table_cells: Vec<TableCellLineSpacingHints>,
     pub(crate) first_footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) first_footer_table_cells: Vec<TableCellLineSpacingHints>,
     pub(crate) even_footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) even_footer_table_cells: Vec<TableCellLineSpacingHints>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -3931,6 +3937,7 @@ enum RunningSurfaceItem {
 fn layout_running_surface_items(
     blocks: &[Block],
     line_spacing_hints: &[Option<LineSpacingHint>],
+    table_cell_line_spacing: &[TableCellLineSpacingHints],
     geom: Geom,
     cx: &mut TextCx<'_>,
 ) -> Vec<RunningSurfaceItem> {
@@ -3944,6 +3951,7 @@ fn layout_running_surface_items(
         &mut capture,
         BlockCollectionOptions {
             line_spacing_hints: Some(line_spacing_hints),
+            table_cell_line_spacing: Some(table_cell_line_spacing),
             ..BlockCollectionOptions::default()
         },
     );
@@ -4274,6 +4282,21 @@ fn running_surface_line_spacing(
         (false, RunningSurfaceVariant::Default) => &hints.footer,
         (false, RunningSurfaceVariant::First) => &hints.first_footer,
         (false, RunningSurfaceVariant::Even) => &hints.even_footer,
+    }
+}
+
+fn running_surface_table_cell_line_spacing(
+    hints: &RunningSurfaceLineSpacingHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[TableCellLineSpacingHints] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header_table_cells,
+        (true, RunningSurfaceVariant::First) => &hints.first_header_table_cells,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header_table_cells,
+        (false, RunningSurfaceVariant::Default) => &hints.footer_table_cells,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer_table_cells,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer_table_cells,
     }
 }
 
@@ -8781,10 +8804,26 @@ fn render_pdf(
         let footer_spacing = running_spacing
             .map(|hints| running_surface_line_spacing(hints, footer_variant, false))
             .unwrap_or_default();
-        let header_items =
-            layout_running_surface_items(header_blocks, header_spacing, page_geom, &mut tcx);
-        let footer_items =
-            layout_running_surface_items(footer_blocks, footer_spacing, page_geom, &mut tcx);
+        let header_table_cell_spacing = running_spacing
+            .map(|hints| running_surface_table_cell_line_spacing(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_table_cell_spacing = running_spacing
+            .map(|hints| running_surface_table_cell_line_spacing(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_items = layout_running_surface_items(
+            header_blocks,
+            header_spacing,
+            header_table_cell_spacing,
+            page_geom,
+            &mut tcx,
+        );
+        let footer_items = layout_running_surface_items(
+            footer_blocks,
+            footer_spacing,
+            footer_table_cell_spacing,
+            page_geom,
+            &mut tcx,
+        );
         let mut surface = page.surface();
         for overlay in floating_shape_overlays
             .iter()

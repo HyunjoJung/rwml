@@ -771,8 +771,11 @@ struct HeaderFooterBlocks {
 #[derive(Default)]
 struct HeaderFooterLineSpacing {
     default: Vec<Option<crate::model::LineSpacingHint>>,
+    default_table_cells: Vec<crate::model::TableCellLineSpacingHints>,
     first: Vec<Option<crate::model::LineSpacingHint>>,
+    first_table_cells: Vec<crate::model::TableCellLineSpacingHints>,
     even: Vec<Option<crate::model::LineSpacingHint>>,
+    even_table_cells: Vec<crate::model::TableCellLineSpacingHints>,
 }
 
 struct HeaderFooterRead {
@@ -849,7 +852,11 @@ fn read_headers_footers(
     #[cfg(feature = "render")]
     let mut inherited_header_line_spacing = Vec::new();
     #[cfg(feature = "render")]
+    let mut inherited_header_table_cell_line_spacing = Vec::new();
+    #[cfg(feature = "render")]
     let mut inherited_footer_line_spacing = Vec::new();
+    #[cfg(feature = "render")]
+    let mut inherited_footer_table_cell_line_spacing = Vec::new();
 
     for refs in section_refs {
         let header_has_default = has_default_header_footer_ref(&refs.headers);
@@ -880,6 +887,8 @@ fn read_headers_footers(
         let mut header = header_blocks.default;
         #[cfg(feature = "render")]
         let mut header_spacing = header_line_spacing.default;
+        #[cfg(feature = "render")]
+        let mut header_table_cell_spacing = header_line_spacing.default_table_cells;
         // Omitted odd/default refs inherit the previous section; an explicit
         // default ref, even when blank/unresolved, resets the inherited surface.
         if !header_has_default && !inherited_header.is_empty() {
@@ -887,6 +896,7 @@ fn read_headers_footers(
             #[cfg(feature = "render")]
             {
                 header_spacing = inherited_header_line_spacing.clone();
+                header_table_cell_spacing = inherited_header_table_cell_line_spacing.clone();
             }
         }
         if header_has_default || !header.is_empty() {
@@ -894,6 +904,7 @@ fn read_headers_footers(
             #[cfg(feature = "render")]
             {
                 inherited_header_line_spacing = header_spacing.clone();
+                inherited_header_table_cell_line_spacing = header_table_cell_spacing.clone();
             }
         }
 
@@ -923,12 +934,15 @@ fn read_headers_footers(
         let mut footer = footer_blocks.default;
         #[cfg(feature = "render")]
         let mut footer_spacing = footer_line_spacing.default;
+        #[cfg(feature = "render")]
+        let mut footer_table_cell_spacing = footer_line_spacing.default_table_cells;
         // Same inheritance rule as headers.
         if !footer_has_default && !inherited_footer.is_empty() {
             footer = inherited_footer.clone();
             #[cfg(feature = "render")]
             {
                 footer_spacing = inherited_footer_line_spacing.clone();
+                footer_table_cell_spacing = inherited_footer_table_cell_line_spacing.clone();
             }
         }
         if footer_has_default || !footer.is_empty() {
@@ -936,6 +950,7 @@ fn read_headers_footers(
             #[cfg(feature = "render")]
             {
                 inherited_footer_line_spacing = footer_spacing.clone();
+                inherited_footer_table_cell_line_spacing = footer_table_cell_spacing.clone();
             }
         }
         sections.push(SectionHeaderFooter {
@@ -948,11 +963,17 @@ fn read_headers_footers(
             #[cfg(feature = "render")]
             line_spacing: crate::render::RunningSurfaceLineSpacingHints {
                 header: header_spacing,
+                header_table_cells: header_table_cell_spacing,
                 first_header: header_line_spacing.first,
+                first_header_table_cells: header_line_spacing.first_table_cells,
                 even_header: header_line_spacing.even,
+                even_header_table_cells: header_line_spacing.even_table_cells,
                 footer: footer_spacing,
+                footer_table_cells: footer_table_cell_spacing,
                 first_footer: footer_line_spacing.first,
+                first_footer_table_cells: footer_line_spacing.first_table_cells,
                 even_footer: footer_line_spacing.even,
+                even_footer_table_cells: footer_line_spacing.even_table_cells,
             },
         });
     }
@@ -1295,23 +1316,38 @@ fn read_hf_parts(
         hf_ctx.begin_pagination_capture();
         let part_blocks = body::parse_hdrftr(&xml, &hf_ctx);
         #[cfg(feature = "render")]
-        let part_line_spacing = hf_ctx.take_render_hints().line_spacing;
+        let part_render_hints = hf_ctx.take_render_hints();
         if seen_blocks.insert((path.clone(), type_name.to_string())) {
             match type_name {
                 "first" => {
                     blocks.first.extend(part_blocks.clone());
                     #[cfg(feature = "render")]
-                    line_spacing.first.extend(part_line_spacing);
+                    {
+                        line_spacing.first.extend(part_render_hints.line_spacing);
+                        line_spacing
+                            .first_table_cells
+                            .extend(part_render_hints.table_cell_line_spacing);
+                    }
                 }
                 "even" => {
                     blocks.even.extend(part_blocks.clone());
                     #[cfg(feature = "render")]
-                    line_spacing.even.extend(part_line_spacing);
+                    {
+                        line_spacing.even.extend(part_render_hints.line_spacing);
+                        line_spacing
+                            .even_table_cells
+                            .extend(part_render_hints.table_cell_line_spacing);
+                    }
                 }
                 _ => {
                     blocks.default.extend(part_blocks.clone());
                     #[cfg(feature = "render")]
-                    line_spacing.default.extend(part_line_spacing);
+                    {
+                        line_spacing.default.extend(part_render_hints.line_spacing);
+                        line_spacing
+                            .default_table_cells
+                            .extend(part_render_hints.table_cell_line_spacing);
+                    }
                 }
             }
         }

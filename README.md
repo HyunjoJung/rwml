@@ -335,9 +335,9 @@ row painter for model-backed width,
 alignment, visual RTL placement, borders, cell shading, margins, and vertical
 alignment. Fitting rows paint in source order; a first row taller than the
 remaining band paints once under a vertical clip and ends that surface without
-moving body content or changing page counts. Source-only paragraph hints inside
-those cells, nested-grid geometry, cell images/charts, and Word-exact overlap
-remain outside this bounded path. Finite positive
+moving body content or changing page counts. Source-only pagination and tab
+hints inside those cells, nested-grid geometry, cell images/charts, and
+Word-exact overlap remain outside this bounded path. Finite positive
 paragraph before/after gaps advance later running text, pictures,
 model-authored charts, and tables in source order; explicit zero suppresses a
 gap, and an unset after value retains the renderer's established default
@@ -426,18 +426,19 @@ top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
 justified-aligned paragraphs use that path when the resolved stop is reachable.
 Top-level opened-DOCX body paragraphs, ordinary or recursively nested
 table-cell paragraphs, real footnote/endnote paragraphs, and ordinary
-paragraphs in default/first/even running headers and footers also consume
-resolved `exact` and `atLeast` `w:lineRule` values as twentieths of a point
-through source-only render hints. Exact boxes center fitting text, bottom-align
-and vertically clip over-tall text, while at-least boxes only expand shorter
-natural lines. The hints remain aligned when a source paragraph is split by an
-explicit page break, with surviving vertical-merge owner cells, across skipped
-note separator records, and through section-specific default-surface
-inheritance and page-variant selection. Exact running-surface content is clipped
-to its margin-band line box. Notes retain the preview renderer's
-flattened end-of-flow placement; page-bottom note composition, running-surface
-table-cell exact/minimum paragraph rules, model-authored exact/minimum paragraph
-rules, and fresh conversion remain outside this absolute-spacing path.
+paragraphs in default/first/even running headers and footers, including their
+modeled table cells, also consume resolved `exact` and `atLeast` `w:lineRule`
+values as twentieths of a point through source-only render hints. Exact boxes
+center fitting text, bottom-align and vertically clip over-tall text, while
+at-least boxes only expand shorter natural lines. The hints remain aligned when
+a source paragraph is split by an explicit page break, with surviving
+vertical-merge owner cells, across skipped note separator records, and through
+section-specific default-surface inheritance, page-variant selection, and
+non-table block positions before a running table. Exact running-surface content
+is clipped to its margin-band line or visible row fragment. Notes retain the
+preview renderer's flattened end-of-flow placement; page-bottom note
+composition, model-authored exact/minimum paragraph rules, and fresh conversion
+remain outside this absolute-spacing path.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
 center/end/decimal stops. Supported LTR and RTL dot, hyphen, underscore,
 heavy, and middle-dot leaders plus bar tabs now paint through the same bounded
@@ -584,8 +585,8 @@ bridges.
 > row-local `w:tblCellMar` behavior; other `w:tblPrEx` properties are outside
 > this renderer slice, and `w:cantSplit` remains a `w:trPr` property.
 > Exact/at-least line rules outside the bounded opened-DOCX top-level body,
-> recursively flattened table-cell, real-note, and ordinary running-surface
-> paragraph paths,
+> recursively flattened body-table-cell, real-note, ordinary running-surface,
+> and running-table-cell paragraph paths,
 > nonzero line-unit before/after spacing, enabled automatic/contextual paragraph
 > spacing, nonzero character-unit indents,
 > theme/automatic/pattern paragraph shading, and table/list/conditional-style

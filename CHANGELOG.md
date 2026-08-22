@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies opened-DOCX `exact` and `atLeast` paragraph line rules inside modeled
+  table cells in selected default/first/even running headers and footers. The
+  reader-retained per-block sidecar follows default-surface inheritance and
+  variant selection into the existing table layout, so exact/minimum boxes
+  participate in row measurement, vertical alignment, and visible row clipping
+  without changing the public model, body pagination, or running-band policy.
+  Missing or malformed hints retain natural line height; model-authored rules,
+  fresh conversion, running-table tabs/media, nested-grid geometry, and
+  Word-exact overlap remain outside this bounded path.
 - Emits clickable PDF annotations for hyperlink runs in selected
   default/first/even running header and footer paragraphs and modeled table
   cells, including targets resolved from referenced DOCX parts. Candidate

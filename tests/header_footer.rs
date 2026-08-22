@@ -950,3 +950,108 @@ fn opened_docx_render_consumes_section_and_variant_running_surface_absolute_spac
         render("", "", r#"<w:spacing w:line="100" w:lineRule="exact"/>"#)
     );
 }
+
+#[cfg(feature = "render")]
+fn running_surface_table_line_spacing_docx(
+    header_cell_properties: &str,
+    footer_cell_properties: &str,
+    even_footer_cell_properties: &str,
+) -> Vec<u8> {
+    let table = |label: &str, properties: &str| {
+        format!(
+            r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr>{properties}</w:pPr><w:r><w:t>{label}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+        )
+    };
+    let header = format!(
+        r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>HEADER PREFIX</w:t></w:r></w:p>{}</w:hdr>"#,
+        table("HEADER TABLE", header_cell_properties)
+    );
+    let footer = format!(
+        r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>FOOTER PREFIX</w:t></w:r></w:p>{}</w:ftr>"#,
+        table("FOOTER TABLE", footer_cell_properties)
+    );
+    let even_footer = format!(
+        r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>EVEN FOOTER PREFIX</w:t></w:r></w:p>{}</w:ftr>"#,
+        table("EVEN FOOTER TABLE", even_footer_cell_properties)
+    );
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/footer2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rIdEvenFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>PAGE ONE</w:t></w:r></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:t>PAGE TWO</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="4400" w:h="7000"/><w:pgMar w:top="1800" w:right="400" w:bottom="1800" w:left="400"/><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/><w:footerReference w:type="even" r:id="rIdEvenFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        ("word/header1.xml", &header),
+        ("word/footer1.xml", &footer),
+        ("word/footer2.xml", &even_footer),
+    ])
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_consumes_running_table_cell_absolute_spacing() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let baseline_model = Document::open(&running_surface_table_line_spacing_docx("", "", ""))
+        .expect("baseline running-table fixture opens")
+        .model();
+    let render = |header: &str, footer: &str, even_footer: &str| {
+        let document = Document::open(&running_surface_table_line_spacing_docx(
+            header,
+            footer,
+            even_footer,
+        ))
+        .expect("running-table fixture opens");
+        assert_eq!(
+            document.model(),
+            baseline_model,
+            "running-table absolute spacing must remain outside the public model"
+        );
+        assert_eq!(
+            document
+                .layout_pages_with_fonts(&fonts)
+                .expect("running-table layout succeeds")
+                .pages,
+            2
+        );
+        document.to_pdf_with_fonts(&fonts)
+    };
+
+    let baseline = render("", "", "");
+    let header_exact = render(r#"<w:spacing w:line="100" w:lineRule="exact"/>"#, "", "");
+    let footer_minimum = render("", r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#, "");
+    let even_footer_exact = render("", "", r#"<w:spacing w:line="100" w:lineRule="exact"/>"#);
+
+    for (name, rendered) in [
+        ("default-header exact cell", &header_exact),
+        ("default-footer minimum cell", &footer_minimum),
+        ("even-footer exact cell", &even_footer_exact),
+    ] {
+        assert!(rendered.starts_with(b"%PDF-"), "{name}");
+        assert_ne!(rendered, &baseline, "{name} must affect PDF output");
+    }
+    assert_ne!(header_exact, footer_minimum);
+    assert_ne!(header_exact, even_footer_exact);
+    assert_ne!(footer_minimum, even_footer_exact);
+    assert_eq!(
+        header_exact,
+        render(r#"<w:spacing w:line="100" w:lineRule="exact"/>"#, "", "")
+    );
+    assert_eq!(
+        footer_minimum,
+        render("", r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#, "")
+    );
+    assert_eq!(
+        even_footer_exact,
+        render("", "", r#"<w:spacing w:line="100" w:lineRule="exact"/>"#)
+    );
+}
