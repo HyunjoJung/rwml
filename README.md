@@ -340,7 +340,8 @@ when the table declares neither.
 Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,
-equal-width section columns, and per-side margins come from the document;
+equal-width section columns, explicit opened-DOCX inter-column spacing, and
+per-side margins come from the document;
 multi-page tables repeat their header rows without losing outer placement or
 border paint. Opened
 `.docx` rows, including recursively flattened nested rows, may split across
@@ -516,7 +517,9 @@ bridges.
 > breaks apply each section's modeled physical page width and height, including
 > landscape layouts, plus per-side margins to native shaping, pagination,
 > running surfaces, anchored overlays, and emitted PDF pages. Unequal column
-> tracks remain outside this bounded bridge. Unknown fields, remaining
+> tracks remain outside this bounded bridge; equal-width opened DOCX sections
+> apply an explicit `w:cols/@w:space` value to shaping and column placement.
+> Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
 > `w:tblPrEx` remains a table-property exception path for the supported

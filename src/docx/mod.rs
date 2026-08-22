@@ -208,6 +208,12 @@ pub(crate) struct DocxState {
     /// Renderer-only resolved explicit tab stops aligned to body model blocks.
     #[cfg(feature = "render")]
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
+    /// Renderer-only explicit equal-column gaps aligned to body model blocks.
+    #[cfg(feature = "render")]
+    pub section_column_gap_pt: Vec<Option<f32>>,
+    /// Renderer-only explicit equal-column gap for the final body section.
+    #[cfg(feature = "render")]
+    pub final_section_column_gap_pt: Option<f32>,
     /// Renderer-only effective table-row pagination controls aligned to body model blocks.
     #[cfg(feature = "render")]
     pub table_row_pagination: Vec<Vec<crate::model::TableRowPaginationHint>>,
@@ -431,6 +437,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let body::BodyRenderHints {
         pagination: pagination_hints,
         tab_stops,
+        section_column_gap_pt,
         table_rows: table_row_pagination,
         table_cells: table_cell_pagination,
         table_nested: table_nested_pagination,
@@ -671,6 +678,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         pagination_hints,
         #[cfg(feature = "render")]
         tab_stops,
+        #[cfg(feature = "render")]
+        section_column_gap_pt,
+        #[cfg(feature = "render")]
+        final_section_column_gap_pt: body::scan_section_column_gap_pt(&doc_xml),
         #[cfg(feature = "render")]
         table_row_pagination,
         #[cfg(feature = "render")]

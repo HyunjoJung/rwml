@@ -2937,6 +2937,8 @@ impl Document {
                     render::SourceRenderHints {
                         pagination: &d.pagination_hints,
                         tab_stops: &d.tab_stops,
+                        section_column_gap_pt: &d.section_column_gap_pt,
+                        final_section_column_gap_pt: d.final_section_column_gap_pt,
                         table_row_pagination: &d.table_row_pagination,
                         table_cell_pagination: &d.table_cell_pagination,
                         table_nested_pagination: &d.table_nested_pagination,
@@ -10968,6 +10970,27 @@ mod tests {
         assert_eq!(raw_model_layout.block_pages, vec![Some(1), Some(1)]);
         assert_eq!(opened_document_layout.block_pages, vec![Some(1), Some(2)]);
         assert_eq!(opened_document_layout.pages, 2);
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_carries_section_local_equal_column_spacing_hints() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:sectPr><w:cols w:num="2" w:space="800"/></w:sectPr></w:pPr>
+                    <w:r><w:t>ending section</w:t></w:r>
+                </w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:num="2" w:space="200"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.section_column_gap_pt, &[None, Some(40.0), None]);
+            assert_eq!(hints.final_section_column_gap_pt, Some(10.0));
+        });
     }
 
     #[cfg(all(feature = "docx", feature = "render"))]

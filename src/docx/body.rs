@@ -76,6 +76,7 @@ const PAGE_BREAK_MARKER: char = '\u{000C}';
 pub(super) struct PaginationCapture {
     hints: Vec<PaginationHint>,
     tab_stops: Vec<Vec<TabStop>>,
+    section_column_gap_pt: Vec<Option<f32>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
     table_nested_pagination: Vec<TableCellNestedPaginationHints>,
@@ -88,6 +89,7 @@ pub(super) struct PaginationCapture {
 pub(super) struct BodyRenderHints {
     pub(super) pagination: Vec<PaginationHint>,
     pub(super) tab_stops: Vec<Vec<TabStop>>,
+    pub(super) section_column_gap_pt: Vec<Option<f32>>,
     pub(super) table_rows: Vec<Vec<TableRowPaginationHint>>,
     pub(super) table_cells: Vec<TableCellPaginationHints>,
     pub(super) table_nested: Vec<TableCellNestedPaginationHints>,
@@ -152,6 +154,7 @@ impl Ctx<'_> {
             .map(|capture| BodyRenderHints {
                 pagination: capture.hints,
                 tab_stops: capture.tab_stops,
+                section_column_gap_pt: capture.section_column_gap_pt,
                 table_rows: capture.table_row_pagination,
                 table_cells: capture.table_cell_pagination,
                 table_nested: capture.table_nested_pagination,
@@ -172,11 +175,17 @@ impl Ctx<'_> {
         }
     }
 
-    fn capture_block_hints(&self, hint: PaginationHint, tab_stops: &[TabStop]) {
+    fn capture_block_hints(
+        &self,
+        hint: PaginationHint,
+        tab_stops: &[TabStop],
+        section_column_gap_pt: Option<f32>,
+    ) {
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
                 capture.hints.push(hint);
                 capture.tab_stops.push(tab_stops.to_vec());
+                capture.section_column_gap_pt.push(section_column_gap_pt);
                 capture.table_row_pagination.push(Vec::new());
                 capture.table_cell_pagination.push(Vec::new());
                 capture.table_nested_pagination.push(Vec::new());
@@ -190,6 +199,7 @@ impl Ctx<'_> {
             if capture.suspended == 0 {
                 capture.hints.push(PaginationHint::default());
                 capture.tab_stops.push(Vec::new());
+                capture.section_column_gap_pt.push(None);
                 capture.table_row_pagination.push(table.rows.clone());
                 capture.table_cell_pagination.push(table.cells.clone());
                 capture.table_nested_pagination.push(table.nested.clone());
@@ -203,12 +213,16 @@ impl Ctx<'_> {
         blocks: &[Block],
         hint: PaginationHint,
         tab_stops: &[TabStop],
+        section_column_gap_pt: Option<f32>,
     ) {
         for block in blocks {
             if matches!(block, Block::Paragraph(_)) {
-                self.capture_block_hints(hint, tab_stops);
+                self.capture_block_hints(hint, tab_stops, None);
             } else {
-                self.capture_block_hints(PaginationHint::default(), &[]);
+                let column_gap = matches!(block, Block::SectionBreak(_))
+                    .then_some(section_column_gap_pt)
+                    .flatten();
+                self.capture_block_hints(PaginationHint::default(), &[], column_gap);
             }
         }
     }
@@ -577,6 +591,26 @@ pub(crate) fn scan_section_columns(xml: &str) -> Option<u16> {
     columns
 }
 
+/// Scan the final/body section's explicit equal-column spacing.
+#[cfg(feature = "render")]
+pub(crate) fn scan_section_column_gap_pt(xml: &str) -> Option<f32> {
+    let mut r = Reader::from_str(xml);
+    let mut column_gap_pt = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                column_gap_pt = read_section_column_gap_pt(&mut r);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                column_gap_pt = None;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    column_gap_pt
+}
+
 /// Scan the final/body section properties for text flow direction.
 pub(crate) fn scan_section_text_direction(xml: &str) -> Option<TextDirection> {
     let mut r = Reader::from_str(xml);
@@ -693,8 +727,39 @@ fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
     columns
 }
 
+#[cfg(feature = "render")]
+fn read_section_column_gap_pt(r: &mut Xml<'_>) -> Option<f32> {
+    let mut column_gap_pt = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_section_setup_alternate_content(r).column_gap_pt {
+                    column_gap_pt = value;
+                }
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"cols" => {
+                column_gap_pt = section_column_gap_pt(&e);
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    column_gap_pt
+}
+
 fn section_columns(e: &BytesStart<'_>) -> Option<u16> {
     attr_u16(e, b"num").map(|value| value.max(1))
+}
+
+fn section_column_gap_pt(e: &BytesStart<'_>) -> Option<f32> {
+    if !toggle_on(attr_local(e, b"equalWidth")) || section_columns(e)? < 2 {
+        return None;
+    }
+    attr_local(e, b"space")
+        .and_then(|value| twips_to_pt(&value))
+        .filter(|value| *value >= 0.0)
 }
 
 fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
@@ -784,6 +849,7 @@ fn read_section_title_page(r: &mut Xml<'_>) -> bool {
 #[derive(Default)]
 struct SectionSetupScan {
     columns: Option<Option<u16>>,
+    column_gap_pt: Option<Option<f32>>,
     text_direction: Option<Option<TextDirection>>,
     doc_grid: Option<Option<DocGrid>>,
     title_page: bool,
@@ -838,6 +904,9 @@ fn merge_section_setup_scan(target: &mut SectionSetupScan, source: SectionSetupS
     if source.columns.is_some() {
         target.columns = source.columns;
     }
+    if source.column_gap_pt.is_some() {
+        target.column_gap_pt = source.column_gap_pt;
+    }
     if source.text_direction.is_some() {
         target.text_direction = source.text_direction;
     }
@@ -851,6 +920,7 @@ fn record_section_setup_child(setup: &mut SectionSetupScan, e: &BytesStart<'_>) 
     match local(e.name().as_ref()) {
         b"cols" => {
             setup.columns = Some(section_columns(e));
+            setup.column_gap_pt = Some(section_column_gap_pt(e));
             true
         }
         b"textDirection" => {
@@ -2116,7 +2186,7 @@ fn read_paragraph(
     depth: u32,
 ) -> (
     Paragraph,
-    Option<SectionSetup>,
+    Option<ParsedSectionSetup>,
     PaginationHint,
     Vec<TabStop>,
 ) {
@@ -2292,21 +2362,24 @@ fn read_paragraph_blocks_data(
     r: &mut Xml<'_>,
     ctx: &Ctx<'_>,
     depth: u32,
-) -> (Vec<Block>, PaginationHint, Vec<TabStop>) {
+) -> (Vec<Block>, PaginationHint, Vec<TabStop>, Option<f32>) {
     let (paragraph, section, pagination, tab_stops) = read_paragraph(r, ctx, depth);
     let mut blocks = split_page_breaks(paragraph);
+    let mut section_column_gap_pt = None;
     if let Some(mut section) = section {
-        if section.section_break.is_none() {
-            section.section_break = Some(SectionBreakKind::NextPage);
+        if section.setup.section_break.is_none() {
+            section.setup.section_break = Some(SectionBreakKind::NextPage);
         }
-        blocks.push(Block::SectionBreak(section));
+        section_column_gap_pt = section.column_gap_pt;
+        blocks.push(Block::SectionBreak(section.setup));
     }
-    (blocks, pagination, tab_stops)
+    (blocks, pagination, tab_stops, section_column_gap_pt)
 }
 
 fn read_paragraph_block_batch(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> BlockBatch {
-    let (blocks, pagination, tab_stops) = read_paragraph_blocks_data(r, ctx, depth);
-    ctx.capture_paragraph_blocks(&blocks, pagination, &tab_stops);
+    let (blocks, pagination, tab_stops, section_column_gap_pt) =
+        read_paragraph_blocks_data(r, ctx, depth);
+    ctx.capture_paragraph_blocks(&blocks, pagination, &tab_stops, section_column_gap_pt);
     let pagination = blocks
         .iter()
         .map(|block| {
@@ -2599,7 +2672,7 @@ struct PPr {
     keep_lines: Option<bool>,
     widow_control: Option<bool>,
     tab_stops: Vec<TabStop>,
-    section: Option<SectionSetup>,
+    section: Option<ParsedSectionSetup>,
 }
 
 fn read_runs_container_with_complex(
@@ -3140,7 +3213,7 @@ fn read_ppr_child(
             read_ppr_alternate_content(r, pp, num_id, ilvl, depth + 1);
         }
         b"sectPr" if is_start => pp.section = Some(read_sect_pr(r, depth + 1)),
-        b"sectPr" => pp.section = Some(SectionSetup::default()),
+        b"sectPr" => pp.section = Some(ParsedSectionSetup::default()),
         b"numPr" if is_start => read_num_pr(r, num_id, ilvl, depth + 1),
         b"tabs" if is_start => read_ppr_tabs(r, pp, depth + 1),
         name if is_ppr_leaf(name) => {
@@ -3399,12 +3472,18 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
     }
 }
 
-fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> SectionSetup {
+#[derive(Default)]
+struct ParsedSectionSetup {
+    setup: SectionSetup,
+    column_gap_pt: Option<f32>,
+}
+
+fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> ParsedSectionSetup {
     if depth > MAX_DEPTH {
         skip_subtree(r);
-        return SectionSetup::default();
+        return ParsedSectionSetup::default();
     }
-    let mut section = SectionSetup::default();
+    let mut section = ParsedSectionSetup::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPrChange" => {
@@ -3429,7 +3508,7 @@ fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> SectionSetup {
     section
 }
 
-fn read_sect_pr_alternate_content(r: &mut Xml<'_>, section: &mut SectionSetup, depth: u32) {
+fn read_sect_pr_alternate_content(r: &mut Xml<'_>, section: &mut ParsedSectionSetup, depth: u32) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
         return;
@@ -3462,7 +3541,7 @@ fn read_sect_pr_alternate_content(r: &mut Xml<'_>, section: &mut SectionSetup, d
 
 fn read_sect_pr_alternate_content_branch(
     r: &mut Xml<'_>,
-    section: &mut SectionSetup,
+    section: &mut ParsedSectionSetup,
     branch: &[u8],
     depth: u32,
 ) {
@@ -3503,35 +3582,36 @@ fn is_sect_pr_leaf(name: &[u8]) -> bool {
     )
 }
 
-fn apply_sect_pr_child(section: &mut SectionSetup, e: &BytesStart<'_>) {
+fn apply_sect_pr_child(section: &mut ParsedSectionSetup, e: &BytesStart<'_>) {
     match local(e.name().as_ref()) {
         b"pgSz" => {
             if let Some(size) = section_page_size(e) {
-                apply_section_page_size(&mut section.page, size);
+                apply_section_page_size(&mut section.setup.page, size);
             }
         }
         b"type" => {
-            section.section_break =
+            section.setup.section_break =
                 attr_local(e, b"val").and_then(|value| SectionBreakKind::from_wml_value(&value));
         }
         b"pgMar" => {
-            apply_section_page_margins(&mut section.page, section_page_margins(e));
+            apply_section_page_margins(&mut section.setup.page, section_page_margins(e));
         }
         b"pgNumType" => {
-            section.page_number_start = section_page_number_start(e);
-            section.page_number_format = section_page_number_format(e);
+            section.setup.page_number_start = section_page_number_start(e);
+            section.setup.page_number_format = section_page_number_format(e);
         }
         b"cols" => {
-            section.columns = section_columns(e);
+            section.setup.columns = section_columns(e);
+            section.column_gap_pt = section_column_gap_pt(e);
         }
         b"textDirection" => {
-            section.text_direction = section_text_direction(e);
+            section.setup.text_direction = section_text_direction(e);
         }
         b"docGrid" => {
-            section.doc_grid = doc_grid_from_attrs(e);
+            section.setup.doc_grid = doc_grid_from_attrs(e);
         }
         b"titlePg" => {
-            section.title_page = true;
+            section.setup.title_page = true;
         }
         _ => {}
     }
@@ -9736,6 +9816,33 @@ mod tests {
             })
         );
         assert!(scan_section_title_page(xml));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn final_section_column_spacing_uses_equal_current_branch_only() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:sectPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:cols w:num="2" w:equalWidth="true" w:space="960"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:cols w:num="2" w:space="240"/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:sectPr>
+        </w:body></w:document>"#;
+
+        assert_eq!(scan_section_column_gap_pt(xml), Some(48.0));
+
+        let unequal = r#"<w:document><w:body><w:sectPr>
+            <w:cols w:num="2" w:equalWidth="0" w:space="960">
+                <w:col w:w="2400" w:space="480"/>
+                <w:col w:w="4800"/>
+            </w:cols>
+        </w:sectPr></w:body></w:document>"#;
+        assert_eq!(scan_section_column_gap_pt(unequal), None);
     }
 
     #[test]

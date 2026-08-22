@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies an opened DOCX section's explicit `w:cols/@w:space` value to both
+  equal-column paragraph shaping and the corresponding PDF column origins,
+  including section-local values selected through accepted-current Markup
+  Compatibility branches. Explicit unequal-width `w:col` tracks remain outside
+  this bounded path, and model-authored sections retain the established preview
+  gap because the public section model stores only the column count.
 - Applies each modeled section's physical page width and height, including
   landscape layouts, plus per-side margins to PDF body shaping and pagination,
   running headers and footers, anchored floating-shape coordinates,
