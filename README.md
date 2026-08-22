@@ -86,7 +86,15 @@ pie-of-pie / bar-of-pie. It also authors the newer **chart-ex extension
 families** — waterfall, treemap, sunburst, histogram, box & whisker, and
 funnel — emitted as `chartEx` parts. `wireframe()` styling is available for
 surface-family charts and `ChartShape` styling (cylinder/pyramid) for 3-D
-bar/column-family charts. See [`examples/report.rs`](examples/report.rs).
+bar/column-family charts. Fresh rwml-generated charts with serialized series are
+reconstructed as modeled `Chart` blocks on native reopen, including titles,
+series data, dimensions, alternative text, wireframe state, and 3-D shape state,
+so reopened documents use the same vector PDF painter. Core scatter/bubble
+payloads serialize generated numeric x-values rather than the public string
+category labels, so `categories` normalizes to empty for those families on
+reopen. Formula/reference-backed, combination, and otherwise arbitrary Office
+chart payloads remain package-preserved and explicitly reported as unsupported.
+See [`examples/report.rs`](examples/report.rs).
 
 ```rust
 let model = rwml::DocBuilder::new()

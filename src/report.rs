@@ -1573,18 +1573,13 @@ fn is_modeled_docx_chart_payload(name: &str, bytes: &[u8]) -> bool {
     let Some(stem) = file.strip_suffix(".xml") else {
         return false;
     };
-    if !has_numbered_suffix(stem, "chartEx") {
+    if !has_numbered_suffix(stem, "chart") && !has_numbered_suffix(stem, "chartEx") {
         return false;
     }
-    let xml = String::from_utf8_lossy(bytes);
-    xml.contains("<cx:chartSpace")
-        && xml.contains("<cx:chartData>")
-        && (xml.contains(r#"layoutId="waterfall""#)
-            || xml.contains(r#"layoutId="treemap""#)
-            || xml.contains(r#"layoutId="sunburst""#)
-            || xml.contains(r#"layoutId="histogram""#)
-            || xml.contains(r#"layoutId="boxWhisker""#)
-            || xml.contains(r#"layoutId="funnel""#))
+    std::str::from_utf8(bytes)
+        .ok()
+        .and_then(crate::docx::chart::parse)
+        .is_some()
 }
 
 #[cfg(feature = "docx")]

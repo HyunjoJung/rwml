@@ -26,7 +26,7 @@ use crate::annotation::{
 };
 use crate::assemble;
 use crate::error::{Error, Result};
-use crate::model::{Block, Color, CustomXmlItem, DocMeta, DocModel, Image};
+use crate::model::{Block, Chart, Color, CustomXmlItem, DocMeta, DocModel, Image};
 use crate::text;
 use crate::CoreProperties;
 
@@ -34,6 +34,7 @@ pub(crate) use self::xml_text::skip_subtree as skip_xml_subtree;
 use self::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree};
 
 mod body;
+pub(crate) mod chart;
 mod comments;
 pub(crate) mod fields;
 mod numbering;
@@ -300,6 +301,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         .map(|s| numbering::parse(&s))
         .unwrap_or_default();
     let media = read_media(&mut zip, &rels);
+    let charts = read_charts(&mut zip, &rels);
 
     // The body is the one required part.
     let doc_xml = part(&mut zip, "word/document.xml")
@@ -417,6 +419,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         numbering: &numbering,
         rels: &rels,
         media: &media,
+        charts: &charts,
         ref_targets: &ref_targets,
         ref_position_context: &ref_position_context,
         ref_number_context: &ref_number_context,
@@ -449,6 +452,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         listnum_counter: Default::default(),
         field_bookmarks: Default::default(),
         counters: Default::default(),
+        paragraph_charts: Default::default(),
         pagination_capture: Default::default(),
     };
     #[cfg(feature = "render")]
@@ -1261,6 +1265,7 @@ fn read_hf_parts(
             .map(|s| parse_rels(&s))
             .unwrap_or_default();
         let part_media = read_media(zip, &part_rels);
+        let part_charts = read_charts(zip, &part_rels);
         let field_properties = fields::FieldDocumentProperties {
             core: properties.core,
             custom: properties.custom,
@@ -1338,6 +1343,7 @@ fn read_hf_parts(
             numbering,
             rels: &part_rels,
             media: &part_media,
+            charts: &part_charts,
             ref_targets: &ref_targets,
             ref_position_context: &ref_position_context,
             ref_number_context: &ref_number_context,
@@ -1370,6 +1376,7 @@ fn read_hf_parts(
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            paragraph_charts: Default::default(),
             pagination_capture: Default::default(),
         };
         let type_name = normalized_header_footer_type(&reference.type_name);
@@ -1569,6 +1576,7 @@ fn read_notes(
         .map(|s| parse_rels(&s))
         .unwrap_or_default();
     let part_media = read_media(zip, &part_rels);
+    let part_charts = read_charts(zip, &part_rels);
     let field_properties = fields::FieldDocumentProperties {
         core: properties.core,
         custom: properties.custom,
@@ -1646,6 +1654,7 @@ fn read_notes(
         numbering,
         rels: &part_rels,
         media: &part_media,
+        charts: &part_charts,
         ref_targets: &ref_targets,
         ref_position_context: &ref_position_context,
         ref_number_context: &ref_number_context,
@@ -1678,6 +1687,7 @@ fn read_notes(
         listnum_counter: Default::default(),
         field_bookmarks: Default::default(),
         counters: Default::default(),
+        paragraph_charts: Default::default(),
         pagination_capture: Default::default(),
     };
     let mut blocks = Vec::new();
@@ -4210,6 +4220,55 @@ fn parse_rels(xml: &str) -> Rels {
         }
     }
     map
+}
+
+const MAX_MODELED_CHARTS_PER_STORY: usize = 256;
+
+fn read_charts(
+    zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>,
+    rels: &Rels,
+) -> HashMap<String, Chart> {
+    let mut chart_rels = rels
+        .iter()
+        .filter(|(_, (_, external))| !external)
+        .filter_map(|(id, (target, _))| {
+            let path = normalize_part(target);
+            is_authored_chart_part(&path).then_some((id.clone(), path))
+        })
+        .collect::<Vec<_>>();
+    chart_rels.sort_unstable();
+    chart_rels.truncate(MAX_MODELED_CHARTS_PER_STORY);
+    let mut parsed_by_path: HashMap<String, Chart> = HashMap::new();
+    let mut charts = HashMap::new();
+    for (id, path) in chart_rels {
+        let parsed = if let Some(chart) = parsed_by_path.get(&path) {
+            Some(chart.clone())
+        } else {
+            let chart = part(zip, &path).and_then(|xml| chart::parse(&xml));
+            if let Some(chart) = chart.as_ref() {
+                parsed_by_path.insert(path, chart.clone());
+            }
+            chart
+        };
+        if let Some(chart) = parsed {
+            charts.insert(id, chart);
+        }
+    }
+    charts
+}
+
+fn is_authored_chart_part(path: &str) -> bool {
+    let Some(file) = path.strip_prefix("word/charts/") else {
+        return false;
+    };
+    let Some(stem) = file.strip_suffix(".xml") else {
+        return false;
+    };
+    ["chart", "chartEx"].iter().any(|prefix| {
+        stem.strip_prefix(prefix).is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    })
 }
 
 /// Pre-read every embedded raster image referenced by an internal relationship

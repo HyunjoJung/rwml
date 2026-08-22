@@ -34,7 +34,7 @@ use crate::annotation::{
     page_ref_field_syntax, ref_field_syntax, toc_field_syntax, FieldKind,
 };
 use crate::model::{
-    Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
+    Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Chart, Color, DocGrid,
     DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, LineSpacingHint, ListInfo,
     PageNumberFormat, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind,
     SectionSetup, TabAlignment, TabStop, Table, TableBorderColors, TableBorderSide,
@@ -109,6 +109,7 @@ pub(crate) struct Ctx<'a> {
     pub numbering: &'a Numbering,
     pub rels: &'a HashMap<String, (String, bool)>,
     pub media: &'a HashMap<String, Image>,
+    pub charts: &'a HashMap<String, Chart>,
     pub ref_targets: &'a HashMap<String, String>,
     pub ref_position_context: &'a super::fields::RefPositionContext,
     pub ref_number_context: &'a super::fields::RefNumberContext,
@@ -144,10 +145,25 @@ pub(crate) struct Ctx<'a> {
     /// order as list paragraphs are finalized (interior-mutable: parsing is
     /// single-threaded and `finalize_paragraph` runs in reading order).
     pub counters: std::cell::RefCell<HashMap<String, [u32; 9]>>,
+    pub paragraph_charts: std::cell::RefCell<Vec<Vec<Chart>>>,
     pub(super) pagination_capture: std::cell::RefCell<Option<PaginationCapture>>,
 }
 
 impl Ctx<'_> {
+    fn begin_paragraph_charts(&self) {
+        self.paragraph_charts.borrow_mut().push(Vec::new());
+    }
+
+    fn push_paragraph_chart(&self, chart: Chart) {
+        if let Some(charts) = self.paragraph_charts.borrow_mut().last_mut() {
+            charts.push(chart);
+        }
+    }
+
+    fn end_paragraph_charts(&self) -> Vec<Chart> {
+        self.paragraph_charts.borrow_mut().pop().unwrap_or_default()
+    }
+
     #[cfg(feature = "render")]
     pub(crate) fn begin_pagination_capture(&self) {
         *self.pagination_capture.borrow_mut() = Some(PaginationCapture::default());
@@ -2239,6 +2255,7 @@ fn read_paragraph(
     depth: u32,
 ) -> (
     Paragraph,
+    Vec<Chart>,
     Option<ParsedSectionSetup>,
     PaginationHint,
     Vec<TabStop>,
@@ -2248,12 +2265,14 @@ fn read_paragraph(
         skip_subtree(r);
         return (
             Paragraph::default(),
+            Vec::new(),
             None,
             PaginationHint::default(),
             Vec::new(),
             None,
         );
     }
+    ctx.begin_paragraph_charts();
     let mut runs: Vec<Run> = Vec::new();
     let mut pp = PPr::default();
     let mut sequence_heading_applied = false;
@@ -2362,7 +2381,15 @@ fn read_paragraph(
     apply_sequence_heading_scope(&pp, ctx, &mut sequence_heading_applied);
     let section = pp.section.take();
     let (paragraph, pagination, tab_stops, line_spacing) = finalize_paragraph(runs, pp, ctx);
-    (paragraph, section, pagination, tab_stops, line_spacing)
+    let charts = ctx.end_paragraph_charts();
+    (
+        paragraph,
+        charts,
+        section,
+        pagination,
+        tab_stops,
+        line_spacing,
+    )
 }
 
 fn push_active_bookmark(bookmarks: &mut Vec<(String, String)>, e: &BytesStart<'_>) {
@@ -2423,8 +2450,18 @@ struct ParagraphBlockData {
 }
 
 fn read_paragraph_blocks_data(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> ParagraphBlockData {
-    let (paragraph, section, pagination, tab_stops, line_spacing) = read_paragraph(r, ctx, depth);
-    let mut split = split_page_breaks(paragraph);
+    let (paragraph, charts, section, pagination, tab_stops, line_spacing) =
+        read_paragraph(r, ctx, depth);
+    let mut split = if !charts.is_empty() && paragraph.runs.is_empty() {
+        let blocks = charts.into_iter().map(Block::Chart).collect::<Vec<_>>();
+        let column_break_offsets = vec![Vec::new(); blocks.len()];
+        ParagraphBlockSplit {
+            blocks,
+            column_break_offsets,
+        }
+    } else {
+        split_page_breaks(paragraph)
+    };
     let mut section_column_gap_pt = None;
     if let Some(mut section) = section {
         if section.setup.section_break.is_none() {
@@ -4362,96 +4399,109 @@ fn effective_run_props(
     props
 }
 
-/// Scan a `<w:drawing>`/`<w:pict>` subtree for (a) the first image blip, resolved
-/// to extracted bytes via the relationship/media tables, and (b) any text-box
-/// (`w:txbxContent`) text. Honors `mc:AlternateContent` (descends a single branch)
-/// so a box serialized as both DrawingML and VML isn't counted twice.
+/// Scan a `<w:drawing>`/`<w:pict>` subtree for the first image or modeled chart
+/// relationship plus any text-box (`w:txbxContent`) text. Honors
+/// `mc:AlternateContent` (descends a single branch) so duplicate DrawingML/VML
+/// representations are not counted twice.
+#[derive(Default)]
+struct DrawingReadState {
+    image: Option<Image>,
+    chart: Option<Chart>,
+    text: String,
+    anchor: DrawingAnchorOffset,
+    extent: Option<DrawingExtent>,
+    alt: Option<String>,
+}
+
 fn read_drawing(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Option<Image>, String) {
-    let mut img = None;
-    let mut text = String::new();
-    let mut anchor = DrawingAnchorOffset::default();
-    let mut alt = None;
+    let mut state = DrawingReadState::default();
     // Start from the caller's structural depth (not 0) so the recursion budget is
     // continuous across the drawing/text-box boundary.
-    walk_drawing(r, ctx, &mut img, &mut text, &mut anchor, &mut alt, depth);
-    (img, text)
+    walk_drawing(r, ctx, &mut state, depth);
+    if let Some(mut chart) = state.chart.take() {
+        chart.alt = state.alt.take();
+        if let Some(extent) = state.extent {
+            chart.width_px = emu_to_px(extent.cx);
+            chart.height_px = emu_to_px(extent.cy);
+        }
+        ctx.push_paragraph_chart(chart);
+    }
+    (state.image, state.text)
 }
 
 /// Recursively consume a drawing subtree through its `End`, collecting the first
-/// blip image and all text-box text. `txbxContent` children hold body-level
-/// content, parsed with [`read_blocks`] and flattened to text.
-fn walk_drawing(
-    r: &mut Xml<'_>,
-    ctx: &Ctx<'_>,
-    img: &mut Option<Image>,
-    text: &mut String,
-    anchor: &mut DrawingAnchorOffset,
-    alt: &mut Option<String>,
-    depth: u32,
-) {
+/// blip image or modeled chart and all text-box text. `txbxContent` children hold
+/// body-level content, parsed with [`read_blocks`] and flattened to text.
+fn walk_drawing(r: &mut Xml<'_>, ctx: &Ctx<'_>, state: &mut DrawingReadState, depth: u32) {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"anchor" => {
-                    let previous_anchor = *anchor;
-                    let had_image = img.is_some();
-                    *anchor = DrawingAnchorOffset {
+                    let previous_anchor = state.anchor;
+                    let had_image = state.image.is_some();
+                    state.anchor = DrawingAnchorOffset {
                         active: true,
                         ..DrawingAnchorOffset::default()
                     };
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, anchor, alt, depth + 1);
+                        walk_drawing(r, ctx, state, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
                     if !had_image {
-                        apply_floating_anchor_offset(img, anchor);
+                        apply_floating_anchor_offset(&mut state.image, &state.anchor);
                     }
-                    *anchor = previous_anchor;
+                    state.anchor = previous_anchor;
                 }
                 b"positionH" => {
-                    anchor.horizontal_page_offset_emu = read_page_position_offset(r, &e);
+                    state.anchor.horizontal_page_offset_emu = read_page_position_offset(r, &e);
                 }
                 b"positionV" => {
-                    anchor.vertical_page_offset_emu = read_page_position_offset(r, &e);
+                    state.anchor.vertical_page_offset_emu = read_page_position_offset(r, &e);
                 }
                 b"txbxContent" => {
                     if depth < MAX_DEPTH {
                         let blocks = read_blocks(r, ctx, depth + 1);
-                        append_blocks_text(text, &blocks);
+                        append_blocks_text(&mut state.text, &blocks);
                     } else {
                         skip_subtree(r);
                     }
                 }
-                b"AlternateContent" => {
-                    walk_alternate_content(r, ctx, img, text, anchor, alt, depth + 1)
-                }
+                b"AlternateContent" => walk_alternate_content(r, ctx, state, depth + 1),
                 _ => {
-                    capture_drawing_alt(&e, img, alt);
+                    capture_drawing_alt(&e, &mut state.image, &mut state.alt);
+                    capture_drawing_extent(&e, &mut state.extent);
                     if local(e.name().as_ref()) == b"xfrm" {
-                        apply_image_rotation(img, &e);
+                        apply_image_rotation(&mut state.image, &e);
                     }
-                    if img.is_none() {
-                        *img = blip_image(&e, ctx);
-                        apply_drawing_alt(img, alt);
-                        apply_floating_anchor_offset(img, anchor);
+                    if state.image.is_none() {
+                        state.image = blip_image(&e, ctx);
+                        apply_drawing_alt(&mut state.image, &state.alt);
+                        apply_floating_anchor_offset(&mut state.image, &state.anchor);
+                    }
+                    if state.chart.is_none() {
+                        state.chart = drawing_chart(&e, ctx);
                     }
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, anchor, alt, depth + 1);
+                        walk_drawing(r, ctx, state, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
                 }
             },
             Ok(Event::Empty(e)) => {
-                capture_drawing_alt(&e, img, alt);
+                capture_drawing_alt(&e, &mut state.image, &mut state.alt);
+                capture_drawing_extent(&e, &mut state.extent);
                 if local(e.name().as_ref()) == b"xfrm" {
-                    apply_image_rotation(img, &e);
+                    apply_image_rotation(&mut state.image, &e);
                 }
-                if img.is_none() {
-                    *img = blip_image(&e, ctx);
-                    apply_drawing_alt(img, alt);
-                    apply_floating_anchor_offset(img, anchor);
+                if state.image.is_none() {
+                    state.image = blip_image(&e, ctx);
+                    apply_drawing_alt(&mut state.image, &state.alt);
+                    apply_floating_anchor_offset(&mut state.image, &state.anchor);
+                }
+                if state.chart.is_none() {
+                    state.chart = drawing_chart(&e, ctx);
                 }
             }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -4481,6 +4531,37 @@ struct DrawingAnchorOffset {
     active: bool,
     horizontal_page_offset_emu: Option<i64>,
     vertical_page_offset_emu: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DrawingExtent {
+    cx: i64,
+    cy: i64,
+}
+
+fn capture_drawing_extent(e: &BytesStart<'_>, extent: &mut Option<DrawingExtent>) {
+    if extent.is_some() || local(e.name().as_ref()) != b"extent" {
+        return;
+    }
+    let Some(cx) = attr_i64(e, b"cx").filter(|value| *value > 0) else {
+        return;
+    };
+    let Some(cy) = attr_i64(e, b"cy").filter(|value| *value > 0) else {
+        return;
+    };
+    *extent = Some(DrawingExtent { cx, cy });
+}
+
+fn emu_to_px(value: i64) -> Option<u32> {
+    u32::try_from(value.saturating_add(4_762) / 9_525).ok()
+}
+
+fn drawing_chart(e: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<Chart> {
+    if local(e.name().as_ref()) != b"chart" {
+        return None;
+    }
+    let id = attr_local_trimmed(e, b"id")?;
+    ctx.charts.get(&id).cloned()
 }
 
 fn read_page_position_offset(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<i64> {
@@ -4538,10 +4619,7 @@ fn apply_image_rotation(img: &mut Option<Image>, e: &BytesStart<'_>) {
 fn walk_alternate_content(
     r: &mut Xml<'_>,
     ctx: &Ctx<'_>,
-    img: &mut Option<Image>,
-    text: &mut String,
-    anchor: &mut DrawingAnchorOffset,
-    alt: &mut Option<String>,
+    state: &mut DrawingReadState,
     depth: u32,
 ) {
     let mut took = false;
@@ -4551,7 +4629,7 @@ fn walk_alternate_content(
                 b"Choice" | b"Fallback" if !took => {
                     took = true;
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, anchor, alt, depth + 1);
+                        walk_drawing(r, ctx, state, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
@@ -8071,6 +8149,7 @@ mod tests {
     ) -> ParsedWithRenderHints {
         let numbering = Numbering::default();
         let rels = HashMap::new();
+        let charts = HashMap::new();
         let ref_targets = HashMap::new();
         let ref_position_context = super::super::fields::RefPositionContext::default();
         let ref_number_context = super::super::fields::RefNumberContext::empty();
@@ -8091,6 +8170,7 @@ mod tests {
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            charts: &charts,
             ref_targets: &ref_targets,
             ref_position_context: &ref_position_context,
             ref_number_context: &ref_number_context,
@@ -8123,6 +8203,7 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            paragraph_charts: Default::default(),
             pagination_capture: Default::default(),
         };
         if capture_pagination {
@@ -10281,6 +10362,7 @@ mod tests {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let media = HashMap::new();
+        let charts = HashMap::new();
         let ref_targets = HashMap::new();
         let ref_position_context = super::super::fields::RefPositionContext::default();
         let ref_number_context = super::super::fields::RefNumberContext::empty();
@@ -10301,6 +10383,7 @@ mod tests {
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            charts: &charts,
             ref_targets: &ref_targets,
             ref_position_context: &ref_position_context,
             ref_number_context: &ref_number_context,
@@ -10333,6 +10416,7 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            paragraph_charts: Default::default(),
             pagination_capture: Default::default(),
         };
         let xml = r#"<w:footnotes>
@@ -10358,6 +10442,7 @@ mod tests {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let media = HashMap::new();
+        let charts = HashMap::new();
         let ref_targets = HashMap::new();
         let ref_position_context = super::super::fields::RefPositionContext::default();
         let ref_number_context = super::super::fields::RefNumberContext::empty();
@@ -10378,6 +10463,7 @@ mod tests {
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            charts: &charts,
             ref_targets: &ref_targets,
             ref_position_context: &ref_position_context,
             ref_number_context: &ref_number_context,
@@ -10410,6 +10496,7 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            paragraph_charts: Default::default(),
             pagination_capture: Default::default(),
         };
         let xml = r#"<w:footnotes xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
@@ -10448,6 +10535,7 @@ mod tests {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let media = HashMap::new();
+        let charts = HashMap::new();
         let ref_targets = HashMap::new();
         let ref_position_context = super::super::fields::RefPositionContext::default();
         let ref_number_context = super::super::fields::RefNumberContext::empty();
@@ -10468,6 +10556,7 @@ mod tests {
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            charts: &charts,
             ref_targets: &ref_targets,
             ref_position_context: &ref_position_context,
             ref_number_context: &ref_number_context,
@@ -10500,6 +10589,7 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            paragraph_charts: Default::default(),
             pagination_capture: Default::default(),
         };
         let xml = r#"<w:hdr><w:p><w:r><w:t>헤더 텍스트</w:t></w:r></w:p></w:hdr>"#;

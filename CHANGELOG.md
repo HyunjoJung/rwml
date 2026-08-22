@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Reconstructs fresh rwml-generated core and chart-ex DOCX payloads as modeled
+  `Chart` blocks on native reopen instead of preserving them as opaque chart
+  parts. All 52 currently authored kinds retain their kind, title, serialized
+  categories, series, bubble sizes, dimensions, alternative text, wireframe,
+  and 3-D shape state across top-level and ordinary-table-cell reopen, then use
+  the existing vector PDF painter. The decoder accepts only the bounded,
+  namespace-correct dense literal-cache structures emitted by rwml, with finite
+  values and explicit depth/series/point/text limits; malformed, sparse,
+  duplicate, formula/reference-backed, combination, unrelated, and otherwise
+  arbitrary Office chart payloads remain preserved and are reported as
+  unsupported. Scatter/bubble numeric x-values intentionally normalize the
+  public string `categories` vector to empty on reopen.
 - Emits present raster image bytes in fresh DOCX default/first/even headers and
   footers with relationships scoped to each owning running part. Top-level,
   paragraph-run, ordinary-table-cell, and nested-table-cell images retain
