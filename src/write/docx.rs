@@ -20,9 +20,10 @@ use crate::model::{
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
     ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, LineSpacingHint,
     PaginationHint, ParaProps, Paragraph, ParagraphStyle, RunningSurfaceDistanceHints,
-    SectionBreakKind, SectionColumnLayoutHints, SectionSetup, Spacing, Table, TableBorderSide,
-    TableBorderStyle, TableCellLineSpacingHints, TableCellPaginationHints, TableRowPaginationHint,
-    VertAlign, WebExtensionTaskPane,
+    SectionBreakKind, SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader,
+    TabStop, Table, TableBorderSide, TableBorderStyle, TableCellLineSpacingHints,
+    TableCellPaginationHints, TableCellTabStopHints, TableRowPaginationHint, VertAlign,
+    WebExtensionTaskPane, MAX_TAB_STOPS,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -77,16 +78,25 @@ struct SectionWriteHint<'a> {
 }
 
 #[derive(Clone, Copy, Default)]
+struct ParagraphWriteHints<'a> {
+    line_spacing: Option<LineSpacingHint>,
+    pagination: Option<PaginationHint>,
+    tab_stops: Option<&'a [TabStop]>,
+}
+
+#[derive(Clone, Copy, Default)]
 struct TableWriteHints<'a> {
     row_pagination: Option<&'a [TableRowPaginationHint]>,
     cell_pagination: Option<&'a TableCellPaginationHints>,
     cell_line_spacing: Option<&'a TableCellLineSpacingHints>,
+    cell_tab_stops: Option<&'a TableCellTabStopHints>,
 }
 
 #[derive(Clone, Copy, Default)]
 struct CellWriteHints<'a> {
     pagination: Option<&'a [Option<PaginationHint>]>,
     line_spacing: Option<&'a [Option<LineSpacingHint>]>,
+    tab_stops: Option<&'a [Vec<TabStop>]>,
 }
 
 #[derive(Clone, Copy)]
@@ -102,9 +112,11 @@ pub(crate) struct SourceWriteHints<'a> {
     pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
     pub(crate) paragraph_line_spacing: &'a [Option<LineSpacingHint>],
     pub(crate) paragraph_pagination: &'a [PaginationHint],
+    pub(crate) paragraph_tab_stops: &'a [Vec<TabStop>],
     pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     pub(crate) table_cell_pagination: &'a [TableCellPaginationHints],
     pub(crate) table_cell_line_spacing: &'a [TableCellLineSpacingHints],
+    pub(crate) table_cell_tab_stops: &'a [TableCellTabStopHints],
 }
 
 impl<'a> SourceWriteHints<'a> {
@@ -122,6 +134,10 @@ impl<'a> SourceWriteHints<'a> {
 
     fn aligned_paragraph_pagination(self, block_count: usize) -> Option<&'a [PaginationHint]> {
         (self.paragraph_pagination.len() == block_count).then_some(self.paragraph_pagination)
+    }
+
+    fn aligned_paragraph_tab_stops(self, block_count: usize) -> Option<&'a [Vec<TabStop>]> {
+        (self.paragraph_tab_stops.len() == block_count).then_some(self.paragraph_tab_stops)
     }
 
     fn aligned_table_row_pagination(
@@ -143,6 +159,13 @@ impl<'a> SourceWriteHints<'a> {
         block_count: usize,
     ) -> Option<&'a [TableCellPaginationHints]> {
         (self.table_cell_pagination.len() == block_count).then_some(self.table_cell_pagination)
+    }
+
+    fn aligned_table_cell_tab_stops(
+        self,
+        block_count: usize,
+    ) -> Option<&'a [TableCellTabStopHints]> {
+        (self.table_cell_tab_stops.len() == block_count).then_some(self.table_cell_tab_stops)
     }
 
     fn for_block(
@@ -209,6 +232,49 @@ fn source_line_spacing(spacing: Option<LineSpacingHint>) -> Option<(i64, &'stati
     }
     let twips = pt_twips(points);
     (1..=31_680).contains(&twips).then_some((twips, rule))
+}
+
+fn source_tab_stops_xml(tab_stops: Option<&[TabStop]>) -> Option<String> {
+    let tab_stops = tab_stops.filter(|stops| !stops.is_empty())?;
+    if tab_stops.len() > MAX_TAB_STOPS {
+        return None;
+    }
+
+    let mut previous_position = None;
+    let mut out = String::from("<w:tabs>");
+    for stop in tab_stops {
+        let position = source_column_twips(stop.position_pt, true)?;
+        if previous_position.is_some_and(|previous| position <= previous) {
+            return None;
+        }
+        previous_position = Some(position);
+
+        let alignment = match stop.alignment {
+            TabAlignment::Left => "left",
+            TabAlignment::Center => "center",
+            TabAlignment::Right => "right",
+            TabAlignment::Decimal => "decimal",
+            TabAlignment::Bar => "bar",
+            TabAlignment::Clear => return None,
+        };
+        let leader = match stop.leader {
+            TabLeader::None => None,
+            TabLeader::Dot => Some("dot"),
+            TabLeader::Hyphen => Some("hyphen"),
+            TabLeader::Underscore => Some("underscore"),
+            TabLeader::Heavy => Some("heavy"),
+            TabLeader::MiddleDot => Some("middleDot"),
+            #[cfg(feature = "render")]
+            TabLeader::Bar => return None,
+        };
+        out.push_str(&format!(r#"<w:tab w:val="{alignment}" w:pos="{position}""#));
+        if let Some(leader) = leader {
+            out.push_str(&format!(r#" w:leader="{leader}""#));
+        }
+        out.push_str("/>");
+    }
+    out.push_str("</w:tabs>");
+    Some(out)
 }
 
 fn section_columns_xml(column_count: Option<u16>, hint: SectionColumnWriteHint<'_>) -> String {
@@ -880,13 +946,12 @@ impl Ctx {
         out: &mut String,
         block: &Block,
         section_hints: SectionWriteHint<'_>,
-        line_spacing: Option<LineSpacingHint>,
-        pagination: Option<PaginationHint>,
+        paragraph_hints: ParagraphWriteHints<'_>,
         table_hints: TableWriteHints<'_>,
     ) {
         match block {
             Block::Paragraph(paragraph) => {
-                self.write_paragraph_with_source_hints(out, paragraph, line_spacing, pagination)
+                self.write_paragraph_with_source_hints(out, paragraph, paragraph_hints)
             }
             Block::Table(table) => self.write_table_with_source_hints(out, table, table_hints),
             Block::SectionBreak(setup) => self.write_section_break(out, setup, section_hints),
@@ -898,13 +963,15 @@ impl Ctx {
         match b {
             Block::Paragraph(p) => {
                 out.push_str("<w:p>");
-                self.write_ppr(out, &p.props, None, None);
+                self.write_ppr(out, &p.props, None, None, None);
                 for r in &p.runs {
                     write_hf_run(self, rels, out, r);
                 }
                 out.push_str("</w:p>");
             }
-            Block::Table(t) => self.write_table_inner(out, t, Some(rels), None, None, None),
+            Block::Table(t) => {
+                self.write_table_inner(out, t, Some(rels), TableWriteHints::default())
+            }
             Block::Image(img) => {
                 out.push_str("<w:p>");
                 self.write_hf_image_or_placeholder(out, img, rels);
@@ -1045,18 +1112,23 @@ impl Ctx {
     }
 
     fn write_paragraph(&mut self, out: &mut String, p: &Paragraph) {
-        self.write_paragraph_with_source_hints(out, p, None, None);
+        self.write_paragraph_with_source_hints(out, p, ParagraphWriteHints::default());
     }
 
     fn write_paragraph_with_source_hints(
         &mut self,
         out: &mut String,
         p: &Paragraph,
-        line_spacing: Option<LineSpacingHint>,
-        pagination: Option<PaginationHint>,
+        hints: ParagraphWriteHints<'_>,
     ) {
         out.push_str("<w:p>");
-        self.write_ppr(out, &p.props, line_spacing, pagination);
+        self.write_ppr(
+            out,
+            &p.props,
+            hints.line_spacing,
+            hints.pagination,
+            hints.tab_stops,
+        );
         for r in &p.runs {
             self.write_run(out, r);
         }
@@ -1069,6 +1141,7 @@ impl Ctx {
         pr: &ParaProps,
         line_spacing: Option<LineSpacingHint>,
         pagination: Option<PaginationHint>,
+        tab_stops: Option<&[TabStop]>,
     ) {
         let heading = pr.heading_level;
         // A heading suppresses list rendering — mirror the reader's precedence.
@@ -1106,6 +1179,7 @@ impl Ctx {
         let keep_next = pagination.is_some_and(|hint| hint.keep_next);
         let keep_lines = pagination.is_some_and(|hint| hint.keep_lines);
         let widow_control_off = pagination.is_some_and(|hint| !hint.widow_control);
+        let tab_stops = source_tab_stops_xml(tab_stops);
         if style_id.is_none()
             && list.is_none()
             && jc.is_none()
@@ -1118,12 +1192,13 @@ impl Ctx {
             && !keep_next
             && !keep_lines
             && !widow_control_off
+            && tab_stops.is_none()
         {
             return;
         }
         out.push_str("<w:pPr>");
         // Schema order: pStyle, keepNext, keepLines, pageBreakBefore,
-        // widowControl, numPr, shd, bidi, spacing, ind, jc, outlineLvl.
+        // widowControl, numPr, shd, tabs, bidi, spacing, ind, jc, outlineLvl.
         if let Some(s) = &style_id {
             self.has_styles = true;
             if generated_heading_style {
@@ -1156,6 +1231,9 @@ impl Ctx {
                 r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
                 hex(c)
             ));
+        }
+        if let Some(tab_stops) = tab_stops {
+            out.push_str(&tab_stops);
         }
         if pr.bidi {
             out.push_str("<w:bidi/>");
@@ -1518,16 +1596,22 @@ impl Ctx {
                 Block::Paragraph(paragraph) => self.write_paragraph_with_source_hints(
                     out,
                     paragraph,
-                    hints
-                        .line_spacing
-                        .and_then(|hints| hints.get(index))
-                        .copied()
-                        .flatten(),
-                    hints
-                        .pagination
-                        .and_then(|hints| hints.get(index))
-                        .copied()
-                        .flatten(),
+                    ParagraphWriteHints {
+                        line_spacing: hints
+                            .line_spacing
+                            .and_then(|hints| hints.get(index))
+                            .copied()
+                            .flatten(),
+                        pagination: hints
+                            .pagination
+                            .and_then(|hints| hints.get(index))
+                            .copied()
+                            .flatten(),
+                        tab_stops: hints
+                            .tab_stops
+                            .and_then(|hints| hints.get(index))
+                            .map(Vec::as_slice),
+                    },
                 ),
                 _ => self.write_block(out, block),
             }
@@ -1570,7 +1654,7 @@ impl Ctx {
     /// Write a table, reconstructing the full grid (re-inserting the `vMerge`
     /// continuation cells the reader dropped) so merges round-trip.
     fn write_table(&mut self, out: &mut String, t: &Table) {
-        self.write_table_inner(out, t, None, None, None, None);
+        self.write_table_inner(out, t, None, TableWriteHints::default());
     }
 
     fn write_table_with_source_hints(
@@ -1588,13 +1672,19 @@ impl Ctx {
         let cell_line_spacing = hints
             .cell_line_spacing
             .filter(|hints| Self::table_cell_paragraph_hints_align(table, hints));
+        let cell_tab_stops = hints
+            .cell_tab_stops
+            .filter(|hints| Self::table_cell_tab_stops_align(table, hints));
         self.write_table_inner(
             out,
             table,
             None,
-            row_pagination,
-            cell_pagination,
-            cell_line_spacing,
+            TableWriteHints {
+                row_pagination,
+                cell_pagination,
+                cell_line_spacing,
+                cell_tab_stops,
+            },
         );
     }
 
@@ -1619,14 +1709,33 @@ impl Ctx {
         true
     }
 
+    fn table_cell_tab_stops_align(table: &Table, hints: &TableCellTabStopHints) -> bool {
+        if hints.len() != table.rows.len() {
+            return false;
+        }
+        for (row, row_hints) in table.rows.iter().zip(hints) {
+            if row_hints.len() != row.cells.len() {
+                return false;
+            }
+            for (cell, cell_hints) in row.cells.iter().zip(row_hints) {
+                if cell_hints.len() != cell.blocks.len()
+                    || cell.blocks.iter().zip(cell_hints).any(|(block, stops)| {
+                        !stops.is_empty() && !matches!(block, Block::Paragraph(_))
+                    })
+                {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
     fn write_table_inner(
         &mut self,
         out: &mut String,
         t: &Table,
         mut hf_rels: Option<&mut Vec<Rel>>,
-        row_pagination: Option<&[TableRowPaginationHint]>,
-        cell_pagination: Option<&TableCellPaginationHints>,
-        cell_line_spacing: Option<&TableCellLineSpacingHints>,
+        hints: TableWriteHints<'_>,
     ) {
         struct Active {
             col: usize,
@@ -1639,7 +1748,8 @@ impl Ctx {
 
         for (ri, row) in t.rows.iter().enumerate() {
             let is_header = ri < t.header_rows;
-            let cant_split = row_pagination
+            let cant_split = hints
+                .row_pagination
                 .and_then(|hints| hints.get(ri))
                 .is_some_and(|hint| hint.cant_split);
             let mut row_xml = String::new();
@@ -1669,11 +1779,18 @@ impl Ctx {
                     continue;
                 }
                 if ci < row.cells.len() {
-                    let source_pagination = cell_pagination
+                    let source_pagination = hints
+                        .cell_pagination
                         .and_then(|rows| rows.get(ri))
                         .and_then(|row| row.get(ci))
                         .map(Vec::as_slice);
-                    let source_line_spacing = cell_line_spacing
+                    let source_line_spacing = hints
+                        .cell_line_spacing
+                        .and_then(|rows| rows.get(ri))
+                        .and_then(|row| row.get(ci))
+                        .map(Vec::as_slice);
+                    let source_tab_stops = hints
+                        .cell_tab_stops
                         .and_then(|rows| rows.get(ri))
                         .and_then(|row| row.get(ci))
                         .map(Vec::as_slice);
@@ -1720,6 +1837,7 @@ impl Ctx {
                             CellWriteHints {
                                 pagination: source_pagination,
                                 line_spacing: source_line_spacing,
+                                tab_stops: source_tab_stops,
                             },
                         );
                     }
@@ -3817,12 +3935,16 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         source_hints.and_then(|hints| hints.aligned_paragraph_line_spacing(model.blocks.len()));
     let paragraph_pagination =
         source_hints.and_then(|hints| hints.aligned_paragraph_pagination(model.blocks.len()));
+    let paragraph_tab_stops =
+        source_hints.and_then(|hints| hints.aligned_paragraph_tab_stops(model.blocks.len()));
     let table_row_pagination =
         source_hints.and_then(|hints| hints.aligned_table_row_pagination(model.blocks.len()));
     let table_cell_pagination =
         source_hints.and_then(|hints| hints.aligned_table_cell_pagination(model.blocks.len()));
     let table_cell_line_spacing =
         source_hints.and_then(|hints| hints.aligned_table_cell_line_spacing(model.blocks.len()));
+    let table_cell_tab_stops =
+        source_hints.and_then(|hints| hints.aligned_table_cell_tab_stops(model.blocks.len()));
     let mut section_index = 0;
     for (index, block) in model.blocks.iter().enumerate() {
         ctx.write_top_level_block(
@@ -3831,19 +3953,25 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
             source_hints
                 .map(|hints| hints.for_block(index, section_index, running_surface_distances))
                 .unwrap_or_default(),
-            paragraph_line_spacing
-                .and_then(|hints| hints.get(index))
-                .copied()
-                .flatten(),
-            paragraph_pagination
-                .and_then(|hints| hints.get(index))
-                .copied(),
+            ParagraphWriteHints {
+                line_spacing: paragraph_line_spacing
+                    .and_then(|hints| hints.get(index))
+                    .copied()
+                    .flatten(),
+                pagination: paragraph_pagination
+                    .and_then(|hints| hints.get(index))
+                    .copied(),
+                tab_stops: paragraph_tab_stops
+                    .and_then(|hints| hints.get(index))
+                    .map(Vec::as_slice),
+            },
             TableWriteHints {
                 row_pagination: table_row_pagination
                     .and_then(|hints| hints.get(index))
                     .map(Vec::as_slice),
                 cell_pagination: table_cell_pagination.and_then(|hints| hints.get(index)),
                 cell_line_spacing: table_cell_line_spacing.and_then(|hints| hints.get(index)),
+                cell_tab_stops: table_cell_tab_stops.and_then(|hints| hints.get(index)),
             },
         );
         if matches!(block, Block::SectionBreak(_)) {
@@ -3984,14 +4112,15 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
 #[cfg(test)]
 mod tests {
     use super::{
-        render_body, section_columns_xml, source_line_spacing, SectionColumnWriteHint,
-        SourceWriteHints,
+        render_body, section_columns_xml, source_line_spacing, source_tab_stops_xml,
+        SectionColumnWriteHint, SourceWriteHints,
     };
     use crate::model::{
         Align, Block, Cell, CharProps, DocModel, DocSetup, FieldRole, Image, LineSpacingHint,
         ListInfo, PaginationHint, ParaProps, Paragraph, Row, Run, RunningSurfaceDistanceHints,
-        SectionColumnHint, SectionColumnLayoutHints, SectionSetup, Table,
-        TableCellLineSpacingHints, TableCellPaginationHints, TableRowPaginationHint,
+        SectionColumnHint, SectionColumnLayoutHints, SectionSetup, TabAlignment, TabLeader,
+        TabStop, Table, TableCellLineSpacingHints, TableCellPaginationHints, TableCellTabStopHints,
+        TableRowPaginationHint, MAX_TAB_STOPS,
     };
     use crate::Document;
 
@@ -4009,6 +4138,14 @@ mod tests {
         Cell {
             blocks: vec![Block::Paragraph(para(text))],
             ..Cell::default()
+        }
+    }
+
+    fn tab(position_pt: f32, alignment: TabAlignment, leader: TabLeader) -> TabStop {
+        TabStop {
+            position_pt,
+            alignment,
+            leader,
         }
     }
 
@@ -4096,9 +4233,11 @@ mod tests {
                 running_surface_distances: &distances,
                 paragraph_line_spacing: &[],
                 paragraph_pagination: &[],
+                paragraph_tab_stops: &[],
                 table_row_pagination: &[],
                 table_cell_pagination: &[],
                 table_cell_line_spacing: &[],
+                table_cell_tab_stops: &[],
             }),
         );
         let document_xml = String::from_utf8(rendered.document_xml).unwrap();
@@ -4141,9 +4280,11 @@ mod tests {
                 running_surface_distances: &distances,
                 paragraph_line_spacing: &line_spacing,
                 paragraph_pagination: &[],
+                paragraph_tab_stops: &[],
                 table_row_pagination: &[],
                 table_cell_pagination: &[],
                 table_cell_line_spacing: &[],
+                table_cell_tab_stops: &[],
             }),
         );
         let document_xml = String::from_utf8(rendered.document_xml).unwrap();
@@ -4169,6 +4310,121 @@ mod tests {
         ] {
             assert_eq!(source_line_spacing(Some(hint)), None);
         }
+    }
+
+    #[test]
+    fn source_tab_stop_writer_maps_and_bounds_private_values() {
+        let valid = [
+            tab(1.0, TabAlignment::Left, TabLeader::Dot),
+            tab(2.0, TabAlignment::Center, TabLeader::Hyphen),
+            tab(3.0, TabAlignment::Right, TabLeader::Underscore),
+            tab(4.0, TabAlignment::Decimal, TabLeader::Heavy),
+            tab(5.0, TabAlignment::Bar, TabLeader::MiddleDot),
+        ];
+        assert_eq!(
+            source_tab_stops_xml(Some(&valid)).as_deref(),
+            Some(concat!(
+                r#"<w:tabs><w:tab w:val="left" w:pos="20" w:leader="dot"/>"#,
+                r#"<w:tab w:val="center" w:pos="40" w:leader="hyphen"/>"#,
+                r#"<w:tab w:val="right" w:pos="60" w:leader="underscore"/>"#,
+                r#"<w:tab w:val="decimal" w:pos="80" w:leader="heavy"/>"#,
+                r#"<w:tab w:val="bar" w:pos="100" w:leader="middleDot"/></w:tabs>"#,
+            ))
+        );
+        assert_eq!(source_tab_stops_xml(None), None);
+        assert_eq!(source_tab_stops_xml(Some(&[])), None);
+
+        for invalid in [
+            vec![tab(f32::NAN, TabAlignment::Left, TabLeader::None)],
+            vec![tab(-1.0, TabAlignment::Left, TabLeader::None)],
+            vec![tab(1_584.1, TabAlignment::Left, TabLeader::None)],
+            vec![tab(1.0, TabAlignment::Clear, TabLeader::None)],
+            vec![
+                tab(2.0, TabAlignment::Left, TabLeader::None),
+                tab(1.0, TabAlignment::Right, TabLeader::None),
+            ],
+            vec![
+                tab(1.0, TabAlignment::Left, TabLeader::None),
+                tab(1.0, TabAlignment::Right, TabLeader::None),
+            ],
+        ] {
+            assert_eq!(source_tab_stops_xml(Some(&invalid)), None, "{invalid:?}");
+        }
+        let too_many = vec![tab(1.0, TabAlignment::Left, TabLeader::None); MAX_TAB_STOPS + 1];
+        assert_eq!(source_tab_stops_xml(Some(&too_many)), None);
+
+        #[cfg(feature = "render")]
+        assert_eq!(
+            source_tab_stops_xml(Some(&[tab(1.0, TabAlignment::Left, TabLeader::Bar,)])),
+            None
+        );
+    }
+
+    #[test]
+    fn source_paragraph_tab_writer_rejects_misalignment_independently() {
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(para("body"))],
+            ..DocModel::default()
+        };
+        let line_spacing = [Some(LineSpacingHint::Exact(12.0))];
+        let pagination = [PaginationHint {
+            keep_next: true,
+            widow_control: true,
+            ..PaginationHint::default()
+        }];
+        let render = |paragraph_tab_stops: &[Vec<TabStop>]| {
+            String::from_utf8(
+                render_body(
+                    &model,
+                    Some(SourceWriteHints {
+                        gaps: &[None],
+                        layouts: &[None],
+                        separators: &[false],
+                        rtl: &[false],
+                        final_gap: None,
+                        final_layout: None,
+                        final_separator: false,
+                        final_rtl: false,
+                        running_surface_distances: &[RunningSurfaceDistanceHints::default()],
+                        paragraph_line_spacing: &line_spacing,
+                        paragraph_pagination: &pagination,
+                        paragraph_tab_stops,
+                        table_row_pagination: &[],
+                        table_cell_pagination: &[],
+                        table_cell_line_spacing: &[],
+                        table_cell_tab_stops: &[],
+                    }),
+                )
+                .document_xml,
+            )
+            .unwrap()
+        };
+        let assert_only_tabs_rejected = |xml: &str| {
+            assert!(xml.contains("<w:keepNext/>"), "{xml}");
+            assert!(xml.contains(r#"w:line="240" w:lineRule="exact""#), "{xml}");
+            assert!(!xml.contains("<w:tabs>"), "{xml}");
+        };
+
+        assert_only_tabs_rejected(&render(&[
+            vec![tab(36.0, TabAlignment::Left, TabLeader::None)],
+            Vec::new(),
+        ]));
+        assert_only_tabs_rejected(&render(&[vec![tab(
+            -1.0,
+            TabAlignment::Left,
+            TabLeader::None,
+        )]]));
+
+        let aligned = render(&[vec![tab(36.0, TabAlignment::Left, TabLeader::None)]]);
+        assert!(
+            aligned.contains(r#"<w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs>"#),
+            "{aligned}"
+        );
+        assert!(aligned.contains("<w:keepNext/>"), "{aligned}");
+        assert!(
+            aligned.contains(r#"w:line="240" w:lineRule="exact""#),
+            "{aligned}"
+        );
     }
 
     #[test]
@@ -4211,9 +4467,11 @@ mod tests {
                         running_surface_distances: &distances,
                         paragraph_line_spacing: &[],
                         paragraph_pagination,
+                        paragraph_tab_stops: &[],
                         table_row_pagination: &[],
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
+                        table_cell_tab_stops: &[],
                     }),
                 )
                 .document_xml,
@@ -4248,6 +4506,7 @@ mod tests {
             },
             ..DocModel::default()
         };
+        let body_tab_stops = [vec![tab(36.0, TabAlignment::Right, TabLeader::Dot)]];
         let rendered = render_body(
             &model,
             Some(SourceWriteHints {
@@ -4266,13 +4525,20 @@ mod tests {
                     widow_control: true,
                     ..PaginationHint::default()
                 }],
+                paragraph_tab_stops: &body_tab_stops,
                 table_row_pagination: &[],
                 table_cell_pagination: &[],
                 table_cell_line_spacing: &[],
+                table_cell_tab_stops: &[],
             }),
         );
         let document_xml = String::from_utf8(rendered.document_xml).unwrap();
         assert!(document_xml.contains("<w:keepNext/>"), "{document_xml}");
+        assert!(
+            document_xml
+                .contains(r#"<w:tabs><w:tab w:val="right" w:pos="720" w:leader="dot"/></w:tabs>"#),
+            "{document_xml}"
+        );
         assert!(
             document_xml.contains(r#"w:line="240" w:lineRule="exact""#),
             "{document_xml}"
@@ -4285,6 +4551,7 @@ mod tests {
             .map(|(_, _, bytes)| String::from_utf8_lossy(bytes))
             .expect("generated running header");
         assert!(!header_xml.contains("<w:keepNext"));
+        assert!(!header_xml.contains("<w:tabs>"));
         assert!(!header_xml.contains(r#"w:lineRule="exact""#));
         assert!(
             header_xml.contains(r#"w:line="360" w:lineRule="auto""#),
@@ -4326,9 +4593,11 @@ mod tests {
                         running_surface_distances: &distances,
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
+                        paragraph_tab_stops: &[],
                         table_row_pagination,
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
+                        table_cell_tab_stops: &[],
                     }),
                 )
                 .document_xml,
@@ -4394,9 +4663,11 @@ mod tests {
                         running_surface_distances: &distances,
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
+                        paragraph_tab_stops: &[],
                         table_row_pagination: &[],
                         table_cell_pagination: &[],
                         table_cell_line_spacing,
+                        table_cell_tab_stops: &[],
                     }),
                 )
                 .document_xml,
@@ -4473,9 +4744,11 @@ mod tests {
                         running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
+                        paragraph_tab_stops: &[],
                         table_row_pagination: &row_pagination,
                         table_cell_pagination,
                         table_cell_line_spacing,
+                        table_cell_tab_stops: &[],
                     }),
                 )
                 .document_xml,
@@ -4544,6 +4817,110 @@ mod tests {
     }
 
     #[test]
+    fn source_table_cell_tab_writer_rejects_misalignment_independently() {
+        let model = DocModel {
+            blocks: vec![Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(para("cell")), Block::PageBreak],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            })],
+            ..DocModel::default()
+        };
+        let row_pagination = [vec![TableRowPaginationHint { cant_split: true }]];
+        let cell_pagination = [vec![vec![vec![
+            Some(PaginationHint {
+                keep_next: true,
+                widow_control: true,
+                ..PaginationHint::default()
+            }),
+            None,
+        ]]]];
+        let cell_line_spacing = [vec![vec![vec![Some(LineSpacingHint::Exact(12.0)), None]]]];
+        let valid_table_tabs: TableCellTabStopHints = vec![vec![vec![
+            vec![tab(36.0, TabAlignment::Right, TabLeader::Dot)],
+            Vec::new(),
+        ]]];
+        let render = |table_cell_tab_stops: &[TableCellTabStopHints]| {
+            String::from_utf8(
+                render_body(
+                    &model,
+                    Some(SourceWriteHints {
+                        gaps: &[None],
+                        layouts: &[None],
+                        separators: &[false],
+                        rtl: &[false],
+                        final_gap: None,
+                        final_layout: None,
+                        final_separator: false,
+                        final_rtl: false,
+                        running_surface_distances: &[RunningSurfaceDistanceHints::default()],
+                        paragraph_line_spacing: &[],
+                        paragraph_pagination: &[],
+                        paragraph_tab_stops: &[],
+                        table_row_pagination: &row_pagination,
+                        table_cell_pagination: &cell_pagination,
+                        table_cell_line_spacing: &cell_line_spacing,
+                        table_cell_tab_stops,
+                    }),
+                )
+                .document_xml,
+            )
+            .unwrap()
+        };
+        let assert_only_tabs_rejected = |xml: &str| {
+            assert!(xml.contains("<w:cantSplit/>"), "{xml}");
+            assert!(xml.contains("<w:keepNext/>"), "{xml}");
+            assert!(xml.contains(r#"w:line="240" w:lineRule="exact""#), "{xml}");
+            assert!(!xml.contains("<w:tabs>"), "{xml}");
+        };
+
+        assert_only_tabs_rejected(&render(&[
+            valid_table_tabs.clone(),
+            valid_table_tabs.clone(),
+        ]));
+        assert_only_tabs_rejected(&render(&[vec![
+            valid_table_tabs[0].clone(),
+            valid_table_tabs[0].clone(),
+        ]]));
+        assert_only_tabs_rejected(&render(&[vec![vec![
+            valid_table_tabs[0][0].clone(),
+            valid_table_tabs[0][0].clone(),
+        ]]]));
+        assert_only_tabs_rejected(&render(&[vec![vec![vec![vec![tab(
+            36.0,
+            TabAlignment::Right,
+            TabLeader::Dot,
+        )]]]]]));
+        assert_only_tabs_rejected(&render(&[vec![vec![vec![
+            vec![tab(36.0, TabAlignment::Right, TabLeader::Dot)],
+            vec![tab(72.0, TabAlignment::Left, TabLeader::None)],
+        ]]]]));
+        assert_only_tabs_rejected(&render(&[vec![vec![vec![
+            vec![tab(-1.0, TabAlignment::Right, TabLeader::Dot)],
+            Vec::new(),
+        ]]]]));
+
+        let aligned = render(&[valid_table_tabs]);
+        assert!(aligned.contains("<w:cantSplit/>"), "{aligned}");
+        assert!(aligned.contains("<w:keepNext/>"), "{aligned}");
+        assert!(
+            aligned.contains(r#"w:line="240" w:lineRule="exact""#),
+            "{aligned}"
+        );
+        assert!(
+            aligned.contains(concat!(
+                r#"<w:tabs><w:tab w:val="right" w:pos="720" "#,
+                r#"w:leader="dot"/></w:tabs>"#,
+            )),
+            "{aligned}"
+        );
+    }
+
+    #[test]
     fn source_table_cell_line_writer_tracks_surviving_vertical_merge_cells() {
         let model = DocModel {
             blocks: vec![Block::Table(Table {
@@ -4588,9 +4965,11 @@ mod tests {
                     running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
+                    paragraph_tab_stops: &[],
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &table_cell_line_spacing,
+                    table_cell_tab_stops: &[],
                 }),
             )
             .document_xml,
@@ -4660,9 +5039,11 @@ mod tests {
                     running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
+                    paragraph_tab_stops: &[],
                     table_row_pagination: &[],
                     table_cell_pagination: &table_cell_pagination,
                     table_cell_line_spacing: &[],
+                    table_cell_tab_stops: &[],
                 }),
             )
             .document_xml,
@@ -4683,6 +5064,86 @@ mod tests {
         assert_eq!(document_xml.matches("<w:keepNext").count(), 1);
         assert_eq!(document_xml.matches("<w:keepLines").count(), 1);
         assert_eq!(document_xml.matches("<w:widowControl").count(), 1);
+    }
+
+    #[test]
+    fn source_table_cell_tab_writer_tracks_surviving_vertical_merge_cells() {
+        let model = DocModel {
+            blocks: vec![Block::Table(Table {
+                rows: vec![
+                    Row {
+                        cells: vec![
+                            Cell {
+                                blocks: vec![Block::Paragraph(para("owner"))],
+                                row_span: 2,
+                                ..Cell::default()
+                            },
+                            cell("top"),
+                        ],
+                    },
+                    Row {
+                        cells: vec![cell("bottom")],
+                    },
+                ],
+                ..Table::default()
+            })],
+            ..DocModel::default()
+        };
+        let table_cell_tab_stops = [vec![
+            vec![
+                vec![vec![tab(5.0, TabAlignment::Left, TabLeader::Dot)]],
+                vec![vec![tab(10.0, TabAlignment::Center, TabLeader::Hyphen)]],
+            ],
+            vec![vec![vec![tab(
+                15.0,
+                TabAlignment::Right,
+                TabLeader::Underscore,
+            )]]],
+        ]];
+        let document_xml = String::from_utf8(
+            render_body(
+                &model,
+                Some(SourceWriteHints {
+                    gaps: &[None],
+                    layouts: &[None],
+                    separators: &[false],
+                    rtl: &[false],
+                    final_gap: None,
+                    final_layout: None,
+                    final_separator: false,
+                    final_rtl: false,
+                    running_surface_distances: &[RunningSurfaceDistanceHints::default()],
+                    paragraph_line_spacing: &[],
+                    paragraph_pagination: &[],
+                    paragraph_tab_stops: &[],
+                    table_row_pagination: &[],
+                    table_cell_pagination: &[],
+                    table_cell_line_spacing: &[],
+                    table_cell_tab_stops: &table_cell_tab_stops,
+                }),
+            )
+            .document_xml,
+        )
+        .unwrap();
+
+        for (text, expected) in [
+            (
+                "owner",
+                r#"<w:tab w:val="left" w:pos="100" w:leader="dot"/>"#,
+            ),
+            (
+                "top",
+                r#"<w:tab w:val="center" w:pos="200" w:leader="hyphen"/>"#,
+            ),
+            (
+                "bottom",
+                r#"<w:tab w:val="right" w:pos="300" w:leader="underscore"/>"#,
+            ),
+        ] {
+            let paragraph = written_paragraph_with_text(&document_xml, text);
+            assert!(paragraph.contains(expected), "{paragraph}");
+        }
+        assert_eq!(document_xml.matches("<w:tabs>").count(), 3);
     }
 
     #[test]
@@ -4734,6 +5195,10 @@ mod tests {
             None,
         ]]]];
         let table_cell_line_spacing = [vec![vec![vec![Some(LineSpacingHint::Exact(5.0)), None]]]];
+        let table_cell_tab_stops = [vec![vec![vec![
+            vec![tab(36.0, TabAlignment::Decimal, TabLeader::Heavy)],
+            Vec::new(),
+        ]]]];
         let rendered = render_body(
             &model,
             Some(SourceWriteHints {
@@ -4748,14 +5213,24 @@ mod tests {
                 running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                 paragraph_line_spacing: &[],
                 paragraph_pagination: &[],
+                paragraph_tab_stops: &[],
                 table_row_pagination: &[],
                 table_cell_pagination: &table_cell_pagination,
                 table_cell_line_spacing: &table_cell_line_spacing,
+                table_cell_tab_stops: &table_cell_tab_stops,
             }),
         );
         let document_xml = String::from_utf8(rendered.document_xml).unwrap();
         assert_eq!(document_xml.matches(r#"w:lineRule="exact""#).count(), 1);
         assert_eq!(document_xml.matches("<w:keepNext").count(), 1);
+        assert_eq!(document_xml.matches("<w:tabs>").count(), 1);
+        let direct = written_paragraph_with_text(&document_xml, "direct");
+        assert!(
+            direct.contains(r#"<w:tab w:val="decimal" w:pos="720" w:leader="heavy"/>"#),
+            "{direct}"
+        );
+        let nested = written_paragraph_with_text(&document_xml, "nested");
+        assert!(!nested.contains("<w:tabs>"), "{nested}");
         assert_eq!(
             document_xml
                 .matches(r#"w:line="360" w:lineRule="auto""#)
@@ -4771,6 +5246,7 @@ mod tests {
             .expect("generated header table");
         assert!(!header_xml.contains(r#"w:lineRule="exact""#));
         assert!(!header_xml.contains("<w:keepNext"));
+        assert!(!header_xml.contains("<w:tabs>"));
         assert!(
             header_xml.contains(r#"w:line="360" w:lineRule="auto""#),
             "{header_xml}"

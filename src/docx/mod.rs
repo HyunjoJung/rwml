@@ -218,8 +218,7 @@ pub(crate) struct DocxState {
     pub running_table_cell_tab_stops: Vec<crate::render::RunningSurfaceTableCellTabStopHints>,
     /// Source-only header/footer edge distances by section.
     pub running_surface_distances: Vec<crate::model::RunningSurfaceDistanceHints>,
-    /// Renderer-only resolved explicit tab stops aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only resolved explicit tab stops aligned to body model blocks.
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
     /// Renderer-only manual column-break character offsets within body paragraphs.
     #[cfg(feature = "render")]
@@ -249,8 +248,7 @@ pub(crate) struct DocxState {
     /// Renderer-only recursive nested-table controls aligned to body model blocks.
     #[cfg(feature = "render")]
     pub table_nested_pagination: Vec<crate::model::TableCellNestedPaginationHints>,
-    /// Renderer-only resolved table-cell paragraph tab stops aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only resolved table-cell paragraph tab stops aligned to body model blocks.
     pub table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
     /// Renderer-only document default tab interval from `word/settings.xml`.
     #[cfg(feature = "render")]
@@ -472,17 +470,15 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let body_hints = ctx.take_layout_hints();
     let pagination_hints = body_hints.pagination;
     let line_spacing_hints = body_hints.line_spacing;
+    let tab_stops = body_hints.tab_stops;
     let table_row_pagination = body_hints.table_rows;
     let table_cell_pagination = body_hints.table_cells;
     let table_cell_line_spacing = body_hints.table_cell_line_spacing;
-    #[cfg(feature = "render")]
-    let tab_stops = body_hints.tab_stops;
+    let table_cell_tab_stops = body_hints.table_cell_tabs;
     #[cfg(feature = "render")]
     let column_break_offsets = body_hints.column_break_offsets;
     #[cfg(feature = "render")]
     let table_nested_pagination = body_hints.table_nested;
-    #[cfg(feature = "render")]
-    let table_cell_tab_stops = body_hints.table_cell_tabs;
     // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
     // (not appended into `model.blocks`); their parts are preserved verbatim on save.
     // They are re-joined for the read/text views below and in `Document::model()`.
@@ -734,7 +730,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         #[cfg(feature = "render")]
         running_table_cell_tab_stops,
         running_surface_distances,
-        #[cfg(feature = "render")]
         tab_stops,
         #[cfg(feature = "render")]
         column_break_offsets,
@@ -751,7 +746,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         table_cell_line_spacing,
         #[cfg(feature = "render")]
         table_nested_pagination,
-        #[cfg(feature = "render")]
         table_cell_tab_stops,
         #[cfg(feature = "render")]
         default_tab_stop_pt,

@@ -80,7 +80,6 @@ const COLUMN_BREAK_MARKER: char = '\u{000B}';
 pub(super) struct PaginationCapture {
     hints: Vec<PaginationHint>,
     line_spacing: Vec<Option<LineSpacingHint>>,
-    #[cfg(any(test, feature = "render"))]
     tab_stops: Vec<Vec<TabStop>>,
     #[cfg(any(test, feature = "render"))]
     column_break_offsets: Vec<Vec<usize>>,
@@ -89,7 +88,6 @@ pub(super) struct PaginationCapture {
     table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
     #[cfg(any(test, feature = "render"))]
     table_nested_pagination: Vec<TableCellNestedPaginationHints>,
-    #[cfg(any(test, feature = "render"))]
     table_cell_tab_stops: Vec<TableCellTabStopHints>,
     suspended: usize,
 }
@@ -115,7 +113,6 @@ pub(super) struct BodySectionColumnHints {
 pub(super) struct BodyLayoutHints {
     pub(super) pagination: Vec<PaginationHint>,
     pub(super) line_spacing: Vec<Option<LineSpacingHint>>,
-    #[cfg(feature = "render")]
     pub(super) tab_stops: Vec<Vec<TabStop>>,
     #[cfg(feature = "render")]
     pub(super) column_break_offsets: Vec<Vec<usize>>,
@@ -124,7 +121,6 @@ pub(super) struct BodyLayoutHints {
     pub(super) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
     #[cfg(feature = "render")]
     pub(super) table_nested: Vec<TableCellNestedPaginationHints>,
-    #[cfg(feature = "render")]
     pub(super) table_cell_tabs: Vec<TableCellTabStopHints>,
 }
 
@@ -226,7 +222,6 @@ impl Ctx<'_> {
             .map(|capture| BodyLayoutHints {
                 pagination: capture.hints,
                 line_spacing: capture.line_spacing,
-                #[cfg(feature = "render")]
                 tab_stops: capture.tab_stops,
                 #[cfg(feature = "render")]
                 column_break_offsets: capture.column_break_offsets,
@@ -235,7 +230,6 @@ impl Ctx<'_> {
                 table_cell_line_spacing: capture.table_cell_line_spacing,
                 #[cfg(feature = "render")]
                 table_nested: capture.table_nested_pagination,
-                #[cfg(feature = "render")]
                 table_cell_tabs: capture.table_cell_tab_stops,
             })
             .unwrap_or_default()
@@ -282,14 +276,14 @@ impl Ctx<'_> {
                 capture.table_row_pagination.push(Vec::new());
                 capture.table_cell_pagination.push(Vec::new());
                 capture.table_cell_line_spacing.push(Vec::new());
+                capture.tab_stops.push(_tab_stops.to_vec());
+                capture.table_cell_tab_stops.push(Vec::new());
                 #[cfg(any(test, feature = "render"))]
                 {
-                    capture.tab_stops.push(_tab_stops.to_vec());
                     capture
                         .column_break_offsets
                         .push(_column_break_offsets.to_vec());
                     capture.table_nested_pagination.push(Vec::new());
-                    capture.table_cell_tab_stops.push(Vec::new());
                 }
             }
         }
@@ -313,12 +307,12 @@ impl Ctx<'_> {
                 capture
                     .table_cell_line_spacing
                     .push(table.cell_line_spacing.clone());
+                capture.tab_stops.push(Vec::new());
+                capture.table_cell_tab_stops.push(table.cell_tabs.clone());
                 #[cfg(any(test, feature = "render"))]
                 {
-                    capture.tab_stops.push(Vec::new());
                     capture.column_break_offsets.push(Vec::new());
                     capture.table_nested_pagination.push(table.nested.clone());
-                    capture.table_cell_tab_stops.push(table.cell_tabs.clone());
                 }
             }
         }

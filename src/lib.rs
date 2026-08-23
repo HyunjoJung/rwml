@@ -1022,10 +1022,12 @@ impl Document {
     /// exact/minimum line rules and effective keep/widow pagination controls for
     /// aligned top-level body paragraphs and direct paragraph blocks in surviving
     /// cells of aligned top-level tables, plus effective no-split state for
-    /// aligned top-level table rows. Nested-table descendants, notes, running
-    /// surfaces, source tab stops, and manual column breaks remain outside this
-    /// fresh-conversion bridge; standalone [`write_docx`] remains model-only for
-    /// all of these private hints.
+    /// aligned top-level table rows. That direct body subset also carries
+    /// reader-resolved explicit paragraph tab stops. Nested-table descendants,
+    /// notes, running surfaces, settings-defined default-tab intervals, and
+    /// manual column breaks remain outside this fresh-conversion bridge;
+    /// standalone [`write_docx`] remains model-only for all of these private
+    /// hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
@@ -1046,9 +1048,11 @@ impl Document {
                         running_surface_distances: &assembled.running_surface_distances,
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
+                        paragraph_tab_stops: &[],
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
+                        table_cell_tab_stops: &[],
                     },
                 )
             }
@@ -1069,9 +1073,11 @@ impl Document {
                         running_surface_distances: &state.running_surface_distances,
                         paragraph_line_spacing: &state.line_spacing_hints,
                         paragraph_pagination: &state.pagination_hints,
+                        paragraph_tab_stops: &state.tab_stops,
                         table_row_pagination: &state.table_row_pagination,
                         table_cell_pagination: &state.table_cell_pagination,
                         table_cell_line_spacing: &state.table_cell_line_spacing,
+                        table_cell_tab_stops: &state.table_cell_tab_stops,
                     },
                 )
             }
@@ -9326,6 +9332,34 @@ mod tests {
         zw.finish().unwrap().into_inner()
     }
 
+    #[cfg(feature = "docx")]
+    fn minimal_docx_with_styles(document_xml: &str, styles_xml: &str) -> Vec<u8> {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+        let mut zw = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let opt = SimpleFileOptions::default();
+        for (name, body) in [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#,
+            ),
+            ("word/document.xml", document_xml),
+            ("word/styles.xml", styles_xml),
+        ] {
+            zw.start_file(name, opt).unwrap();
+            zw.write_all(body.as_bytes()).unwrap();
+        }
+        zw.finish().unwrap().into_inner()
+    }
+
     fn prm0(isprm: u8, value: u8) -> u16 {
         (u16::from(value) << 8) | (u16::from(isprm) << 1)
     }
@@ -14073,7 +14107,7 @@ mod tests {
     fn opened_docx_body_layout_hints_roundtrip_through_fresh_conversion() {
         let source = minimal_docx(
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
-                <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs><w:spacing w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>top</w:t></w:r></w:p>
+                <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:spacing w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>top</w:t></w:r></w:p>
                 <w:tbl><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>
                     <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:spacing w:line="400" w:lineRule="atLeast"/></w:pPr><w:r><w:t>cell</w:t></w:r></w:p>
                     <w:tbl><w:tr><w:tc><w:p><w:pPr><w:keepNext/><w:spacing w:line="600" w:lineRule="exact"/></w:pPr><w:r><w:t>nested</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
@@ -14148,6 +14182,122 @@ mod tests {
         assert_eq!(
             state.table_cell_line_spacing[table_index][0][0][0],
             Some(crate::model::LineSpacingHint::AtLeast(20.0))
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_direct_body_tab_stops_roundtrip_through_fresh_conversion() {
+        let source = minimal_docx_with_styles(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:pStyle w:val="Normal"/><w:keepNext/><w:shd w:val="clear" w:fill="DDEEFF"/><w:tabs>
+                    <w:tab w:val="clear" w:pos="720"/>
+                    <w:tab w:val="right" w:pos="2160" w:leader="underscore"/>
+                    <w:tab w:val="decimal" w:pos="2880" w:leader="heavy"/>
+                    <w:tab w:val="bar" w:pos="3600" w:leader="middleDot"/>
+                    <w:tab w:val="left" w:pos="4320" w:leader="dot"/>
+                </w:tabs><w:bidi/><w:spacing w:line="240" w:lineRule="auto"/><w:ind w:left="360"/><w:jc w:val="right"/></w:pPr><w:r><w:t>top-tabs</w:t><w:tab/><w:t>tail</w:t></w:r></w:p>
+                <w:tbl><w:tr><w:tc>
+                    <w:p><w:pPr><w:tabs><w:tab w:val="clear" w:pos="720"/><w:tab w:val="center" w:pos="900"/><w:tab w:val="clear" w:pos="1440"/></w:tabs></w:pPr><w:r><w:t>cell-tabs</w:t><w:tab/><w:t>tail</w:t></w:r></w:p>
+                    <w:tbl><w:tr><w:tc><w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="1800" w:leader="dot"/></w:tabs></w:pPr><w:r><w:t>nested-tabs</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                </w:tc></w:tr></w:tbl>
+                <w:sectPr/>
+            </w:body></w:document>"#,
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:tabs>
+                    <w:tab w:val="left" w:pos="720" w:leader="dot"/>
+                    <w:tab w:val="center" w:pos="1440" w:leader="hyphen"/>
+                </w:tabs></w:pPr></w:style>
+            </w:styles>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let top = docx_paragraph_with_text(&document_xml, "top-tabs");
+
+        let top_tabs = concat!(
+            r#"<w:tabs><w:tab w:val="center" w:pos="1440" w:leader="hyphen"/>"#,
+            r#"<w:tab w:val="right" w:pos="2160" w:leader="underscore"/>"#,
+            r#"<w:tab w:val="decimal" w:pos="2880" w:leader="heavy"/>"#,
+            r#"<w:tab w:val="bar" w:pos="3600" w:leader="middleDot"/>"#,
+            r#"<w:tab w:val="left" w:pos="4320" w:leader="dot"/></w:tabs>"#,
+        );
+        assert!(top.contains(top_tabs), "{top}");
+        let positions = [
+            "<w:pStyle",
+            "<w:keepNext",
+            "<w:shd",
+            "<w:tabs>",
+            "<w:bidi",
+            "<w:spacing",
+            "<w:ind",
+            "<w:jc",
+        ]
+        .map(|marker| {
+            top.find(marker)
+                .unwrap_or_else(|| panic!("missing {marker}: {top}"))
+        });
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]), "{top}");
+
+        let cell = docx_paragraph_with_text(&document_xml, "cell-tabs");
+        assert!(
+            cell.contains(r#"<w:tabs><w:tab w:val="center" w:pos="900"/></w:tabs>"#),
+            "{cell}"
+        );
+        let nested = docx_paragraph_with_text(&document_xml, "nested-tabs");
+        assert!(!nested.contains("<w:tabs>"), "{nested}");
+        assert_eq!(converted, opened.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&opened.model()), "word/document.xml");
+        assert!(!model_only_xml.contains("<w:tabs>"), "{model_only_xml}");
+
+        let reopened = Document::open(&converted).unwrap();
+        let Backend::Docx(state) = reopened.backend else {
+            panic!("converted document must use the DOCX backend");
+        };
+        assert_eq!(
+            state.tab_stops[0],
+            vec![
+                crate::model::TabStop {
+                    position_pt: 72.0,
+                    alignment: crate::model::TabAlignment::Center,
+                    leader: crate::model::TabLeader::Hyphen,
+                },
+                crate::model::TabStop {
+                    position_pt: 108.0,
+                    alignment: crate::model::TabAlignment::Right,
+                    leader: crate::model::TabLeader::Underscore,
+                },
+                crate::model::TabStop {
+                    position_pt: 144.0,
+                    alignment: crate::model::TabAlignment::Decimal,
+                    leader: crate::model::TabLeader::Heavy,
+                },
+                crate::model::TabStop {
+                    position_pt: 180.0,
+                    alignment: crate::model::TabAlignment::Bar,
+                    leader: crate::model::TabLeader::MiddleDot,
+                },
+                crate::model::TabStop {
+                    position_pt: 216.0,
+                    alignment: crate::model::TabAlignment::Left,
+                    leader: crate::model::TabLeader::Dot,
+                },
+            ]
+        );
+        let table_index = state
+            .model
+            .blocks
+            .iter()
+            .position(|block| matches!(block, Block::Table(_)))
+            .expect("converted top-level table");
+        assert_eq!(
+            state.table_cell_tab_stops[table_index][0][0][0],
+            vec![crate::model::TabStop {
+                position_pt: 45.0,
+                alignment: crate::model::TabAlignment::Center,
+                leader: crate::model::TabLeader::None,
+            }]
         );
     }
 

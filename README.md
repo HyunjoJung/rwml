@@ -468,8 +468,9 @@ DOCX document serializes the effective keep controls and widow-off state for
 aligned top-level body paragraphs and aligned direct paragraph blocks in
 surviving cells of top-level tables, plus effective no-split state for aligned
 top-level table rows. The same direct body subset carries resolved exact/minimum
-line rules into fresh DOCX conversion. Nested-table descendants, notes, running
-surfaces, source tab stops, and manual column breaks remain source-render-only.
+line rules and explicit tab stops into fresh DOCX conversion. Nested-table
+descendants, notes, running surfaces, settings-defined default-tab intervals,
+and manual column breaks remain outside fresh conversion.
 Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
@@ -941,10 +942,11 @@ public model. Legacy- and DOCX-backed conversion also retain validated
 exact/minimum line rules plus effective `keepNext`, `keepLines`, and widow-off
 state for aligned top-level body paragraphs and aligned direct paragraph blocks
 in surviving cells of top-level tables, plus effective no-split state for
-aligned top-level table rows. Standalone model writing remains proportional-only
-and consumes no private pagination hints. Nested-table descendants, notes,
-running surfaces, source tab stops, and manual column breaks remain outside this
-fresh-conversion bridge.
+aligned top-level table rows. The same direct body subset retains resolved
+explicit paragraph tab stops. Standalone model writing remains
+proportional-only and consumes no private layout hints. Nested-table
+descendants, notes, running surfaces, settings-defined default-tab intervals,
+and manual column breaks remain outside this fresh-conversion bridge.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the

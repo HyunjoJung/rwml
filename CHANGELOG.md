@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Preserves reader-resolved explicit DOCX paragraph tab stops when
+  `Document::to_docx()` freshly converts aligned top-level body paragraphs and
+  direct paragraph blocks in surviving cells of top-level tables. The bounded
+  source-only writer bridge emits validated left, center, right, decimal, and
+  bar stops with supported dot, hyphen, underscore, heavy, and middle-dot
+  leaders after the reader has applied style/direct/clear precedence. Strict
+  block, row, cell, and cell-block alignment, rounded-position ordering, the
+  256-stop and 31,680-twip limits, vertical-merge ownership, deterministic
+  bytes, and native reopen are covered. Standalone model writing remains
+  unchanged; nested-table descendants, notes, running surfaces,
+  settings-defined default-tab intervals, and manual column breaks remain
+  outside this fresh-conversion bridge.
 - Extends source-aware body layout conversion to DOCX-backed
   `Document::to_docx()`. Default builds now retain the reader-resolved
   exact/minimum line rules and effective `keepNext`, `keepLines`, and widow-off
@@ -16,7 +28,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   top-level table rows. The existing validated writer bridge preserves those
   five source-only families deterministically through native reopen while
   standalone model writing remains unchanged. Nested-table descendants, notes,
-  running surfaces, source tab stops, manual column breaks, package-preserving
+  running surfaces, manual column breaks, package-preserving
   `save()`, and the public model remain outside this bounded bridge.
 - Preserves resolved legacy-DOC `keepNext`, `keepLines`, and widow-off semantics
   when `Document::to_docx()` freshly converts aligned direct paragraph blocks in
