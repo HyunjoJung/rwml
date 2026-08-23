@@ -583,8 +583,7 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         table_cell_line_spacing: _table_cell_line_spacing,
         #[cfg(feature = "render")]
             running_line_spacing_hints: _running_line_spacing_hints,
-        #[cfg(feature = "render")]
-            running_surface_distances: _running_surface_distances,
+        running_surface_distances: _running_surface_distances,
     } = legacy_build_output_from_doc_state(state);
     model
 }
@@ -1017,18 +1016,19 @@ impl Document {
     /// tables with colspan/rowspan, images, hyperlinks), so a legacy `.doc` can be
     /// converted to a clean, Office-openable `.docx` through the shared model.
     /// Opened legacy and DOCX documents also carry validated source-only section
-    /// column gaps, complete unequal geometry, separator flags, and right-to-left
-    /// population into the generated package; standalone [`write_docx`] remains
-    /// model-only for those private hints.
+    /// column gaps, complete unequal geometry, separator flags, right-to-left
+    /// population, and running header/footer distances into the generated
+    /// package; standalone [`write_docx`] remains model-only for those private
+    /// hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
         match &self.backend {
             Backend::Doc(state) => {
                 let assembled = legacy_build_output_from_doc_state(state);
-                write::to_docx_with_section_columns(
+                write::to_docx_with_section_hints(
                     &assembled.model,
-                    write::SourceSectionColumnWriteHints {
+                    write::SourceSectionWriteHints {
                         gaps: &assembled.section_column_gap_pt,
                         layouts: &assembled.section_column_layouts,
                         separators: &assembled.section_column_separators,
@@ -1037,15 +1037,16 @@ impl Document {
                         final_layout: assembled.final_section_column_layout.as_ref(),
                         final_separator: assembled.final_section_column_separator,
                         final_rtl: assembled.final_section_column_rtl,
+                        running_surface_distances: &assembled.running_surface_distances,
                     },
                 )
             }
             Backend::Docx(state) => {
                 let mut model = state.model.clone();
                 model.blocks.extend(state.notes.iter().cloned());
-                write::to_docx_with_section_columns(
+                write::to_docx_with_section_hints(
                     &model,
-                    write::SourceSectionColumnWriteHints {
+                    write::SourceSectionWriteHints {
                         gaps: &state.section_column_gap_pt,
                         layouts: &state.section_column_layouts,
                         separators: &state.section_column_separators,
@@ -1054,6 +1055,7 @@ impl Document {
                         final_layout: state.final_section_column_layout.as_ref(),
                         final_separator: state.final_section_column_separator,
                         final_rtl: state.final_section_column_rtl,
+                        running_surface_distances: &state.running_surface_distances,
                     },
                 )
             }
@@ -6321,6 +6323,20 @@ mod tests {
         out
     }
 
+    #[cfg(feature = "docx")]
+    fn docx_page_margin_tags(document_xml: &str) -> Vec<&str> {
+        document_xml
+            .match_indices("<w:pgMar ")
+            .map(|(start, _)| {
+                let end = document_xml[start..]
+                    .find("/>")
+                    .map(|offset| start + offset + 2)
+                    .expect("closed page-margin element");
+                &document_xml[start..end]
+            })
+            .collect()
+    }
+
     fn push_lpx_char_buffer9(out: &mut Vec<u8>, text: &str) {
         let units: Vec<u16> = text.encode_utf16().collect();
         assert!(units.len() <= 9);
@@ -7435,12 +7451,12 @@ mod tests {
         assert_eq!(
             hints,
             vec![
-                render::RunningSurfaceDistanceHints {
+                crate::model::RunningSurfaceDistanceHints {
                     header_pt: Some(0.0),
                     footer_pt: Some(1_584.0),
                 },
-                render::RunningSurfaceDistanceHints::default(),
-                render::RunningSurfaceDistanceHints {
+                crate::model::RunningSurfaceDistanceHints::default(),
+                crate::model::RunningSurfaceDistanceHints {
                     header_pt: Some(100.0),
                     footer_pt: Some(150.0),
                 },
@@ -12077,6 +12093,139 @@ mod tests {
         assert_eq!(raw_model_layout.block_pages, vec![Some(1), Some(1)]);
         assert_eq!(opened_document_layout.block_pages, vec![Some(1), Some(2)]);
         assert_eq!(opened_document_layout.pages, 2);
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_to_docx_preserves_private_running_surface_distances() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+                <w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:p><w:pPr><w:sectPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:pgMar w:header="0" w:footer="400"/></mc:Choice>
+                    <mc:Fallback><w:pgMar w:header="100" w:footer="200"/></mc:Fallback>
+                </mc:AlternateContent></w:sectPr></w:pPr>
+                    <w:r><w:t>ending section</w:t></w:r>
+                </w:p>
+                <w:p><w:pPr><w:sectPr><w:pgMar w:header="1000" w:footer="4294967295"/></w:sectPr></w:pPr>
+                    <w:r><w:t>bounded section</w:t></w:r>
+                </w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:pgMar w:header="bad" w:footer="0"/></mc:Choice>
+                    <mc:Fallback><w:pgMar w:header="300" w:footer="500"/></mc:Fallback>
+                </mc:AlternateContent></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        let converted = document.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let page_margins = docx_page_margin_tags(&document_xml);
+
+        assert_eq!(page_margins.len(), 3, "{document_xml}");
+        assert!(page_margins[0].contains(r#"w:header="0""#));
+        assert!(page_margins[0].contains(r#"w:footer="400""#));
+        assert!(page_margins[1].contains(r#"w:header="1000""#));
+        assert!(page_margins[1].contains(r#"w:footer="708""#));
+        assert!(page_margins[2].contains(r#"w:header="708""#));
+        assert!(page_margins[2].contains(r#"w:footer="0""#));
+        assert!(!document_xml.contains(r#"w:header="100""#));
+        assert!(!document_xml.contains(r#"w:footer="200""#));
+        assert!(!document_xml.contains(r#"w:header="300""#));
+        assert!(!document_xml.contains(r#"w:footer="500""#));
+        assert_eq!(converted, document.to_docx());
+
+        let reopened = Document::open(&converted).unwrap();
+        let Backend::Docx(state) = &reopened.backend else {
+            panic!("converted document must use the DOCX backend");
+        };
+        assert_eq!(
+            state.running_surface_distances,
+            [
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(0.0),
+                    footer_pt: Some(20.0),
+                },
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(50.0),
+                    footer_pt: Some(35.4),
+                },
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(35.4),
+                    footer_pt: Some(0.0),
+                },
+            ]
+        );
+
+        let model_only_xml = docx_part(&write_docx(&document.model()), "word/document.xml");
+        assert_eq!(
+            docx_page_margin_tags(&model_only_xml)
+                .iter()
+                .filter(|tag| tag.contains(r#"w:header="708" w:footer="708""#))
+                .count(),
+            3
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_to_docx_preserves_private_running_surface_distances() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = Vec::new();
+        first.extend_from_slice(&0xB017u16.to_le_bytes());
+        first.extend_from_slice(&0u16.to_le_bytes());
+        first.extend_from_slice(&0xB018u16.to_le_bytes());
+        first.extend_from_slice(&400u16.to_le_bytes());
+        let malformed = [0x17];
+        let mut final_section = Vec::new();
+        final_section.extend_from_slice(&0xB017u16.to_le_bytes());
+        final_section.extend_from_slice(&900u16.to_le_bytes());
+        final_section.extend_from_slice(&0xB018u16.to_le_bytes());
+        final_section.extend_from_slice(&0u16.to_le_bytes());
+        let sepx_grpprls = [
+            first.as_slice(),
+            malformed.as_slice(),
+            final_section.as_slice(),
+        ];
+        let bytes =
+            legacy_doc_with_section_page_grpprls("AAAAABBBBBCCCCC", &section_cps, &sepx_grpprls);
+        let document = Document::open(&bytes).unwrap();
+
+        let converted = document.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let page_margins = docx_page_margin_tags(&document_xml);
+        assert_eq!(page_margins.len(), 3, "{document_xml}");
+        assert!(page_margins[0].contains(r#"w:header="0""#));
+        assert!(page_margins[0].contains(r#"w:footer="400""#));
+        assert!(page_margins[1].contains(r#"w:header="708""#));
+        assert!(page_margins[1].contains(r#"w:footer="708""#));
+        assert!(page_margins[2].contains(r#"w:header="900""#));
+        assert!(page_margins[2].contains(r#"w:footer="0""#));
+        assert_eq!(converted, document.to_docx());
+
+        let reopened = Document::open(&converted).unwrap();
+        let Backend::Docx(state) = &reopened.backend else {
+            panic!("converted document must use the DOCX backend");
+        };
+        assert_eq!(
+            state.running_surface_distances,
+            [
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(0.0),
+                    footer_pt: Some(20.0),
+                },
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(35.4),
+                    footer_pt: Some(35.4),
+                },
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(45.0),
+                    footer_pt: Some(0.0),
+                },
+            ]
+        );
     }
 
     #[cfg(feature = "docx")]

@@ -19,8 +19,9 @@ use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
     ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, ParaProps,
-    Paragraph, ParagraphStyle, SectionBreakKind, SectionColumnLayoutHints, SectionSetup, Spacing,
-    Table, TableBorderSide, TableBorderStyle, VertAlign, WebExtensionTaskPane,
+    Paragraph, ParagraphStyle, RunningSurfaceDistanceHints, SectionBreakKind,
+    SectionColumnLayoutHints, SectionSetup, Spacing, Table, TableBorderSide, TableBorderStyle,
+    VertAlign, WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -68,8 +69,14 @@ struct SectionColumnWriteHint<'a> {
     rtl: bool,
 }
 
+#[derive(Clone, Copy, Default)]
+struct SectionWriteHint<'a> {
+    columns: SectionColumnWriteHint<'a>,
+    running_surface_distances: RunningSurfaceDistanceHints,
+}
+
 #[derive(Clone, Copy)]
-pub(crate) struct SourceSectionColumnWriteHints<'a> {
+pub(crate) struct SourceSectionWriteHints<'a> {
     pub(crate) gaps: &'a [Option<f32>],
     pub(crate) layouts: &'a [Option<SectionColumnLayoutHints>],
     pub(crate) separators: &'a [bool],
@@ -78,24 +85,50 @@ pub(crate) struct SourceSectionColumnWriteHints<'a> {
     pub(crate) final_layout: Option<&'a SectionColumnLayoutHints>,
     pub(crate) final_separator: bool,
     pub(crate) final_rtl: bool,
+    pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
 }
 
-impl<'a> SourceSectionColumnWriteHints<'a> {
-    fn for_block(&self, index: usize) -> SectionColumnWriteHint<'a> {
-        SectionColumnWriteHint {
-            gap_pt: self.gaps.get(index).copied().flatten(),
-            layout: self.layouts.get(index).and_then(Option::as_ref),
-            separator: self.separators.get(index).copied().unwrap_or(false),
-            rtl: self.rtl.get(index).copied().unwrap_or(false),
+impl<'a> SourceSectionWriteHints<'a> {
+    fn aligned_distances(self, section_count: usize) -> Option<&'a [RunningSurfaceDistanceHints]> {
+        (self.running_surface_distances.len() == section_count)
+            .then_some(self.running_surface_distances)
+    }
+
+    fn for_block(
+        &self,
+        block_index: usize,
+        section_index: usize,
+        distances: Option<&[RunningSurfaceDistanceHints]>,
+    ) -> SectionWriteHint<'a> {
+        SectionWriteHint {
+            columns: SectionColumnWriteHint {
+                gap_pt: self.gaps.get(block_index).copied().flatten(),
+                layout: self.layouts.get(block_index).and_then(Option::as_ref),
+                separator: self.separators.get(block_index).copied().unwrap_or(false),
+                rtl: self.rtl.get(block_index).copied().unwrap_or(false),
+            },
+            running_surface_distances: distances
+                .and_then(|values| values.get(section_index))
+                .copied()
+                .unwrap_or_default(),
         }
     }
 
-    fn final_section(self) -> SectionColumnWriteHint<'a> {
-        SectionColumnWriteHint {
-            gap_pt: self.final_gap,
-            layout: self.final_layout,
-            separator: self.final_separator,
-            rtl: self.final_rtl,
+    fn final_section(
+        self,
+        distances: Option<&[RunningSurfaceDistanceHints]>,
+    ) -> SectionWriteHint<'a> {
+        SectionWriteHint {
+            columns: SectionColumnWriteHint {
+                gap_pt: self.final_gap,
+                layout: self.final_layout,
+                separator: self.final_separator,
+                rtl: self.final_rtl,
+            },
+            running_surface_distances: distances
+                .and_then(|values| values.last())
+                .copied()
+                .unwrap_or_default(),
         }
     }
 }
@@ -107,6 +140,12 @@ fn source_column_twips(points: f32, allow_zero: bool) -> Option<i64> {
     let twips = pt_twips(points);
     let minimum = if allow_zero { 0 } else { 1 };
     (minimum..=31_680).contains(&twips).then_some(twips)
+}
+
+fn source_running_surface_twips(points: Option<f32>) -> i64 {
+    points
+        .and_then(|value| source_column_twips(value, true))
+        .unwrap_or(708)
 }
 
 fn section_columns_xml(column_count: Option<u16>, hint: SectionColumnWriteHint<'_>) -> String {
@@ -761,7 +800,7 @@ impl Ctx {
             Block::Chart(chart) => self.write_chart(out, chart),
             Block::PageBreak => out.push_str(r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#),
             Block::SectionBreak(setup) => {
-                self.write_section_break(out, setup, SectionColumnWriteHint::default())
+                self.write_section_break(out, setup, SectionWriteHint::default())
             }
         }
     }
@@ -770,10 +809,10 @@ impl Ctx {
         &mut self,
         out: &mut String,
         block: &Block,
-        section_columns: SectionColumnWriteHint<'_>,
+        section_hints: SectionWriteHint<'_>,
     ) {
         if let Block::SectionBreak(setup) = block {
-            self.write_section_break(out, setup, section_columns);
+            self.write_section_break(out, setup, section_hints);
         } else {
             self.write_block(out, block);
         }
@@ -813,15 +852,10 @@ impl Ctx {
         &mut self,
         out: &mut String,
         setup: &SectionSetup,
-        section_columns: SectionColumnWriteHint<'_>,
+        section_hints: SectionWriteHint<'_>,
     ) {
         out.push_str("<w:p><w:pPr>");
-        self.write_sect_pr(
-            out,
-            setup,
-            Some(SectionBreakKind::NextPage),
-            section_columns,
-        );
+        self.write_sect_pr(out, setup, Some(SectionBreakKind::NextPage), section_hints);
         out.push_str("</w:pPr></w:p>");
     }
 
@@ -874,7 +908,7 @@ impl Ctx {
         out: &mut String,
         setup: &SectionSetup,
         fallback_break: Option<SectionBreakKind>,
-        section_columns: SectionColumnWriteHint<'_>,
+        section_hints: SectionWriteHint<'_>,
     ) {
         let mut refs = String::new();
         self.write_header_ref(&mut refs, "default", &setup.header);
@@ -903,8 +937,16 @@ impl Ctx {
             pt_twips(page.bottom()),
             pt_twips(page.left()),
         );
-        let columns = section_columns_xml(setup.columns, section_columns);
-        let bidi = if section_columns.rtl { "<w:bidi/>" } else { "" };
+        let columns = section_columns_xml(setup.columns, section_hints.columns);
+        let bidi = if section_hints.columns.rtl {
+            "<w:bidi/>"
+        } else {
+            ""
+        };
+        let header_distance =
+            source_running_surface_twips(section_hints.running_surface_distances.header_pt);
+        let footer_distance =
+            source_running_surface_twips(section_hints.running_surface_distances.footer_pt);
         let text_direction = setup
             .text_direction
             .map(|direction| format!(r#"<w:textDirection w:val="{}"/>"#, direction.wml_value()))
@@ -922,7 +964,7 @@ impl Ctx {
             ""
         };
         out.push_str(&format!(
-            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{text_direction}{bidi}{page_number_type}{columns}{doc_grid}</w:sectPr>"#
+            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="{header_distance}" w:footer="{footer_distance}" w:gutter="0"/>{text_direction}{bidi}{page_number_type}{columns}{doc_grid}</w:sectPr>"#
         ));
     }
 
@@ -3336,24 +3378,24 @@ pub(crate) fn to_docx(model: &crate::DocModel) -> Vec<u8> {
     try_to_docx(model).unwrap_or_default()
 }
 
-pub(crate) fn to_docx_with_section_columns(
+pub(crate) fn to_docx_with_section_hints(
     model: &crate::DocModel,
-    section_columns: SourceSectionColumnWriteHints<'_>,
+    section_hints: SourceSectionWriteHints<'_>,
 ) -> Vec<u8> {
-    try_to_docx_with_section_columns(model, Some(section_columns)).unwrap_or_default()
+    try_to_docx_with_section_hints(model, Some(section_hints)).unwrap_or_default()
 }
 
 /// Fallible generator — used by the public `try_write_docx` so a serialization
 /// failure surfaces instead of becoming silent empty bytes.
 pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
-    try_to_docx_with_section_columns(model, None)
+    try_to_docx_with_section_hints(model, None)
 }
 
-fn try_to_docx_with_section_columns(
+fn try_to_docx_with_section_hints(
     model: &crate::DocModel,
-    section_columns: Option<SourceSectionColumnWriteHints<'_>>,
+    section_hints: Option<SourceSectionWriteHints<'_>>,
 ) -> crate::Result<Vec<u8>> {
-    let br = render_body(model, section_columns);
+    let br = render_body(model, section_hints);
 
     let mut pkg = Package::new();
     pkg.add_part("word/document.xml", Some(CT_DOCUMENT), br.document_xml);
@@ -3556,18 +3598,30 @@ pub(crate) struct BodyRender {
 /// `doc_rels` already include the `numbering`/`styles` type-links.
 fn render_body(
     model: &crate::DocModel,
-    section_columns: Option<SourceSectionColumnWriteHints<'_>>,
+    section_hints: Option<SourceSectionWriteHints<'_>>,
 ) -> BodyRender {
     let mut ctx = Ctx::new();
     let mut body = String::new();
+    let section_count = model
+        .blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count()
+        + 1;
+    let running_surface_distances =
+        section_hints.and_then(|hints| hints.aligned_distances(section_count));
+    let mut section_index = 0;
     for (index, block) in model.blocks.iter().enumerate() {
         ctx.write_top_level_block(
             &mut body,
             block,
-            section_columns
-                .map(|hints| hints.for_block(index))
+            section_hints
+                .map(|hints| hints.for_block(index, section_index, running_surface_distances))
                 .unwrap_or_default(),
         );
+        if matches!(block, Block::SectionBreak(_)) {
+            section_index += 1;
+        }
     }
 
     // word/document.xml
@@ -3584,8 +3638,8 @@ fn render_body(
         &mut doc,
         &SectionSetup::from(&model.setup),
         None,
-        section_columns
-            .map(SourceSectionColumnWriteHints::final_section)
+        section_hints
+            .map(|hints| hints.final_section(running_surface_distances))
             .unwrap_or_default(),
     );
     let comments_xml = if ctx.comments.is_empty() {
@@ -3702,10 +3756,13 @@ fn render_body(
 
 #[cfg(test)]
 mod tests {
-    use super::{section_columns_xml, SectionColumnWriteHint};
+    use super::{
+        render_body, section_columns_xml, SectionColumnWriteHint, SourceSectionWriteHints,
+    };
     use crate::model::{
         Align, Block, Cell, CharProps, DocModel, FieldRole, Image, ListInfo, ParaProps, Paragraph,
-        Row, Run, SectionColumnHint, SectionColumnLayoutHints, Table,
+        Row, Run, RunningSurfaceDistanceHints, SectionColumnHint, SectionColumnLayoutHints,
+        SectionSetup, Table,
     };
     use crate::Document;
 
@@ -3770,6 +3827,45 @@ mod tests {
                 format!(r#"<w:cols w:num="{count}" w:space="360" w:sep="1"/>"#)
             );
         }
+    }
+
+    #[test]
+    fn source_section_distance_writer_rejects_misaligned_vector() {
+        let model = DocModel {
+            blocks: vec![Block::SectionBreak(SectionSetup::default())],
+            ..DocModel::default()
+        };
+        let gaps = [None];
+        let layouts = [None];
+        let separators = [false];
+        let rtl = [false];
+        let distances = [RunningSurfaceDistanceHints {
+            header_pt: Some(0.0),
+            footer_pt: Some(20.0),
+        }];
+        let rendered = render_body(
+            &model,
+            Some(SourceSectionWriteHints {
+                gaps: &gaps,
+                layouts: &layouts,
+                separators: &separators,
+                rtl: &rtl,
+                final_gap: None,
+                final_layout: None,
+                final_separator: false,
+                final_rtl: false,
+                running_surface_distances: &distances,
+            }),
+        );
+        let document_xml = String::from_utf8(rendered.document_xml).unwrap();
+
+        assert_eq!(
+            document_xml
+                .matches(r#"w:header="708" w:footer="708""#)
+                .count(),
+            2,
+            "{document_xml}"
+        );
     }
 
     /// Build a representative model, write it to `.docx`, read it back, and assert

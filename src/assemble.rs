@@ -18,16 +18,17 @@ use crate::list::Numberer;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocGrid, DocGridType, DocMeta, DocModel,
     DocSetup, FieldRole, Image, Indent, LineSpacingHint, ListInfo, PageNumberFormat, PageSetup,
-    PaginationHint, ParaProps, Paragraph, SectionBreakKind, SectionColumnHint,
-    SectionColumnLayoutHints, SectionSetup, SourceRegion, SourceRegionKind, Spacing, Stats,
-    TableCellLineSpacingHints, TableCellPaginationHints, TableRowPaginationHint, TextDirection,
+    PaginationHint, ParaProps, Paragraph, RunningSurfaceDistanceHints, SectionBreakKind,
+    SectionColumnHint, SectionColumnLayoutHints, SectionSetup, SourceRegion, SourceRegionKind,
+    Spacing, Stats, TableCellLineSpacingHints, TableCellPaginationHints, TableRowPaginationHint,
+    TextDirection,
 };
 use crate::papx::{
     PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
     ParagraphSpacingOverrides,
 };
 #[cfg(feature = "render")]
-use crate::render::{RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints};
+use crate::render::RunningSurfaceLineSpacingHints;
 use crate::stsh::StyleSheet;
 use crate::table::{self, CellBuild, RowBuild};
 use crate::util::{u16le, u32le};
@@ -92,7 +93,6 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
     #[cfg(feature = "render")]
     pub(crate) running_line_spacing_hints: Vec<RunningSurfaceLineSpacingHints>,
-    #[cfg(feature = "render")]
     pub(crate) running_surface_distances: Vec<RunningSurfaceDistanceHints>,
 }
 
@@ -155,7 +155,6 @@ pub(crate) fn build_model_with_render_hints(
         legacy_section_column_separator_hints(&blocks, &section_spans);
     let (section_column_rtl, final_section_column_rtl) =
         legacy_section_column_rtl_hints(&blocks, &section_spans);
-    #[cfg(feature = "render")]
     let running_surface_distances = legacy_running_surface_distance_hints(&section_spans);
     LegacyBuildOutput {
         model: DocModel {
@@ -186,12 +185,10 @@ pub(crate) fn build_model_with_render_hints(
         table_cell_line_spacing,
         #[cfg(feature = "render")]
         running_line_spacing_hints,
-        #[cfg(feature = "render")]
         running_surface_distances,
     }
 }
 
-#[cfg(feature = "render")]
 fn legacy_running_surface_distance_hints(
     section_spans: &[LegacySectionSpan],
 ) -> Vec<RunningSurfaceDistanceHints> {

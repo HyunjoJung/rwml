@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Preserves source-defined section-local running header and footer distances
+  when `Document::to_docx()` freshly converts an opened DOCX or legacy `.doc`.
+  The shared writer bridge consumes strictly section-aligned private hints,
+  accepts finite values from zero through 31,680 twips, and falls back each
+  missing or rejected edge independently to 708 twips. Accepted-current Markup
+  Compatibility selection, malformed-section isolation, deterministic package
+  bytes, and native reopen are covered for intermediate and final sections.
+  Standalone `write_docx(&DocModel)` remains model-only, and public distance
+  authoring, package-preserving `save()`, and Word-exact overlap are unchanged.
 - Extends source-aware section-column conversion to DOCX-backed
   `Document::to_docx()`. A default-build capture now retains only the aligned
   equal gaps, complete unequal layouts, separator flags, and section direction

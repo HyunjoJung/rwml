@@ -47,8 +47,8 @@ use parley::{FontContext, Layout, LayoutContext};
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
     FieldRole, Image, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
-    Run, SectionBreakKind, SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment,
-    TabLeader, TabStop, Table, TableBorderSide, TableCellLineSpacingHints,
+    Run, RunningSurfaceDistanceHints, SectionBreakKind, SectionColumnLayoutHints, SectionSetup,
+    Spacing, TabAlignment, TabLeader, TabStop, Table, TableBorderSide, TableCellLineSpacingHints,
     TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
     TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
 };
@@ -184,12 +184,6 @@ pub(crate) struct RunningSurfaceTableCellTabStopHints {
     pub(crate) footer: Vec<TableCellTabStopHints>,
     pub(crate) first_footer: Vec<TableCellTabStopHints>,
     pub(crate) even_footer: Vec<TableCellTabStopHints>,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
-pub(crate) struct RunningSurfaceDistanceHints {
-    pub(crate) header_pt: Option<f32>,
-    pub(crate) footer_pt: Option<f32>,
 }
 
 #[derive(Clone, Copy, Default)]

@@ -297,6 +297,12 @@ pub(crate) struct SectionColumnLayoutHints {
     pub(crate) columns: Vec<SectionColumnHint>,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct RunningSurfaceDistanceHints {
+    pub(crate) header_pt: Option<f32>,
+    pub(crate) footer_pt: Option<f32>,
+}
+
 /// Paragraph indentation in points; `None` = unset.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Indent {

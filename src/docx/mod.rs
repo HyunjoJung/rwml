@@ -218,9 +218,8 @@ pub(crate) struct DocxState {
     /// Renderer-only table-cell tab stops for section running surfaces.
     #[cfg(feature = "render")]
     pub running_table_cell_tab_stops: Vec<crate::render::RunningSurfaceTableCellTabStopHints>,
-    /// Renderer-only source-defined header/footer edge distances by section.
-    #[cfg(feature = "render")]
-    pub running_surface_distances: Vec<crate::render::RunningSurfaceDistanceHints>,
+    /// Source-only header/footer edge distances by section.
+    pub running_surface_distances: Vec<crate::model::RunningSurfaceDistanceHints>,
     /// Renderer-only resolved explicit tab stops aligned to body model blocks.
     #[cfg(feature = "render")]
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
@@ -585,7 +584,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     #[cfg(feature = "render")]
     let running_table_cell_tab_stops =
         running_table_cell_tab_stops_by_model_section(&blocks, &section_header_footers);
-    #[cfg(feature = "render")]
     let running_surface_distances =
         running_surface_distances_by_model_section(&blocks, &section_header_footers);
     apply_section_header_footers(&mut blocks, &section_header_footers);
@@ -741,7 +739,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         running_line_spacing_hints,
         #[cfg(feature = "render")]
         running_table_cell_tab_stops,
-        #[cfg(feature = "render")]
         running_surface_distances,
         #[cfg(feature = "render")]
         tab_stops,
@@ -802,8 +799,7 @@ struct SectionHeaderFooter {
     line_spacing: crate::render::RunningSurfaceLineSpacingHints,
     #[cfg(feature = "render")]
     table_cell_tab_stops: crate::render::RunningSurfaceTableCellTabStopHints,
-    #[cfg(feature = "render")]
-    distances: crate::render::RunningSurfaceDistanceHints,
+    distances: crate::model::RunningSurfaceDistanceHints,
 }
 
 #[derive(Default)]
@@ -919,8 +915,7 @@ fn read_headers_footers(
     let mut inherited_footer_table_cell_tab_stops = Vec::new();
 
     for refs in section_refs {
-        #[cfg(feature = "render")]
-        let distances = crate::render::RunningSurfaceDistanceHints {
+        let distances = crate::model::RunningSurfaceDistanceHints {
             header_pt: refs
                 .header_distance_twips
                 .map(|distance| distance as f32 / 20.0),
@@ -1065,7 +1060,6 @@ fn read_headers_footers(
                 first_footer: footer_table_cell_tab_stops.first,
                 even_footer: footer_table_cell_tab_stops.even,
             },
-            #[cfg(feature = "render")]
             distances,
         });
     }
@@ -1205,17 +1199,16 @@ fn running_table_cell_tab_stops_by_model_section(
     aligned
 }
 
-#[cfg(feature = "render")]
 fn running_surface_distances_by_model_section(
     blocks: &[Block],
     sections: &[SectionHeaderFooter],
-) -> Vec<crate::render::RunningSurfaceDistanceHints> {
+) -> Vec<crate::model::RunningSurfaceDistanceHints> {
     let section_break_count = blocks
         .iter()
         .filter(|block| matches!(block, Block::SectionBreak(_)))
         .count();
     let mut aligned =
-        vec![crate::render::RunningSurfaceDistanceHints::default(); section_break_count + 1];
+        vec![crate::model::RunningSurfaceDistanceHints::default(); section_break_count + 1];
     for (target, source) in aligned
         .iter_mut()
         .take(section_break_count)
@@ -4690,12 +4683,8 @@ mod tests {
         custom_xml_item_id, normalize_part, parse_default_tab_stop_pt, parse_document_id,
         parse_rels, toggle_on, MAX_REL_RECORDS,
     };
-    #[cfg(feature = "render")]
     use super::{running_surface_distances_by_model_section, SectionHeaderFooter};
-    #[cfg(feature = "render")]
-    use crate::model::{Block, SectionSetup};
-    #[cfg(feature = "render")]
-    use crate::render::RunningSurfaceDistanceHints;
+    use crate::model::{Block, RunningSurfaceDistanceHints, SectionSetup};
 
     #[test]
     fn toggle_on_accepts_case_insensitive_off_values() {
@@ -4764,7 +4753,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "render")]
     #[test]
     fn running_surface_distances_align_break_sections_and_final_section() {
         let blocks = vec![

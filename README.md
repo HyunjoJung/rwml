@@ -378,8 +378,13 @@ edge; generated DOCX page numbers follow that same path. Both surfaces clamp at
 the body margin rather than overlap body content, and missing or malformed
 values retain the existing fixed preview bands. Public authoring of distances,
 reconstruction of legacy installation-language defaults, automatic margin-
-conflict resolution, conversion round-trip of private source hints, and Word-
-exact overlap remain outside this bounded source-only path. Opened `.docx`
+conflict resolution, and Word-exact overlap remain outside this bounded
+source-only path. Fresh `Document::to_docx()` conversion of an opened DOCX or
+legacy `.doc` carries aligned, finite source distances from zero through 31,680
+twips into each generated section; absent, out-of-range, or misaligned hints
+fall back locally to the writer's 708-twip default, and native reopen recovers
+the emitted values. Standalone model writing retains that default because the
+public model has no distance fields. Opened `.docx`
 tables
 materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
@@ -1167,8 +1172,9 @@ code points.
   local SEPX data remains isolated. This section direction does not force
   paragraph or run bidi behavior. Legacy-backed `Document::to_docx()` also
   serializes each aligned, validated equal gap or complete unequal layout,
-  separator flag, and section direction as bounded `w:cols`/`w:col` and
-  `w:bidi` properties; native reopen recovers the same source semantics.
+  separator flag, section direction, and header/footer distance as bounded
+  `w:cols`/`w:col`, `w:bidi`, and `w:pgMar` properties; native reopen recovers
+  the same source semantics.
   Opened-DOCX conversion uses the same bounded writer path. Standalone model
   writing remains unchanged.
   A visible end-of-column character (`0x0E`) in a top-level main-story
