@@ -629,6 +629,9 @@ fn supports_field_evaluation(field: &Field) -> bool {
     if field.computed_result.is_some() {
         return true;
     }
+    if supports_owned_computed_field_evaluation(field) {
+        return true;
+    }
     if field.kind == FieldKind::Hyperlink {
         return supports_hyperlink_field_evaluation(field);
     }
@@ -647,6 +650,44 @@ fn supports_field_evaluation(field: &Field) -> bool {
         }
     }
     supports_field_kind_evaluation(&field.kind)
+}
+
+fn supports_owned_computed_field_evaluation(field: &Field) -> bool {
+    #[cfg(feature = "docx")]
+    {
+        match &field.kind {
+            FieldKind::Dynamic(kind) if kind == "QUOTE" => {
+                crate::docx::supports_quote_field_syntax(&field.instruction)
+            }
+            FieldKind::Dynamic(kind) if kind == "IF" || kind == "COMPARE" => {
+                crate::docx::supports_context_free_if_compare_field_syntax(&field.instruction)
+            }
+            FieldKind::Dynamic(kind) if kind == "=" => {
+                crate::docx::supports_context_free_formula_field_syntax(&field.instruction)
+            }
+            FieldKind::Dynamic(kind) if kind == "FILLIN" => {
+                crate::docx::supports_context_free_fill_in_field_syntax(&field.instruction)
+            }
+            FieldKind::Display(kind) if kind == "EQ" || kind == "ADVANCE" => {
+                crate::docx::supports_context_free_display_field_syntax(&field.instruction)
+            }
+            FieldKind::Display(kind) if kind == "SYMBOL" => {
+                crate::docx::supports_computed_symbol_field_syntax(&field.instruction)
+            }
+            FieldKind::DocumentInfo(_) => {
+                crate::docx::supports_preserved_document_info_field_syntax(&field.instruction)
+            }
+            FieldKind::DocumentStructure(kind) if kind == "REVNUM" => {
+                crate::docx::supports_revision_number_field_syntax(&field.instruction)
+            }
+            _ => false,
+        }
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = field;
+        false
+    }
 }
 
 fn supports_hyperlink_field_evaluation(field: &Field) -> bool {
@@ -1573,18 +1614,13 @@ fn is_modeled_docx_chart_payload(name: &str, bytes: &[u8]) -> bool {
     let Some(stem) = file.strip_suffix(".xml") else {
         return false;
     };
-    if !has_numbered_suffix(stem, "chartEx") {
+    if !has_numbered_suffix(stem, "chart") && !has_numbered_suffix(stem, "chartEx") {
         return false;
     }
-    let xml = String::from_utf8_lossy(bytes);
-    xml.contains("<cx:chartSpace")
-        && xml.contains("<cx:chartData>")
-        && (xml.contains(r#"layoutId="waterfall""#)
-            || xml.contains(r#"layoutId="treemap""#)
-            || xml.contains(r#"layoutId="sunburst""#)
-            || xml.contains(r#"layoutId="histogram""#)
-            || xml.contains(r#"layoutId="boxWhisker""#)
-            || xml.contains(r#"layoutId="funnel""#))
+    std::str::from_utf8(bytes)
+        .ok()
+        .and_then(crate::docx::chart::parse)
+        .is_some()
 }
 
 #[cfg(feature = "docx")]
@@ -5054,6 +5090,283 @@ mod tests {
                 count: 1,
             }]
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn model_inventory_recognizes_owned_context_free_computed_fields() {
+        let blocks = vec![Block::Paragraph(Paragraph {
+            runs: vec![
+                Run {
+                    text: "Ready".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"QUOTE "Ready""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "\u{2022}".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r"SYMBOL 183 \f Symbol".to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "Ready".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"IF 2 > 1 "Ready" "Held""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "1".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"COMPARE "A*" = "AB""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "2.50".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"= 10 / 4 \# "0.00""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "Acme".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"FILLIN "Client?" \d "Acme""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "1/2".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"EQ \f(1,2)"#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: String::new(),
+                    field: FieldRole::Simple {
+                        instruction: r#"ADVANCE \r2"#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached quote".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"QUOTE "broken"#.to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached symbol".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r"SYMBOL 66 \f Wingdings".to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached bookmark IF".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"IF Gate = "Ready" "yes" "no""#.to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached nonfinite compare".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: "COMPARE 1e309 > 0".to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached bookmark formula".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: "= Amount + 1".to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached DEFINED formula".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: "= DEFINED(Known)".to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached default-less FILLIN".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"FILLIN "Client?""#.to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached stateful ASK".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"ASK ClientCode "Client code?" \d "ac-42""#.to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached malformed EQ".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"EQ \f(1,"#.to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached unsupported ADVANCE".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"ADVANCE \z 2"#.to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        })];
+
+        let inventory = super::feature_inventory_for_model(&blocks);
+
+        assert_eq!(inventory.fields, 18);
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("QUOTE".to_string()),
+                    count: 1,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Display("SYMBOL".to_string()),
+                    count: 1,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("IF".to_string()),
+                    count: 1,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("COMPARE".to_string()),
+                    count: 1,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("=".to_string()),
+                    count: 2,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("FILLIN".to_string()),
+                    count: 1,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("ASK".to_string()),
+                    count: 1,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Display("EQ".to_string()),
+                    count: 1,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Display("ADVANCE".to_string()),
+                    count: 1,
+                },
+            ]
+        );
+        assert_eq!(
+            inventory.unsupported_field_reasons,
+            vec![
+                super::FieldEvaluationReasonCount {
+                    reason: super::FieldEvaluationReason::UnsupportedSwitch,
+                    count: 5,
+                },
+                super::FieldEvaluationReasonCount {
+                    reason: super::FieldEvaluationReason::NoComputedResult,
+                    count: 5,
+                },
+            ]
+        );
+
+        #[cfg(feature = "render")]
+        {
+            let render_inventory = super::render_inventory_for_model(&blocks);
+            assert_eq!(
+                render_inventory.unsupported_field_kinds,
+                inventory.unsupported_field_kinds
+            );
+            assert_eq!(
+                render_inventory.unsupported_field_reasons,
+                inventory.unsupported_field_reasons
+            );
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn owned_document_info_fields_use_the_note_writer_syntax_boundary() {
+        let field = |instruction: &str| Field {
+            kind: FieldKind::DocumentInfo("DOCPROPERTY".to_string()),
+            instruction: instruction.to_string(),
+            ..Field::default()
+        };
+
+        for instruction in [
+            r#"DOCPROPERTY Subject \* Upper"#,
+            r#"DOCPROPERTY "Client Name" \* Caps"#,
+            r#"TITLE \* Upper"#,
+            r#"CREATEDATE \@ "yyyy-MM-dd""#,
+        ] {
+            assert!(
+                super::supports_owned_computed_field_evaluation(&field(instruction)),
+                "{instruction}"
+            );
+        }
+        for instruction in [
+            r#"NUMPAGES \* ROMAN"#,
+            "DOCPROPERTY Pages",
+            r#"DOCVARIABLE ClientCode \* Upper"#,
+            "FILESIZE",
+            r#"DATE \@ "yyyy-MM-dd""#,
+            "USERNAME",
+            "REVNUM",
+            r#"DOCPROPERTY "Broken Name"#,
+        ] {
+            assert!(
+                !super::supports_owned_computed_field_evaluation(&field(instruction)),
+                "{instruction}"
+            );
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn owned_revision_number_fields_use_the_note_writer_syntax_boundary() {
+        let field = |instruction: &str| Field {
+            kind: FieldKind::DocumentStructure("REVNUM".to_string()),
+            instruction: instruction.to_string(),
+            ..Field::default()
+        };
+
+        for instruction in ["REVNUM", r#"REVNUM \* Upper"#, r#"REVNUM \* Caps"#] {
+            assert!(
+                super::supports_owned_computed_field_evaluation(&field(instruction)),
+                "{instruction}"
+            );
+        }
+        for instruction in [r#"REVNUM \x"#, r#"REVNUM "broken"#, "SECTION"] {
+            assert!(
+                !super::supports_owned_computed_field_evaluation(&field(instruction)),
+                "{instruction}"
+            );
+        }
     }
 
     #[cfg(feature = "render")]

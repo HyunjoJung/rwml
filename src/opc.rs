@@ -41,6 +41,7 @@ type CtRecordIdentity = (String, String);
 const CT_NS: &str = "http://schemas.openxmlformats.org/package/2006/content-types";
 const REL_NS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 const CT_RELS: &str = "application/vnd.openxmlformats-package.relationships+xml";
+const REL_IMAGE: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 const XML_DECL: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#;
 const CONTENT_TYPES: &str = "[Content_Types].xml";
 
@@ -502,6 +503,9 @@ impl Package {
             if name.ends_with('/') || name == CONTENT_TYPES {
                 continue;
             }
+            if !self.has_part(name) {
+                continue;
+            }
             if !self.ctypes.resolves(name) {
                 return Err(Error::Docx(format!(
                     "part {name} has no resolvable content type"
@@ -600,6 +604,34 @@ impl Package {
     /// Whether a part exists (no allocation, unlike [`Package::part`]).
     pub(crate) fn has_part(&self, name: &str) -> bool {
         self.parts.keys().any(|p| p.eq_ignore_ascii_case(name))
+    }
+
+    /// Remove one retained part and any matching content-type override.
+    /// The part name remains in `touched` so edit diagnostics include a removed
+    /// part, while write validation skips it because it is no longer emitted.
+    fn remove_part(&mut self, name: &str) -> bool {
+        let Some(actual) = self
+            .parts
+            .keys()
+            .find(|part| part.eq_ignore_ascii_case(name))
+            .cloned()
+        else {
+            return false;
+        };
+        self.parts.remove(&actual);
+        self.order
+            .retain(|part| !part.eq_ignore_ascii_case(&actual));
+        self.touched.insert(actual.clone());
+
+        let part_name = format!("/{actual}");
+        let before = self.ctypes.overrides.len();
+        self.ctypes
+            .overrides
+            .retain(|override_part| !override_part.part_name.eq_ignore_ascii_case(&part_name));
+        if self.ctypes.overrides.len() != before {
+            self.regen_content_types();
+        }
+        true
     }
 
     /// Whether the package declares exactly `content_type` for `part`, through
@@ -738,6 +770,65 @@ impl Package {
             .get(&rels_path_of(content_part))
             .map(|v| v.as_slice())
             .unwrap_or(&[])
+    }
+
+    /// Remove image relationships from an edited XML part only when their ids no
+    /// longer occur in that part, and remove the target media part only when no
+    /// other retained relationship points at it. This is deliberately narrower
+    /// than general OPC garbage collection: unknown relationships and unrelated
+    /// media remain preserved.
+    pub(crate) fn prune_unreferenced_media_relationships(
+        &mut self,
+        content_part: &str,
+    ) -> Result<()> {
+        let rels_path = rels_path_of(content_part);
+        let (retained, removed_targets) = {
+            let Some(tree) = self.part_tree_ref(content_part) else {
+                return Err(Error::Docx(format!("no XML part {content_part}")));
+            };
+            let references = tree.relationship_references();
+            let Some(entries) = self.rels.get(&rels_path) else {
+                return Ok(());
+            };
+            let mut retained = Vec::with_capacity(entries.len());
+            let mut removed_targets = Vec::new();
+            for rel in entries {
+                let target = resolve_rel_target(content_part, rel_target_part_path(&rel.target));
+                let removable = !rel.external
+                    && rel.rel_type == REL_IMAGE
+                    && is_word_media_part(&target)
+                    && !references.contains(rel.id.as_bytes());
+                if removable {
+                    removed_targets.push(target);
+                } else {
+                    retained.push(rel.clone());
+                }
+            }
+            (retained, removed_targets)
+        };
+
+        if removed_targets.is_empty() {
+            return Ok(());
+        }
+        self.rels.insert(rels_path.clone(), retained);
+        self.regen_rels(&rels_path);
+
+        for target in removed_targets {
+            let still_referenced = self.rels.iter().any(|(source_rels, entries)| {
+                let Some(source_part) = source_part_of_rels_path(source_rels) else {
+                    return false;
+                };
+                entries.iter().any(|rel| {
+                    !rel.external
+                        && resolve_rel_target(&source_part, rel_target_part_path(&rel.target))
+                            .eq_ignore_ascii_case(&target)
+                })
+            });
+            if !still_referenced {
+                self.remove_part(&target);
+            }
+        }
+        Ok(())
     }
 
     /// Whether `part` has a resolvable content type (Override or matching Default).
@@ -980,6 +1071,11 @@ fn source_part_of_rels_path(rels_path: &str) -> Option<String> {
 /// part merely *named* `foo.rels` outside `_rels/` is not a relationships part.)
 fn is_rels(name: &str) -> bool {
     name.ends_with(".rels") && (name.starts_with("_rels/") || name.contains("/_rels/"))
+}
+
+fn is_word_media_part(name: &str) -> bool {
+    name.strip_prefix("word/media/")
+        .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
 }
 
 /// Relationship target for `new_part` relative to `src_part`'s directory.

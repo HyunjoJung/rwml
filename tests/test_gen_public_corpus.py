@@ -46,7 +46,13 @@ class PublicCorpusGeneratorTests(unittest.TestCase):
             self.assertEqual(stale.read_bytes(), b"stale")
 
     def test_every_public_docx_is_manifested_or_attributed(self):
-        expected = {f"synthetic/{name}" for name in gen_public_corpus.CORPUS}
+        vendored = {
+            "vendored/python-docx/blk-inner-content.docx",
+            "vendored/python-docx/having-images.docx",
+            "vendored/python-docx/sct-inner-content.docx",
+            "vendored/python-docx/test.docx",
+        }
+        expected = {f"synthetic/{name}" for name in gen_public_corpus.CORPUS} | vendored
         self.assertEqual(manifest_paths(ROOT / "corpus/public/MANIFEST.tsv"), expected)
         self.assertEqual(
             manifest_paths(ROOT / "corpus/public/RENDER_MANIFEST.tsv"), expected
@@ -61,8 +67,7 @@ class PublicCorpusGeneratorTests(unittest.TestCase):
         provenance = (corpus_root / "PROVENANCE.md").read_text(encoding="utf-8")
         for name in gen_public_corpus.CORPUS:
             self.assertIn(f"`synthetic/{name}`", provenance)
-        for relative in observed - expected:
-            self.assertTrue(relative.startswith("vendored/"), relative)
+        for relative in vendored:
             self.assertIn(f"`{pathlib.PurePosixPath(relative).name}`", attribution)
 
     def test_render_activation_fixtures_are_deterministic_and_cover_target_markup(self):

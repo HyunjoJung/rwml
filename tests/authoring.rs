@@ -1521,6 +1521,55 @@ fn run_builder_adds_inline_hyperlink_runs() {
 }
 
 #[test]
+fn run_builder_adds_internal_anchor_hyperlinks_without_relationships() {
+    let model = DocBuilder::new()
+        .rich_paragraph(
+            ParagraphBuilder::new().runs([
+                RunBuilder::new("Target").bookmark("SectionOne").build(),
+                RunBuilder::new(" jump")
+                    .hyperlink(" #SectionOne ")
+                    .bold()
+                    .build(),
+                RunBuilder::new(" invalid").hyperlink("#Bad Target").build(),
+            ]),
+        )
+        .build();
+
+    let bytes = rwml::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = parts
+        .get("word/_rels/document.xml.rels")
+        .map(|bytes| std::str::from_utf8(bytes).unwrap())
+        .unwrap_or_default();
+    assert!(
+        document_xml.contains(r#"<w:bookmarkStart w:id="0" w:name="SectionOne"/>"#)
+            && document_xml.contains(r#"<w:hyperlink w:anchor="SectionOne"><w:r>"#)
+            && document_xml.contains("<w:b/>")
+            && document_xml.contains("> jump</w:t></w:r></w:hyperlink>")
+            && document_xml.contains("> invalid</w:t>")
+            && !document_xml.contains(r#"w:anchor="Bad Target""#),
+        "internal hyperlink XML missing or malformed target retained: {document_xml}"
+    );
+    assert_eq!(document_xml.matches("<w:hyperlink").count(), 1);
+    assert!(
+        !rels.contains("relationships/hyperlink") && !rels.contains("#SectionOne"),
+        "internal hyperlinks must not create external relationships: {rels}"
+    );
+
+    let reopened = Document::open(&bytes).expect("internal-anchor .docx reopens");
+    let Block::Paragraph(paragraph) = &reopened.model().blocks[0] else {
+        panic!("expected reopened paragraph");
+    };
+    assert_eq!(paragraph.runs[0].bookmark.as_deref(), Some("SectionOne"));
+    assert!(matches!(
+        &paragraph.runs[1].field,
+        FieldRole::Hyperlink { url } if url == "#SectionOne"
+    ));
+    assert!(matches!(paragraph.runs[2].field, FieldRole::None));
+}
+
+#[test]
 fn builders_ignore_blank_hyperlink_targets() {
     let model = DocBuilder::new()
         .hyperlink("doc link", " ")
@@ -2795,31 +2844,180 @@ fn doc_builder_adds_styled_first_even_header_footer_blocks() {
 }
 
 #[test]
-fn write_docx_emits_visible_placeholders_for_header_footer_image_blocks() {
+fn write_docx_emits_header_footer_images_with_local_relationships() {
+    let png = tiny_png();
+    let image_url = "https://example.com/header-image?a=1&b=2";
     let model = DocModel {
         blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
         setup: DocSetup {
             header: vec![
                 Block::Image(
-                    ImageBuilder::new(tiny_png(), "image/png")
+                    ImageBuilder::new(png.clone(), "image/png")
                         .alt("Header <logo>")
+                        .size_px(200, 100)
+                        .rotate_degrees(90)
                         .into(),
                 ),
                 Block::Paragraph(Paragraph {
                     runs: vec![rwml::Run {
                         image: Some(
-                            ImageBuilder::new(tiny_png(), "image/png")
+                            ImageBuilder::new(png.clone(), "image/png")
                                 .alt("Inline <badge>")
+                                .size_px(40, 20)
                                 .into(),
                         ),
+                        field: FieldRole::Hyperlink {
+                            url: image_url.to_string(),
+                        },
                         ..rwml::Run::default()
                     }],
                     ..Paragraph::default()
                 }),
+                Block::Table(
+                    TableBuilder::new()
+                        .row([CellBuilder::new().rich_table(
+                            TableBuilder::new().row([CellBuilder::new().push_block(Block::Image(
+                                ImageBuilder::new(png.clone(), "image/png")
+                                    .alt("Nested cell image")
+                                    .size_px(30, 15)
+                                    .into(),
+                            ))]),
+                        )])
+                        .into(),
+                ),
             ],
             footer: vec![Block::Image(
-                ImageBuilder::new(tiny_png(), "image/png")
+                ImageBuilder::new(png.clone(), "image/png")
                     .alt("Footer <mark>")
+                    .size_px(80, 40)
+                    .floating_offset_emu(91_440, 182_880)
+                    .into(),
+            )],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rwml::write_docx(&model);
+    assert_eq!(bytes, rwml::write_docx(&model));
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+    let header_rels = String::from_utf8(parts["word/_rels/header1.xml.rels"].clone()).unwrap();
+    let footer_rels = String::from_utf8(parts["word/_rels/footer1.xml.rels"].clone()).unwrap();
+    let document_rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let content_types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+
+    assert!(
+        header_xml.contains(
+            r#"xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing""#
+        ) && header_xml
+            .contains(r#"xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main""#)
+            && header_xml.contains(
+                r#"xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture""#
+            ),
+        "header drawing namespaces missing: {header_xml}"
+    );
+    assert_eq!(header_xml.matches("<w:drawing>").count(), 3, "{header_xml}");
+    assert!(
+        header_xml.contains(r#"<wp:extent cx="1905000" cy="952500"/>"#)
+            && header_xml
+                .contains(r#"<wp:docPr id="1" name="Image1" descr="Header &lt;logo&gt;"/>"#,)
+            && header_xml.contains(r#"<a:xfrm rot="5400000">"#)
+            && header_xml.contains(r#"<w:hyperlink r:id="rId2"><w:r><w:drawing>"#)
+            && header_xml.contains(r#"<a:blip r:embed="rId3"/>"#)
+            && header_xml.contains("Nested cell image"),
+        "header image drawings missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains(r#"xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing""#)
+            && footer_xml.contains("<wp:anchor ")
+            && footer_xml.contains(
+                r#"<wp:positionH relativeFrom="page"><wp:posOffset>91440</wp:posOffset></wp:positionH>"#,
+            )
+            && footer_xml.contains(
+                r#"<wp:docPr id="4" name="Image4" descr="Footer &lt;mark&gt;"/>"#,
+            )
+            && footer_xml.contains(r#"<a:blip r:embed="rId1"/>"#),
+        "footer floating image missing: {footer_xml}"
+    );
+    assert!(
+        header_rels.contains(r#"Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png""#)
+            && header_rels.contains(r#"Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/header-image?a=1&amp;b=2" TargetMode="External""#)
+            && header_rels.contains(r#"Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image2.png""#)
+            && header_rels.contains(r#"Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image3.png""#),
+        "header-local image relationships missing: {header_rels}"
+    );
+    assert!(
+        footer_rels.contains(r#"Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image4.png""#),
+        "footer-local image relationship missing: {footer_rels}"
+    );
+    assert!(
+        !document_rels.contains("relationships/image"),
+        "{document_rels}"
+    );
+    assert!(!document_rels.contains(image_url), "{document_rels}");
+    assert!(content_types.contains(r#"ContentType="image/png""#));
+    for index in 1..=4 {
+        assert_eq!(parts[&format!("word/media/image{index}.png")], png);
+    }
+
+    let reopened = Document::open(&bytes).expect("header/footer image .docx reopens");
+    let setup = &reopened.model().setup;
+    let [Block::Paragraph(header_block), Block::Paragraph(header_inline), Block::Table(outer)] =
+        setup.header.as_slice()
+    else {
+        panic!("unexpected reopened header blocks: {:?}", setup.header);
+    };
+    let header_image = header_block.runs[0].image.as_ref().expect("header image");
+    assert_eq!(header_image.bytes.as_deref(), Some(png.as_slice()));
+    assert_eq!(header_image.alt.as_deref(), Some("Header <logo>"));
+    assert_eq!(header_image.rotation_degrees, Some(90));
+    let inline_image = header_inline.runs[0].image.as_ref().expect("inline image");
+    assert_eq!(inline_image.bytes.as_deref(), Some(png.as_slice()));
+    assert!(matches!(
+        &header_inline.runs[0].field,
+        FieldRole::Hyperlink { url } if url == image_url
+    ));
+    let Block::Table(nested) = &outer.rows[0].cells[0].blocks[0] else {
+        panic!("expected nested running table");
+    };
+    let Block::Paragraph(nested_image) = &nested.rows[0].cells[0].blocks[0] else {
+        panic!("expected nested image paragraph");
+    };
+    assert_eq!(
+        nested_image.runs[0]
+            .image
+            .as_ref()
+            .and_then(|image| image.alt.as_deref()),
+        Some("Nested cell image")
+    );
+    let [Block::Paragraph(footer)] = setup.footer.as_slice() else {
+        panic!("unexpected reopened footer blocks: {:?}", setup.footer);
+    };
+    let footer_image = footer.runs[0].image.as_ref().expect("footer image");
+    assert_eq!(footer_image.bytes.as_deref(), Some(png.as_slice()));
+    assert_eq!(footer_image.floating_offset_emu, Some((91_440, 182_880)));
+}
+
+#[test]
+fn write_docx_keeps_missing_header_footer_images_as_visible_placeholders() {
+    let missing = |alt: &str| rwml::Image {
+        alt: Some(alt.to_string()),
+        width_px: Some(40),
+        height_px: Some(20),
+        ..rwml::Image::default()
+    };
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Image(missing("Header <missing>"))],
+            footer: vec![Block::Table(
+                TableBuilder::new()
+                    .row([CellBuilder::new().paragraph_runs([rwml::Run {
+                        image: Some(missing("Footer <missing>")),
+                        ..rwml::Run::default()
+                    }])])
                     .into(),
             )],
             ..DocSetup::default()
@@ -2831,33 +3029,64 @@ fn write_docx_emits_visible_placeholders_for_header_footer_image_blocks() {
     let parts = unzip_parts(&bytes);
     let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
     let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+    assert!(header_xml.contains("[rwml image placeholder: Header &lt;missing&gt;]"));
+    assert!(footer_xml.contains("[rwml image placeholder: Footer &lt;missing&gt;]"));
+    assert!(!header_xml.contains("xmlns:wp=") && !footer_xml.contains("xmlns:wp="));
+    assert!(!parts.keys().any(|path| path.starts_with("word/media/")));
+    assert!(!parts.contains_key("word/_rels/header1.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/footer1.xml.rels"));
 
-    assert!(
-        header_xml.contains("[rwml image placeholder: Header &lt;logo&gt;]"),
-        "header image placeholder missing: {header_xml}"
-    );
-    assert!(
-        header_xml.contains("[rwml image placeholder: Inline &lt;badge&gt;]"),
-        "header inline image placeholder missing: {header_xml}"
-    );
-    assert!(
-        footer_xml.contains("[rwml image placeholder: Footer &lt;mark&gt;]"),
-        "footer image placeholder missing: {footer_xml}"
-    );
-    assert!(
-        !parts.keys().any(|part| part.starts_with("word/media/")),
-        "header/footer image placeholders should not emit media parts: {:?}",
-        parts.keys().collect::<Vec<_>>()
-    );
-
-    let reopened = Document::open(&bytes).expect("header/footer image placeholder .docx reopens");
+    let reopened = Document::open(&bytes).expect("missing running image .docx reopens");
     let text = reopened.text();
     assert!(
-        text.contains("[rwml image placeholder: Header <logo>]")
-            && text.contains("[rwml image placeholder: Inline <badge>]")
-            && text.contains("[rwml image placeholder: Footer <mark>]"),
-        "header/footer image placeholders not readable after reopen: {text:?}"
+        text.contains("[rwml image placeholder: Header <missing>]")
+            && text.contains("[rwml image placeholder: Footer <missing>]")
     );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn fresh_docx_running_images_survive_reopen_and_render() {
+    let model = |bytes: Option<Vec<u8>>| {
+        let image = || rwml::Image {
+            bytes: bytes.clone(),
+            mime: Some("image/png".to_string()),
+            alt: Some("Running raster".to_string()),
+            width_px: Some(120),
+            height_px: Some(60),
+            ..rwml::Image::default()
+        };
+        DocModel {
+            blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+            setup: DocSetup {
+                header: vec![Block::Image(image())],
+                footer: vec![Block::Table(
+                    TableBuilder::new()
+                        .row([CellBuilder::new().paragraph_runs([rwml::Run {
+                            image: Some(image()),
+                            ..rwml::Run::default()
+                        }])])
+                        .into(),
+                )],
+                ..DocSetup::default()
+            },
+            ..DocModel::default()
+        }
+    };
+    let present = Document::open(&rwml::write_docx(&model(Some(tiny_png()))))
+        .expect("present running images reopen");
+    let missing =
+        Document::open(&rwml::write_docx(&model(None))).expect("missing running images reopen");
+
+    let present_pdf = present.to_pdf_with_report();
+    let missing_pdf = missing.to_pdf_with_report();
+    assert_eq!(present_pdf.report.pages, 1);
+    assert_eq!(missing_pdf.report.pages, 1);
+    assert_ne!(
+        present_pdf.pdf, missing_pdf.pdf,
+        "present running rasters must not render as missing-byte placeholders"
+    );
+    assert_eq!(present_pdf.pdf, present.to_pdf_with_report().pdf);
 }
 
 #[test]
@@ -2903,7 +3132,344 @@ fn write_docx_keeps_header_footer_table_text_visible() {
 }
 
 #[test]
-fn write_docx_keeps_header_footer_chart_placeholders_visible() {
+fn write_docx_emits_rich_header_footer_tables_with_local_relationships() {
+    let border = Color::rgb(0x1F, 0x4E, 0x78);
+    let shade = Color::rgb(0xDE, 0xEB, 0xF7);
+    let header_url = "https://example.com/header-table?a=1&b=2";
+    let header_table = TableBuilder::new()
+        .header_rows(1)
+        .col_widths_pct([0.4, 0.6])
+        .width_pct(0.8)
+        .fixed_layout()
+        .bidi_visual()
+        .indent_twips(240)
+        .align(Align::Center)
+        .border_color(border)
+        .border_size_eighths(12)
+        .border_style(TableBorderStyle::Double)
+        .row([CellBuilder::text("Header metrics").header().col_span(2)])
+        .row([
+            CellBuilder::new()
+                .rich_paragraph(
+                    ParagraphBuilder::new()
+                        .align(Align::Right)
+                        .runs([RunBuilder::new("Linked value")
+                            .hyperlink(header_url)
+                            .bold()
+                            .build()]),
+                )
+                .row_span(2)
+                .shading(shade)
+                .margins_twips(80, 120, 160, 200)
+                .valign(VCell::Bottom)
+                .width_pct(0.4),
+            CellBuilder::new()
+                .rich_table(TableBuilder::new().row([CellBuilder::text("Nested table")])),
+        ])
+        .row([CellBuilder::text("Tail cell")]);
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Table(header_table.into())],
+            footer: vec![Block::Table(
+                TableBuilder::new()
+                    .row([
+                        CellBuilder::new(),
+                        CellBuilder::new().push_block(Block::Image(
+                            ImageBuilder::new(tiny_png(), "image/png")
+                                .alt("Footer cell image")
+                                .into(),
+                        )),
+                        CellBuilder::new().push_block(Block::Chart(
+                            ChartBuilder::bar()
+                                .categories(["Q1"])
+                                .series("Revenue", [7.0])
+                                .alt("Footer cell chart")
+                                .into(),
+                        )),
+                    ])
+                    .into(),
+            )],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rwml::write_docx(&model);
+    assert_eq!(bytes, rwml::write_docx(&model));
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+    let header_rels = String::from_utf8(parts["word/_rels/header1.xml.rels"].clone()).unwrap();
+    let footer_rels = String::from_utf8(parts["word/_rels/footer1.xml.rels"].clone()).unwrap();
+    let document_rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+
+    assert_eq!(header_xml.matches("<w:tbl>").count(), 2, "{header_xml}");
+    for expected in [
+        "<w:tblHeader/>",
+        r#"<w:tblW w:w="4000" w:type="pct"/>"#,
+        r#"<w:tblInd w:w="240" w:type="dxa"/>"#,
+        r#"<w:jc w:val="center"/>"#,
+        r#"<w:tblLayout w:type="fixed"/>"#,
+        r#"<w:gridSpan w:val="2"/>"#,
+        r#"<w:vMerge w:val="restart"/>"#,
+        "<w:vMerge/>",
+        r#"<w:shd w:val="clear" w:color="auto" w:fill="DEEBF7"/>"#,
+        r#"<w:top w:w="80" w:type="dxa"/>"#,
+        r#"<w:vAlign w:val="bottom"/>"#,
+        r#"<w:jc w:val="right"/>"#,
+        r#"<w:hyperlink r:id="rId1">"#,
+        "<w:b/>",
+        "Nested table",
+        "Tail cell",
+    ] {
+        assert!(
+            header_xml.contains(expected),
+            "missing {expected}: {header_xml}"
+        );
+    }
+    assert!(
+        header_xml.contains(r#"<w:top w:val="double" w:sz="12" w:space="0" w:color="1F4E78"/>"#),
+        "rich border missing: {header_xml}"
+    );
+    assert!(
+        header_xml.contains("</w:tbl><w:p/></w:tc>"),
+        "nested table terminal paragraph missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains("<w:tbl>")
+            && footer_xml.contains("<w:tcPr></w:tcPr><w:p/>")
+            && footer_xml.contains("<w:drawing>")
+            && footer_xml.contains("Footer cell image")
+            && footer_xml.contains(r#"<c:chart r:id="rId2"/>"#)
+            && footer_xml.contains("Footer cell chart"),
+        "empty footer table cell missing: {footer_xml}"
+    );
+    assert!(
+        parts.contains_key("word/media/image1.png")
+            && parts.contains_key("word/charts/chart1.xml")
+            && parts.contains_key("word/charts/_rels/chart1.xml.rels")
+            && parts.contains_key("word/embeddings/Microsoft_Excel_Worksheet1.xlsx"),
+        "running-table raster/chart package parts are wrong: {:?}",
+        parts.keys().collect::<Vec<_>>()
+    );
+    assert!(
+        header_rels.contains("relationships/hyperlink")
+            && header_rels.contains(r#"Target="https://example.com/header-table?a=1&amp;b=2""#)
+            && header_rels.contains(r#"TargetMode="External""#),
+        "header-local hyperlink relationship missing: {header_rels}"
+    );
+    assert!(
+        footer_rels.contains("relationships/image")
+            && footer_rels.contains(r#"Target="media/image1.png""#)
+            && footer_rels.contains("relationships/chart")
+            && footer_rels.contains(r#"Target="charts/chart1.xml""#),
+        "footer-local media relationships missing: {footer_rels}"
+    );
+    assert!(!document_rels.contains(header_url), "{document_rels}");
+    assert!(
+        !document_rels.contains("relationships/image"),
+        "{document_rels}"
+    );
+    assert!(
+        !document_rels.contains("relationships/chart"),
+        "{document_rels}"
+    );
+    assert!(
+        document_rels.contains(r#"Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml""#)
+            && document_rels.contains(r#"Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml""#),
+        "document relationship ids changed: {document_rels}"
+    );
+
+    let reopened = Document::open(&bytes).expect("rich header/footer table .docx reopens");
+    let Block::Table(header) = &reopened.model().setup.header[0] else {
+        panic!("expected reopened header table");
+    };
+    assert_eq!(header.header_rows, 1);
+    assert!(header.fixed_layout);
+    assert!(header.bidi_visual);
+    assert_eq!(header.rows[0].cells[0].col_span, 2);
+    assert_eq!(header.rows[1].cells[0].row_span, 2);
+    assert_eq!(header.rows[1].cells[0].shading, Some(shade));
+    assert_eq!(header.rows[1].cells[0].valign, VCell::Bottom);
+    assert!(matches!(
+        &header.rows[1].cells[1].blocks[0],
+        Block::Table(nested) if nested.rows[0].cells[0].text() == "Nested table"
+    ));
+    let Block::Table(footer) = &reopened.model().setup.footer[0] else {
+        panic!("expected reopened footer table");
+    };
+    let Block::Paragraph(image_para) = &footer.rows[0].cells[1].blocks[0] else {
+        panic!("expected reopened footer image paragraph");
+    };
+    assert_eq!(
+        image_para.runs[0]
+            .image
+            .as_ref()
+            .and_then(|image| image.alt.as_deref()),
+        Some("Footer cell image")
+    );
+    let Block::Chart(chart) = &footer.rows[0].cells[2].blocks[0] else {
+        panic!("expected reopened footer chart");
+    };
+    assert_eq!(chart.alt.as_deref(), Some("Footer cell chart"));
+    assert_eq!(chart.kind, ChartKind::Bar);
+}
+
+#[test]
+fn write_docx_emits_tables_in_all_header_footer_variants() {
+    let table =
+        |text: &str| Block::Table(TableBuilder::new().row([CellBuilder::text(text)]).into());
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![table("Default header table")],
+            first_header: vec![table("First header table")],
+            even_header: vec![table("Even header table")],
+            footer: vec![table("Default footer table")],
+            first_footer: vec![table("First footer table")],
+            even_footer: vec![table("Even footer table")],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rwml::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    for (path, text) in [
+        ("word/header1.xml", "Default header table"),
+        ("word/header2.xml", "First header table"),
+        ("word/header3.xml", "Even header table"),
+        ("word/footer1.xml", "Default footer table"),
+        ("word/footer2.xml", "First footer table"),
+        ("word/footer3.xml", "Even footer table"),
+    ] {
+        let xml = String::from_utf8(parts[path].clone()).unwrap();
+        assert!(
+            xml.contains("<w:tbl>") && xml.contains(text),
+            "running table missing from {path}: {xml}"
+        );
+    }
+
+    let reopened = Document::open(&bytes).expect("running table variants .docx reopens");
+    let setup = &reopened.model().setup;
+    for (blocks, text) in [
+        (&setup.header, "Default header table"),
+        (&setup.first_header, "First header table"),
+        (&setup.even_header, "Even header table"),
+        (&setup.footer, "Default footer table"),
+        (&setup.first_footer, "First footer table"),
+        (&setup.even_footer, "Even footer table"),
+    ] {
+        assert!(matches!(
+            blocks.as_slice(),
+            [Block::Table(table)] if table.rows[0].cells[0].text() == text
+        ));
+    }
+}
+
+#[test]
+fn write_docx_emits_images_in_all_header_footer_variants() {
+    let png = tiny_png();
+    let image = |alt: &str| {
+        Block::Image(
+            ImageBuilder::new(png.clone(), "image/png")
+                .alt(alt)
+                .size_px(24, 12)
+                .into(),
+        )
+    };
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![image("Default header image")],
+            first_header: vec![image("First header image")],
+            even_header: vec![image("Even header image")],
+            footer: vec![image("Default footer image")],
+            first_footer: vec![image("First footer image")],
+            even_footer: vec![image("Even footer image")],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rwml::write_docx(&model);
+    assert_eq!(bytes, rwml::write_docx(&model));
+    let parts = unzip_parts(&bytes);
+    for (part_path, rels_path, alt) in [
+        (
+            "word/header1.xml",
+            "word/_rels/header1.xml.rels",
+            "Default header image",
+        ),
+        (
+            "word/header2.xml",
+            "word/_rels/header2.xml.rels",
+            "First header image",
+        ),
+        (
+            "word/header3.xml",
+            "word/_rels/header3.xml.rels",
+            "Even header image",
+        ),
+        (
+            "word/footer1.xml",
+            "word/_rels/footer1.xml.rels",
+            "Default footer image",
+        ),
+        (
+            "word/footer2.xml",
+            "word/_rels/footer2.xml.rels",
+            "First footer image",
+        ),
+        (
+            "word/footer3.xml",
+            "word/_rels/footer3.xml.rels",
+            "Even footer image",
+        ),
+    ] {
+        let xml = String::from_utf8(parts[part_path].clone()).unwrap();
+        let rels = String::from_utf8(parts[rels_path].clone()).unwrap();
+        assert!(
+            xml.contains("<w:drawing>") && xml.contains(alt),
+            "running image missing from {part_path}: {xml}"
+        );
+        assert!(
+            rels.contains("relationships/image") && rels.contains(r#"Target="media/image"#),
+            "part-local image relationship missing from {rels_path}: {rels}"
+        );
+    }
+    assert_eq!(
+        parts
+            .keys()
+            .filter(|path| path.starts_with("word/media/image"))
+            .count(),
+        6
+    );
+
+    let reopened = Document::open(&bytes).expect("running image variants .docx reopens");
+    let setup = &reopened.model().setup;
+    for (blocks, alt) in [
+        (&setup.header, "Default header image"),
+        (&setup.first_header, "First header image"),
+        (&setup.even_header, "Even header image"),
+        (&setup.footer, "Default footer image"),
+        (&setup.first_footer, "First footer image"),
+        (&setup.even_footer, "Even footer image"),
+    ] {
+        assert!(matches!(
+            blocks.as_slice(),
+            [Block::Paragraph(paragraph)]
+                if paragraph.runs[0]
+                    .image
+                    .as_ref()
+                    .and_then(|image| image.alt.as_deref()) == Some(alt)
+        ));
+    }
+}
+
+#[test]
+fn write_docx_emits_header_footer_charts_with_local_relationships() {
     let model = DocModel {
         blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
         setup: DocSetup {
@@ -2931,28 +3497,53 @@ fn write_docx_keeps_header_footer_chart_placeholders_visible() {
     let parts = unzip_parts(&bytes);
     let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
     let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+    let header_rels = String::from_utf8(parts["word/_rels/header1.xml.rels"].clone()).unwrap();
+    let footer_rels = String::from_utf8(parts["word/_rels/footer1.xml.rels"].clone()).unwrap();
+    let document_rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
 
     assert!(
-        header_xml.contains("[rwml chart placeholder: Header &lt;chart&gt;]"),
-        "header chart placeholder missing: {header_xml}"
+        header_xml.contains(r#"<c:chart r:id="rId1"/>"#)
+            && header_xml.contains(r#"descr="Header &lt;chart&gt;""#),
+        "header chart drawing missing: {header_xml}"
     );
     assert!(
-        footer_xml.contains("[rwml chart placeholder: Footer chart]"),
-        "footer chart placeholder missing: {footer_xml}"
+        footer_xml.contains(r#"<c:chart r:id="rId1"/>"#),
+        "footer chart drawing missing: {footer_xml}"
     );
     assert!(
-        !parts.keys().any(|part| part.starts_with("word/charts/")),
-        "header/footer chart placeholders should not emit chart parts: {:?}",
+        parts.contains_key("word/charts/chart1.xml")
+            && parts.contains_key("word/charts/chart2.xml")
+            && parts.contains_key("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+            && parts.contains_key("word/embeddings/Microsoft_Excel_Worksheet2.xlsx"),
+        "header/footer chart package parts missing: {:?}",
         parts.keys().collect::<Vec<_>>()
     );
-
-    let reopened = Document::open(&bytes).expect("header/footer chart placeholder .docx reopens");
-    let text = reopened.text();
     assert!(
-        text.contains("[rwml chart placeholder: Header <chart>]")
-            && text.contains("[rwml chart placeholder: Footer chart]"),
-        "header/footer chart placeholders not readable after reopen: {text:?}"
+        header_rels.contains("relationships/chart")
+            && header_rels.contains(r#"Target="charts/chart1.xml""#),
+        "header-local chart relationship missing: {header_rels}"
     );
+    assert!(
+        footer_rels.contains("relationships/chart")
+            && footer_rels.contains(r#"Target="charts/chart2.xml""#),
+        "footer-local chart relationship missing: {footer_rels}"
+    );
+    assert!(
+        !document_rels.contains("relationships/chart"),
+        "{document_rels}"
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer chart .docx reopens");
+    let reopened_model = reopened.model();
+    let [Block::Chart(header)] = reopened_model.setup.header.as_slice() else {
+        panic!("expected reopened header chart");
+    };
+    let [Block::Chart(footer)] = reopened_model.setup.footer.as_slice() else {
+        panic!("expected reopened footer chart");
+    };
+    assert_eq!(header.alt.as_deref(), Some("Header <chart>"));
+    assert_eq!(footer.title.as_deref(), Some("Footer chart"));
+    assert_eq!(reopened.report().features.unsupported_charts, 0);
 }
 
 #[test]
@@ -3102,20 +3693,30 @@ fn write_docx_keeps_header_footer_content_control_runs() {
 }
 
 #[test]
-fn write_docx_keeps_header_footer_bookmark_runs() {
+fn write_docx_keeps_header_footer_bookmark_and_internal_anchor_runs() {
     let model = DocModel {
         blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
         setup: DocSetup {
             header: vec![Block::Paragraph(Paragraph {
-                runs: vec![RunBuilder::new("Header anchor")
-                    .bookmark("HeaderMark")
-                    .build()],
+                runs: vec![
+                    RunBuilder::new("Header anchor")
+                        .bookmark("HeaderMark")
+                        .build(),
+                    RunBuilder::new(" header jump")
+                        .hyperlink("#HeaderMark")
+                        .build(),
+                ],
                 ..Paragraph::default()
             })],
             footer: vec![Block::Paragraph(Paragraph {
-                runs: vec![RunBuilder::new("Footer anchor")
-                    .bookmark("FooterMark")
-                    .build()],
+                runs: vec![
+                    RunBuilder::new("Footer anchor")
+                        .bookmark("FooterMark")
+                        .build(),
+                    RunBuilder::new(" footer jump")
+                        .hyperlink("#FooterMark")
+                        .build(),
+                ],
                 ..Paragraph::default()
             })],
             ..DocSetup::default()
@@ -3141,6 +3742,10 @@ fn write_docx_keeps_header_footer_bookmark_runs() {
         header_start < header_text && header_text < header_end,
         "header bookmark XML missing or out of order: {header_xml}"
     );
+    assert!(
+        header_xml.contains(r#"<w:hyperlink w:anchor="HeaderMark">"#),
+        "header internal anchor missing: {header_xml}"
+    );
 
     let footer_start = footer_xml
         .find(r#"<w:bookmarkStart w:id="1" w:name="FooterMark"/>"#)
@@ -3155,11 +3760,33 @@ fn write_docx_keeps_header_footer_bookmark_runs() {
         footer_start < footer_text && footer_text < footer_end,
         "footer bookmark XML missing or out of order: {footer_xml}"
     );
+    assert!(
+        footer_xml.contains(r#"<w:hyperlink w:anchor="FooterMark">"#),
+        "footer internal anchor missing: {footer_xml}"
+    );
+    assert!(!parts.contains_key("word/_rels/header1.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/footer1.xml.rels"));
 
     let reopened = Document::open(&bytes).expect("header/footer bookmark .docx reopens");
+    let reopened_model = reopened.model();
+    let Block::Paragraph(header) = &reopened_model.setup.header[0] else {
+        panic!("expected reopened header paragraph")
+    };
+    assert!(matches!(
+        &header.runs[1].field,
+        FieldRole::Hyperlink { url } if url == "#HeaderMark"
+    ));
+    let Block::Paragraph(footer) = &reopened_model.setup.footer[0] else {
+        panic!("expected reopened footer paragraph")
+    };
+    assert!(matches!(
+        &footer.runs[1].field,
+        FieldRole::Hyperlink { url } if url == "#FooterMark"
+    ));
     let header_text = reopened.header_text();
     assert!(
-        header_text.contains("Header anchor") && header_text.contains("Footer anchor"),
+        header_text.contains("Header anchor header jump")
+            && header_text.contains("Footer anchor footer jump"),
         "header/footer bookmark text not readable after reopen: {header_text:?}"
     );
 }
@@ -3385,6 +4012,97 @@ fn write_docx_keeps_header_footer_hyperlink_runs() {
         &footer.runs[0].field,
         FieldRole::Hyperlink { url } if url == "https://example.com/footer"
     ));
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_keeps_running_surface_hyperlink_annotations() {
+    let header_url = "https://example.com/running-header";
+    let footer_url = "https://example.com/running-footer";
+    let table_url = "https://example.com/running-table";
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("Header link").hyperlink(header_url).build()],
+                ..Paragraph::default()
+            })],
+            footer: vec![
+                Block::Paragraph(Paragraph {
+                    runs: vec![RunBuilder::new("Footer link").hyperlink(footer_url).build()],
+                    ..Paragraph::default()
+                }),
+                Block::Table(
+                    TableBuilder::new()
+                        .row([
+                            CellBuilder::new().paragraph_runs([RunBuilder::new("Table link")
+                                .hyperlink(table_url)
+                                .build()]),
+                        ])
+                        .build(),
+                ),
+            ],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+    let contains_target = |pdf: &[u8], target: &str| {
+        pdf.windows(target.len())
+            .any(|window| window == target.as_bytes())
+    };
+
+    let direct = rwml::render_pdf_with_report(&model);
+    assert_eq!(direct.report.pages, 1);
+    for target in [header_url, footer_url, table_url] {
+        assert!(
+            contains_target(&direct.pdf, target),
+            "direct-model running target missing from PDF: {target}"
+        );
+    }
+    assert_eq!(direct.pdf, rwml::render_pdf_with_report(&model).pdf);
+
+    let visible_url = "https://example.com/visible-running-row";
+    let clipped_url = "https://example.com/clipped-running-row";
+    let clipped_model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Table(
+                TableBuilder::new()
+                    .row([CellBuilder::new()
+                        .paragraph_runs([RunBuilder::new("Visible link")
+                            .hyperlink(visible_url)
+                            .build()])
+                        .paragraph("Spacer one")
+                        .paragraph("Spacer two")
+                        .paragraph("Spacer three")
+                        .paragraph_runs([RunBuilder::new("Clipped link")
+                            .hyperlink(clipped_url)
+                            .build()])])
+                    .build(),
+            )],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+    let clipped = rwml::render_pdf_with_report(&clipped_model);
+    assert_eq!(clipped.report.pages, 1);
+    assert!(contains_target(&clipped.pdf, visible_url));
+    assert!(
+        !contains_target(&clipped.pdf, clipped_url),
+        "fully clipped running-row target must not create an annotation"
+    );
+
+    let bytes = rwml::write_docx(&model);
+    let reopened = Document::open(&bytes).expect("running-link DOCX reopens");
+    let opened = reopened.to_pdf_with_report();
+    assert_eq!(opened.report.pages, 1);
+    for target in [header_url, footer_url, table_url] {
+        assert!(
+            contains_target(&opened.pdf, target),
+            "reopened running target missing from PDF: {target}"
+        );
+    }
+    assert_eq!(opened.pdf, reopened.to_pdf_with_report().pdf);
 }
 
 #[test]
@@ -4321,6 +5039,15 @@ fn image_builder_adds_alt_text_and_size() {
     let images = reopened.images();
     assert_eq!(images.len(), 1);
     assert_eq!(images[0].bytes.as_deref(), Some(png.as_slice()));
+    assert_eq!(images[0].alt.as_deref(), Some("Chart <trend>"));
+    assert_eq!(reopened.to_markdown(), "![Chart \\<trend\\>]()");
+    assert!(
+        reopened.to_html().contains(r#"alt="Chart &lt;trend&gt;""#),
+        "HTML export must preserve escaped image alt text"
+    );
+
+    let converted = Document::open(&reopened.to_docx()).expect("fresh DOCX conversion reopens");
+    assert_eq!(converted.images()[0].alt.as_deref(), Some("Chart <trend>"));
 }
 
 #[test]
@@ -7997,6 +8724,79 @@ fn render_pdf_draws_authored_bar_chart_without_unsupported_chart_warning() {
         rendered.pdf.len() > empty.pdf.len() + 100,
         "chart drawing should add visible PDF content"
     );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_charts_in_running_surface_bands() {
+    let chart = ChartBuilder::bar()
+        .title("Quarterly revenue")
+        .categories(["Q1", "Q2", "Q3"])
+        .series("Revenue", [42.0, 51.5, 63.0])
+        .size_px(160, 80)
+        .alt("Running revenue chart")
+        .build();
+    let page = PageSetup {
+        width_pt: 240.0,
+        height_pt: 200.0,
+        margin_pt: 60.0,
+        ..PageSetup::default()
+    };
+    let model = |header, footer, page| DocModel {
+        blocks: vec![Block::Paragraph(
+            ParagraphBuilder::new()
+                .runs([RunBuilder::new("Body").build()])
+                .build(),
+        )],
+        setup: DocSetup {
+            page,
+            header,
+            footer,
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+    let baseline = model(Vec::new(), Vec::new(), page);
+    let header = model(vec![Block::Chart(chart.clone())], Vec::new(), page);
+    let footer = model(Vec::new(), vec![Block::Chart(chart.clone())], page);
+    let both = model(
+        vec![Block::Chart(chart.clone())],
+        vec![Block::Chart(chart.clone())],
+        page,
+    );
+    let tiny_page = PageSetup {
+        margin_top_pt: Some(30.0),
+        ..page
+    };
+    let tiny_baseline = model(Vec::new(), Vec::new(), tiny_page);
+    let tiny_header = model(vec![Block::Chart(chart)], Vec::new(), tiny_page);
+
+    let baseline_render = rwml::render_pdf_with_report(&baseline);
+    let header_render = rwml::render_pdf_with_report(&header);
+    let footer_render = rwml::render_pdf_with_report(&footer);
+    let both_render = rwml::render_pdf_with_report(&both);
+    let tiny_baseline_render = rwml::render_pdf_with_report(&tiny_baseline);
+    let tiny_header_render = rwml::render_pdf_with_report(&tiny_header);
+    for rendered in [
+        &baseline_render,
+        &header_render,
+        &footer_render,
+        &both_render,
+        &tiny_baseline_render,
+        &tiny_header_render,
+    ] {
+        assert_eq!(rendered.report.pages, 1);
+        assert_eq!(rendered.report.unsupported.charts, 0);
+    }
+    assert_ne!(header_render.pdf, baseline_render.pdf);
+    assert_ne!(footer_render.pdf, baseline_render.pdf);
+    assert_ne!(header_render.pdf, footer_render.pdf);
+    assert_ne!(both_render.pdf, header_render.pdf);
+    assert_ne!(both_render.pdf, footer_render.pdf);
+    assert_ne!(tiny_header_render.pdf, tiny_baseline_render.pdf);
+    assert_eq!(header_render.pdf, rwml::render_pdf_with_report(&header).pdf);
+    assert_eq!(footer_render.pdf, rwml::render_pdf_with_report(&footer).pdf);
+    assert_eq!(both_render.pdf, rwml::render_pdf_with_report(&both).pdf);
 }
 
 #[cfg(feature = "render")]

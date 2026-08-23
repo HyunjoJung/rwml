@@ -146,6 +146,31 @@ fn parse_expected_reports(manifest: &str) -> Vec<ExpectedReport> {
         .collect()
 }
 
+#[test]
+fn public_report_manifest_accounts_for_every_docx_fixture() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/public");
+    let manifest = fs::read_to_string(root.join("MANIFEST.tsv")).expect("read corpus manifest");
+    let expected = parse_expected_reports(&manifest);
+
+    let mut manifested: Vec<_> = expected.iter().map(|row| root.join(&row.path)).collect();
+    manifested.sort();
+    manifested.dedup();
+
+    let mut discovered = Vec::new();
+    collect_docx(&root, &mut discovered);
+    discovered.sort();
+
+    assert_eq!(
+        manifested.len(),
+        expected.len(),
+        "manifest paths must be unique"
+    );
+    assert_eq!(
+        manifested, discovered,
+        "MANIFEST.tsv must account for every committed public .docx fixture"
+    );
+}
+
 fn warning_name(warning: &DocumentWarning) -> &'static str {
     match warning {
         DocumentWarning::UnsupportedFieldEvaluation { .. } => "UnsupportedFieldEvaluation",

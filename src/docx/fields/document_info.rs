@@ -111,6 +111,84 @@ pub(crate) fn supports_document_info_field_syntax(instruction: &str) -> bool {
     document_info_instruction(instruction).is_some()
 }
 
+pub(crate) fn supports_preserved_document_info_field_syntax(instruction: &str) -> bool {
+    document_info_instruction(instruction)
+        .is_some_and(|spec| is_preserved_document_info_property(&spec.property))
+}
+
+pub(crate) fn computed_preserved_document_info_result(
+    instruction: &str,
+    core_properties: &CoreProperties,
+    custom_properties: &HashMap<String, String>,
+) -> Option<String> {
+    let spec = document_info_instruction(instruction)?;
+    match &spec.property {
+        DocumentInfoProperty::Custom(key) => {
+            custom_properties.get(key)?;
+        }
+        property if is_core_document_info_property(property) => {
+            let value = core_document_info_value(property, core_properties)?;
+            if value.is_empty() || value.trim() != value {
+                return None;
+            }
+        }
+        _ => return None,
+    }
+    computed_document_info_result(
+        instruction,
+        core_properties,
+        custom_properties,
+        &HashMap::new(),
+        &HashMap::new(),
+        None,
+    )
+}
+
+fn is_preserved_document_info_property(property: &DocumentInfoProperty) -> bool {
+    is_core_document_info_property(property) || matches!(property, DocumentInfoProperty::Custom(_))
+}
+
+fn is_core_document_info_property(property: &DocumentInfoProperty) -> bool {
+    matches!(
+        property,
+        DocumentInfoProperty::Title
+            | DocumentInfoProperty::Subject
+            | DocumentInfoProperty::Creator
+            | DocumentInfoProperty::Description
+            | DocumentInfoProperty::Keywords
+            | DocumentInfoProperty::Category
+            | DocumentInfoProperty::ContentStatus
+            | DocumentInfoProperty::LastModifiedBy
+            | DocumentInfoProperty::CreatedDate
+            | DocumentInfoProperty::SavedDate
+            | DocumentInfoProperty::PrintDate
+            | DocumentInfoProperty::Version
+            | DocumentInfoProperty::Revision
+    )
+}
+
+fn core_document_info_value<'a>(
+    property: &DocumentInfoProperty,
+    core_properties: &'a CoreProperties,
+) -> Option<&'a str> {
+    match property {
+        DocumentInfoProperty::Title => core_properties.title.as_deref(),
+        DocumentInfoProperty::Subject => core_properties.subject.as_deref(),
+        DocumentInfoProperty::Creator => core_properties.creator.as_deref(),
+        DocumentInfoProperty::Description => core_properties.description.as_deref(),
+        DocumentInfoProperty::Keywords => core_properties.keywords.as_deref(),
+        DocumentInfoProperty::Category => core_properties.category.as_deref(),
+        DocumentInfoProperty::ContentStatus => core_properties.content_status.as_deref(),
+        DocumentInfoProperty::LastModifiedBy => core_properties.last_modified_by.as_deref(),
+        DocumentInfoProperty::CreatedDate => core_properties.created.as_deref(),
+        DocumentInfoProperty::SavedDate => core_properties.modified.as_deref(),
+        DocumentInfoProperty::PrintDate => core_properties.last_printed.as_deref(),
+        DocumentInfoProperty::Version => core_properties.version.as_deref(),
+        DocumentInfoProperty::Revision => core_properties.revision.as_deref(),
+        _ => None,
+    }
+}
+
 // Deterministic-given-inputs evaluation for volatile document-info fields: the
 // caller-supplied FieldContext is the input, so identical document + context
 // always yields identical results. Explicit literal overrides win over context.
@@ -366,6 +444,17 @@ pub(crate) fn computed_revision_number_result(
     let text_format = revision_number_field_text_format(instruction)?;
     let revision = core_properties.revision.clone()?;
     Some(apply_field_text_format(revision, text_format))
+}
+
+pub(crate) fn computed_preserved_revision_number_result(
+    instruction: &str,
+    core_properties: &CoreProperties,
+) -> Option<String> {
+    let revision = core_properties.revision.as_deref()?;
+    if revision.is_empty() || revision.trim() != revision {
+        return None;
+    }
+    computed_revision_number_result(instruction, core_properties)
 }
 
 pub(crate) fn supports_revision_number_field_syntax(instruction: &str) -> bool {

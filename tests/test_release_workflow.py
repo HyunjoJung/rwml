@@ -18,6 +18,45 @@ def step_body(text, name):
 
 
 class ReleaseWorkflowTests(unittest.TestCase):
+    def test_release_workflow_is_tag_only(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertNotIn("workflow_dispatch", text)
+        self.assertIn("tags: ['v*']", text)
+
+    def test_local_release_preflight_is_non_publishing_and_complete(self):
+        preflight = WORKFLOW.parents[2] / "scripts" / "release_preflight.py"
+        text = preflight.read_text(encoding="utf-8")
+
+        self.assertNotIn("cargo publish", text)
+        self.assertNotIn("gh release", text)
+        self.assertIn("CARGO_TARGET_DIR", text)
+        self.assertIn("cargo-target", text)
+        self.assertIn('COMMAND_ENV["PATH"]', text)
+        self.assertIn('"-m", "venv"', text)
+        self.assertIn('"PyMuPDF"', text)
+        self.assertIn('"Pillow"', text)
+        self.assertIn("JSONDecoder", text)
+        for command in [
+            "public_hygiene_audit.py",
+            "gen_public_corpus.py",
+            "render_validate.py",
+            "bench_vs_mature.py",
+            "release_manifest.py",
+            "cargo package",
+        ]:
+            self.assertIn(command, text)
+        self.assertIn('"fuzz/Cargo.toml"', text)
+        for artifact in [
+            "rwml-{version}.crate",
+            "rwml-fonts-{version}.crate",
+            "public-hygiene.json",
+            "render-validation.json",
+            "extract-benchmark.json",
+            "rwml-release-manifest.json",
+        ]:
+            self.assertIn(artifact, text)
+
     def test_release_workflow_publishes_manifest_artifact(self):
         text = WORKFLOW.read_text(encoding="utf-8")
 
@@ -39,7 +78,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(
             'crate_version=$(cargo metadata --no-deps --format-version 1', text
         )
-        self.assertIn('if [[ "$GITHUB_REF" == refs/tags/* ]]', text)
+        self.assertIn(
+            'if [[ "$GITHUB_REF_TYPE" != "tag" ]] || [[ "$GITHUB_REF_NAME" != v* ]]; then',
+            text,
+        )
         self.assertIn('"$GITHUB_REF_NAME" != "v${crate_version}"', text)
         self.assertIn(
             'echo "RWML_VERSION=${crate_version}" >> "$GITHUB_ENV"', text
@@ -47,7 +89,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('--version "$RWML_VERSION"', text)
         self.assertNotIn('VERSION="${GITHUB_REF_NAME#v}"', text)
         self.assertIn("--release-policy public-release", text)
-        self.assertNotIn("--enforce-policy-inputs", text)
+        self.assertIn("--enforce-policy-inputs", text)
         self.assertIn("--hygiene-report dist/public-hygiene.json", text)
         self.assertIn("--corpus-manifest corpus/public/MANIFEST.tsv", text)
         self.assertIn("--corpus-manifest corpus/public/RENDER_MANIFEST.tsv", text)
@@ -77,16 +119,27 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("target/package/rwml-${RWML_VERSION}.crate", text)
         self.assertIn("target/package/rwml-${{ env.RWML_VERSION }}.crate", text)
         self.assertIn("actions/upload-artifact@v7", text)
+        for artifact in [
+            "rwml-${RWML_VERSION}.crate",
+            "rwml-fonts-${RWML_VERSION}.crate",
+            "public-hygiene.json",
+            "render-validation.json",
+            "extract-benchmark.json",
+            "rwml-release-manifest.json",
+        ]:
+            self.assertIn(artifact, text)
 
     def test_release_workflow_checks_patch_compatible_public_api(self):
         text = WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("fetch-depth: 0", text)
+        self.assertIn("dtolnay/rust-toolchain@1.92.0", text)
+        self.assertNotIn("dtolnay/rust-toolchain@stable", text)
         self.assertIn(
             "cargo install cargo-semver-checks --version 0.48.0 --locked", text
         )
         self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.0 "
+            "cargo semver-checks check-release --baseline-rev v0.1.1 "
             "--release-type patch --default-features",
             text,
         )
@@ -158,7 +211,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         positions = [text.index(step) for step in ordered_steps]
         self.assertEqual(positions, sorted(positions))
         self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.0 "
+            "cargo semver-checks check-release --baseline-rev v0.1.1 "
             "--release-type patch --all-features",
             text,
         )

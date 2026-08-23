@@ -72,18 +72,21 @@ class CiWorkflowTests(unittest.TestCase):
 
     def test_ci_workflow_checks_patch_compatible_public_api(self):
         text = WORKFLOW.read_text(encoding="utf-8")
+        check_job = text[text.index("  check:\n") : text.index("\n  wasm:\n")]
 
         self.assertIn("fetch-depth: 0", text)
+        self.assertIn("dtolnay/rust-toolchain@1.92.0", check_job)
+        self.assertNotIn("dtolnay/rust-toolchain@stable", check_job)
         self.assertIn(
             "cargo install cargo-semver-checks --version 0.48.0 --locked", text
         )
         self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.0 "
+            "cargo semver-checks check-release --baseline-rev v0.1.1 "
             "--release-type patch --default-features",
             text,
         )
         self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.0 "
+            "cargo semver-checks check-release --baseline-rev v0.1.1 "
             "--release-type patch --all-features",
             text,
         )

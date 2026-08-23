@@ -352,6 +352,38 @@ fn paragraph_layout_render_variant_docx(style_properties: &str) -> Vec<u8> {
 }
 
 #[cfg(feature = "render")]
+fn table_cell_absolute_line_spacing_docx(paragraph_properties: &str, nested: bool) -> Vec<u8> {
+    let content_types = content_types(false);
+    let paragraph = format!(
+        r#"<w:p><w:pPr>{paragraph_properties}</w:pPr>
+            <w:r><w:t>table-cell absolute spacing</w:t></w:r></w:p>"#
+    );
+    let cell_content = if nested {
+        format!(r#"<w:tbl><w:tr><w:tc>{paragraph}</w:tc></w:tr></w:tbl><w:p/>"#)
+    } else {
+        paragraph
+    };
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:tbl><w:tr><w:tc>{cell_content}</w:tc></w:tr></w:tbl>
+            <w:p><w:r><w:t>following paragraph</w:t></w:r></w:p>
+            <w:sectPr><w:pgSz w:w="4400" w:h="6000"/>
+                <w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
+#[cfg(feature = "render")]
 fn table_pagination_docx(
     table_properties: &str,
     direct_row_props: &str,
@@ -360,7 +392,7 @@ fn table_pagination_docx(
     let content_types = content_types(true);
     let document_xml = format!(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
-            <w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr><w:r><w:t>seed</w:t></w:r></w:p>
+            <w:p><w:r><w:t>seed</w:t></w:r></w:p>
             <w:tbl><w:tblPr>{table_properties}</w:tblPr><w:tr>{direct_row_props}<w:tc>
                 <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p>
                 <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>
@@ -368,7 +400,7 @@ fn table_pagination_docx(
                 <w:p><w:r><w:t>four</w:t></w:r></w:p>
                 <w:p><w:r><w:t>five</w:t></w:r></w:p>
             </w:tc></w:tr></w:tbl>
-            <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>after</w:t></w:r></w:p>
+            <w:p><w:r><w:t>after</w:t></w:r></w:p>
             <w:sectPr><w:pgSz w:w="4400" w:h="2400"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
         </w:body></w:document>"#
     );
@@ -426,6 +458,21 @@ fn horizontal_band_table_style_pagination_docx(direct_row_props: &str) -> Vec<u8
 }
 
 #[cfg(feature = "render")]
+fn first_column_table_style_pagination_docx(direct_row_props: &str) -> Vec<u8> {
+    table_pagination_docx(
+        r#"<w:tblStyle w:val="FirstColumnKeep"/><w:tblLook w:firstColumn="1" w:noHBand="1" w:noVBand="1"/>"#,
+        direct_row_props,
+        r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:style w:type="table" w:styleId="FirstColumnKeep">
+                <w:tblStylePr w:type="firstCol">
+                    <w:trPr><w:cantSplit/></w:trPr>
+                </w:tblStylePr>
+            </w:style>
+        </w:styles>"#,
+    )
+}
+
+#[cfg(feature = "render")]
 fn conditional_cell_presentation_render_docx(presentation: &str) -> Vec<u8> {
     let content_types = content_types(true);
     let styles_xml = format!(
@@ -456,6 +503,227 @@ fn conditional_cell_presentation_render_docx(presentation: &str) -> Vec<u8> {
                 </w:sectPr>
             </w:body></w:document>"#,
         ),
+    ])
+}
+
+#[cfg(feature = "render")]
+fn table_cell_tab_render_docx(cell_tabs: &str, nested: bool) -> Vec<u8> {
+    let content_types = content_types(false);
+    let cell_body = if nested {
+        format!(
+            r#"<w:p><w:r><w:t>outer</w:t></w:r></w:p>
+            <w:tbl><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid>
+                <w:tr><w:tc><w:p><w:pPr>{cell_tabs}</w:pPr>
+                    <w:r><w:t>lead</w:t><w:tab/><w:t>tail</w:t></w:r>
+                </w:p></w:tc></w:tr>
+            </w:tbl>"#
+        )
+    } else {
+        format!(
+            r#"<w:p><w:pPr>{cell_tabs}</w:pPr>
+                <w:r><w:t>lead</w:t><w:tab/><w:t>tail</w:t></w:r>
+            </w:p>"#
+        )
+    };
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:tbl><w:tblPr><w:tblW w:w="3600" w:type="dxa"/></w:tblPr>
+                <w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid>
+                <w:tr><w:tc>{cell_body}</w:tc></w:tr>
+            </w:tbl>
+            <w:sectPr><w:pgSz w:w="4400" w:h="2600"/>
+                <w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
+#[cfg(feature = "render")]
+fn default_tab_stop_render_docx(default_tab_stop_twips: Option<u32>) -> Vec<u8> {
+    let content_types = content_types(false);
+    let settings = default_tab_stop_twips.map_or_else(String::new, |twips| {
+        format!(
+            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="{twips}"/></w:settings>"#
+        )
+    });
+    let parts = [
+        ("[Content_Types].xml", content_types.as_str()),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:r><w:t>lead</w:t><w:tab/><w:t>tail</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="2600"/><w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/></w:sectPr>
+            </w:body></w:document>"#,
+        ),
+    ];
+    let mut out = docx_fixture(&parts);
+    if !settings.is_empty() {
+        let mut with_settings = Vec::new();
+        {
+            let cursor = std::io::Cursor::new(&mut with_settings);
+            let mut zip = zip::ZipWriter::new(cursor);
+            let opt = zip::write::SimpleFileOptions::default();
+            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&out)).unwrap();
+            for index in 0..archive.len() {
+                let mut entry = archive.by_index(index).unwrap();
+                zip.start_file(entry.name(), opt).unwrap();
+                std::io::copy(&mut entry, &mut zip).unwrap();
+            }
+            zip.start_file("word/settings.xml", opt).unwrap();
+            zip.write_all(settings.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        out = with_settings;
+    }
+    out
+}
+
+#[cfg(feature = "render")]
+fn aligned_tab_render_docx(jc: &str, stop_twips: Option<u32>) -> Vec<u8> {
+    let content_types = content_types(false);
+    let tabs = stop_twips.map_or_else(String::new, |twips| {
+        format!(r#"<w:tabs><w:tab w:val="left" w:pos="{twips}"/></w:tabs>"#)
+    });
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:p><w:pPr><w:jc w:val="{jc}"/>{tabs}</w:pPr>
+                <w:r><w:t>A</w:t><w:tab/><w:t>B</w:t></w:r>
+            </w:p>
+            <w:sectPr><w:pgSz w:w="4400" w:h="2600"/>
+                <w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
+#[cfg(feature = "render")]
+fn leader_tab_render_docx(tabs: &str) -> Vec<u8> {
+    let content_types = content_types(false);
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:p><w:pPr>{tabs}</w:pPr>
+                <w:r><w:t>A</w:t><w:tab/><w:t>B</w:t><w:tab/><w:t>C</w:t></w:r>
+            </w:p>
+            <w:sectPr><w:pgSz w:w="4400" w:h="2600"/>
+                <w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
+#[cfg(feature = "render")]
+fn rtl_leader_tab_render_docx(tabs: &str) -> Vec<u8> {
+    let content_types = content_types(false);
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:p><w:pPr><w:bidi/><w:jc w:val="right"/>{tabs}</w:pPr>
+                <w:r><w:rPr><w:rtl/></w:rPr><w:t>א</w:t><w:tab/><w:t>ב</w:t><w:tab/><w:t>ג</w:t></w:r>
+            </w:p>
+            <w:sectPr><w:pgSz w:w="4400" w:h="2600"/>
+                <w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
+#[cfg(feature = "render")]
+fn rtl_tab_render_docx(tab_val: &str, text: &str, stop_twips: Option<u32>) -> Vec<u8> {
+    let content_types = content_types(false);
+    let tabs = stop_twips.map_or_else(String::new, |twips| {
+        format!(r#"<w:tabs><w:tab w:val="{tab_val}" w:pos="{twips}"/></w:tabs>"#)
+    });
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:p><w:pPr><w:bidi/><w:jc w:val="right"/>{tabs}</w:pPr>
+                <w:r><w:rPr><w:rtl/></w:rPr><w:t>א</w:t><w:tab/><w:t>{text}</w:t></w:r>
+            </w:p>
+            <w:sectPr><w:pgSz w:w="4400" w:h="2600"/>
+                <w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
+#[cfg(feature = "render")]
+fn rtl_table_cell_tab_render_docx(tab_val: &str, text: &str, stop_twips: Option<u32>) -> Vec<u8> {
+    let content_types = content_types(false);
+    let tabs = stop_twips.map_or_else(String::new, |twips| {
+        format!(r#"<w:tabs><w:tab w:val="{tab_val}" w:pos="{twips}"/></w:tabs>"#)
+    });
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:tbl><w:tblPr><w:tblW w:w="3600" w:type="dxa"/></w:tblPr>
+                <w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid>
+                <w:tr><w:tc><w:p><w:pPr><w:bidi/><w:jc w:val="right"/>{tabs}</w:pPr>
+                    <w:r><w:rPr><w:rtl/></w:rPr><w:t>א</w:t><w:tab/><w:t>{text}</w:t></w:r>
+                </w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:sectPr><w:pgSz w:w="4400" w:h="2600"/>
+                <w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
     ])
 }
 
@@ -726,6 +994,14 @@ fn opened_docx_render_consumes_each_style_layout_value() {
             "proportional line spacing",
             r#"<w:spacing w:line="480" w:lineRule="auto"/>"#,
         ),
+        (
+            "exact line spacing",
+            r#"<w:spacing w:line="800" w:lineRule="exact"/>"#,
+        ),
+        (
+            "minimum line spacing",
+            r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#,
+        ),
         ("first-line indent", r#"<w:ind w:firstLine="360"/>"#),
         ("flat shading", r#"<w:shd w:val="clear" w:fill="DDEEFF"/>"#),
     ] {
@@ -733,6 +1009,45 @@ fn opened_docx_render_consumes_each_style_layout_value() {
         assert!(rendered.starts_with(b"%PDF-"), "{name}");
         assert_ne!(rendered, baseline, "{name} must affect PDF output");
         assert_eq!(rendered, render(properties), "{name} must be deterministic");
+    }
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_consumes_direct_and_nested_table_cell_absolute_line_spacing() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let render = |properties: &str, nested: bool| {
+        Document::open(&table_cell_absolute_line_spacing_docx(properties, nested))
+            .expect("table-cell line-spacing fixture opens")
+            .to_pdf_with_fonts(&fonts)
+    };
+
+    for (name, properties, nested) in [
+        (
+            "direct exact spacing",
+            r#"<w:spacing w:line="100" w:lineRule="exact"/>"#,
+            false,
+        ),
+        (
+            "direct minimum spacing",
+            r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#,
+            false,
+        ),
+        (
+            "nested exact spacing",
+            r#"<w:spacing w:line="800" w:lineRule="exact"/>"#,
+            true,
+        ),
+    ] {
+        let baseline = render("", nested);
+        let rendered = render(properties, nested);
+        assert!(rendered.starts_with(b"%PDF-"), "{name}");
+        assert_ne!(rendered, baseline, "{name} must affect PDF output");
+        assert_eq!(
+            rendered,
+            render(properties, nested),
+            "{name} must be deterministic"
+        );
     }
 }
 
@@ -818,6 +1133,33 @@ fn opened_docx_render_honors_horizontal_table_style_band_cant_split() {
 
 #[cfg(feature = "render")]
 #[test]
+fn opened_docx_render_honors_first_column_table_style_cant_split() {
+    let first_column =
+        Document::open(&first_column_table_style_pagination_docx("")).expect("fixture opens");
+    let direct_off = Document::open(&first_column_table_style_pagination_docx(
+        r#"<w:trPr><w:cantSplit w:val="off"/></w:trPr>"#,
+    ))
+    .expect("fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let first_column_pages = first_column
+        .layout_pages_with_fonts(&fonts)
+        .expect("first-column table style lays out")
+        .pages;
+    let direct_off_pages = direct_off
+        .layout_pages_with_fonts(&fonts)
+        .expect("direct override lays out")
+        .pages;
+
+    assert_eq!(
+        (first_column_pages, direct_off_pages),
+        (3, 2),
+        "the selected first-column style keeps the row together while direct off restores splitting"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
 fn opened_docx_render_consumes_conditional_cell_presentation_deterministically() {
     let baseline = Document::open(&conditional_cell_presentation_render_docx(""))
         .expect("baseline conditional table opens");
@@ -851,6 +1193,253 @@ fn opened_docx_render_consumes_conditional_cell_presentation_deterministically()
     assert!(styled_pdf.starts_with(b"%PDF-"));
     assert_ne!(styled_pdf, baseline_pdf);
     assert_eq!(styled_pdf, styled.to_pdf_with_fonts(&fonts));
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_uses_explicit_tabs_inside_table_cells() {
+    let default = Document::open(&table_cell_tab_render_docx("", false))
+        .expect("default table-cell tab fixture opens");
+    let explicit = Document::open(&table_cell_tab_render_docx(
+        r#"<w:tabs><w:tab w:val="left" w:pos="1440"/></w:tabs>"#,
+        false,
+    ))
+    .expect("explicit table-cell tab fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let default_pdf = default.to_pdf_with_fonts(&fonts);
+    let explicit_pdf = explicit.to_pdf_with_fonts(&fonts);
+    let model_pdf = rwml::try_render_pdf_with_fonts(&explicit.model(), &fonts)
+        .expect("model-only table-cell tab fixture renders");
+    assert!(default_pdf.starts_with(b"%PDF-"));
+    assert!(explicit_pdf.starts_with(b"%PDF-"));
+    assert_ne!(
+        default_pdf, explicit_pdf,
+        "an explicit tab stop in a table cell must affect deterministic PDF output"
+    );
+    assert_ne!(
+        explicit_pdf, model_pdf,
+        "opened-document cell tab sidecar must affect rendering beyond the model"
+    );
+    assert_eq!(
+        explicit_pdf,
+        explicit.to_pdf_with_fonts(&fonts),
+        "table-cell tab rendering must remain deterministic"
+    );
+
+    let nested_default = Document::open(&table_cell_tab_render_docx("", true))
+        .expect("default nested table-cell tab fixture opens");
+    let nested_explicit = Document::open(&table_cell_tab_render_docx(
+        r#"<w:tabs><w:tab w:val="left" w:pos="1440"/></w:tabs>"#,
+        true,
+    ))
+    .expect("explicit nested table-cell tab fixture opens");
+    let nested_default_pdf = nested_default.to_pdf_with_fonts(&fonts);
+    let nested_explicit_pdf = nested_explicit.to_pdf_with_fonts(&fonts);
+    assert_ne!(
+        nested_default_pdf, nested_explicit_pdf,
+        "explicit tab stops must reach recursively nested table cells"
+    );
+    assert_eq!(
+        nested_explicit_pdf,
+        nested_explicit.to_pdf_with_fonts(&fonts),
+        "nested table-cell tab rendering must remain deterministic"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_uses_settings_default_tab_stop_interval() {
+    let default =
+        Document::open(&default_tab_stop_render_docx(None)).expect("default-tab fixture opens");
+    let configured = Document::open(&default_tab_stop_render_docx(Some(1440)))
+        .expect("configured default-tab fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let default_pdf = default.to_pdf_with_fonts(&fonts);
+    let configured_pdf = configured.to_pdf_with_fonts(&fonts);
+    let model_pdf = rwml::try_render_pdf_with_fonts(&configured.model(), &fonts)
+        .expect("model-only configured default-tab fixture renders");
+    assert!(default_pdf.starts_with(b"%PDF-"));
+    assert!(configured_pdf.starts_with(b"%PDF-"));
+    assert_ne!(
+        default_pdf, configured_pdf,
+        "settings-defined default tab interval must affect deterministic PDF output"
+    );
+    assert_ne!(
+        configured_pdf, model_pdf,
+        "opened-document default-tab sidecar must affect rendering beyond the model"
+    );
+    assert_eq!(
+        configured_pdf,
+        configured.to_pdf_with_fonts(&fonts),
+        "settings-defined default-tab rendering must remain deterministic"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_uses_explicit_tabs_in_non_left_paragraph_alignments() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    for (jc, stop_twips) in [("center", 2000), ("right", 3800), ("both", 2000)] {
+        let default = Document::open(&aligned_tab_render_docx(jc, None))
+            .expect("default aligned-tab fixture opens");
+        let explicit = Document::open(&aligned_tab_render_docx(jc, Some(stop_twips)))
+            .expect("explicit aligned-tab fixture opens");
+
+        let default_pdf = default.to_pdf_with_fonts(&fonts);
+        let explicit_pdf = explicit.to_pdf_with_fonts(&fonts);
+        let model_pdf = rwml::try_render_pdf_with_fonts(&explicit.model(), &fonts)
+            .expect("model-only aligned-tab fixture renders");
+        assert!(default_pdf.starts_with(b"%PDF-"));
+        assert!(explicit_pdf.starts_with(b"%PDF-"));
+        assert_ne!(
+            default_pdf, explicit_pdf,
+            "explicit {jc} tab stop must affect deterministic PDF output"
+        );
+        assert_ne!(
+            explicit_pdf, model_pdf,
+            "opened-document {jc} tab sidecar must affect rendering beyond the model"
+        );
+        assert_eq!(
+            explicit_pdf,
+            explicit.to_pdf_with_fonts(&fonts),
+            "explicit {jc} tab rendering must remain deterministic"
+        );
+    }
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_draws_tab_leaders_and_bar_tabs() {
+    let plain = Document::open(&leader_tab_render_docx("")).expect("plain tab fixture opens");
+    let decorated = Document::open(&leader_tab_render_docx(
+        r#"<w:tabs>
+            <w:tab w:val="right" w:pos="2000" w:leader="dot"/>
+            <w:tab w:val="bar" w:pos="3000"/>
+        </w:tabs>"#,
+    ))
+    .expect("leader and bar tab fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let plain_pdf = plain.to_pdf_with_fonts(&fonts);
+    let decorated_pdf = decorated.to_pdf_with_fonts(&fonts);
+    let model_pdf = rwml::try_render_pdf_with_fonts(&decorated.model(), &fonts)
+        .expect("model-only leader fixture renders");
+    assert!(plain_pdf.starts_with(b"%PDF-"));
+    assert!(decorated_pdf.starts_with(b"%PDF-"));
+    assert_ne!(
+        plain_pdf, decorated_pdf,
+        "leader and bar tabs must affect PDF paint"
+    );
+    assert_ne!(
+        decorated_pdf, model_pdf,
+        "opened-document tab decorations must stay sidecar-only"
+    );
+    assert_eq!(
+        decorated_pdf,
+        decorated.to_pdf_with_fonts(&fonts),
+        "leader and bar tab rendering must remain deterministic"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_draws_rtl_tab_leaders_and_bar_tabs() {
+    let plain =
+        Document::open(&rtl_leader_tab_render_docx("")).expect("plain RTL tab fixture opens");
+    let decorated = Document::open(&rtl_leader_tab_render_docx(
+        r#"<w:tabs>
+            <w:tab w:val="left" w:pos="2000" w:leader="dot"/>
+            <w:tab w:val="bar" w:pos="3000"/>
+        </w:tabs>"#,
+    ))
+    .expect("RTL leader and bar tab fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let plain_pdf = plain.to_pdf_with_fonts(&fonts);
+    let decorated_pdf = decorated.to_pdf_with_fonts(&fonts);
+    let model_pdf = rwml::try_render_pdf_with_fonts(&decorated.model(), &fonts)
+        .expect("model-only RTL leader fixture renders");
+    assert!(plain_pdf.starts_with(b"%PDF-"));
+    assert!(decorated_pdf.starts_with(b"%PDF-"));
+    assert_ne!(
+        plain_pdf, decorated_pdf,
+        "RTL leader and bar tabs must affect PDF paint"
+    );
+    assert_ne!(
+        decorated_pdf, model_pdf,
+        "opened-document RTL tab decorations must stay sidecar-only"
+    );
+    assert_eq!(
+        decorated_pdf,
+        decorated.to_pdf_with_fonts(&fonts),
+        "RTL leader and bar tab rendering must remain deterministic"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_uses_explicit_rtl_center_end_and_decimal_tabs() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    for (tab_val, text) in [("center", "ב"), ("right", "אב"), ("decimal", "12.34")] {
+        let default = Document::open(&rtl_tab_render_docx(tab_val, text, None))
+            .expect("default RTL-tab fixture opens");
+        let explicit = Document::open(&rtl_tab_render_docx(tab_val, text, Some(2000)))
+            .expect("explicit RTL-tab fixture opens");
+
+        let default_pdf = default.to_pdf_with_fonts(&fonts);
+        let explicit_pdf = explicit.to_pdf_with_fonts(&fonts);
+        let model_pdf = rwml::try_render_pdf_with_fonts(&explicit.model(), &fonts)
+            .expect("model-only RTL-tab fixture renders");
+        assert!(default_pdf.starts_with(b"%PDF-"));
+        assert!(explicit_pdf.starts_with(b"%PDF-"));
+        assert_ne!(
+            default_pdf, explicit_pdf,
+            "explicit RTL {tab_val} tab stop must affect deterministic PDF output"
+        );
+        assert_ne!(
+            explicit_pdf, model_pdf,
+            "opened-document RTL {tab_val} tab sidecar must affect rendering beyond the model"
+        );
+        assert_eq!(
+            explicit_pdf,
+            explicit.to_pdf_with_fonts(&fonts),
+            "explicit RTL {tab_val} tab rendering must remain deterministic"
+        );
+    }
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_uses_explicit_rtl_tabs_inside_table_cells() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    for (tab_val, text) in [("center", "ב"), ("right", "אב"), ("decimal", "12.34")] {
+        let default = Document::open(&rtl_table_cell_tab_render_docx(tab_val, text, None))
+            .expect("default RTL table-cell tab fixture opens");
+        let explicit = Document::open(&rtl_table_cell_tab_render_docx(tab_val, text, Some(2000)))
+            .expect("explicit RTL table-cell tab fixture opens");
+
+        let default_pdf = default.to_pdf_with_fonts(&fonts);
+        let explicit_pdf = explicit.to_pdf_with_fonts(&fonts);
+        let model_pdf = rwml::try_render_pdf_with_fonts(&explicit.model(), &fonts)
+            .expect("model-only RTL table-cell tab fixture renders");
+        assert!(default_pdf.starts_with(b"%PDF-"));
+        assert!(explicit_pdf.starts_with(b"%PDF-"));
+        assert_ne!(
+            default_pdf, explicit_pdf,
+            "explicit RTL table-cell {tab_val} tab stop must affect PDF output"
+        );
+        assert_ne!(
+            explicit_pdf, model_pdf,
+            "opened-document RTL table-cell {tab_val} sidecar must affect rendering"
+        );
+        assert_eq!(
+            explicit_pdf,
+            explicit.to_pdf_with_fonts(&fonts),
+            "explicit RTL table-cell {tab_val} rendering must remain deterministic"
+        );
+    }
 }
 
 /// A table style's own `tblCellMar` is the table's cell-margin default, ahead

@@ -280,6 +280,29 @@ pub struct Spacing {
     pub line_pct: Option<f32>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum LineSpacingHint {
+    Exact(f32),
+    AtLeast(f32),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SectionColumnHint {
+    pub(crate) width_pt: f32,
+    pub(crate) space_after_pt: f32,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct SectionColumnLayoutHints {
+    pub(crate) columns: Vec<SectionColumnHint>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct RunningSurfaceDistanceHints {
+    pub(crate) header_pt: Option<f32>,
+    pub(crate) footer_pt: Option<f32>,
+}
+
 /// Paragraph indentation in points; `None` = unset.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Indent {
@@ -334,12 +357,43 @@ pub(crate) struct TableRowPaginationHint {
 
 pub(crate) type TableCellPaginationHints = Vec<Vec<Vec<Option<PaginationHint>>>>;
 
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningBlockPaginationHints {
+    pub(crate) paragraphs: Vec<PaginationHint>,
+    pub(crate) table_rows: Vec<Vec<TableRowPaginationHint>>,
+    pub(crate) table_cells: Vec<TableCellPaginationHints>,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfacePaginationHints {
+    pub(crate) header: RunningBlockPaginationHints,
+    pub(crate) first_header: RunningBlockPaginationHints,
+    pub(crate) even_header: RunningBlockPaginationHints,
+    pub(crate) footer: RunningBlockPaginationHints,
+    pub(crate) first_footer: RunningBlockPaginationHints,
+    pub(crate) even_footer: RunningBlockPaginationHints,
+}
+
+pub(crate) type TableCellLineSpacingHints = Vec<Vec<Vec<Option<LineSpacingHint>>>>;
+
 #[cfg(any(feature = "docx", feature = "render"))]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) type TableCellTabStopHints = Vec<Vec<Vec<Vec<TabStop>>>>;
+
+#[cfg(feature = "docx")]
+pub(crate) type TableCellColumnBreakHints = Vec<Vec<Vec<Vec<usize>>>>;
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct TablePaginationHints {
     pub(crate) rows: Vec<TableRowPaginationHint>,
     pub(crate) cells: TableCellPaginationHints,
+    pub(crate) cell_line_spacing: TableCellLineSpacingHints,
+    #[cfg(feature = "docx")]
+    pub(crate) cell_column_breaks: TableCellColumnBreakHints,
     pub(crate) nested: TableCellNestedPaginationHints,
+    pub(crate) cell_tabs: TableCellTabStopHints,
 }
 
 #[cfg(any(feature = "docx", feature = "render"))]
@@ -352,7 +406,22 @@ pub(crate) enum TabAlignment {
     Center,
     Right,
     Decimal,
+    Bar,
     Clear,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum TabLeader {
+    #[default]
+    None,
+    Dot,
+    Hyphen,
+    Underscore,
+    Heavy,
+    MiddleDot,
+    #[cfg(feature = "render")]
+    Bar,
 }
 
 #[cfg(any(feature = "docx", feature = "render"))]
@@ -360,6 +429,88 @@ pub(crate) enum TabAlignment {
 pub(crate) struct TabStop {
     pub(crate) position_pt: f32,
     pub(crate) alignment: TabAlignment,
+    pub(crate) leader: TabLeader,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceLineSpacingHints {
+    pub(crate) header: Vec<Option<LineSpacingHint>>,
+    pub(crate) header_table_cells: Vec<TableCellLineSpacingHints>,
+    pub(crate) first_header: Vec<Option<LineSpacingHint>>,
+    pub(crate) first_header_table_cells: Vec<TableCellLineSpacingHints>,
+    pub(crate) even_header: Vec<Option<LineSpacingHint>>,
+    pub(crate) even_header_table_cells: Vec<TableCellLineSpacingHints>,
+    pub(crate) footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) footer_table_cells: Vec<TableCellLineSpacingHints>,
+    pub(crate) first_footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) first_footer_table_cells: Vec<TableCellLineSpacingHints>,
+    pub(crate) even_footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) even_footer_table_cells: Vec<TableCellLineSpacingHints>,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceTabStopHints {
+    pub(crate) header: Vec<Vec<TabStop>>,
+    pub(crate) first_header: Vec<Vec<TabStop>>,
+    pub(crate) even_header: Vec<Vec<TabStop>>,
+    pub(crate) footer: Vec<Vec<TabStop>>,
+    pub(crate) first_footer: Vec<Vec<TabStop>>,
+    pub(crate) even_footer: Vec<Vec<TabStop>>,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceTableCellTabStopHints {
+    pub(crate) header: Vec<TableCellTabStopHints>,
+    pub(crate) first_header: Vec<TableCellTabStopHints>,
+    pub(crate) even_header: Vec<TableCellTabStopHints>,
+    pub(crate) footer: Vec<TableCellTabStopHints>,
+    pub(crate) first_footer: Vec<TableCellTabStopHints>,
+    pub(crate) even_footer: Vec<TableCellTabStopHints>,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceColumnBreakHints {
+    pub(crate) header: Vec<Vec<usize>>,
+    pub(crate) first_header: Vec<Vec<usize>>,
+    pub(crate) even_header: Vec<Vec<usize>>,
+    pub(crate) footer: Vec<Vec<usize>>,
+    pub(crate) first_footer: Vec<Vec<usize>>,
+    pub(crate) even_footer: Vec<Vec<usize>>,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NoteWritePayload {
+    pub(crate) kind: NoteKind,
+    pub(crate) text: String,
+    pub(crate) blocks: Vec<Block>,
+    pub(crate) pagination: Vec<PaginationHint>,
+    pub(crate) line_spacing: Vec<Option<LineSpacingHint>>,
+    pub(crate) tab_stops: Vec<Vec<TabStop>>,
+    pub(crate) column_break_offsets: Vec<Vec<usize>>,
+    pub(crate) table_pagination: Vec<Option<TablePaginationHints>>,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningTableLayoutHints {
+    pub(crate) cell_column_breaks: Vec<TableCellColumnBreakHints>,
+    pub(crate) nested_tables: Vec<TableCellNestedPaginationHints>,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceTableLayoutHints {
+    pub(crate) header: RunningTableLayoutHints,
+    pub(crate) first_header: RunningTableLayoutHints,
+    pub(crate) even_header: RunningTableLayoutHints,
+    pub(crate) footer: RunningTableLayoutHints,
+    pub(crate) first_footer: RunningTableLayoutHints,
+    pub(crate) even_footer: RunningTableLayoutHints,
 }
 
 #[cfg(any(feature = "docx", feature = "render"))]

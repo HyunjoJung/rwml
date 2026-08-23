@@ -756,8 +756,34 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "summary contains non-finite value"):
                 release_manifest.report_summary(validation)
 
+    def test_report_summary_accepts_reference_stability_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "reference_stable": True,
+                            "unstable_references": [],
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = release_manifest.report_summary(validation)
+
+        self.assertEqual(
+            report["summary"],
+            {"reference_stable": True, "unstable_references": []},
+        )
+
     def test_report_summary_rejects_non_numeric_summary_values(self):
-        for key, value in (("documents", True), ("mean_recall", "0.9")):
+        for key, value in (
+            ("documents", True),
+            ("mean_recall", "0.9"),
+            ("unstable_references", "none"),
+        ):
             with self.subTest(key=key):
                 with tempfile.TemporaryDirectory() as tmp:
                     validation = pathlib.Path(tmp) / "render-validation.json"

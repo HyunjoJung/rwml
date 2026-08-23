@@ -286,6 +286,19 @@ class RenderValidateReportTests(unittest.TestCase):
             1.0,
         )
 
+    def test_token_recall_accepts_split_rtl_list_marker_punctuation(self):
+        ref_tokens = ["5", ".عنصر", "خلية", "مباشر", "6", ".פריט", "תא"]
+        got_tokens = ["مباشر", "خلية", "عنصر", ".", "5", "פריט", "תא", ".", "6"]
+
+        self.assertEqual(render_validate.token_recall(ref_tokens, got_tokens), 1.0)
+        self.assertLess(
+            render_validate.token_recall(
+                ref_tokens, [token for token in got_tokens if token != "."]
+            ),
+            1.0,
+        )
+        self.assertLess(render_validate.token_recall([".item"], ["item", "."]), 1.0)
+
     def test_validation_report_rejects_measured_skip_rows(self):
         row = render_validate.ValidationRow(
             document="sample.docx",

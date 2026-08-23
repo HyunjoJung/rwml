@@ -1953,6 +1953,55 @@ impl XmlTree {
         out
     }
 
+    /// OPC relationship ids referenced by namespace-qualified XML attributes.
+    /// Scanning the parsed tree avoids substring matches in text, comments, or
+    /// unrelated attributes and lets callers check many ids in one traversal.
+    pub(crate) fn relationship_references(&self) -> HashSet<Vec<u8>> {
+        fn walk(
+            tree: &XmlTree,
+            id: NodeId,
+            scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+            out: &mut HashSet<Vec<u8>>,
+        ) {
+            let base = scope.len();
+            if let Node::Element { attrs, .. } = &tree.nodes[id.0 as usize].node {
+                for (key, value) in attrs {
+                    if key == b"xmlns" {
+                        scope.push((Vec::new(), value.clone()));
+                    } else if let Some(prefix) = key.strip_prefix(b"xmlns:".as_slice()) {
+                        scope.push((prefix.to_vec(), value.clone()));
+                    }
+                }
+                for (key, value) in attrs {
+                    let Some(separator) = key.iter().position(|&byte| byte == b':') else {
+                        continue;
+                    };
+                    let prefix = &key[..separator];
+                    let namespace = scope
+                        .iter()
+                        .rev()
+                        .find(|(bound_prefix, _)| bound_prefix.as_slice() == prefix)
+                        .map(|(_, uri)| uri.as_slice());
+                    if namespace == Some(OOXML_REL_NS) {
+                        out.insert(value.clone());
+                    }
+                }
+            }
+
+            for &child in &tree.nodes[id.0 as usize].children {
+                walk(tree, child, scope, out);
+            }
+            scope.truncate(base);
+        }
+
+        let mut references = HashSet::new();
+        let mut scope = Vec::new();
+        for &root in &self.roots {
+            walk(self, root, &mut scope, &mut references);
+        }
+        references
+    }
+
     /// Cached result text and tab/break marker nodes for the zero-based field in
     /// body order. The order matches the public `Document::fields()` extraction:
     /// simple fields are counted at `w:fldSimple`, while complex fields are counted
@@ -2079,7 +2128,9 @@ impl XmlTree {
         Ok(())
     }
 
-    /// Cached visible `w:t` nodes for a physical cell in a top-level body table.
+    /// Cached visible direct-content `w:t` nodes for a physical cell in a top-level
+    /// body table. Descendant nested tables are excluded so a parent-cell edit
+    /// cannot rewrite a nested table's text.
     pub(crate) fn wml_table_cell_text_runs_under(
         &self,
         body: NodeId,
@@ -2090,19 +2141,6 @@ impl XmlTree {
         let table = self.wml_body_table_at(body, table_index)?;
         let mut scope = self.ns_scope_at(table);
         self.wml_table_cell_text_runs(table, &mut scope, row_index, cell_index)
-    }
-
-    /// Whether a physical cell in a top-level body table contains a nested `w:tbl`.
-    pub(crate) fn wml_table_cell_has_nested_table_under(
-        &self,
-        body: NodeId,
-        table_index: usize,
-        row_index: usize,
-        cell_index: usize,
-    ) -> Option<bool> {
-        let table = self.wml_body_table_at(body, table_index)?;
-        let mut scope = self.ns_scope_at(table);
-        self.wml_table_cell_has_nested_table(table, &mut scope, row_index, cell_index)
     }
 
     fn wml_body_table_at(&self, body: NodeId, table_index: usize) -> Option<NodeId> {
@@ -2454,21 +2492,9 @@ impl XmlTree {
         let mut cell_scope = self.ns_scope_at(cell);
         for i in 0..self.nodes[cell.0 as usize].children.len() {
             let c = self.nodes[cell.0 as usize].children[i];
-            self.collect_wml_t(c, &mut cell_scope, &mut runs);
+            self.collect_wml_t_excluding_tables(c, &mut cell_scope, &mut runs);
         }
         Some(runs)
-    }
-
-    fn wml_table_cell_has_nested_table(
-        &self,
-        table: NodeId,
-        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
-        row_index: usize,
-        cell_index: usize,
-    ) -> Option<bool> {
-        let cell = self.wml_table_cell_at(table, scope, row_index, cell_index)?;
-        let mut cell_scope = self.ns_scope_at(cell);
-        Some(self.contains_wml_table_descendant(cell, &mut cell_scope))
     }
 
     fn wml_table_cell_at(
@@ -2631,30 +2657,6 @@ impl XmlTree {
         vmerge
     }
 
-    fn contains_wml_table_descendant(
-        &self,
-        id: NodeId,
-        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
-    ) -> bool {
-        for i in 0..self.nodes[id.0 as usize].children.len() {
-            let c = self.nodes[id.0 as usize].children[i];
-            let base = scope.len();
-            self.push_xmlns(c, scope);
-            let is_accepted =
-                self.wml_revision_edit_action(c, scope, WmlRevisionEditPolicy::Accept)
-                    != WmlRevisionEditAction::Remove;
-            if is_accepted
-                && (self.resolves_to(c, WML_NS, b"tbl", scope)
-                    || self.contains_wml_table_descendant(c, scope))
-            {
-                scope.truncate(base);
-                return true;
-            }
-            scope.truncate(base);
-        }
-        false
-    }
-
     fn edit_wml_revisions_descendants(
         &mut self,
         id: NodeId,
@@ -2761,11 +2763,27 @@ impl XmlTree {
         scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
         out: &mut Vec<NodeId>,
     ) {
-        self.collect_wml_t_with_alternate_content(
+        self.collect_wml_t_with_alternate_content_policy(
             id,
             scope,
             out,
             AlternateContentTraversal::Selected,
+            false,
+        );
+    }
+
+    fn collect_wml_t_excluding_tables(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        out: &mut Vec<NodeId>,
+    ) {
+        self.collect_wml_t_with_alternate_content_policy(
+            id,
+            scope,
+            out,
+            AlternateContentTraversal::Selected,
+            true,
         );
     }
 
@@ -2776,6 +2794,17 @@ impl XmlTree {
         out: &mut Vec<NodeId>,
         alternate_content: AlternateContentTraversal,
     ) {
+        self.collect_wml_t_with_alternate_content_policy(id, scope, out, alternate_content, false);
+    }
+
+    fn collect_wml_t_with_alternate_content_policy(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        out: &mut Vec<NodeId>,
+        alternate_content: AlternateContentTraversal,
+        exclude_tables: bool,
+    ) {
         let base = scope.len();
         self.push_xmlns(id, scope);
         if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
@@ -2784,14 +2813,19 @@ impl XmlTree {
             scope.truncate(base);
             return;
         }
+        if exclude_tables && self.resolves_to(id, WML_NS, b"tbl", scope) {
+            scope.truncate(base);
+            return;
+        }
         if matches!(alternate_content, AlternateContentTraversal::Selected) {
             match self.selected_alternate_content_branch(id, scope) {
                 AlternateContentBranch::Selected(branch) => {
-                    self.collect_wml_t_with_alternate_content(
+                    self.collect_wml_t_with_alternate_content_policy(
                         branch,
                         scope,
                         out,
                         alternate_content,
+                        exclude_tables,
                     );
                     scope.truncate(base);
                     return;
@@ -2817,7 +2851,13 @@ impl XmlTree {
         }
         for i in 0..self.nodes[id.0 as usize].children.len() {
             let c = self.nodes[id.0 as usize].children[i];
-            self.collect_wml_t_with_alternate_content(c, scope, out, alternate_content);
+            self.collect_wml_t_with_alternate_content_policy(
+                c,
+                scope,
+                out,
+                alternate_content,
+                exclude_tables,
+            );
         }
         scope.truncate(base);
     }

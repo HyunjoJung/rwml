@@ -5,10 +5,14 @@
 //! Reference: [MS-DOC] 2.4.3 (cell boundaries), 2.9.349 (TDefTableOperand),
 //! 2.9.330 (TC80).
 
+#[cfg(feature = "docx")]
+use crate::model::TableCellColumnBreakHints;
 use crate::model::{
-    Block, Cell, Color, PaginationHint, Row, Table, TableBorderSide, TableBorderStyle,
-    TableCellPaginationHints,
+    Block, Cell, Color, LineSpacingHint, PaginationHint, Row, Table, TableBorderSide,
+    TableBorderStyle, TableCellLineSpacingHints, TableCellPaginationHints,
 };
+#[cfg(any(feature = "docx", feature = "render"))]
+use crate::model::{TabStop, TableCellTabStopHints};
 
 const F_MERGED: u16 = 0x0002; // cell folds into the one to its left
 const F_VERT_MERGE: u16 = 0x0020; // cell continues a vertical merge from above
@@ -238,6 +242,11 @@ fn parse_row_borders(
 pub(crate) struct CellBuild {
     pub blocks: Vec<Block>,
     pub pagination: Vec<Option<PaginationHint>>,
+    pub line_spacing: Vec<Option<LineSpacingHint>>,
+    #[cfg(feature = "docx")]
+    pub column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub tab_stops: Vec<Vec<TabStop>>,
 }
 
 /// One streamed row: its cells + the row definition + header flag.
@@ -250,12 +259,22 @@ pub(crate) struct RowBuild {
 pub(crate) struct TableBuildOutput {
     pub table: Table,
     pub cell_pagination: TableCellPaginationHints,
+    pub cell_line_spacing: TableCellLineSpacingHints,
+    #[cfg(feature = "docx")]
+    pub cell_column_breaks: TableCellColumnBreakHints,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub cell_tab_stops: TableCellTabStopHints,
 }
 
 /// An output cell during merge resolution.
 struct Out {
     blocks: Vec<Block>,
     pagination: Vec<Option<PaginationHint>>,
+    line_spacing: Vec<Option<LineSpacingHint>>,
+    #[cfg(feature = "docx")]
+    column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    tab_stops: Vec<Vec<TabStop>>,
     /// Starting column over the table's global boundary set.
     col: usize,
     colspan: u16,
@@ -526,12 +545,22 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
                         last.colspan = (col_of(right).saturating_sub(last.col)).max(1) as u16;
                         last.blocks.extend(cell.blocks);
                         last.pagination.extend(cell.pagination);
+                        last.line_spacing.extend(cell.line_spacing);
+                        #[cfg(feature = "docx")]
+                        last.column_break_offsets.extend(cell.column_break_offsets);
+                        #[cfg(any(feature = "docx", feature = "render"))]
+                        last.tab_stops.extend(cell.tab_stops);
                     } else {
                         let col = col_of(left);
                         let colspan = (col_of(right).saturating_sub(col)).max(1) as u16;
                         out.push(Out {
                             blocks: cell.blocks,
                             pagination: cell.pagination,
+                            line_spacing: cell.line_spacing,
+                            #[cfg(feature = "docx")]
+                            column_break_offsets: cell.column_break_offsets,
+                            #[cfg(any(feature = "docx", feature = "render"))]
+                            tab_stops: cell.tab_stops,
                             col,
                             colspan,
                             rowspan: 1,
@@ -545,6 +574,11 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
                     if let Some(last) = out.last_mut() {
                         last.blocks.extend(cell.blocks);
                         last.pagination.extend(cell.pagination);
+                        last.line_spacing.extend(cell.line_spacing);
+                        #[cfg(feature = "docx")]
+                        last.column_break_offsets.extend(cell.column_break_offsets);
+                        #[cfg(any(feature = "docx", feature = "render"))]
+                        last.tab_stops.extend(cell.tab_stops);
                     }
                 }
             }
@@ -553,6 +587,11 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
                     out.push(Out {
                         blocks: cell.blocks,
                         pagination: cell.pagination,
+                        line_spacing: cell.line_spacing,
+                        #[cfg(feature = "docx")]
+                        column_break_offsets: cell.column_break_offsets,
+                        #[cfg(any(feature = "docx", feature = "render"))]
+                        tab_stops: cell.tab_stops,
                         col: k,
                         colspan: 1,
                         rowspan: 1,
@@ -591,12 +630,42 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
     // Emit, skipping merged-away cells.
     let mut model_rows = Vec::with_capacity(grid.len());
     let mut cell_pagination = Vec::with_capacity(grid.len());
+    let mut cell_line_spacing = Vec::with_capacity(grid.len());
+    #[cfg(feature = "docx")]
+    let mut cell_column_breaks = Vec::with_capacity(grid.len());
+    #[cfg(any(feature = "docx", feature = "render"))]
+    let mut cell_tab_stops = Vec::with_capacity(grid.len());
     for (r, row) in grid.into_iter().enumerate() {
         let is_header = r < header_rows;
         let mut cells = Vec::with_capacity(row.len());
         let mut row_pagination = Vec::with_capacity(row.len());
+        let mut row_line_spacing = Vec::with_capacity(row.len());
+        #[cfg(feature = "docx")]
+        let mut row_column_breaks = Vec::with_capacity(row.len());
+        #[cfg(any(feature = "docx", feature = "render"))]
+        let mut row_tab_stops = Vec::with_capacity(row.len());
         for output in row.into_iter().filter(|output| !output.dropped) {
+            debug_assert!(
+                output.pagination.is_empty() || output.blocks.len() == output.pagination.len()
+            );
+            debug_assert!(
+                output.line_spacing.is_empty() || output.blocks.len() == output.line_spacing.len()
+            );
+            #[cfg(feature = "docx")]
+            debug_assert!(
+                output.column_break_offsets.is_empty()
+                    || output.blocks.len() == output.column_break_offsets.len()
+            );
+            #[cfg(any(feature = "docx", feature = "render"))]
+            debug_assert!(
+                output.tab_stops.is_empty() || output.blocks.len() == output.tab_stops.len()
+            );
             row_pagination.push(output.pagination);
+            row_line_spacing.push(output.line_spacing);
+            #[cfg(feature = "docx")]
+            row_column_breaks.push(output.column_break_offsets);
+            #[cfg(any(feature = "docx", feature = "render"))]
+            row_tab_stops.push(output.tab_stops);
             cells.push(Cell {
                 blocks: output.blocks,
                 col_span: output.colspan,
@@ -607,6 +676,11 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
         }
         model_rows.push(Row { cells });
         cell_pagination.push(row_pagination);
+        cell_line_spacing.push(row_line_spacing);
+        #[cfg(feature = "docx")]
+        cell_column_breaks.push(row_column_breaks);
+        #[cfg(any(feature = "docx", feature = "render"))]
+        cell_tab_stops.push(row_tab_stops);
     }
     let mut table = Table {
         rows: model_rows,
@@ -621,6 +695,11 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
     TableBuildOutput {
         table,
         cell_pagination,
+        cell_line_spacing,
+        #[cfg(feature = "docx")]
+        cell_column_breaks,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        cell_tab_stops,
     }
 }
 
@@ -630,6 +709,8 @@ mod tests {
     use crate::model::{
         Block, Color, PaginationHint, ParaProps, Paragraph, Run, TableBorderSide, TableBorderStyle,
     };
+    #[cfg(any(feature = "docx", feature = "render"))]
+    use crate::model::{TabAlignment, TabLeader, TabStop};
 
     fn cell(text: &str) -> Vec<Block> {
         vec![Block::Paragraph(Paragraph {
@@ -1158,18 +1239,27 @@ mod tests {
             keep_lines: true,
             widow_control: true,
         };
-        let built_cell = |text: &str, pagination| CellBuild {
+        let built_cell = |text: &str, pagination, line_spacing| CellBuild {
             blocks: cell(text),
             pagination: vec![Some(pagination)],
+            line_spacing: vec![Some(line_spacing)],
+            #[cfg(feature = "docx")]
+            column_break_offsets: vec![vec![usize::from(text.as_bytes()[0])]],
+            #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stops: vec![vec![TabStop {
+                position_pt: f32::from(text.as_bytes()[0]),
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            }]],
         };
 
         let built = build(vec![
             RowBuild {
                 cells: vec![
-                    built_cell("A", a),
-                    built_cell("B", b),
-                    built_cell("C", c),
-                    built_cell("extra", extra),
+                    built_cell("A", a, LineSpacingHint::Exact(1.0)),
+                    built_cell("B", b, LineSpacingHint::AtLeast(2.0)),
+                    built_cell("C", c, LineSpacingHint::Exact(3.0)),
+                    built_cell("extra", extra, LineSpacingHint::AtLeast(4.0)),
                 ],
                 def: Some(TableDef {
                     rgdxa: vec![0, 100, 200, 300],
@@ -1180,9 +1270,9 @@ mod tests {
             },
             RowBuild {
                 cells: vec![
-                    built_cell("D", d),
-                    built_cell("E", e),
-                    built_cell("dropped", dropped),
+                    built_cell("D", d, LineSpacingHint::Exact(5.0)),
+                    built_cell("E", e, LineSpacingHint::AtLeast(6.0)),
+                    built_cell("dropped", dropped, LineSpacingHint::Exact(7.0)),
                 ],
                 def: Some(TableDef {
                     rgdxa: vec![0, 100, 200, 300],
@@ -1204,6 +1294,53 @@ mod tests {
                 vec![vec![Some(d)], vec![Some(e)]],
             ]
         );
+        assert_eq!(
+            built.cell_line_spacing,
+            vec![
+                vec![
+                    vec![
+                        Some(LineSpacingHint::Exact(1.0)),
+                        Some(LineSpacingHint::AtLeast(2.0)),
+                    ],
+                    vec![
+                        Some(LineSpacingHint::Exact(3.0)),
+                        Some(LineSpacingHint::AtLeast(4.0)),
+                    ],
+                ],
+                vec![
+                    vec![Some(LineSpacingHint::Exact(5.0))],
+                    vec![Some(LineSpacingHint::AtLeast(6.0))],
+                ],
+            ]
+        );
+        #[cfg(feature = "docx")]
+        assert_eq!(
+            built.cell_column_breaks,
+            vec![
+                vec![
+                    vec![vec![usize::from(b'A')], vec![usize::from(b'B')]],
+                    vec![vec![usize::from(b'C')], vec![usize::from(b'e')]],
+                ],
+                vec![vec![vec![usize::from(b'D')]], vec![vec![usize::from(b'E')]],],
+            ]
+        );
+        #[cfg(any(feature = "docx", feature = "render"))]
+        {
+            let tabs = |label: u8| {
+                vec![TabStop {
+                    position_pt: f32::from(label),
+                    alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
+                }]
+            };
+            assert_eq!(
+                built.cell_tab_stops,
+                vec![
+                    vec![vec![tabs(b'A'), tabs(b'B')], vec![tabs(b'C'), tabs(b'e')]],
+                    vec![vec![tabs(b'D')], vec![tabs(b'E')]],
+                ]
+            );
+        }
     }
 
     #[test]

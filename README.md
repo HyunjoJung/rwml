@@ -37,7 +37,7 @@ let md    = doc.to_markdown();   // # headings, **bold**, | tables |, lists, lin
 let html  = doc.to_html();       // <h1>, <strong>, <table colspan>, <img>, <a>, page breaks
 let model = doc.model();         // typed IR: Vec<Block> (Paragraph | Table | Image | PageBreak | SectionBreak)
 let hregs = model.source_regions(rwml::SourceRegionKind::HeaderFooter);
-let imgs  = doc.images();        // extracted raster bytes (like POI getAllPictures)
+let imgs  = doc.images();        // raster bytes plus per-drawing DOCX alternative text
 let info  = doc.report();        // format, stats, edit state, feature inventory incl. notes/text boxes/metafiles
 let json  = info.to_json();      // compact diagnostics JSON for scripts/CLI
 let edit  = doc.edit_capability(); // package-preserving edit availability
@@ -61,15 +61,20 @@ size, color, bold/italic, highlight, super/subscript), paragraph layout
 (named styles, headings, alignment, spacing, indent, shading, page-break-before), leveled lists,
 **bordered tables with width, fixed layout, alignment, indentation, uniform/per-side border widths, styles, and colors, and per-cell shading / width / margins / vertical alignment**, images
 with alt text, explicit pixel size, inline rotation, and page-relative floating
-offsets, simple fields with cached results, `PAGEREF` helper runs, dirty TOC
+offsets (including per-occurrence `wp:docPr/@descr` alt text from opened DOCX
+drawings through Markdown/HTML and fresh DOCX conversion), simple fields with
+cached results, `PAGEREF` helper runs, dirty TOC
 heading-range fields, run-anchored comments with reply parent ids and
 commentsExtended metadata, tracked
 insertion/deletion runs, run-level content controls, bookmarked runs, authored
-footnotes/endnotes, string custom document properties, raw custom XML data-store
+external hyperlinks and `#bookmark` internal hyperlinks, authored footnotes/
+endnotes, string custom document properties, raw custom XML data-store
 items, generated core metadata (title, subject, creator, description, keywords,
 category, content status, last modified by, created, modified, last printed,
 revision, and version), explicit Word document ids, web-extension task pane package shells, page setup with section columns, document grids, text direction, title pages, and page-number restarts/formats, explicit page breaks and next/even/odd section breaks,
-styled default/first/even running headers/footers, and page numbers all round-trip. Content controls can include tag/alias and
+styled default/first/even running headers/footers (including nested rich tables
+with local hyperlinks, real raster images and charts, and visible missing-image
+fallbacks), and page numbers all round-trip. Content controls can include tag/alias and
 data-binding metadata.
 
 <a name="chart-families"></a>`ChartBuilder` authors the current core OOXML
@@ -82,7 +87,20 @@ pie-of-pie / bar-of-pie. It also authors the newer **chart-ex extension
 families** — waterfall, treemap, sunburst, histogram, box & whisker, and
 funnel — emitted as `chartEx` parts. `wireframe()` styling is available for
 surface-family charts and `ChartShape` styling (cylinder/pyramid) for 3-D
-bar/column-family charts. See [`examples/report.rs`](examples/report.rs).
+bar/column-family charts. Fresh rwml-generated charts with serialized series are
+reconstructed as modeled `Chart` blocks on native reopen, including titles,
+series data, dimensions, alternative text, wireframe state, and 3-D shape state,
+so reopened documents use the same vector PDF painter. Core scatter/bubble
+payloads serialize generated numeric x-values rather than the public string
+category labels, so `categories` normalizes to empty for those families on
+reopen. Formula/reference-backed, combination, and otherwise arbitrary Office
+chart payloads remain package-preserved and explicitly reported as unsupported.
+Generated charts use part-local relationships in default/first/even headers and
+footers, including ordinary and nested running-table cells, and survive native
+reopen into the same model and PDF path. A running chart without a serialized
+series retains an escaped visible fallback and emits no orphan chart package
+parts.
+See [`examples/report.rs`](examples/report.rs).
 
 ```rust
 let model = rwml::DocBuilder::new()
@@ -234,6 +252,11 @@ Newlines remain inline breaks rather than new paragraphs, while existing
 page/column breaks, other run objects, data bindings, and rich-run structure
 remain preserved rather than interpreted or redistributed.
 
+`set_table_cell_text` replaces direct text in a selected top-level table cell,
+including a parent cell that contains a nested table; the nested table's text
+and XML structure are excluded from the replacement and preserved. Nested-grid
+layout remains a renderer ceiling.
+
 Several existing edit methods can share one package rollback boundary:
 
 ```rust
@@ -271,9 +294,12 @@ and forbidden-control handling. Structural edits reject opaque direct children
 and cross-block ranges or complex fields; move/remove also protect section-boundary
 targets and moves. Rich paragraph/block insertion, nested containers, and
 relationship-bearing content remain outside this bounded API. Existing exact
-subtrees and untouched package parts are preserved, but removals do not
-garbage-collect relationships or media they make unreachable. Read/model views
-remain stale until explicitly refreshed or reopened.
+subtrees and untouched package parts are preserved. Removing a block also prunes
+an unreferenced internal image relationship and its unreachable `word/media/*`
+target when the retained relationship graph proves it is safe; other relationship
+kinds, shared media, and general package garbage collection remain outside this
+bounded behavior. Read/model views remain stale until explicitly refreshed or
+reopened.
 Regenerated relationship parts are validated before save, so internal
 relationship targets must point at retained package parts unless they are
 explicitly external.
@@ -305,8 +331,63 @@ physical cell margins, authored and
 opened-DOCX `tblGrid` column proportions, bounded preferred-percentage outer
 widths, logical leading/center/trailing placement, and non-negative leading
 indentation, top-level and run-attached body images with model-backed
-whole-degree clockwise rotation, and **clickable hyperlink annotations** are
-drawn. Opened `.docx` tables materialize direct `dxa`/`nil` `w:tblCellMar`
+whole-degree clockwise rotation, decoded block or reader-style inline raster
+images plus non-empty model-authored charts inside ordinary modeled table cells,
+and decoded raster images, model-authored charts, and ordinary modeled tables in
+selected default/first/even running headers and footers are drawn. PDF hyperlinks
+emit **clickable annotations**.
+Running paragraph and table-cell hyperlink annotations follow the selected
+surface variant and are clipped to the physical page plus the visible
+margin-band line or row fragment, so clipped table content cannot leave an
+active link over the body.
+Running-surface images retain
+their rotation-aware bounds, are proportionally reduced without upscaling to
+the remaining section-local margin band, and are centered within its content
+width. Non-empty running-surface model charts use the body vector painter and
+are proportionally reduced without upscaling to the remaining band, centered,
+and clipped at their fitted bounds; labels, strokes, and geometry scale together.
+Arbitrary opened Office chart-part modeling remains outside this path.
+Running-surface tables use the body
+row painter for model-backed width,
+alignment, visual RTL placement, borders, cell shading, margins, and vertical
+alignment. Fitting rows paint in source order; a first row taller than the
+remaining band paints once under a vertical clip and ends that surface without
+moving body content or changing page counts. Opened-DOCX running-table cells
+consume the same resolved explicit LTR/RTL tab-stop, leader, and bar-tab subset
+as body table cells, together with a finite positive settings-defined default
+interval. Decoded block and reader-style inline rasters plus non-empty
+model-authored charts paint in cell source order, center within the inner cell,
+fit proportionally without upscaling to the inner width and active page content
+height, contribute to row measurement and vertical alignment, and stay atomic
+across row splits and repeated headers. Source-only pagination hints inside those
+cells, nested-grid geometry, inline media baseline/crop/flip/effects, arbitrary
+opened Office chart parts, and Word-exact overlap remain outside this bounded
+path.
+Finite positive
+paragraph before/after gaps advance later running text, pictures,
+model-authored charts, and tables in source order; explicit zero suppresses a
+gap, and an unset after value retains the renderer's established default
+trailing gap. Gaps are bounded to the remaining margin band, footer page numbers
+follow the resulting cursor, and body page counts do not change. Adjacent gaps
+are additive rather than Word-exact collapsed. Opened `.docx` sections apply
+explicit unsigned `w:pgMar` header and footer distances, and opened legacy
+`.doc` sections apply validated unsigned `sprmSDyaHdrTop` and
+`sprmSDyaHdrBottom` values, through a private section-aligned render sidecar.
+Headers start at the requested offset from the physical top edge; footer
+content is bottom-aligned to the requested offset from the physical bottom
+edge; generated DOCX page numbers follow that same path. Both surfaces clamp at
+the body margin rather than overlap body content, and missing or malformed
+values retain the existing fixed preview bands. Public authoring of distances,
+reconstruction of legacy installation-language defaults, automatic margin-
+conflict resolution, and Word-exact overlap remain outside this bounded
+source-only path. Fresh `Document::to_docx()` conversion of an opened DOCX or
+legacy `.doc` carries aligned, finite source distances from zero through 31,680
+twips into each generated section; absent, out-of-range, or misaligned hints
+fall back locally to the writer's 708-twip default, and native reopen recovers
+the emitted values. Standalone model writing retains that default because the
+public model has no distance fields. Opened `.docx`
+tables
+materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
 `start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own
 `w:tblCellMar` through its `w:basedOn` chain, plus its `wholeTable`
@@ -332,18 +413,25 @@ when the table declares neither.
 Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,
-equal-width section columns, and per-side margins come from the document;
+equal-width section columns, bounded explicit unequal-width opened-DOCX and
+legacy `.doc` tracks, explicit opened-DOCX and legacy `.doc` inter-column
+spacing and column-separator rules, source-opened `w:sectPr/w:bidi` and
+`sprmSFBiDi` right-to-left column population, visible top-level
+opened-DOCX and legacy `.doc` manual column breaks, and per-side margins
+come from the document;
 multi-page tables repeat their header rows without losing outer placement or
 border paint. Opened
 `.docx` rows, including recursively flattened nested rows, may split across
 pages by default, while effective `w:cantSplit` from direct row properties or
 an inherited table-style chain keeps a fitting row together and an over-tall
-row still splits at line boundaries. Table styles
-include direct non-conditional row properties and bounded
-`wholeTable`/`band1Horz`/`band2Horz`/`firstRow`/`lastRow` conditional regions
-selected by direct table `w:tblLook` or row `w:cnfStyle`. Inherited style and
-direct-table `w:tblStyleRowBandSize` values use Word's 0-3 row grouping; later
-regions and direct row formatting retain Word precedence. Model-only renders
+row still splits at line boundaries. Table styles include direct non-conditional
+row properties and bounded `wholeTable`, horizontal and vertical bands,
+first/last rows and columns, and all four corner conditional row properties
+selected by direct table `w:tblLook` or row `w:cnfStyle`. Named and hexadecimal
+selector masks, inherited style and direct-table `w:tblStyleRowBandSize` /
+`w:tblStyleColBandSize` values use Word's 0-3 grouping rules; the effective
+table visual direction maps physical corners, later regions and direct row
+formatting retain Word precedence. Model-only renders
 retain the established keep-together default. Opened legacy `.doc` rows follow direct
 `sprmTFCantSplit` and compatibility `sprmTFCantSplit90`: absent properties
 retain the MS-DOC splittable default, the modern property takes precedence when
@@ -355,16 +443,31 @@ paragraph-style STSH inheritance followed by direct PAPX for `sprmPFKeep`,
 source-aligned hints; resolved `sprmPFPageBreakBefore` maps to the existing
 model property. Explicit direct-off values override inherited-on values.
 Fitting protected content moves whole and over-tall content still splits for
-deterministic progress. Opened `.docx` `Document` renders
+deterministic progress. The same ordinary Main-story legacy paragraphs resolve
+bounded custom tabs through paragraph-style STSH inheritance followed by direct
+PAPX `sprmPChgTabsPapx` and `sprmPChgTabs` changes. Left, center, right, decimal,
+and bar stops plus none, dot, hyphen, underscore, heavy, and middle-dot leaders
+reach both preview rendering and fresh DOCX conversion without entering the
+public model. Legacy running stories, notes, nested tables, default-tab
+intervals, implicit list tabs, negative stops, and Word-exact tab reflow remain
+outside this Main-story path. The same bounded legacy resolution reaches direct
+top-level paragraphs and direct paragraph blocks in surviving cells of
+top-level tables across all six running header/footer variants through private
+section-aligned hints. Legacy notes, nested running tables, and Word-exact tab
+reflow remain outside that running-story path. Opened `.docx` `Document` renders
 additionally honor resolved left/center/right/decimal tab stops in LTR
-left/start-aligned top-level body paragraphs, plus default and resolved
-logical-start tab stops in RTL right/start-aligned top-level body paragraphs.
+left/start-aligned top-level body paragraphs, plus explicit left-aligned stops
+and default-tab fallback in supported center/right/justified-aligned LTR
+top-level body paragraphs, and default, logical-start, center/end, and decimal
+tab stops in RTL
+right/start-aligned top-level body paragraphs.
 LTR stops retain their page-text-margin coordinates under supported left,
 positive first-line, and hanging indents; RTL logical-start stops retain
 leading-edge coordinates from the right page-text margin under resolved
 physical or logical left/right indents. Default-tab fallback targets use the
-same margin-anchored grid and are clamped to the active paragraph box. Opened
-documents also honor document-default,
+same margin-anchored grid, use a positive `w:defaultTabStop` interval from
+`word/settings.xml` when present, and are clamped to the active paragraph box.
+Opened documents also honor document-default,
 declared default paragraph-style, and bounded explicit paragraph-style
 before/after spacing, proportional automatic line spacing, first-line/hanging
 indents, flat RGB shading, and `pageBreakBefore`; authored zero/off direct
@@ -372,10 +475,112 @@ overrides; and source-aligned `keepNext`,
 `keepLines`, and default-on `widowControl` pagination hints in top-level body
 paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
-render hints to the public `DocModel`. Table-cell tab semantics, RTL
-center/end/decimal tab stops, center/right/justified LTR paragraph alignment,
-leaders/bar tabs, settings-defined default-tab intervals, and implicit
-hanging-indent/list-marker tabs remain outside this bounded tab support. Within
+layout hints to the public `DocModel`. Fresh conversion of an opened legacy or
+DOCX document serializes the effective keep controls and widow-off state for
+aligned top-level body paragraphs and aligned direct paragraph blocks in
+surviving cells of top-level tables, plus effective no-split state for aligned
+top-level table rows. The same direct body subset carries resolved exact/minimum
+line rules and explicit tab stops into fresh DOCX conversion. Visible manual
+column breaks in aligned top-level body paragraphs and aligned direct paragraph
+blocks in surviving cells of top-level body tables also survive through
+independently validated source-offset bridges. Opened DOCX inputs additionally
+carry row no-split state, direct cell-paragraph keep/widow controls,
+exact/minimum line rules, explicit tabs, and visible column breaks recursively
+through nested descendants of those top-level body tables. Each component of
+the recursive source tree is validated independently. Direct top-level
+paragraphs in selected default/first/even running headers and footers from
+opened DOCX and legacy DOC inputs also retain reader-resolved explicit tab stops
+through section-aligned six-variant bridges.
+Direct paragraph blocks in surviving cells of top-level tables on those same
+running surfaces retain explicit tabs through an independently validated
+companion block/row/surviving-cell/paragraph-aligned bridge. For opened DOCX and
+legacy DOC inputs alike, those direct table-cell paragraphs also retain reader-
+resolved exact/minimum line rules, while direct top-level running paragraphs
+retain the same rules through a section-aligned source-only bridge. Those same
+selected running surfaces retain effective `keepNext`, `keepLines`, and widow-off
+state on direct top-level paragraphs and direct paragraphs in surviving cells of
+top-level tables, plus effective no-split state for aligned top-level table rows,
+through an all-or-nothing section/block/tree-aligned bridge. Opened DOCX and
+legacy DOC inputs additionally retain visible manual column breaks in ordinary
+top-level paragraphs across those six running variants through a separately
+validated section/variant/paragraph-aligned bridge. Legacy source-story offsets
+follow the same six-slot section ownership used by the other running-surface
+hints; opened DOCX hints follow default-surface inheritance and keep local
+relationships. Opened DOCX inputs also retain visible manual column breaks in
+direct paragraphs
+of those top-level running-table cells and recursively carry row no-split state,
+cell-paragraph keep/widow controls, exact/minimum line rules, explicit tabs, and
+visible column breaks through nested running-table descendants. The private
+six-variant tree follows default-surface inheritance, validates every table slot
+and recursive component independently, and keeps header/footer-local
+relationships. Fresh legacy
+conversion emits an exact HeaderFooter source range only in its generated
+running part when that range populated a selected section slot; it validates and
+remaps every body sidecar before removing the duplicate from `word/document.xml`.
+Unselected running stories retain their flattened fallback. Legacy nested-table
+recovery and note paragraph layout properties remain outside these running-
+surface layout-hint paths. Legacy manual breaks in running-table cells and nested
+running tables remain unsupported. Settings-defined default-tab intervals remain
+outside the tab path. Opened DOCX inputs retain typed manual page breaks in direct
+and recursively nested body and running-surface table cells during fresh
+conversion, including all selected header/footer variants. This transport does
+not claim preview table fragmentation or Word-exact pagination. Legacy note
+manual breaks remain unsupported; the separate bounded opened-DOCX note
+conversion described below retains supported note column and page breaks,
+including inside table cells.
+Ordinary top-level paragraphs in selected default/first/even running headers
+and footers from opened DOCX and legacy DOC inputs also consume reader-resolved
+explicit tab stops and supported leaders through section-aligned render hints.
+DOCX default-surface inheritance, page-variant selection, and a positive
+settings-defined default-tab interval use the same bounded paragraph shaper
+without changing the public model; running-table-cell tabs remain independently
+aligned. Legacy running stories use their resolved six-story section mapping
+without a settings-defined interval. Post-tab field containment and Word-exact
+tab reflow and pagination remain outside this path.
+Ordinary top-level real footnote and endnote paragraphs from an opened DOCX
+likewise consume reader-resolved explicit tab stops, supported leaders, and a
+positive settings-defined default-tab interval. Their private hints retain
+footnote-then-endnote block order across skipped separator records and preceding
+non-paragraph blocks without changing the public model. Direct paragraphs in
+cells of top-level real footnote and endnote tables use the same bounded tab
+path through a block/row/surviving-cell/paragraph-aligned private tree, including
+vertical-merge owner indexing. Opened legacy `.doc` Footnote and Endnote source
+stories apply their resolved common custom tabs to the equivalent direct
+paragraph and top-level table-cell subset through a strictly aligned render-only
+overlay; writer-facing tab sidecars remain blank. Nested note tables, rich note-
+body conversion from legacy inputs, settings-defined legacy default-tab
+intervals, post-tab field containment, page-bottom note composition, and Word-
+exact tab reflow and pagination remain outside this path.
+Resolved LTR tab stops in ordinary and
+recursively nested table-cell paragraphs use the same bounded path as supported
+top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
+justified-aligned paragraphs use that path when the resolved stop is reachable.
+Top-level opened-DOCX body paragraphs, ordinary or recursively nested
+table-cell paragraphs, real footnote/endnote paragraphs, and ordinary
+paragraphs in default/first/even running headers and footers, including their
+modeled table cells, also consume resolved `exact` and `atLeast` `w:lineRule`
+values as twentieths of a point through source-only render hints. Exact boxes
+center fitting text, bottom-align and vertically clip over-tall text, while
+at-least boxes only expand shorter natural lines. The hints remain aligned when
+a source paragraph is split by an explicit page break, with surviving
+vertical-merge owner cells, across skipped note separator records, and through
+section-specific default-surface inheritance, page-variant selection, and
+non-table block positions before a running table. Exact running-surface content
+is clipped to its margin-band line or visible row fragment. Notes retain the
+preview renderer's flattened end-of-flow placement; page-bottom note
+composition, model-authored exact/minimum paragraph rules, note paragraph-
+property conversion from legacy inputs, and PDF consumption of nested-running-
+table descendant exact/minimum rules remain outside this absolute-spacing path.
+Direct top-level opened-DOCX running paragraphs and direct paragraphs in
+surviving cells of their top-level running tables use the bounded fresh-
+conversion bridges described above.
+The same bounded path reaches ordinary RTL table-cell paragraphs for
+center/end/decimal stops. Supported LTR and RTL dot, hyphen, underscore,
+heavy, and middle-dot leaders plus bar tabs now paint through the same bounded
+sidecar path in top-level and table-cell paragraphs. Settings-defined
+default-tab intervals in unsupported contexts and implicit hanging-indent/
+list-marker tabs remain outside this
+bounded tab support. Within
 the supported LTR and RTL paths, resolved tab advances now reserve line width
 before breaking, so content that no longer fits after a tab moves to the next
 line instead of running past the paragraph box; the reservation only ever
@@ -423,15 +628,18 @@ not participate in the bounded exclusion. Behind the `render` feature.
 
 Bounded RTL rendering applies `w:bidi` paragraph base direction, `w:rtl` run
 isolation, logical alignment/list placement, and `w:bidiVisual` table column
-mirroring. This improves mixed Arabic/Hebrew documents without claiming
-Word-exact list-level alignment, punctuation, or table typography.
+mirroring. Source-opened DOCX section `w:bidi` and legacy `sprmSFBiDi` also
+populate equal or bounded unequal section columns from right to left without
+forcing paragraph direction. This improves mixed Arabic/Hebrew documents
+without claiming Word-exact list-level alignment, punctuation, or table
+typography.
 `ListInfo` does not retain list-instance identity, source `numId`/`ilfo`,
 restart/start overrides, marker fonts or glyph metadata, or marker
 tabs/alignment/exact hanging indents. Independent or restarted empty-label
 lists therefore use deterministic preview numbering rather than Word-exact
-numbering. Marker-aware table autofit, nested-grid geometry, table-cell images,
-legacy nested-table recovery, and Word-exact RTL list typography remain outside
-this preview.
+numbering. Marker-aware table autofit, nested-grid geometry, Word-exact inline
+media placement/effects, legacy nested-table recovery, and Word-exact RTL list
+typography remain outside this preview.
 Opened legacy `.doc` runs additionally preserve literal direct
 `sprmCFBiDi` on/off values from complete FKP/CHPX payloads through `.docx`
 conversion and PDF run isolation. Opened legacy paragraphs preserve valid
@@ -453,6 +661,21 @@ through the same style inheritance and final direct-PAPX precedence. Omitted
 values materialize the MS-DOC defaults of zero points before/after and single
 line spacing; supported values survive shared-model use, `.docx`
 conversion/reopen, and top-level or table-cell PDF preview layout.
+Opened legacy documents additionally retain positive non-multiple LSPD as a
+minimum line box and negative encoded LSPD as an exact line box through private
+hints. Aligned top-level body paragraphs, direct paragraph blocks in surviving
+cells of aligned top-level body tables, direct top-level running paragraphs, and
+direct paragraph blocks in surviving cells of top-level running tables carry
+those rules into fresh `.docx` conversion/reopen. PDF previews also apply them
+to ordinary main-story table-cell paragraphs and ordinary top-level or table-
+cell paragraphs in section-linked even/default/first headers and footers. Exact
+boxes use the same centered or bottom-aligned baseline and vertical clipping
+behavior as opened DOCX. The hints survive promoted manual page-break fragments,
+remain aligned through horizontal cell folds and surviving vertical-merge
+owners, and mirror the existing six-story legacy running-surface mapping, non-
+table block positions, and unindexed default-header fallback. Exact running-
+surface content is clipped to its margin-band line box or visible table-row
+fragment.
 Direct and paragraph-style `sprmPShd80` and `sprmPShd` paragraph shading also
 reaches the shared model, `.docx` conversion/reopen, and PDF preview when the
 source result collapses exactly to one explicit RGB fill: clear uses its
@@ -465,9 +688,11 @@ A truncated or unsizeable direct shading modifier suppresses the effective
 fill and stops that PAPX scan; a structurally malformed style UPX invalidates
 its local style payload. A later paragraph-style modifier resets earlier
 direct shading.
-At-least/exact and explicit
-zero proportional LSPD values clear an inherited multiplier but remain unset
-because the shared model has no corresponding line-rule representation.
+At-least/exact and explicit zero proportional LSPD values clear an inherited
+multiplier but remain unset in the shared model because it has no corresponding
+line-rule representation. The absolute line-rule sidecar does not enter the
+shared model; nested-table-descendant and note rules are not yet carried through
+fresh `.docx` conversion.
 Paragraph direction does not imply table mirroring. Opened
 legacy tables preserve strict direct row-mark
 `sprmTFBiDi` and compatibility
@@ -489,14 +714,43 @@ bridges.
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
 > layout engine. It is faithful to the model and produces selectable text, but
 > does **not** claim Word- or LibreOffice-exact pagination, floating-object
-> layout, end-to-end RTL typography, page-bottom footnote composition, unequal
-> section columns, or section-local page geometry. Unknown fields, remaining
+> layout, end-to-end RTL typography, page-bottom footnote composition, exact
+> per-column rewrapping, or Word-exact section-local geometry. Supported section
+> breaks apply each section's modeled physical page width and height, including
+> landscape layouts, plus per-side margins to native shaping, pagination,
+> running surfaces, anchored overlays, and emitted PDF pages. Explicit-false
+> opened-DOCX unequal sections accept one through 64 bounded direct `w:col`
+> widths and following spaces, preserve fitting geometry, and scale an over-wide
+> set only while every scaled column remains usable; otherwise they fall back to
+> equal tracks. Complete unequal legacy `.doc` sections accept two through 44
+> indexed `sprmSDxaColWidth` values and optional zero-defaulted
+> `sprmSDxaColSpacing` values under a false `sprmSFEvenlySpaced` selector.
+> Content is shaped conservatively to the narrowest active track before
+> pagination places it at each declared origin. Equal-width opened DOCX and
+> legacy `.doc` sections apply explicit `w:cols/@w:space` and
+> `sprmSDxaColumns` values. Valid opened-DOCX `w:cols/@w:sep` and legacy
+> `sprmSLBetween` flags paint centered rules between every active equal,
+> fitting, scaled, or fallback track without changing pagination; one-column
+> sections remain paint-inert. Valid opened-DOCX section `w:bidi` and legacy
+> `sprmSFBiDi` values preserve physical track geometry while starting flow at
+> the rightmost track, advancing left, and resetting right on a new page.
+> `Document::to_docx()` maps those validated opened-DOCX and legacy equal gaps,
+> complete unequal tracks, separator flags, and section direction into fresh
+> `w:cols`/`w:col` and `w:bidi` properties. Standalone `write_docx` remains
+> model-only. Incomplete custom legacy geometry, public model authoring of
+> private geometry, exact per-column rewrapping, and Word-exact reflow remain
+> outside this bounded bridge.
+> Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
-> Conditional table-style vertical bands, first/last-column and corner regions,
-> and `w:tblPrEx` row-group exceptions do not yet contribute `cantSplit`.
-> Exact/at-least line rules, nonzero line-unit before/after spacing,
-> enabled automatic/contextual paragraph spacing, nonzero character-unit indents,
+> `w:tblPrEx` remains a table-property exception path for the supported
+> row-local `w:tblCellMar` behavior; other `w:tblPrEx` properties are outside
+> this renderer slice, and `w:cantSplit` remains a `w:trPr` property.
+> Exact/at-least line rules outside the bounded opened-DOCX top-level body,
+> recursively flattened body-table-cell, real-note, ordinary running-surface,
+> and running-table-cell paragraph paths,
+> nonzero line-unit before/after spacing, enabled automatic/contextual paragraph
+> spacing, nonzero character-unit indents,
 > theme/automatic/pattern paragraph shading, and table/list/conditional-style
 > paragraph properties remain outside the bounded style-derived layout subset.
 > Nested-table paragraph and row controls retain the renderer's 32-level
@@ -534,10 +788,13 @@ bridges.
 > legacy `.doc` per-cell, no-border, conflicting, merged/ragged, nested, or
 > style-derived border recovery remain outside this bounded renderer slice.
 > PDF image rotation normalizes direct-model angles modulo 360 and rotates the
-> decoded raster around its center. Source-authored display extents, crop/flip/
-> effects, floating-anchor offsets, exclusion-zone reflow, table-cell images,
-> and Word-exact inline baseline placement remain outside this bounded image
-> bridge.
+> decoded raster around its center. Running-surface pictures use decoded/model
+> raster dimensions rather than relationship display extents. Source-authored
+> table-cell rasters and model-authored charts use atomic centered records fitted
+> to the inner cell and active page content box. Source-authored display extents,
+> crop/flip/effects, floating-anchor offsets, exclusion-zone reflow, arbitrary
+> opened Office chart parts, and Word-exact inline baseline or header/footer
+> overlap remain outside this bounded image bridge.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
@@ -590,8 +847,11 @@ live in a separate `LayoutPages` record and never overwrite reader-path
 least one physical page; even/odd starts add one body-empty filler when needed
 to reach the requested 1-based physical parity. Section display-number
 restarts/formats do not affect that preview parity. Word-exact filler-page
-running surfaces, section-relative odd/even header selection, and mixed
-section-local geometry remain outside this bounded behavior.
+running surfaces and section-relative odd/even header selection remain outside
+this bounded behavior; modeled section-local page geometry is applied, while
+bounded explicit unequal DOCX and legacy `.doc` tracks use the same
+deterministic private geometry as PDF output. Exact per-column rewrapping and
+Word pagination remain outside it.
 
 You can also convert a parsed document straight to PDF:
 `Document::open(&bytes)?.to_pdf()` / `try_to_pdf()`, pass font blobs with
@@ -621,7 +881,7 @@ python scripts/render_validate.py --json --page-cap 32 --min-mean-recall 0.90 --
 # which needs a host with no duplicate font families: two builds sharing one
 # family name but differing in vertical metrics make LibreOffice pick between
 # them per run, shifting every baseline.
-VERSION=0.1.2
+VERSION=0.1.3
 REV="$(git rev-parse HEAD)"
 python scripts/bench_vs_mature.py --corpus corpus/public/benchmark --json \
   --version "$VERSION" --git-rev "$REV" \
@@ -717,11 +977,13 @@ Markdown/HTML remain outside this path.
 
 The `.docx` **writer** is the inverse of the reader, part by part: `document.xml`
 (`w:rPr`/`w:pPr` with the full property set), a synthesized `styles.xml`
-(Normal + Heading1–6 with `outlineLvl`), `numbering.xml`, header/footer parts wired
-through `sectPr`, media parts + relationships for images, and external relationships
-for hyperlinks. The **renderer** flows the model through its authored page geometry
-and section columns, then draws each page's glyph runs, table grids, shading, and
-images with krilla.
+(Normal, generated Heading1–6 with `outlineLvl`, authored styles, and minimal
+recovered paragraph style id/name definitions when otherwise undefined),
+`numbering.xml`, header/footer parts wired through `sectPr`, media parts +
+relationships for images, and external relationships for hyperlinks. The
+**renderer** flows the model through its authored page geometry and section
+columns, then draws each page's glyph runs, table grids, shading, and images with
+krilla.
 
 Encrypted / XOR-obfuscated documents and pre-Word-97 (Word 6/95) files are detected
 and reported as distinct [`Error`]s rather than silently emitting garbage. Every
@@ -760,6 +1022,218 @@ element-tree image insert produces a package python-docx opens with the inline i
 present on every openable file; both fail cleanly (no panic) on a pathologically-deep
 file and a structurally-broken original. To author/convert from a `DocModel`, use
 `write_docx` (it regenerates a fresh package, lossy w.r.t. unmodeled content).
+Converting an opened `.doc` or `.docx` through `Document::to_docx()` additionally
+retains validated source-only section column gaps, complete unequal geometry,
+separator flags, and right-to-left population without exposing them in the
+public model. Opened DOCX conversion also projects every supported nonempty core
+property into `DocModel::setup` and regenerates the complete supported
+`docProps/core.xml` set: descriptive metadata, package timestamps, last editor,
+revision, and version. Legacy- and DOCX-backed conversion also retain validated
+exact/minimum line rules plus effective `keepNext`, `keepLines`, and widow-off
+state for aligned top-level body paragraphs and aligned direct paragraph blocks
+in surviving cells of top-level tables, plus effective no-split state for
+aligned top-level table rows. The same direct body subset retains resolved
+explicit paragraph tab stops; legacy inputs resolve the bounded common
+STSH/PAPX subset described above. Aligned top-level body paragraphs and aligned
+direct paragraph blocks in surviving cells of top-level body tables retain
+visible manual column breaks through independently validated source character
+offsets. Opened DOCX inputs additionally retain row no-split state, direct cell-
+paragraph keep/widow controls, exact/minimum line rules, explicit tabs, and
+visible column breaks recursively through nested descendants of those body
+tables; each recursive component is validated independently.
+Standalone model writing remains proportional-only and consumes no private
+layout hints. Direct top-level paragraphs in selected default/first/even running
+headers and footers from opened DOCX and legacy DOC inputs also retain
+reader-resolved explicit tab stops through section-aligned private hints. Direct
+paragraph blocks in surviving cells of top-level tables on those running
+surfaces use a companion
+block/row/surviving-cell/paragraph-aligned bridge for explicit tabs. Opened DOCX
+and legacy DOC inputs both retain reader-resolved exact/minimum line rules on
+those direct table-cell paragraphs and on direct top-level running paragraphs
+through section-aligned source-only hints. Those same selected running surfaces
+retain effective `keepNext`, `keepLines`, and widow-off state on direct top-level
+paragraphs and direct paragraphs in surviving cells of top-level tables, plus
+effective no-split state for aligned top-level table rows. Opened DOCX and legacy
+DOC inputs also retain visible manual column breaks in ordinary top-level
+paragraphs across those six running variants through a separately validated
+section/variant/paragraph-aligned bridge. Legacy source-story offsets follow the
+same six-slot section ownership used by the other running-surface hints; opened
+DOCX hints follow default-surface inheritance and keep local relationships.
+Opened DOCX inputs retain visible manual column breaks in direct paragraphs of
+top-level running-table cells and recursively retain row no-split state,
+cell-paragraph keep/widow controls, exact/minimum line rules, explicit tabs, and
+visible column breaks in nested running-table descendants across all six variants. The private
+tree follows default-surface inheritance, validates each table slot and recursive
+component independently, and keeps header/footer-local relationships. Legacy
+nested-table descendants and note paragraph layout properties remain outside
+these layout-hint paths. Legacy manual breaks in running-table cells and nested
+running tables remain unsupported. Opened DOCX typed manual page breaks in direct
+and recursively nested body and running-surface table cells survive fresh
+conversion through the ordered public block tree; all six selected running
+variants are covered. Settings-defined default-tab intervals and legacy note
+manual breaks remain outside the bounded paths, and table-cell preview pagination
+is not claimed. Opened-DOCX note column and page breaks use the separate
+block/tree-aligned bridge described below.
+
+Opened legacy `.doc` inputs additionally promote normalized footnote/endnote
+text into real references and note parts only when nonempty
+`PlcffndRef`/`PlcfendRef` tables, recovered records, and dropped Main-story
+markers match one-to-one at ordinary top-level paragraph offsets. Reopened DOCX
+inputs retain that normalized subset through the same exact private block/id/
+offset contract for stable fresh reconversion. Any missing, truncated, count-,
+ID-, offset-, or context-mismatch keeps the complete historical note fallback;
+the independently promoted running ranges described below may still be removed
+from the generated body. Rich legacy note formatting, tables, media, source IDs
+and numbering, separators, custom marks, table-cell/manual-break anchors, and
+page-bottom placement remain outside that normalized legacy path.
+
+When the exact body note-reference contract succeeds for an opened DOCX, fresh
+conversion separately retains mixed ordinary paragraphs and supported table trees
+rooted at top-level tables in real footnote and endnote bodies. Every
+surviving cell may contain ordinary paragraphs or further nested tables under the
+same constraint. The private ID-keyed payload preserves block order, modeled
+table properties and horizontal/vertical merges, modeled paragraph and character
+formatting, row no-split and cell keep/widow controls, exact/minimum line rules,
+explicit tabs and leaders, visible manual column breaks at every table depth, and
+manual page breaks between top-level paragraph fragments and inside table cells
+at every selected depth. Relationship-backed external hyperlinks survive in
+top-level and recursively nested note paragraphs through relationship files owned
+by the corresponding footnote or endnote part; simple HYPERLINK field syntax may
+normalize to a `w:hyperlink` element. Validator-approved internal-anchor links
+and run bookmarks likewise survive at every supported depth without note
+relationships, using paired bookmark IDs unique across body and note stories.
+Parser-modeled run content controls with a nonempty alias or tag, or a complete
+XPath/store-item data-binding pair, likewise survive at every supported depth
+with trimmed metadata and no additional package relationships. A one-sided
+data binding rejects that note atomically; property-empty source wrappers are
+normalized out by the reader and are not claimed.
+Parser-normalized cached result runs for nonempty compatibility/private,
+inserted-content, mail-merge-helper, and barcode fields reported as
+`NoComputedResult` likewise survive at every supported depth as non-dirty
+`w:fldSimple` fields with normalized instructions and modeled formatting. Complex
+source fields normalize to the same form; source simple/complex grouping and
+source update state are not preserved. Parser-validated, non-dirty `MERGEFIELD`
+cached results with valid names and bounded before/after and text-format switches
+also survive as normalized simple fields; no external merge data source is copied
+or evaluated. Parser-validated, non-dirty `FILENAME` cached results with bounded
+path-display and text-format switches likewise survive as normalized simple
+fields; no filesystem path is read and no destination filename is inferred.
+Parser-validated, non-dirty `RD`, `TA`, `XE`, and `TC` marker instructions also
+survive in source order as empty simple fields with modeled formatting while stale
+marker cache text stays hidden. This path transports markers only; it does not
+generate or update indexes, tables of authorities, tables of contents, or master-
+document references. Marker-only notes and generated `BIBLIOGRAPHY`/`CITATION`/
+`INDEX`/`TOA`/`TOC` fields remain excluded. Dirty modeled runs, malformed field
+syntax, and unknown or other context-sensitive/generated fields reject that note
+atomically.
+Parser-validated, non-dirty `SYMBOL` instructions that actually compute one
+character likewise survive as normalized simple fields with modeled formatting;
+stale cached characters stay replaced by the deterministic result. Malformed or
+unmapped symbols remain excluded. Context-free, non-dirty `EQ` and `ADVANCE`
+instructions with one modeled result run likewise survive. Supported EQ
+expressions retain deterministic plain-text approximations and modeled formatting;
+parser-valid ADVANCE instructions retain an empty current result and any modeled
+result-run formatting. Malformed or unsupported display syntax, split results,
+and action fields remain excluded. This does not add native PDF equation layout,
+ADVANCE displacement, or action execution.
+Parser-validated, non-dirty literal `QUOTE` instructions with one modeled result
+run likewise survive as normalized simple fields with computed text, supported
+text-format switches, and modeled formatting. Malformed or split-result `QUOTE`
+fields and other dynamic fields remain excluded.
+Context-free, non-dirty `IF` and `COMPARE` instructions with one modeled result
+run likewise survive when quoted-text or finite-number operands compute without
+bookmark or `SET` state, including compact comparisons and wildcard equality.
+Bookmark- or `SET`-backed, malformed or nonfinite, and split-result comparisons
+remain excluded. Context-free, non-dirty formula (`=`) instructions with one
+modeled result run likewise survive when finite literal arithmetic or scalar-
+function expressions compute without bookmark or `SET` state and do not use
+`DEFINED`. A formula-owning table may instead retain exactly one parser-computed
+direct/range or positional formula when its independently rebuilt matrix is span-
+free, left-to-right, has no header rows, and every cell contains exactly one
+stable nonempty run; such a table may be nested under other supported note tables.
+Supported numeric pictures, table-local `DEFINED` calls, computed text, and
+modeled formatting are retained. Stateful expressions, including non-table-local
+`DEFINED`, multiple or dependent formulas, spans, RTL/header grids, non-plain
+operands, malformed or nonfinite formulas, mismatched results, and split results
+remain excluded.
+Parser-validated, non-dirty `FILLIN` instructions with an explicit literal default
+and one modeled result run likewise retain quoted or bounded multi-token defaults,
+neutral `\o`, supported text formatting, and deterministic current results. This
+does not add interactive prompting or field updates; default-less or malformed
+prompts, split results, and stateful `ASK`, `SET`, and merge-control fields remain
+excluded.
+Parser-validated, non-dirty core-property and custom-string `DOCPROPERTY` fields
+with one modeled result run likewise survive when the referenced property exists
+and each core value already matches the fresh writer's nonempty trim
+normalization. Direct core-property and `INFO` aliases, supported text/date
+pictures, deterministic current results, and modeled formatting are retained.
+Extended application properties, document variables, `FILESIZE`, volatile date/
+user fields, `REVNUM`, malformed or dirty instructions, and split results remain
+excluded. This path uses the core/custom properties already carried by the fresh
+model; it does not copy app/settings parts or add field updates, user context,
+relationships, or layout behavior.
+Parser-validated, non-dirty `REVNUM` fields with one modeled result run likewise
+survive when the core revision exists and already matches the fresh writer's
+nonempty trim normalization. Normalized instructions, deterministic current
+results, supported text-format switches, and modeled formatting are retained.
+Missing, empty, trim-unstable, malformed, dirty, or split-result cases remain
+excluded. This does not add revision tracking, field updates, relationships, or
+layout behavior.
+Parser-validated, non-dirty explicit bookmark-text `REF` fields with one modeled
+result run likewise survive when the target is exactly one stable, nonempty,
+non-field run in the same note payload and the modeled result matches a fresh
+evaluation of that text. Neutral hyperlink/lock switches, supported text and
+integer number formats, numeric pictures, target bookmarks, and modeled formatting
+are retained. Note-mark, relative-position, paragraph/full/relative-context
+numbering, sequence-separator, cross-note, missing, empty, multi-run, field-backed,
+malformed, dirty, mismatched-result, or split-result cases remain excluded. This
+does not add global bookmark lookup, field updates, relationships, or layout
+behavior.
+Parser-validated, non-dirty `SEQ` fields with an explicit nonnegative `\r` reset
+and one visible modeled result run likewise survive when the result matches a
+fresh empty-state evaluation. Supported number and text formats, normalized
+instructions, deterministic counter assignment, and modeled formatting are
+retained. Ordinary increment/current fields, heading resets, hidden output,
+cross-note sequence state, malformed, dirty, mismatched-result, or split-result
+cases remain excluded. This does not add field updates, ordinary source-order
+numbering transport, relationships, or layout behavior.
+Parser-validated, non-dirty `LISTNUM` fields with an explicit nonnegative `\s`
+start and one modeled result run likewise survive when the result matches a fresh
+empty-state evaluation. Optional `NumberDefault`/`LegalDefault` names, level one,
+supported number and text formats, normalized instructions, and modeled formatting
+are retained. Ordinary LISTNUM increments, levels above one, custom list names,
+AUTONUM-family fields, cross-note numbering state, malformed, dirty, mismatched-
+result, or split-result cases remain excluded. This does not add field updates,
+relationships, or layout behavior.
+Parser-validated, non-dirty text and `\p` relative-position `STYLEREF` fields with
+one modeled result run likewise survive when their nearest prior, otherwise first
+later, paragraph-style target is in the same note and contains exactly one stable,
+nonempty plain run. Style ids and resolved style names, supported text formatting,
+normalized instructions, source order, modeled field formatting, and recursive
+table placement are retained; the fresh writer emits a minimal recovered style
+id/name definition when no authored or generated definition exists. Numbered
+`STYLEREF` results, character-style targets, cross-note matches, multi-run or
+field-backed targets, missing or empty targets, malformed, dirty, mismatched-
+result, or split-result cases remain excluded. This does not add field updates,
+relationships, or page/layout-aware lookup.
+Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
+likewise survive at every supported paragraph
+depth, including under an external hyperlink, with globally unique media names
+and relationships owned by the corresponding note part. Parser-modeled native
+literal-cache core and ChartEx chart blocks in chart-only sibling paragraphs also
+survive at the top level or any supported table depth. Their relationships remain
+note-local, chart/drawing IDs remain globally unique, core chart data receives a
+fresh embedded XLSX workbook, and ChartEx literal data remains native. Missing or
+empty image bytes, unknown or raw-RGBA MIME data, floating and block images,
+image-only or chart-only notes, arbitrary Office chart grammars, source chart
+styling/formulas/external data, exact floating chart placement, vector metafiles,
+malformed internal-anchor or bookmark names, other fields, annotations, or nested
+notes degrade only that note to the normalized one-paragraph text fallback without
+leaving orphan media, charts, workbooks, or relationships; supported sibling
+notes remain rich. Source IDs, numbering and separators, custom marks, page-
+bottom placement, and Word-exact pagination are not preserved. Standalone
+`write_docx` remains model-only and does not emit note parts; it does serialize
+modeled body/running internal anchors and bookmarks. The public model is unchanged.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the
@@ -800,7 +1274,7 @@ and malformed instruction syntax for any supported family reports
 | **PAGE** | Current page from trusted leading structural / source-rendered context, section `w:pgNumType` restarts + supported page-number format styles, page-number and field-result format switches | Broader layout-derived current-page cases keep cached text |
 | **PAGEREF** | Page numbers from leading page breaks / `pageBreakBefore` / section starts, restart labels + supported `w:fmt` styles, `\*` number formats, `\p` relative (`above`/`below`/`on page N`) | Remaining layout-dependent references keep cached text; missing targets → `UnresolvedBookmark` |
 | **REF / direct bookmark** | Bookmark text (incl. hidden targets, multi-paragraph ranges), `\* Upper/Lower/Caps/FirstCap`, `\#` numeric picture on numeric bookmark text, `\p` relative, numbered-paragraph `\n`/`\r`/`\w` (+ `\p`/`\t`), `\f` note-reference marks, neutral `\h`/`\!`, text-neutral `\d "sep"` | Value-changing `\d` separators, non-numeric `\#` targets, and broader REF semantics keep cached text |
-| **NOTEREF / FTNREF** | Footnote/endnote reference marks (honoring `settings.xml` `numStart`/`numFmt` and skipping `w:customMarkFollows` auto-numbering), `\h`, `\f`, `\p` above/below, number/text format switches | Missing targets → `UnresolvedBookmark`; no note mark or custom-mark target → `NoComputedResult`; per-page note restart is layout-dependent |
+| **NOTEREF / FTNREF** | Footnote/endnote reference marks (honoring `settings.xml` `numStart`/`numFmt`, materializing a bookmarked literal mark immediately following `w:customMarkFollows`, and skipping its auto-number), `\h`, `\f`, `\p` above/below, number/text format switches | Missing targets → `UnresolvedBookmark`; no note mark or custom mark without a bounded following literal → `NoComputedResult`; per-page note restart is layout-dependent |
 | **STYLEREF** | Nearest styled paragraph/run text by style id or name (backward-then-forward), `\p` above/below, numbered `\n`/`\r`/`\w`/`\t` | Page-aware / header-footer / layout-dependent lookup keeps cached text |
 | **TOC / TC / SEQ** | Default, `\b` bookmark-scoped, `\o`/`\u` outline, `\t` custom-style, `\f` from `TC` markers, `\c`/`\a` caption entries from `SEQ`; source-order `SEQ` recompute; `\h`/`\z`/`\w`/`\x`/`\n`/`\p`/`\s`/`\d` and `\*` switches | Advanced/layout-dependent TOC cases keep cached text; missing `\b` scope → `UnresolvedBookmark` |
 | **SECTION / SECTIONPAGES / REVNUM** | Current structural section number; structurally bounded section page counts; `REVNUM` from `cp:revision`; page-number and field-result format switches | Layout-dependent section page counts keep cached text |
@@ -817,12 +1291,12 @@ document plus identical context always yields identical results.
 
 Authored charts render as native vector preview charts (see
 [chart families](#chart-families)). On a real
-`.docx` corpus it reaches **0.996 mean text recall** with a **1.00 mean page-count
+`.docx` corpus it reaches **1.000 mean text recall** with a **1.00 mean page-count
 ratio** (extracting headers/footers,
 text boxes, nested tables, real list labels, caps; model-driven page geometry makes
-`.doc` page counts line up). 23 of the 24 public-corpus documents score exactly
-1.00; the exception is a right-to-left list fixture, for the reason given under
-[Scope & parity](#scope--parity). It still trails
+`.doc` page counts line up). All 21 public render fixtures score at least the
+0.97 per-document floor on the strict revision-bound report, with stable
+LibreOffice references. It still trails
 LibreOffice on exact pagination, exact floating-object layout, remaining
 layout-derived `PAGEREF` page-reference computation beyond trusted source markers,
 advanced TOC/REF/NOTEREF computed fields, and
@@ -900,10 +1374,10 @@ benchmark, and exactly the public `MANIFEST.tsv` plus `RENDER_MANIFEST.tsv`
 corpus manifests with matching document paths whose listed documents exist, and
 rejects hygiene, validation, or benchmark reports whose compact gates failed or
 were generated with weaker thresholds than the named `public-release` policy.
-The release workflow intentionally emits the non-strict policy manifest from the
-packaged `.crate` artifact, public hygiene report, and public corpus manifests,
-then uploads the manifest and crate package as workflow artifacts before
-publishing.
+The tag-bound release workflow generates the strict render and extraction
+reports on the tagged revision, passes them with the hygiene and public-corpus
+manifests to `release_manifest.py --enforce-policy-inputs`, and uploads the
+exact crates plus evidence to both workflow artifacts and the GitHub Release.
 The renderer also maps a small common Symbol/Wingdings display subset to Unicode,
 including the Symbol `0xB7` bullet, before PDF shaping; text extraction and exporters still preserve the source
 code points.
@@ -961,6 +1435,13 @@ code points.
   are exposed through `notes()` as best-effort recovered note records. A single
   unambiguous legacy footnote or endnote marker anchors to its containing body
   text; broader ambiguous note/endnote cases keep source-region anchors.
+  When usable `PlcffndRef`/`PlcfendRef` tables and every visible Main-story
+  marker match recovered nonempty notes one-to-one in ordinary top-level
+  paragraphs, `Document::to_docx()` emits real normalized note references and
+  note parts. Missing, truncated, or count-mismatched tables; extra or duplicate
+  markers; unsupported table-cell, manual-break, or rich anchors; nonempty
+  annotation/text-box coexistence; or one invalid note family keep the complete
+  flattened fallback.
   Text-box regions are exposed through `text_boxes()` as best-effort recovered
   text-box records with source-region anchors.
   Header/footer regions are exposed through `header_footers()` as best-effort
@@ -970,6 +1451,13 @@ code points.
   `DocSetup` mirrors the first recovered default, even-page, and first-page
   legacy header/footer variants when story indexes are available, and falls back
   to a default running header for unsplit recovered header/footer text.
+  During legacy-backed `Document::to_docx()`, an exact nonempty HeaderFooter
+  region copied into one of those selected running slots is emitted only in its
+  generated header/footer part, not duplicated in `word/document.xml`. The
+  conversion validates and remaps every block-aligned source hint before removing
+  those ranges. Malformed, excess, duplicate-slot, or otherwise unselected
+  HeaderFooter stories remain in the flattened body fallback, as do unsupported
+  footnote, annotation, endnote, and text-box regions.
   Valid `PlcfSed` SED records also preserve each section's SEPX page size,
   orientation, nonnegative left/right/top/bottom margins, equal-width
   `sprmSCcolumns` counts from 1 through 44, strict `sprmSFTitlePage` first-page
@@ -986,21 +1474,53 @@ code points.
   fallback, non-counting values use the spec-permitted decimal fallback, and
   invalid values leave prior state intact. A
   disabled restart ignores its stored start, while an enabled zero/default
-  start normalizes to the model's one-based contract. An explicit unequal-
-  spacing selector leaves the column count unmodeled; a later valid equal-
-  spacing selector restores the last valid count. Malformed local SEPX data
-  keeps that section's deterministic default without discarding valid
-  neighboring sections.
+  start normalizes to the model's one-based contract. A complete explicit
+  unequal-spacing section recovers two through 44 indexed column widths and
+  optional following spaces into a private preview sidecar while exposing the
+  validated count through the shared section model. Widths are bounded to the
+  specified 718 through 31,680 twips, spacing defaults to zero and is bounded to
+  31,680 twips, and later valid indexed modifiers replace earlier values. A
+  missing width leaves that unequal count unmodeled; a later valid equal-spacing
+  selector restores the last valid count. Malformed local SEPX data keeps that
+  section's deterministic default without discarding valid neighboring
+  sections. Strict source-order `sprmSLBetween` Bool8 values reach a private
+  section-aligned PDF sidecar; invalid later values preserve the last valid
+  state, and one-column sections emit no rule.
+  Strict source-order `sprmSFBiDi` Bool8 values similarly populate equal or
+  complete unequal section columns from right to left in opened-document PDF
+  previews; invalid later values preserve the last valid state and malformed
+  local SEPX data remains isolated. This section direction does not force
+  paragraph or run bidi behavior. Legacy-backed `Document::to_docx()` also
+  serializes each aligned, validated equal gap or complete unequal layout,
+  separator flag, section direction, and header/footer distance as bounded
+  `w:cols`/`w:col`, `w:bidi`, and `w:pgMar` properties; native reopen recovers
+  the same source semantics.
+  Opened-DOCX conversion uses the same bounded writer path. Standalone model
+  writing remains unchanged.
+  A visible end-of-column character (`0x0E`) in a top-level main-story
+  paragraph advances an opened-document PDF preview to the next active column,
+  or to a new page after the final column, through private source-aligned
+  offsets. The public model retains its newline representation. Hidden
+  characters, table cells, non-main stories, and fresh conversion do not
+  activate that preview hint.
+  An internal main-story end-of-section character (`0x0C`) becomes the shared
+  `PageBreak` block for native preview, export, and fresh `.docx` conversion.
+  The final `0x0C` in each non-final `PlcfSed` range is consumed only as that
+  section's terminator; repeated and marker-only manual page breaks remain
+  explicit. Table-cell and non-main-story occurrences retain their newline
+  representation.
   Continuous/new-column section marks normalize to the shared model's
-  next-page fallback. Custom column widths/gaps, separator lines, manual column
-  breaks, RTL column ordering, gutters/facing pages, header/footer distances,
+  next-page fallback. Incomplete custom column geometry, gutters/facing pages,
+  header/footer margin-growth semantics,
   page borders, vertical justification, signed negative document-grid
   character-pitch deltas, negative fixed-position top/bottom semantics,
   display-number effects on physical pagination, and page-number footer
   inference remain outside this bounded reader path.
-  Exact multi-note/endnote reference markers and exact text-box shape anchors
-  are not yet fully promoted, so non-body regions still remain in the flat
-  block stream;
+  The shared public legacy model intentionally retains non-body regions in the
+  flat block stream even when private running-story projection or exact
+  normalized-note conversion activates; standalone model writing therefore also
+  retains that flat stream. Exact text-box shape promotion and rich or arbitrary
+  note promotion remain incomplete.
   `Document::report()` emits `LegacyDocFlattenedSubdocuments` when FIB
   subdocument counts show that promotion is still incomplete.
 - *`.docx` read only:* an original-view `DocModel` (accepted-current is the only
@@ -1036,8 +1556,9 @@ code points.
   anchor text;
   `text()` includes headers/footers, `main_text()` is
   body-only; `core_properties()` exposes supported `docProps/core.xml` metadata
-  fields including descriptive, package, timestamp, revision, and version values,
-  while `report().custom_properties` exposes parsed string custom document
+  fields including descriptive, package, timestamp, revision, and version values.
+  Opened DOCX models and fresh conversion retain that complete supported nonempty
+  set, while `report().custom_properties` exposes parsed string custom document
   properties.
 - *Write/edit:* editing an opened `.docx` preserves arbitrary OOXML parts
   verbatim and the writer/edit surfaces are broad (see **Write** and **Edit**
@@ -1057,231 +1578,28 @@ code points.
   them is not universal — Acrobat and Chrome honor them, while MuPDF/PyMuPDF,
   pdfminer.six, and pypdf do not and split Arabic words apart when copying or
   extracting. Rendering itself is unaffected, and Hebrew (one glyph per cluster)
-  extracts intact. `scripts/render_validate.py` reads `ActualText` itself, so its
-  own measurement is not affected. The public corpus's right-to-left list fixture
-  still scores below the per-document floor for a narrower reason: its list
-  marker is a separate text object, so an extractor's bidirectional pass leaves
-  the marker's period beside the number rather than beside the following
-  right-to-left word. Both renderers draw that period in the same place.
+  extracts intact. `scripts/render_validate.py` reads `ActualText` itself and
+  conservatively normalizes a standalone period beside an RTL list label, so
+  its strict public-corpus measurement does not treat that PDF text-object
+  boundary as lost content.
 
 ## Roadmap
 
-The long-term native Word engine roadmap is summarized below.
+The public roadmap is deliberately capability-focused. Each supported behavior
+above is covered by deterministic tests; the renderer remains a preview engine
+rather than a Word- or LibreOffice-exact layout replacement.
 
-Current maturity work is concentrated in deeper compatibility rather than new
-top-level APIs. The bounded R2 reader/field pass and deterministic secondary-text
-context work are closed; unresolved values remain cached with explicit reasons
-where layout or Word behavior is required. The larger remaining projects are
-Word-exact pagination and RTL typography, broader floating-object reflow,
-nested/package-aware structural editing, and full vector metafile replay. Future
-slices should move only with focused parser, renderer, report, or public-corpus
-evidence.
+| Area | Current direction | Explicit boundary |
+|---|---|---|
+| Read and fields | Keep extending bounded DOC and DOCX parsing, field evaluation, and cached-with-reason diagnostics | Layout-dependent field values remain cached when their page or Word context cannot be derived deterministically |
+| PDF preview | Improve paragraph, table, tab, list, image, and section behavior from existing model data | Word-exact pagination, footnote composition, exact per-column rewrapping, and full floating-shape exclusion reflow remain out of scope |
+| RTL | Extend tested mixed-script paragraph, table, tab, and list behavior | End-to-end RTL typography, punctuation, font fallback, and Word-exact list/table parity are not claimed |
+| Metafiles | Add narrowly validated raster profiles when fixtures prove them | General WMF/EMF vector replay, composition, scaling, cropping, and mirroring remain unsupported |
+| Editing | Expand package-preserving mutations where the target structure and rollback behavior are unambiguous; bounded top-level removal prunes proven-orphaned image relationships/media | Arbitrary rich block editing, nested-container mutation, general relationship garbage collection, and cross-block range rewriting remain limited |
 
-Two conventions apply throughout this document. Everything described above the
-roadmap is implemented and covered by tests — support is never claimed ahead of
-a test, and each bounded slice names the cases it does not handle. Those named
-limits describe the current build; they are not scope that has been declined.
-The unchecked entries below are correspondingly open projects, not closed ones:
-they stay unchecked until evidence closes them, and describing a gap as a
-current limit never counts as finishing it.
-
-- [x] Codepage-aware `.doc` text; encryption / Word 6/95 detection gates
-- [x] Full read model: runs (CHPX incl. font/size/color and CHPX-resident
-      highlighting plus direct super/subscript and literal caps/small-caps,
-      plus bounded piece `Pcd.Prm` character formatting applied after CHPX:
-      six literal `Prm0` toggles and precompiled literal `Prm1` toggles,
-      underline, RTL, highlighting, and vertical alignment),
-      paragraphs (bounded direct and style-derived flat-color
-      `sprmPShd80`/`sprmPShd` shading),
-      headings (STSH), tables (`sprmTDefTable` merges and bounded relative
-      column proportions), list autonumbers, hyperlinks, inline images
-- [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
-- [x] **`.docx` writer** - styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
-      styled runs, leveled lists, paragraph page-break-before, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
-      run-anchored comments with reply parent ids and commentsExtended metadata, tracked insertion/deletion runs,
-      run-level content controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
-      string custom document properties, raw custom XML data-store items, explicit Word document ids, web-extension task pane package shells, styled default/first/even headers/footers + page numbers, section columns, document grids, text direction, title pages, page-number restarts/formats, next/even/odd section breaks, images with inline rotation and page-relative floating offsets,
-      table width, fixed-layout tables, table alignment, indentation, authored column proportions, uniform/per-side border widths, styles, and colors, per-cell table margins,
-      and the [core OOXML chart families](#chart-families) with embedded workbook-backed data) via `DocBuilder`,
-      `ParagraphBuilder`, `RunBuilder`, `CommentBuilder`, `RevisionBuilder`,
-      `ContentControlBuilder`, `TableBuilder`, `CellBuilder`, `ImageBuilder`,
-      `ChartBuilder`, `DocModel`, and
-      `write_docx`
-- [x] **PDF renderer** - `parley` + `krilla` with rich text/tables/images,
-      body and ordinary/recursively flattened table-cell list markers,
-      hyperlinks, model-backed clockwise image rotation, six-way solid
-      model-backed table border color/width, paragraph
-      page-break-before, header-row repeat, oversized-row split,
-      bounded DOCX document-default, declared-default-style, and explicit
-      paragraph-style spacing, line height, first/hanging indents, flat
-      shading, and page-break-before,
-      direct DOCX table-cell margin defaults with row-local `w:tblPrEx`
-      exceptions and per-side direct cell exceptions,
-      direct plus bounded whole/first/last/horizontal-band table-style DOCX
-      table-row `cantSplit`, including recursively flattened nested rows,
-      direct DOCX and recursively nested table-cell keep/widow controls, direct and
-      paragraph-style-inherited legacy DOC
-      `sprmPFKeep`/`sprmPFKeepFollow`/`sprmPFWidowControl`/`sprmPFPageBreakBefore`
-      plus bounded direct/style top-level
-      `sprmPDyaBefore`/`sprmPDyaAfter`/proportional `sprmPDyaLine` spacing
-      (explicit before/after spacing also reaches table cells) and direct row
-      `sprmTFCantSplit`/`sprmTFCantSplit90`, font registration
-- [x] Reader: `.docx` headers/footers, text boxes (`w:txbxContent` incl. run-level
-      `mc:AlternateContent`) including `text_boxes()` records, footnotes/endnotes
-      including `notes()` records, per-level numbering labels, caps
-- [x] Renderer: model-driven page geometry (size/orientation/per-side margins);
-      running headers/footers; nested-table-cell text; common Symbol/Wingdings
-      display mapping
-- [x] Reader: `.docx` comments with body/note/header/footer anchors,
-      body/note/header/footer tracked-change views and side-table extraction,
-      core document metadata, body/note/header/footer field detection,
-      body/note/header/footer floating-shape geometry and
-      containing-block anchor text capture, trusted body `PAGE` computation
-      plus `FILENAME`/`MERGEFIELD`
-      render support, document-info/date/stat
-      cached-display support, deterministic literal arithmetic formula fields,
-      literal `QUOTE`, literal `IF`, literal `COMPARE`, explicit-default
-      `FILLIN`/`ASK`, and literal `SET`
-      bookmark assignments feeding later plain `REF`/direct bookmark references
-      plus source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
-      comparisons and ordinary document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
-      comparisons,
-      dynamic/control,
-      inserted-content, and mail-merge helper field diagnostics, reference/index field diagnostics,
-      numbering/list field diagnostics, document-structure field diagnostics,
-      display/layout field diagnostics, action/automation field diagnostics,
-      compatibility/private field diagnostics, barcode field diagnostics,
-      legacy form field diagnostics plus deterministic checkbox checked/default
-      states, dropdown result/default selections, explicit non-empty text-input
-      current results, and empty-current text-input default results,
-      unambiguous `.docx` `REF`
-      bookmark text computation
-      including Word-generated hidden bookmark targets and multi-paragraph
-      bookmark ranges plus inline tabs, line breaks, and no-break/soft
-      hyphens for simple and common complex body fields plus deterministic
-      `REF \* Upper`/`REF \* Lower`/`REF \* Caps`/`REF \* FirstCap` text
-      format switches, source-order `REF \p`
-      relative-position results, explicit numbered-paragraph `REF \n` labels
-      from single-branch source paragraphs including `\n \p` relative suffixes
-      and `\n \t` numeric-text suppression, `REF \r` relative-context labels
-      including `\r \p` relative suffixes and `\r \t` numeric-text
-      suppression, `REF \w` full-context labels including `\w \p` relative
-      suffixes and `\w \t` numeric-text suppression, `REF \f` note-reference
-      marks for bookmarks around body footnote/endnote references with
-      generated REF note marks counted in source order plus common field-result
-      number/text format switches, text-neutral `REF \d "separator"` bookmark
-      text while value-changing sequence/page separator cases preserve cached text,
-      direct bookmark-name field computation with
-      supported text-format switches, neutral `\h`, explicit-number `\n`, `\n \t`, `\r`, `\r \t`, `\w`, `\w \t`, note-reference `\f`, sequence-separator `\d`, and source-order `\p`,
-      bookmarked `NOTEREF`/legacy `FTNREF` footnote/endnote reference marks with
-      neutral `\h`, note-reference-style `\f`, source-order `\p` above/below
-      results, and common field-result number/text format switches, bare default `TOC`,
-      standalone bookmark-scoped default `TOC \b`,
-      plus explicit `TOC \o` heading-outline computation, including omitted all-level ranges and common
-      `\o`/`\u` combinations, with neutral `\h`/`\z` switches,
-      text-preserving `\w`/`\x` switches normalized to plain text, text-neutral
-      `\n` no-page-number, `\p` entry/page separator, and `\d`
-      sequence/page separator switches, `\s` sequence-number page prefixes,
-      deterministic TOC `\* Upper`/`\* Lower`/
-      `\* Caps`/`\* FirstCap` field-result format switches, neutral TOC
-      `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, plus
-      quoted or switch-delimited unquoted `TOC \t` custom-style entries, `TOC \f` entries from matching
-      `TC "Text"` markers with optional `\f` type identifiers, `\l` levels,
-      and common marker text-format tails,
-      `TOC \c` full-caption entries and `TOC \a` label/number-omitted
-      caption-text entries from paragraphs containing matching
-      `SEQ Identifier` fields, with simple or common complex dirty/stale `SEQ`
-      caption numbers recomputed from source order,
-      standalone `TOC \u` explicit paragraph
-      outline-level computation and `TOC \b` bookmark-scoped computation when
-      the bookmark range is recoverable, including empty computed results for
-      existing scopes with no matching entries, with normalized simple inline
-      heading/caption tabs, line breaks, no-break/soft hyphens, and supported
-      literal symbols for simple and common complex
-      fields, body `PAGE` trusted current-page computation with page-number and
-      field-result format switches, named `PAGEREF` classification with leading
-      hard-break,
-      paragraph page-break-before, structural section-start, default next-page
-      section-start, deterministic section page-number restart labels,
-      supported section page-number format styles, source rendered page-break, and trusted
-      rendered-context hard-break target computation,
-      deterministic page-number and field-result format switches, trusted
-      leading-structural, source-marker, hard-break-after-target, and
-      paragraph-end section-break `\p` relative-position computation, plus
-      cached page-reference result preservation for remaining
-      layout-dependent cases, cached field result preservation for inline tabs, line
-      breaks, and no-break/soft hyphens in simple and common complex body
-      fields, `.docx` running header/footer
-      default selection/inheritance, first/even-page variant modeling and
-      authoring, plus section-aware first/even-page render selection, and
-      Symbol/Wingdings glyph mapping
-- [x] Reader R2-a: field report/evaluator parity for value-changing fields
-      where duplicated syntax checks or document-report/render-report
-      diagnostics can drift from computed-result behavior. Verified parity
-      coverage now locks `PAGEREF`, `REF`, `NOTEREF`/`FTNREF`, and TOC
-      computed/gap buckets across opened-document and render-model reports, and
-      empty unsupported simple/complex field instructions plus supported hidden
-      `RD`/`TA`/`XE` marker fields stay reportable in model/render inventories;
-      reopen only for newly proven parser/evaluator/report drift or exact
-      duplicated syntax logic.
-- [x] Reader R2-b: bounded deterministic `PAGE`/`PAGEREF` computation in trusted
-      leading/source-rendered, section-start, paragraph-end section-break
-      target, source-marker, and hard-break contexts. Remaining Word-exact
-      current-page, page-reference, and relative-position cases are an inherent
-      layout ceiling and stay cached; opt-in `layout_pages_with_fonts` reports
-      rwml's own preview-grade pagination without changing reader results
-- [x] Reader R2-c: deterministic value-changing `REF` (incl. `\#` numeric
-      picture and `\!`), `NOTEREF`/`FTNREF` (incl. `settings.xml`
-      `numStart`/`numFmt` and `customMarkFollows`), and TOC heading-source
-      `NOTEREF`/`SEQ` resolution; the remaining REF/NOTEREF/TOC cases are
-      layout- or Word-behavior-dependent and stay cached-with-reason
-- [x] Reader R2-d: non-deterministic data-, source-, layout-, action-,
-      generated-, barcode-, compatibility-, and protected-form field families
-      preserve cached text and stay reportable by design unless deterministic
-      semantics are proven
-- [x] Reader R2-e: bounded legacy `.doc` note anchors from
-      `PlcffndRef`/`PlcfendRef`, count-aligned text-box anchors from `PlcSpaMom`,
-      annotation author metadata, and per-section `PlcfHdd` header/footer story
-      application through `PlcfSed`, plus SED/SEPX-backed page size,
-      orientation, nonnegative per-side margins, title-page state, equal-width
-      columns, all six section text directions, complete document-grid state
-      with representable character pitch, and page-number restart/format state
-      for single, headerless, and multi-section documents. Missing annotation
-      bookmark tables,
-      count-mismatched shape/text-box tables, malformed local SEPX data, and
-      unsupported section properties retain bounded fallbacks by design
-- [x] Reader side-table context parity: supported `STYLEREF` fields compute in
-      accepted-current insertion/move-to revision text and note-reference anchor
-      text with source-order-stable body context. Deletion/move-from text keeps
-      cached original results, note anchors skip old-content fields, and
-      revision-view context reconstruction matches strict open-time part parsing,
-      source package size, and `settings.xml` note numbering
-- [x] **Package-preserving edit layer** — `Document::open`→edit→`save` keeps every
-      unmodeled part verbatim; the element-tree edit methods (text/field/comment/
-      note/image/content-control/revision/core-property plus conservative atomic
-      direct body block enumeration/plain-paragraph insertion/move/removal,
-      listed under
-      [Edit](#edit--open-change-save-package-preserving)) preserve fields/shapes/
-      content-controls/comments/revisions;
-      `edited_parts` exposes touched package parts; `edit_capability` /
-      `report().edit` expose read-only reasons; `opc` + `xmltree` internals;
-      fallible `try_write_docx`
-- [ ] Renderer: Word-exact pagination beyond bounded section columns, opened-DOCX
-      top-level/direct-and-nested-cell keep/widow controls, and direct or
-      paragraph-style-inherited legacy-DOC top-level/ordinary-cell paragraph
-      plus direct row controls; floating-shape wrap/reflow
-      beyond bounded forward page-wide `wrapTopAndBottom`,
-      full layout-derived `PAGE`/`PAGEREF` values beyond trusted source markers,
-      remaining render-time TOC/REF/NOTEREF policy where layout context is
-      required, broader bundled script coverage, and full Word-exact RTL typography
-- [x] Authoring API, native PDF preview rendering, and embedded workbook-backed
-      data for the [core OOXML chart families](#chart-families)
-- [x] Wireframe styling for authored surface and 3-D surface charts
-- [x] Shape styling for authored 3-D bar and 3-D column-family charts
-- [x] Metafile diagnostics for WMF/EMF/EMZ/WMZ path, format, byte size, compression flag, and raw/gzip-wrapped header dimensions
-- [x] Chart-ex extension chart families (waterfall, treemap, sunburst, histogram, box & whisker, funnel) authored as `chartEx` parts
-- [x] Bounded exact single-DIB metafile (WMF/EMF) raster extraction for palette, RGB, and strict bitfield rasters rendered as images
-- [ ] Full vector metafile (WMF/EMF) rendering beyond single-DIB raster extraction and bounded header diagnostics
+Future changes are selected from reproducible fixtures and focused regression
+tests. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contributor gate and
+release validation workflow.
 
 ## Contributing
 

@@ -46,10 +46,12 @@ use parley::{FontContext, Layout, LayoutContext};
 
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
-    FieldRole, Image, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Run,
-    SectionBreakKind, SectionSetup, Spacing, TabAlignment, TabStop, Table, TableBorderSide,
-    TableCellNestedPaginationHints, TableCellPaginationHints, TablePaginationHints,
-    TableRowPaginationHint, VCell, VertAlign,
+    FieldRole, Image, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
+    Run, RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints, RunningSurfaceTabStopHints,
+    RunningSurfaceTableCellTabStopHints, SectionBreakKind, SectionColumnLayoutHints, SectionSetup,
+    Spacing, TabAlignment, TabLeader, TabStop, Table, TableBorderSide, TableCellLineSpacingHints,
+    TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
+    TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
 };
 use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
 use crate::{Error, Result};
@@ -63,7 +65,7 @@ const MARGIN: f32 = 56.0;
 /// Per-document page geometry in PDF points, derived from the model's `PageSetup`
 /// (so Letter, A3, custom margins, and landscape all render at the right size
 /// instead of a fixed A4). Replaces the former page-size constants.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct Geom {
     page_w: f32,
     page_h: f32,
@@ -115,6 +117,10 @@ impl Geom {
             ..self
         }
     }
+
+    fn from_section(setup: &SectionSetup) -> Self {
+        Self::from_setup(&setup.page)
+    }
 }
 
 const PARA_GAP: f32 = 6.0;
@@ -145,8 +151,12 @@ const VERTICAL_ALIGN_SCALE: f32 = 0.65;
 const MAX_CELL_INSET_PT: f32 = 720.0;
 const DEFAULT_TAB_STOP_PT: f32 = 36.0;
 const COLUMN_GAP_PT: f32 = 18.0;
+const COLUMN_SEPARATOR_WIDTH_PT: f32 = 0.5;
 const MIN_COLUMN_WIDTH_PT: f32 = 20.0;
 const MAX_SECTION_COLUMNS: usize = 64;
+// Keep hostile numeric attributes away from PDF-coordinate overflow while
+// leaving every practical document value untouched.
+const MAX_ABSOLUTE_LINE_HEIGHT_PT: f32 = 1_000_000.0;
 const RIGHT_TO_LEFT_MARK: char = '\u{200F}';
 const RIGHT_TO_LEFT_ISOLATE: char = '\u{2067}';
 const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
@@ -154,10 +164,27 @@ const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
 #[derive(Clone, Copy, Default)]
 pub(crate) struct SourceRenderHints<'a> {
     pub(crate) pagination: &'a [PaginationHint],
+    pub(crate) line_spacing: &'a [Option<LineSpacingHint>],
     pub(crate) tab_stops: &'a [Vec<TabStop>],
+    pub(crate) column_break_offsets: &'a [Vec<usize>],
+    pub(crate) section_column_gap_pt: &'a [Option<f32>],
+    pub(crate) section_column_layouts: &'a [Option<SectionColumnLayoutHints>],
+    pub(crate) section_column_separators: &'a [bool],
+    pub(crate) section_column_rtl: &'a [bool],
+    pub(crate) final_section_column_gap_pt: Option<f32>,
+    pub(crate) final_section_column_layout: Option<&'a SectionColumnLayoutHints>,
+    pub(crate) final_section_column_separator: bool,
+    pub(crate) final_section_column_rtl: bool,
+    pub(crate) default_tab_stop_pt: Option<f32>,
     pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     pub(crate) table_cell_pagination: &'a [TableCellPaginationHints],
+    pub(crate) table_cell_line_spacing: &'a [TableCellLineSpacingHints],
     pub(crate) table_nested_pagination: &'a [TableCellNestedPaginationHints],
+    pub(crate) table_cell_tab_stops: &'a [TableCellTabStopHints],
+    pub(crate) running_line_spacing: &'a [RunningSurfaceLineSpacingHints],
+    pub(crate) running_tab_stops: &'a [RunningSurfaceTabStopHints],
+    pub(crate) running_table_cell_tab_stops: &'a [RunningSurfaceTableCellTabStopHints],
+    pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,10 +237,20 @@ struct RunPaint {
     strikethrough: bool,
 }
 
+type PageLink = (f32, f32, f32, f32, Rc<str>);
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct LineBackground {
     color: rgb::Color,
     width: f32,
+}
+
+#[derive(Clone, Copy)]
+struct TabLeaderSpan {
+    start: f32,
+    end: f32,
+    style: TabLeader,
+    color: rgb::Color,
 }
 
 impl RunDraw {
@@ -230,12 +267,15 @@ impl RunDraw {
 struct LineLayout {
     height: f32,
     baseline: f32,
+    clip_to_height: bool,
     x_indent: f32,
     char_range: Option<LineCharRange>,
     background: Option<LineBackground>,
     cell_spacing: CellLineSpacing,
     cell_paragraph: Option<CellParagraphLine>,
     cell_cant_split_group: Option<NonZeroUsize>,
+    cell_visual: Option<CellVisual>,
+    leaders: Vec<TabLeaderSpan>,
     runs: Vec<RunDraw>,
 }
 
@@ -461,6 +501,42 @@ struct ImageLayout {
     rotation_degrees: i32,
 }
 
+#[derive(Clone)]
+enum CellVisual {
+    Picture {
+        image: PdfImage,
+        layout: ImageLayout,
+    },
+    Chart {
+        chart: Chart,
+        width: f32,
+        height: f32,
+        layout: ScaledChartLayout,
+    },
+}
+
+impl CellVisual {
+    fn fit_to_height(&mut self, max_height: f32) -> Option<f32> {
+        match self {
+            Self::Picture { layout, .. } => {
+                let fitted = fit_image_layout_to_box(*layout, layout.bounds_w, max_height)?;
+                *layout = fitted;
+                Some(fitted.bounds_h)
+            }
+            Self::Chart {
+                width,
+                height,
+                layout,
+                ..
+            } => {
+                let fitted = fit_chart_layout_to_box(*width, *height, layout.bounds_w, max_height)?;
+                *layout = fitted;
+                Some(fitted.bounds_h)
+            }
+        }
+    }
+}
+
 /// A unit of block flow, paginated top-to-bottom. `Table` groups its rows (with the
 /// header-row count) so pagination can repeat headers and split oversized rows;
 /// `Row` is an individual placed row produced during pagination.
@@ -479,6 +555,10 @@ enum FlowItem {
     Line(LineLayout),
     Row(RowLayout),
     PageBreak,
+    ColumnBreak,
+    SectionColumnGap(f32),
+    SectionColumnLayout(Rc<SectionColumnLayoutHints>),
+    SectionColumnRtl,
     SectionBreak(SectionSetup),
     Table {
         rows: Vec<RowLayout>,
@@ -531,6 +611,7 @@ impl LayoutCapture {
 struct RenderPageSection {
     setup: SectionSetup,
     first_page_index: usize,
+    section_index: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -760,28 +841,24 @@ fn render_warnings_for_model(
 /// Size an authored chart block for PDF flow (96-dpi px -> PDF points, fit to
 /// the content box and one page). Empty charts are skipped rather than rendered
 /// as misleading empty axes.
-fn chart_flow_item(chart: &Chart, geom: Geom) -> Option<FlowItem> {
+fn authored_chart_dimensions(chart: &Chart) -> Option<(f32, f32)> {
     if chart.categories.is_empty() || chart.series.is_empty() {
         return None;
     }
-    let mut w = chart.width_px.unwrap_or(480) as f32 * 0.75;
-    let mut h = chart.height_px.unwrap_or(320) as f32 * 0.75;
-    let content_w = geom.content_w();
-    if w > content_w {
-        let s = content_w / w;
-        w = content_w;
-        h *= s;
-    }
-    let max_h = geom.bottom() - geom.top();
-    if h > max_h {
-        let s = max_h / h;
-        h = max_h;
-        w *= s;
-    }
-    (w > 0.0 && h > 0.0).then_some(FlowItem::Chart {
+    let width = chart.width_px.unwrap_or(480) as f32 * 0.75;
+    let height = chart.height_px.unwrap_or(320) as f32 * 0.75;
+    (width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0)
+        .then_some((width, height))
+}
+
+fn chart_flow_item(chart: &Chart, geom: Geom) -> Option<FlowItem> {
+    let (width, height) = authored_chart_dimensions(chart)?;
+    let layout =
+        fit_chart_layout_to_box(width, height, geom.content_w(), geom.bottom() - geom.top())?;
+    Some(FlowItem::Chart {
         chart: chart.clone(),
-        w,
-        h,
+        w: layout.bounds_w,
+        h: layout.bounds_h,
     })
 }
 
@@ -1365,9 +1442,10 @@ fn nonnegative_emu_pt(value: Option<i64>) -> f32 {
 fn top_bottom_bands_by_block(
     model: &DocModel,
     shapes: &[FloatingShape],
-    geom: Geom,
+    base_geom: Geom,
 ) -> Vec<Vec<TopBottomBand>> {
     let mut bands = vec![Vec::new(); model.blocks.len()];
+    let geometries = section_geometries_by_block(&model.blocks, base_geom);
     for shape in shapes.iter().take(MAX_FLOATING_SHAPE_OVERLAYS) {
         let Some(wrapping) = shape
             .wrapping
@@ -1385,6 +1463,7 @@ fn top_bottom_bands_by_block(
         else {
             continue;
         };
+        let geom = geometries.get(block_index).copied().unwrap_or(base_geom);
         let Some(extent) = shape
             .extent
             .filter(|extent| extent.cx_emu > 0 && extent.cy_emu > 0)
@@ -1418,7 +1497,8 @@ fn top_bottom_bands_by_block(
 
 fn floating_shape_overlays_for_pages(
     shapes: &[FloatingShape],
-    geom: Geom,
+    base_geom: Geom,
+    page_geometries: &[Geom],
     block_pages: &HashMap<usize, usize>,
     block_line_pages: &HashMap<usize, Vec<BlockLinePage>>,
 ) -> Vec<FloatingShapeOverlay> {
@@ -1438,6 +1518,12 @@ fn floating_shape_overlays_for_pages(
         .into_iter()
         .map(|(i, shape)| {
             let index = i + 1;
+            let page_index =
+                floating_shape_anchor_page(shape, block_pages, block_line_pages).unwrap_or(0);
+            let geom = page_geometries
+                .get(page_index)
+                .copied()
+                .unwrap_or(base_geom);
             let (w, h) = floating_shape_size(shape, geom);
             let x = floating_shape_simple_coordinate(shape, ShapeAxis::Horizontal, w, geom)
                 .unwrap_or_else(|| {
@@ -1457,8 +1543,6 @@ fn floating_shape_overlays_for_pages(
                         h,
                     )
                 });
-            let page_index =
-                floating_shape_anchor_page(shape, block_pages, block_line_pages).unwrap_or(0);
             FloatingShapeOverlay {
                 page_index,
                 behind_doc: shape.behind_doc == Some(true),
@@ -1821,6 +1905,7 @@ struct ShapeOptions<'a> {
     hanging_indent: bool,
     tab_origin: f32,
     tab_stops: &'a [TabStop],
+    default_tab_stop_pt: Option<f32>,
     rtl_tabs: bool,
 }
 
@@ -1974,12 +2059,19 @@ fn shape_with_options(
     let adjust_tabs = text.contains('\t')
         && if rtl_tabs {
             matches!(align, Alignment::Right | Alignment::Start)
-                && options
-                    .tab_stops
-                    .iter()
-                    .all(|stop| stop.alignment == TabAlignment::Left)
+                && (options.tab_stops.is_empty()
+                    || options
+                        .tab_stops
+                        .iter()
+                        .any(|stop| stop.alignment != TabAlignment::Clear))
         } else {
-            !layout_rtl && matches!(align, Alignment::Left | Alignment::Start)
+            !layout_rtl
+                && (matches!(align, Alignment::Left | Alignment::Start)
+                    || options.tab_stops.is_empty()
+                    || options
+                        .tab_stops
+                        .iter()
+                        .any(|stop| stop.alignment != TabAlignment::Clear))
         };
 
     let text_rc: Rc<str> = Rc::from(text);
@@ -2002,9 +2094,23 @@ fn shape_with_options(
             break;
         }
         let reservations = if rtl_tabs {
-            apply_rtl_tab_stops(text, &mut out, options.tab_stops, width, options.tab_origin)
+            apply_rtl_tab_stops(
+                text,
+                &mut out,
+                options.tab_stops,
+                width,
+                options.tab_origin,
+                options.default_tab_stop_pt,
+            )
         } else {
-            apply_tab_stops(text, &mut out, options.tab_stops, width, options.tab_origin)
+            apply_tab_stops(
+                text,
+                &mut out,
+                options.tab_stops,
+                width,
+                options.tab_origin,
+                options.default_tab_stop_pt,
+            )
         };
         pass += 1;
         if pass > TAB_REFLOW_PASSES
@@ -2014,6 +2120,52 @@ fn shape_with_options(
         }
     }
     out
+}
+
+fn apply_line_spacing_hint(lines: &mut [LineLayout], hint: Option<LineSpacingHint>) {
+    let Some(hint) = hint else {
+        return;
+    };
+    let requested = match hint {
+        LineSpacingHint::Exact(value) | LineSpacingHint::AtLeast(value) => value,
+    };
+    if !requested.is_finite() || requested <= 0.0 {
+        return;
+    }
+    let requested = requested.min(MAX_ABSOLUTE_LINE_HEIGHT_PT);
+    for line in lines {
+        match hint {
+            LineSpacingHint::AtLeast(_) if requested > line.height => {
+                line.baseline += (requested - line.height) * 0.5;
+                line.height = requested;
+            }
+            LineSpacingHint::AtLeast(_) => {}
+            LineSpacingHint::Exact(_) => {
+                line.clip_to_height = true;
+                let content_bounds = line.runs.iter().fold(None, |bounds, run| {
+                    let top = run.baseline_shift - run.ascent;
+                    let bottom = run.baseline_shift + run.descent;
+                    Some(match bounds {
+                        Some((current_top, current_bottom)) => {
+                            (f32::min(current_top, top), f32::max(current_bottom, bottom))
+                        }
+                        None => (top, bottom),
+                    })
+                });
+                if let Some((top, bottom)) = content_bounds {
+                    let content_height = bottom - top;
+                    line.baseline = if content_height <= requested {
+                        (requested - content_height) * 0.5 - top
+                    } else {
+                        requested - bottom
+                    };
+                } else {
+                    line.baseline += (requested - line.height) * 0.5;
+                }
+                line.height = requested;
+            }
+        }
+    }
 }
 
 /// Build the drawable lines for an already-broken layout.
@@ -2169,12 +2321,15 @@ fn shape_extract_lines(
         out.push(LineLayout {
             height,
             baseline,
+            clip_to_height: false,
             x_indent: 0.0,
             char_range,
             background: None,
             cell_spacing: CellLineSpacing::default(),
             cell_paragraph: None,
             cell_cant_split_group: None,
+            cell_visual: None,
+            leaders: Vec::new(),
             runs,
         });
     }
@@ -2291,7 +2446,7 @@ fn explicit_tab_field_start(
     field: TabFieldMetrics,
     width: f32,
     origin: f32,
-) -> Option<f32> {
+) -> Option<(TabStop, f32)> {
     let absolute_cursor = origin + cursor;
     let absolute_end = origin + width;
     if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
@@ -2305,6 +2460,7 @@ fn explicit_tab_field_start(
                 TabAlignment::Center => field.advance / 2.0,
                 TabAlignment::Right => field.advance,
                 TabAlignment::Decimal => field.decimal_offset.unwrap_or(field.advance),
+                TabAlignment::Bar => return None,
                 TabAlignment::Clear => return None,
             };
             let absolute_field_start = stop.position_pt - alignment_offset;
@@ -2313,13 +2469,46 @@ fn explicit_tab_field_start(
                 && stop.position_pt > absolute_cursor + f32::EPSILON
                 && absolute_field_start >= absolute_cursor
                 && absolute_field_end <= absolute_end)
-                .then_some((stop.position_pt, absolute_field_start - origin))
+                .then_some((stop.position_pt, *stop, absolute_field_start - origin))
         })
         .min_by(|left, right| left.0.total_cmp(&right.0))
-        .map(|(_, field_start)| field_start)
+        .map(|(_, stop, field_start)| (stop, field_start))
 }
 
+fn next_bar_tab_position(
+    tab_stops: &[TabStop],
+    cursor: f32,
+    width: f32,
+    origin: f32,
+) -> Option<f32> {
+    let absolute_cursor = origin + cursor;
+    let absolute_end = origin + width;
+    if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
+        return None;
+    }
+    tab_stops
+        .iter()
+        .filter(|stop| {
+            stop.alignment == TabAlignment::Bar
+                && stop.position_pt.is_finite()
+                && stop.position_pt > absolute_cursor + f32::EPSILON
+                && stop.position_pt <= absolute_end
+        })
+        .min_by(|left, right| left.position_pt.total_cmp(&right.position_pt))
+        .map(|stop| stop.position_pt - origin)
+}
+
+#[cfg(test)]
 fn default_tab_field_start(cursor: f32, width: f32, origin: f32) -> f32 {
+    default_tab_field_start_with_interval(cursor, width, origin, None)
+}
+
+fn default_tab_field_start_with_interval(
+    cursor: f32,
+    width: f32,
+    origin: f32,
+    default_tab_stop_pt: Option<f32>,
+) -> f32 {
     let absolute_cursor = origin + cursor;
     let absolute_end = origin + width;
     if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
@@ -2328,8 +2517,10 @@ fn default_tab_field_start(cursor: f32, width: f32, origin: f32) -> f32 {
     if absolute_cursor >= absolute_end {
         return width;
     }
-    let absolute_stop = (((absolute_cursor / DEFAULT_TAB_STOP_PT).floor() + 1.0)
-        * DEFAULT_TAB_STOP_PT)
+    let interval = default_tab_stop_pt
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(DEFAULT_TAB_STOP_PT);
+    let absolute_stop = (((absolute_cursor / interval).floor() + 1.0) * interval)
         .min(absolute_end)
         .max(absolute_cursor);
     (absolute_stop - origin).max(cursor).min(width)
@@ -2341,9 +2532,11 @@ fn apply_tab_stops(
     tab_stops: &[TabStop],
     width: f32,
     origin: f32,
+    default_tab_stop_pt: Option<f32>,
 ) -> Vec<TabReservation> {
     let mut reservations = Vec::with_capacity(lines.len());
     for line in lines {
+        line.leaders.clear();
         let mut accumulated_shift = 0.0;
         let mut line_end: f32 = 0.0;
         for run_index in 0..line.runs.len() {
@@ -2355,9 +2548,38 @@ fn apply_tab_stops(
                 let original_advance = glyph.x_advance * run_size;
                 if glyph_text(text, glyph) == Some("\t") && run_size > 0.0 {
                     let field = tab_field_metrics(text, line, run_index, glyph_index);
+                    let explicit =
+                        explicit_tab_field_start(tab_stops, cursor, field, width, origin);
                     let field_start =
-                        explicit_tab_field_start(tab_stops, cursor, field, width, origin)
-                            .unwrap_or_else(|| default_tab_field_start(cursor, width, origin));
+                        explicit
+                            .map(|(_, field_start)| field_start)
+                            .unwrap_or_else(|| {
+                                default_tab_field_start_with_interval(
+                                    cursor,
+                                    width,
+                                    origin,
+                                    default_tab_stop_pt,
+                                )
+                            });
+                    if let Some((stop, _)) = explicit {
+                        if stop.leader != TabLeader::None && field_start > cursor {
+                            line.leaders.push(TabLeaderSpan {
+                                start: cursor,
+                                end: field_start,
+                                style: stop.leader,
+                                color: line.runs[run_index].color,
+                            });
+                        }
+                    } else if let Some(bar) =
+                        next_bar_tab_position(tab_stops, cursor, width, origin)
+                    {
+                        line.leaders.push(TabLeaderSpan {
+                            start: bar,
+                            end: bar,
+                            style: TabLeader::Bar,
+                            color: line.runs[run_index].color,
+                        });
+                    }
                     let advance = (field_start - cursor)
                         .max(0.0)
                         .min((width - cursor).max(0.0));
@@ -2378,13 +2600,14 @@ fn apply_tab_stops(
     reservations
 }
 
-fn rtl_tab_field_advance(
+fn rtl_tab_field_metrics(
     text: &str,
     line: &LineLayout,
     tab_run_index: usize,
     tab_glyph_index: usize,
-) -> f32 {
-    let mut advance = 0.0;
+) -> TabFieldMetrics {
+    let mut metrics = TabFieldMetrics::default();
+    let mut found_preferred_decimal = false;
     for run_index in (0..=tab_run_index).rev() {
         let glyph_end = if run_index == tab_run_index {
             tab_glyph_index
@@ -2392,25 +2615,43 @@ fn rtl_tab_field_advance(
             line.runs[run_index].glyphs.len()
         };
         for glyph in line.runs[run_index].glyphs[..glyph_end].iter().rev() {
-            if glyph_text(text, glyph) == Some("\t") {
-                return advance;
+            let Some(glyph_text) = glyph_text(text, glyph) else {
+                continue;
+            };
+            if glyph_text == "\t" {
+                return metrics;
             }
-            let glyph_advance = glyph.x_advance * line.runs[run_index].size;
+            let run_size = line.runs[run_index].size;
+            let contains_preferred_decimal =
+                glyph_text.chars().any(|ch| matches!(ch, '.' | '\u{066B}'));
+            let contains_fallback_decimal = glyph_text.contains(',');
+            if contains_preferred_decimal && !found_preferred_decimal {
+                metrics.decimal_offset =
+                    Some((metrics.advance + glyph.x_offset * run_size).max(metrics.advance));
+                found_preferred_decimal = true;
+            } else if contains_fallback_decimal
+                && !found_preferred_decimal
+                && metrics.decimal_offset.is_none()
+            {
+                metrics.decimal_offset =
+                    Some((metrics.advance + glyph.x_offset * run_size).max(metrics.advance));
+            }
+            let glyph_advance = glyph.x_advance * run_size;
             if glyph_advance.is_finite() {
-                advance += glyph_advance.max(0.0);
+                metrics.advance += glyph_advance.max(0.0);
             }
         }
     }
-    advance
+    metrics
 }
 
-fn explicit_rtl_start_tab_field_start(
+fn explicit_rtl_tab_field_start(
     tab_stops: &[TabStop],
     cursor: f32,
-    field_advance: f32,
+    field: TabFieldMetrics,
     width: f32,
     origin: f32,
-) -> Option<f32> {
+) -> Option<(TabStop, f32)> {
     let absolute_cursor = origin + cursor;
     let absolute_end = origin + width;
     if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
@@ -2418,17 +2659,25 @@ fn explicit_rtl_start_tab_field_start(
     }
     tab_stops
         .iter()
-        .filter(|stop| stop.alignment == TabAlignment::Left)
         .filter_map(|stop| {
-            let absolute_field_start = stop.position_pt;
-            let absolute_field_end = absolute_field_start + field_advance;
+            let alignment_offset = match stop.alignment {
+                TabAlignment::Left => 0.0,
+                TabAlignment::Center => field.advance / 2.0,
+                TabAlignment::Right => field.advance,
+                TabAlignment::Decimal => field.decimal_offset.unwrap_or(field.advance),
+                TabAlignment::Bar => return None,
+                TabAlignment::Clear => return None,
+            };
+            let absolute_field_start = stop.position_pt - alignment_offset;
+            let absolute_field_end = absolute_field_start + field.advance;
             (stop.position_pt.is_finite()
                 && stop.position_pt > absolute_cursor + f32::EPSILON
+                && absolute_field_start >= absolute_cursor
                 && absolute_field_end <= absolute_end)
-                .then_some((stop.position_pt, absolute_field_start - origin))
+                .then_some((stop.position_pt, *stop, absolute_field_start - origin))
         })
         .min_by(|left, right| left.0.total_cmp(&right.0))
-        .map(|(_, field_start)| field_start)
+        .map(|(_, stop, field_start)| (stop, field_start))
 }
 
 fn apply_rtl_tab_stops(
@@ -2437,9 +2686,18 @@ fn apply_rtl_tab_stops(
     tab_stops: &[TabStop],
     width: f32,
     origin: f32,
+    default_tab_stop_pt: Option<f32>,
 ) -> Vec<TabReservation> {
+    let use_default_fallback = tab_stops.is_empty()
+        || tab_stops.iter().all(|stop| {
+            matches!(
+                stop.alignment,
+                TabAlignment::Left | TabAlignment::Bar | TabAlignment::Clear
+            )
+        });
     let mut reservations = Vec::with_capacity(lines.len());
     for line in lines {
+        line.leaders.clear();
         let mut run_deltas = vec![0.0_f32; line.runs.len()];
         let mut shift_from_right = 0.0_f32;
         for run_index in (0..line.runs.len()).rev() {
@@ -2462,17 +2720,41 @@ fn apply_rtl_tab_stops(
                     continue;
                 }
                 let cursor = width - tab_end + shift_from_right;
-                let field_advance = rtl_tab_field_advance(text, line, run_index, glyph_index);
                 // ISO/IEC 29500-1 17.3.1.37 measures w:pos from the paragraph's
                 // leading edge, which is the right edge for an RTL paragraph.
-                let field_start = explicit_rtl_start_tab_field_start(
-                    tab_stops,
-                    cursor,
-                    field_advance,
-                    width,
-                    origin,
-                )
-                .unwrap_or_else(|| default_tab_field_start(cursor, width, origin));
+                let field = rtl_tab_field_metrics(text, line, run_index, glyph_index);
+                let explicit =
+                    explicit_rtl_tab_field_start(tab_stops, cursor, field, width, origin);
+                let field_start = explicit.map(|(_, field_start)| field_start).or_else(|| {
+                    use_default_fallback.then(|| {
+                        default_tab_field_start_with_interval(
+                            cursor,
+                            width,
+                            origin,
+                            default_tab_stop_pt,
+                        )
+                    })
+                });
+                let Some(field_start) = field_start else {
+                    continue;
+                };
+                if let Some((stop, _)) = explicit {
+                    if stop.leader != TabLeader::None && field_start > cursor {
+                        line.leaders.push(TabLeaderSpan {
+                            start: cursor,
+                            end: field_start,
+                            style: stop.leader,
+                            color: line.runs[run_index].color,
+                        });
+                    }
+                } else if let Some(bar) = next_bar_tab_position(tab_stops, cursor, width, origin) {
+                    line.leaders.push(TabLeaderSpan {
+                        start: bar,
+                        end: bar,
+                        style: TabLeader::Bar,
+                        color: line.runs[run_index].color,
+                    });
+                }
                 let original_advance =
                     line.runs[run_index].glyphs[glyph_index].x_advance * run_size;
                 let advance = (field_start - cursor)
@@ -2549,10 +2831,13 @@ struct ShapedParagraph<'a> {
     images: Vec<&'a Image>,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn shape_paragraph_content<'a>(
     p: &'a Paragraph,
     marker: Option<&str>,
     tab_stops: &[TabStop],
+    default_tab_stop_pt: Option<f32>,
+    line_spacing_hint: Option<LineSpacingHint>,
     available_width: f32,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
@@ -2693,6 +2978,7 @@ fn shape_paragraph_content<'a>(
                     indent.x_indent
                 },
                 tab_stops,
+                default_tab_stop_pt,
                 rtl_tabs: p.props.bidi,
             },
             cx,
@@ -2723,20 +3009,48 @@ fn shape_paragraph_content<'a>(
             lines.push(line);
         }
     }
+    apply_line_spacing_hint(&mut lines, line_spacing_hint);
     ShapedParagraph { lines, images }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn layout_paragraph(
     p: &Paragraph,
     out: &mut Vec<FlowItem>,
     marker: Option<&str>,
     tab_stops: &[TabStop],
+    column_break_offsets: &[usize],
+    default_tab_stop_pt: Option<f32>,
+    line_spacing_hint: Option<LineSpacingHint>,
     geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) {
-    let shaped = shape_paragraph_content(p, marker, tab_stops, geom.content_w(), cx, capture, true);
-    out.extend(shaped.lines.into_iter().map(FlowItem::Line));
+    let shaped = shape_paragraph_content(
+        p,
+        marker,
+        tab_stops,
+        default_tab_stop_pt,
+        line_spacing_hint,
+        geom.content_w(),
+        cx,
+        capture,
+        true,
+    );
+    let mut column_breaks = column_break_offsets.iter().copied().peekable();
+    for line in shaped.lines {
+        if let Some(start) = line.char_range.map(|range| range.start) {
+            while column_breaks
+                .peek()
+                .is_some_and(|break_offset| *break_offset < start)
+            {
+                out.push(FlowItem::ColumnBreak);
+                column_breaks.next();
+            }
+        }
+        out.push(FlowItem::Line(line));
+    }
+    out.extend(column_breaks.map(|_| FlowItem::ColumnBreak));
     for img in shaped.images {
         if let Some(item) = image_flow_item(img, geom) {
             out.push(FlowItem::Gap(PARA_GAP));
@@ -2874,10 +3188,67 @@ fn natural_width(text: &str, cx: &mut TextCx<'_>) -> f32 {
 
 /// Shape a cell's paragraph blocks into wrapped, richly-styled lines (each
 /// paragraph keeps its own runs' bold/italic/color/size/font and alignment).
-/// Nested tables/images in a cell are not laid out as grids — only their text was
-/// ever surfaced. A **nested table** inside a cell is flattened to its cells'
-/// lines (no nested grid), recursively — so a document wrapped in an outer table
-/// of inner tables still renders its text. Recursion is depth-capped.
+/// Raster images and model-authored charts become atomic row-splitting records.
+/// A **nested table** inside a cell is flattened to its cells' content lines (no
+/// nested grid), recursively, so wrapper tables still surface text and supported
+/// media. Recursion is depth-capped.
+fn cell_visual_line(visual: CellVisual, height: f32, before: f32) -> LineLayout {
+    LineLayout {
+        height,
+        baseline: 0.0,
+        clip_to_height: false,
+        x_indent: 0.0,
+        char_range: None,
+        background: None,
+        cell_spacing: CellLineSpacing { before, after: 0.0 },
+        cell_paragraph: None,
+        cell_cant_split_group: None,
+        cell_visual: Some(visual),
+        leaders: Vec::new(),
+        runs: Vec::new(),
+    }
+}
+
+fn cell_picture_line(
+    image: &Image,
+    inner_width: f32,
+    max_height: f32,
+    before: f32,
+) -> Option<LineLayout> {
+    let available_height = max_height - before;
+    let (decoded, width_px, height_px) = decode_model_image(image)?;
+    let layout = image_layout(
+        width_px,
+        height_px,
+        image.rotation_degrees,
+        inner_width,
+        available_height,
+    )?;
+    Some(cell_visual_line(
+        CellVisual::Picture {
+            image: decoded,
+            layout,
+        },
+        layout.bounds_h,
+        before,
+    ))
+}
+
+fn cell_chart_line(chart: &Chart, inner_width: f32, max_height: f32) -> Option<LineLayout> {
+    let (width, height) = authored_chart_dimensions(chart)?;
+    let layout = fit_chart_layout_to_box(width, height, inner_width, max_height)?;
+    Some(cell_visual_line(
+        CellVisual::Chart {
+            chart: chart.clone(),
+            width,
+            height,
+            layout,
+        },
+        layout.bounds_h,
+        0.0,
+    ))
+}
+
 #[cfg(test)]
 fn shape_cell(
     cell: &Cell,
@@ -2886,14 +3257,20 @@ fn shape_cell(
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) -> Vec<LineLayout> {
-    shape_cell_with_pagination(cell, None, None, inner_w, depth, cx, capture)
+    shape_cell_with_pagination(
+        cell, None, None, None, None, None, inner_w, depth, cx, capture,
+    )
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 fn shape_cell_with_pagination(
     cell: &Cell,
     pagination: Option<&[Option<PaginationHint>]>,
+    line_spacing: Option<&[Option<LineSpacingHint>]>,
+    tab_stops: Option<&[Vec<TabStop>]>,
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
+    default_tab_stop_pt: Option<f32>,
     inner_w: f32,
     depth: u32,
     cx: &mut TextCx<'_>,
@@ -2903,8 +3280,12 @@ fn shape_cell_with_pagination(
     shape_cell_with_pagination_and_lists(
         cell,
         pagination,
+        line_spacing,
+        tab_stops,
         nested_pagination,
+        default_tab_stop_pt,
         inner_w,
+        (PAGE_H - 2.0 * MARGIN).max(1.0),
         depth,
         cx,
         capture,
@@ -2916,8 +3297,12 @@ fn shape_cell_with_pagination(
 fn shape_cell_with_pagination_and_lists(
     cell: &Cell,
     pagination: Option<&[Option<PaginationHint>]>,
+    line_spacing: Option<&[Option<LineSpacingHint>]>,
+    tab_stops: Option<&[Vec<TabStop>]>,
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
+    default_tab_stop_pt: Option<f32>,
     inner_w: f32,
+    max_visual_height: f32,
     depth: u32,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
@@ -2931,8 +3316,12 @@ fn shape_cell_with_pagination_and_lists(
     shape_cell_in_scope(
         cell,
         pagination,
+        line_spacing,
+        tab_stops,
         nested_pagination,
+        default_tab_stop_pt,
         inner_w,
+        max_visual_height,
         depth,
         cx,
         capture,
@@ -2991,8 +3380,12 @@ impl CellShapeState {
 fn shape_cell_in_scope(
     cell: &Cell,
     pagination: Option<&[Option<PaginationHint>]>,
+    line_spacing: Option<&[Option<LineSpacingHint>]>,
+    tab_stops: Option<&[Vec<TabStop>]>,
     nested_pagination: Option<&[Option<TablePaginationHints>]>,
+    default_tab_stop_pt: Option<f32>,
     inner_w: f32,
+    max_visual_height: f32,
     depth: u32,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
@@ -3012,33 +3405,63 @@ fn shape_cell_in_scope(
         match b {
             Block::Paragraph(p) => {
                 let marker = paragraph_list_marker(p, lists);
+                let paragraph_tab_stops = tab_stops
+                    .and_then(|stops| stops.get(block_index))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let line_spacing_hint = line_spacing
+                    .and_then(|hints| hints.get(block_index))
+                    .copied()
+                    .flatten();
                 let ShapedParagraph {
                     lines: mut paragraph_lines,
-                    ..
-                } = shape_paragraph_content(p, marker.as_deref(), &[], inner_w, cx, capture, false);
-                if paragraph_lines.is_empty() {
+                    images: paragraph_images,
+                } = shape_paragraph_content(
+                    p,
+                    marker.as_deref(),
+                    paragraph_tab_stops,
+                    default_tab_stop_pt,
+                    line_spacing_hint,
+                    inner_w,
+                    cx,
+                    capture,
+                    false,
+                );
+                if paragraph_lines.is_empty() && paragraph_images.is_empty() {
                     continue;
                 }
                 let remaining = MAX_CELL_LINES.saturating_sub(lines.len());
                 truncate_cell_paragraph_lines(&mut paragraph_lines, remaining, p.props.spacing);
-                if let Some(hint) = pagination
-                    .and_then(|hints| hints.get(block_index))
-                    .copied()
-                    .flatten()
-                {
-                    let paragraph_id = state.allocate_paragraph();
-                    let line_count = paragraph_lines.len();
-                    for (line_index, line) in paragraph_lines.iter_mut().enumerate() {
-                        line.cell_paragraph = Some(CellParagraphLine {
-                            scope_id,
-                            paragraph_id,
-                            line_index,
-                            line_count,
-                            pagination: hint,
-                        });
+                if !paragraph_lines.is_empty() {
+                    if let Some(hint) = pagination
+                        .and_then(|hints| hints.get(block_index))
+                        .copied()
+                        .flatten()
+                    {
+                        let paragraph_id = state.allocate_paragraph();
+                        let line_count = paragraph_lines.len();
+                        for (line_index, line) in paragraph_lines.iter_mut().enumerate() {
+                            line.cell_paragraph = Some(CellParagraphLine {
+                                scope_id,
+                                paragraph_id,
+                                line_index,
+                                line_count,
+                                pagination: hint,
+                            });
+                        }
                     }
                 }
                 lines.extend(paragraph_lines);
+                for image in paragraph_images {
+                    if lines.len() >= MAX_CELL_LINES {
+                        break;
+                    }
+                    if let Some(line) =
+                        cell_picture_line(image, inner_w, max_visual_height, PARA_GAP)
+                    {
+                        lines.push(line);
+                    }
+                }
             }
             Block::Table(t) => {
                 let table_pagination = nested_pagination
@@ -3051,6 +3474,14 @@ fn shape_cell_in_scope(
                             .and_then(|table| table.cells.get(row_index))
                             .and_then(|row| row.get(cell_index))
                             .map(Vec::as_slice);
+                        let nested_cell_tab_stops = table_pagination
+                            .and_then(|table| table.cell_tabs.get(row_index))
+                            .and_then(|row| row.get(cell_index))
+                            .map(Vec::as_slice);
+                        let nested_cell_line_spacing = table_pagination
+                            .and_then(|table| table.cell_line_spacing.get(row_index))
+                            .and_then(|row| row.get(cell_index))
+                            .map(Vec::as_slice);
                         let nested_cell_tables = table_pagination
                             .and_then(|table| table.nested.get(row_index))
                             .and_then(|row| row.get(cell_index))
@@ -3059,8 +3490,12 @@ fn shape_cell_in_scope(
                         lines.extend(shape_cell_in_scope(
                             c,
                             nested_cell_pagination,
+                            nested_cell_line_spacing,
+                            nested_cell_tab_stops,
                             nested_cell_tables,
+                            default_tab_stop_pt,
                             inner_w,
+                            max_visual_height,
                             depth + 1,
                             cx,
                             capture,
@@ -3082,7 +3517,17 @@ fn shape_cell_in_scope(
                     }
                 }
             }
-            Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
+            Block::Image(image) => {
+                if let Some(line) = cell_picture_line(image, inner_w, max_visual_height, 0.0) {
+                    lines.push(line);
+                }
+            }
+            Block::Chart(chart) => {
+                if let Some(line) = cell_chart_line(chart, inner_w, max_visual_height) {
+                    lines.push(line);
+                }
+            }
+            Block::PageBreak | Block::SectionBreak(_) => {}
         }
     }
     lines.truncate(MAX_CELL_LINES);
@@ -3108,7 +3553,10 @@ fn layout_table(
 struct TablePaginationView<'a> {
     rows: Option<&'a [TableRowPaginationHint]>,
     cells: Option<&'a TableCellPaginationHints>,
+    cell_line_spacing: Option<&'a TableCellLineSpacingHints>,
     nested: Option<&'a TableCellNestedPaginationHints>,
+    cell_tabs: Option<&'a TableCellTabStopHints>,
+    default_tab_stop_pt: Option<f32>,
 }
 
 fn table_placement(t: &Table, available_width: f32) -> (f32, f32) {
@@ -3288,7 +3736,11 @@ fn layout_table_with_row_pagination_and_lists(
         let mut cells = Vec::with_capacity(placed_row.len());
         let mut row_h = 0.0_f32;
         let row_cell_pagination = pagination.cells.and_then(|rows| rows.get(row_index));
+        let row_cell_line_spacing = pagination
+            .cell_line_spacing
+            .and_then(|rows| rows.get(row_index));
         let row_nested_pagination = pagination.nested.and_then(|rows| rows.get(row_index));
+        let row_cell_tab_stops = pagination.cell_tabs.and_then(|rows| rows.get(row_index));
         let mut source_cell_index = 0usize;
         for pc in placed_row {
             let end = (pc.col + pc.span).min(ncols);
@@ -3337,17 +3789,33 @@ fn layout_table_with_row_pagination_and_lists(
                     TableBorderSide::InsideVertical
                 }),
             };
-            let (direct_pagination, direct_nested_pagination) = if pc.cell.is_some() {
+            let (
+                direct_pagination,
+                direct_line_spacing,
+                direct_tab_stops,
+                direct_nested_pagination,
+            ) = if pc.cell.is_some() {
                 let paragraph_hints = row_cell_pagination
+                    .and_then(|cells| cells.get(source_cell_index))
+                    .map(Vec::as_slice);
+                let paragraph_line_spacing = row_cell_line_spacing
+                    .and_then(|cells| cells.get(source_cell_index))
+                    .map(Vec::as_slice);
+                let paragraph_tab_stops = row_cell_tab_stops
                     .and_then(|cells| cells.get(source_cell_index))
                     .map(Vec::as_slice);
                 let nested_hints = row_nested_pagination
                     .and_then(|cells| cells.get(source_cell_index))
                     .map(Vec::as_slice);
                 source_cell_index += 1;
-                (paragraph_hints, nested_hints)
+                (
+                    paragraph_hints,
+                    paragraph_line_spacing,
+                    paragraph_tab_stops,
+                    nested_hints,
+                )
             } else {
-                (None, None)
+                (None, None, None, None)
             };
             let (lines, insets, shading, valign) = match pc.cell {
                 Some(c) => {
@@ -3355,8 +3823,12 @@ fn layout_table_with_row_pagination_and_lists(
                     let lines = shape_cell_with_pagination_and_lists(
                         c,
                         direct_pagination,
+                        direct_line_spacing,
+                        direct_tab_stops,
                         direct_nested_pagination,
+                        pagination.default_tab_stop_pt,
                         (width - insets.left - insets.right).max(1.0),
+                        (geom.bottom() - geom.top() - insets.top - insets.bottom).max(1.0),
                         0,
                         cx,
                         capture,
@@ -3467,6 +3939,27 @@ fn fitting_cell_split(lines: &[LineLayout], budget: f32) -> usize {
         .unwrap_or(greedy)
 }
 
+fn fit_forced_cell_visual_to_budget(lines: &mut [LineLayout], budget: f32) {
+    if lines.len() != 1 || !budget.is_finite() || budget <= 0.0 || lines[0].cell_extent() <= budget
+    {
+        return;
+    }
+    let line = &mut lines[0];
+    let Some(visual) = line.cell_visual.as_mut() else {
+        return;
+    };
+    let before = if line.cell_spacing.before < budget {
+        line.cell_spacing.before
+    } else {
+        0.0
+    };
+    let Some(height) = visual.fit_to_height(budget - before) else {
+        return;
+    };
+    line.height = height;
+    line.cell_spacing.before = before;
+}
+
 fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
     let cant_split = row.cant_split;
     let border = row.border;
@@ -3489,6 +3982,7 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
         let cut = fitting_cell_split(&lines, budget);
         let mut head = lines;
         let tail = head.split_off(cut);
+        fit_forced_cell_visual_to_budget(&mut head, budget);
         if !tail.is_empty() {
             any_rest = true;
         }
@@ -3558,20 +4052,401 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
     }
 }
 
-/// Lay out blocks and keep only the text lines (used for running headers/footers,
-/// which are drawn compactly in the page margins; tables/images there are rare and
-/// dropped).
-fn layout_lines(blocks: &[Block], geom: Geom, cx: &mut TextCx<'_>) -> Vec<LineLayout> {
+enum RunningSurfaceItem {
+    Gap(f32),
+    Line(LineLayout),
+    Picture {
+        image: PdfImage,
+        layout: ImageLayout,
+    },
+    Chart {
+        chart: Chart,
+        w: f32,
+        h: f32,
+    },
+    Table {
+        rows: Vec<RowLayout>,
+    },
+}
+
+#[derive(Clone, Copy, Default)]
+struct RunningSurfaceLayoutHints<'a> {
+    line_spacing: &'a [Option<LineSpacingHint>],
+    tab_stops: &'a [Vec<TabStop>],
+    table_cell_line_spacing: &'a [TableCellLineSpacingHints],
+    table_cell_tab_stops: &'a [TableCellTabStopHints],
+    default_tab_stop_pt: Option<f32>,
+}
+
+/// Lay out compact running-surface content while retaining paragraph gaps,
+/// decoded pictures, model-authored charts, and modeled table rows. Pagination
+/// controls remain outside this bounded margin-band path.
+fn layout_running_surface_items(
+    blocks: &[Block],
+    hints: RunningSurfaceLayoutHints<'_>,
+    geom: Geom,
+    cx: &mut TextCx<'_>,
+) -> Vec<RunningSurfaceItem> {
     let mut items = Vec::new();
     let mut capture = LayoutCapture::default();
-    collect_blocks(blocks, &mut items, geom, cx, &mut capture);
+    collect_blocks_inner(
+        blocks,
+        &mut items,
+        geom,
+        cx,
+        &mut capture,
+        BlockCollectionOptions {
+            line_spacing_hints: Some(hints.line_spacing),
+            tab_stops: Some(hints.tab_stops),
+            table_cell_line_spacing: Some(hints.table_cell_line_spacing),
+            table_cell_tab_stops: Some(hints.table_cell_tab_stops),
+            default_tab_stop_pt: hints.default_tab_stop_pt,
+            ..BlockCollectionOptions::default()
+        },
+    );
     items
         .into_iter()
         .filter_map(|i| match i {
-            FlowItem::Line(l) => Some(l),
+            FlowItem::Gap(gap) if gap.is_finite() && gap > 0.0 => {
+                Some(RunningSurfaceItem::Gap(gap))
+            }
+            FlowItem::Line(line) => Some(RunningSurfaceItem::Line(line)),
+            FlowItem::Picture { image, layout } => {
+                Some(RunningSurfaceItem::Picture { image, layout })
+            }
+            FlowItem::Chart { chart, w, h } => Some(RunningSurfaceItem::Chart { chart, w, h }),
+            FlowItem::Table { rows, .. } => Some(RunningSurfaceItem::Table { rows }),
             _ => None,
         })
         .collect()
+}
+
+fn normalized_running_surface_distance(distance_pt: Option<f32>) -> Option<f32> {
+    distance_pt.filter(|distance| distance.is_finite() && *distance >= 0.0)
+}
+
+fn running_surface_items_extent(items: &[RunningSurfaceItem], geom: Geom) -> Option<f32> {
+    let mut extent = 0.0_f32;
+    for item in items {
+        let item_extent = match item {
+            RunningSurfaceItem::Gap(gap) => *gap,
+            RunningSurfaceItem::Line(line) => line.height,
+            RunningSurfaceItem::Picture { layout, .. } => {
+                fit_image_layout_to_box(*layout, geom.content_w(), f32::MAX)?.bounds_h
+            }
+            RunningSurfaceItem::Chart { w, h, .. } => {
+                fit_chart_layout_to_box(*w, *h, geom.content_w(), f32::MAX)?.bounds_h
+            }
+            RunningSurfaceItem::Table { rows } => {
+                let mut table_extent = 0.0_f32;
+                for row in rows {
+                    if !row.height.is_finite() || row.height < 0.0 {
+                        return None;
+                    }
+                    table_extent += row.height;
+                    if !table_extent.is_finite() {
+                        return None;
+                    }
+                }
+                table_extent
+            }
+        };
+        if !item_extent.is_finite() || item_extent < 0.0 {
+            return None;
+        }
+        extent += item_extent;
+        if !extent.is_finite() {
+            return None;
+        }
+    }
+    Some(extent)
+}
+
+fn running_header_vertical_bounds(geom: Geom, distance_pt: Option<f32>) -> (f32, f32) {
+    let limit = geom.top();
+    let Some(distance) = normalized_running_surface_distance(distance_pt) else {
+        return (HEADER_Y, limit);
+    };
+    if !limit.is_finite() || limit <= 0.0 {
+        return (limit, limit);
+    }
+    (distance.min(limit), limit)
+}
+
+fn running_footer_vertical_bounds(
+    geom: Geom,
+    distance_pt: Option<f32>,
+    content_extent: Option<f32>,
+) -> (f32, f32) {
+    let Some(distance) = normalized_running_surface_distance(distance_pt) else {
+        return (geom.bottom() + FOOTER_GAP, geom.page_h);
+    };
+    if !geom.page_h.is_finite() || geom.page_h <= 0.0 || !geom.bottom().is_finite() {
+        return (0.0, 0.0);
+    }
+    let body_bottom = geom.bottom().max(0.0).min(geom.page_h);
+    let limit = (geom.page_h - distance).max(body_bottom).min(geom.page_h);
+    let inner = (body_bottom + FOOTER_GAP).min(limit);
+    let start = content_extent
+        .filter(|extent| extent.is_finite() && *extent >= 0.0)
+        .map(|extent| (limit - extent).max(inner))
+        .unwrap_or(inner);
+    (start, limit)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ScaledChartLayout {
+    scale: f32,
+    bounds_w: f32,
+    bounds_h: f32,
+}
+
+fn fit_chart_layout_to_box(
+    width: f32,
+    height: f32,
+    max_width: f32,
+    max_height: f32,
+) -> Option<ScaledChartLayout> {
+    if !width.is_finite()
+        || !height.is_finite()
+        || !max_width.is_finite()
+        || !max_height.is_finite()
+        || width <= 0.0
+        || height <= 0.0
+        || max_width <= 0.0
+        || max_height <= 0.0
+    {
+        return None;
+    }
+    let scale = (max_width / width).min(max_height / height).min(1.0);
+    let bounds_w = width * scale;
+    let bounds_h = height * scale;
+    if !scale.is_finite()
+        || !bounds_w.is_finite()
+        || !bounds_h.is_finite()
+        || scale <= 0.0
+        || bounds_w <= 0.0
+        || bounds_h <= 0.0
+    {
+        return None;
+    }
+    Some(ScaledChartLayout {
+        scale,
+        bounds_w,
+        bounds_h,
+    })
+}
+
+fn fit_image_layout_to_box(
+    layout: ImageLayout,
+    max_width: f32,
+    max_height: f32,
+) -> Option<ImageLayout> {
+    if !max_width.is_finite()
+        || !max_height.is_finite()
+        || max_width <= 0.0
+        || max_height <= 0.0
+        || !layout.image_w.is_finite()
+        || !layout.image_h.is_finite()
+        || !layout.bounds_w.is_finite()
+        || !layout.bounds_h.is_finite()
+        || layout.image_w <= 0.0
+        || layout.image_h <= 0.0
+        || layout.bounds_w <= 0.0
+        || layout.bounds_h <= 0.0
+    {
+        return None;
+    }
+    let scale = (max_width / layout.bounds_w)
+        .min(max_height / layout.bounds_h)
+        .min(1.0);
+    if !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    Some(ImageLayout {
+        image_w: layout.image_w * scale,
+        image_h: layout.image_h * scale,
+        bounds_w: layout.bounds_w * scale,
+        bounds_h: layout.bounds_h * scale,
+        rotation_degrees: layout.rotation_degrees,
+    })
+}
+
+fn push_clipped_page_link(
+    page_links: &mut Vec<PageLink>,
+    link: PageLink,
+    clip_left: f32,
+    clip_top: f32,
+    clip_right: f32,
+    clip_bottom: f32,
+) {
+    let (left, top, right, bottom, url) = link;
+    if ![
+        left,
+        top,
+        right,
+        bottom,
+        clip_left,
+        clip_top,
+        clip_right,
+        clip_bottom,
+    ]
+    .into_iter()
+    .all(f32::is_finite)
+        || clip_left >= clip_right
+        || clip_top >= clip_bottom
+    {
+        return;
+    }
+    let left = left.max(clip_left);
+    let top = top.max(clip_top);
+    let right = right.min(clip_right);
+    let bottom = bottom.min(clip_bottom);
+    if left < right && top < bottom {
+        page_links.push((left, top, right, bottom, url));
+    }
+}
+
+fn draw_running_surface_items(
+    surface: &mut Surface<'_>,
+    items: Vec<RunningSurfaceItem>,
+    vertical_bounds: (f32, f32),
+    geom: Geom,
+    page_number: usize,
+    page_links: &mut Vec<PageLink>,
+    cx: &mut TextCx<'_>,
+) -> f32 {
+    let (mut y, limit_y) = vertical_bounds;
+    for item in items {
+        match item {
+            RunningSurfaceItem::Gap(gap) => {
+                let remaining = limit_y - y;
+                if !remaining.is_finite() || remaining <= 0.0 {
+                    break;
+                }
+                if gap >= remaining {
+                    y = limit_y;
+                    break;
+                }
+                y += gap;
+            }
+            RunningSurfaceItem::Line(line) => {
+                if y + line.height > limit_y {
+                    break;
+                }
+                let baseline = y + line.baseline;
+                let x0 = geom.left + line.x_indent;
+                let clip_content = line.clip_to_height
+                    && push_vertical_line_clip(surface, 0.0, y, line.height, geom.page_w);
+                draw_line_background(surface, &line, x0, y);
+                draw_line_leaders(surface, &line, x0, y, baseline);
+                for run in line.runs {
+                    if let Some(url) = run.link.clone() {
+                        let left = x0 + run.x;
+                        push_clipped_page_link(
+                            page_links,
+                            (left, y, left + run.width(), y + line.height, url),
+                            0.0,
+                            y,
+                            geom.page_w,
+                            limit_y,
+                        );
+                    }
+                    draw_run_with_page_context(surface, run, x0, baseline, page_number, cx);
+                }
+                if clip_content {
+                    surface.pop();
+                }
+                y += line.height;
+            }
+            RunningSurfaceItem::Picture { image, layout } => {
+                let Some(layout) = fit_image_layout_to_box(layout, geom.content_w(), limit_y - y)
+                else {
+                    break;
+                };
+                let bounds_x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
+                if let Some(size) = Size::from_wh(layout.image_w, layout.image_h) {
+                    surface.push_transform(&image_paint_transform(layout, bounds_x, y));
+                    surface.draw_image(image, size);
+                    surface.pop();
+                    y += layout.bounds_h;
+                }
+            }
+            RunningSurfaceItem::Chart { chart, w, h } => {
+                let Some(layout) = fit_chart_layout_to_box(w, h, geom.content_w(), limit_y - y)
+                else {
+                    break;
+                };
+                let x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
+                if !push_vertical_line_clip(surface, x, y, layout.bounds_h, layout.bounds_w) {
+                    break;
+                }
+                surface.push_transform(&Transform::from_row(
+                    layout.scale,
+                    0.0,
+                    0.0,
+                    layout.scale,
+                    x,
+                    y,
+                ));
+                draw_authored_chart(surface, &chart, 0.0, 0.0, w, h, cx);
+                surface.pop();
+                surface.pop();
+                y += layout.bounds_h;
+            }
+            RunningSurfaceItem::Table { rows } => {
+                let mut previous_row_borders = None;
+                for row in rows {
+                    let remaining = limit_y - y;
+                    if !remaining.is_finite() || remaining <= 0.0 {
+                        break;
+                    }
+                    let clipped = row.height > remaining;
+                    let band_clip = if clipped {
+                        if !push_vertical_line_clip(surface, 0.0, y, remaining, geom.page_w) {
+                            break;
+                        }
+                        true
+                    } else {
+                        false
+                    };
+                    let row_height = row.height;
+                    let row_top = y;
+                    let row_bottom = (y + row_height).min(limit_y);
+                    let mut row_links = Vec::new();
+                    previous_row_borders = draw_row_layout(
+                        surface,
+                        row,
+                        RowPaintPlacement {
+                            x_offset: geom.left,
+                            top: y,
+                            page_number,
+                        },
+                        cx,
+                        &mut row_links,
+                        previous_row_borders.as_ref(),
+                    );
+                    for link in row_links {
+                        push_clipped_page_link(
+                            page_links,
+                            link,
+                            0.0,
+                            row_top,
+                            geom.page_w,
+                            row_bottom,
+                        );
+                    }
+                    if band_clip {
+                        surface.pop();
+                        y = limit_y;
+                        break;
+                    }
+                    y += row_height;
+                }
+            }
+        }
+    }
+    y
 }
 
 trait RunningSurfaceSetup {
@@ -3582,6 +4457,99 @@ trait RunningSurfaceSetup {
     fn first_footer(&self) -> &[Block];
     fn even_footer(&self) -> &[Block];
     fn title_page(&self) -> bool;
+}
+
+#[derive(Clone, Copy)]
+enum RunningSurfaceVariant {
+    Default,
+    First,
+    Even,
+}
+
+fn running_surface_variants_for_page<T: RunningSurfaceSetup + ?Sized>(
+    setup: &T,
+    page_number: usize,
+    is_first_section_page: bool,
+) -> (RunningSurfaceVariant, RunningSurfaceVariant) {
+    let title_page = is_first_section_page
+        && (setup.title_page()
+            || !setup.first_header().is_empty()
+            || !setup.first_footer().is_empty());
+    let header = if title_page {
+        RunningSurfaceVariant::First
+    } else if page_number % 2 == 0 && !setup.even_header().is_empty() {
+        RunningSurfaceVariant::Even
+    } else {
+        RunningSurfaceVariant::Default
+    };
+    let footer = if title_page {
+        RunningSurfaceVariant::First
+    } else if page_number % 2 == 0 && !setup.even_footer().is_empty() {
+        RunningSurfaceVariant::Even
+    } else {
+        RunningSurfaceVariant::Default
+    };
+    (header, footer)
+}
+
+fn running_surface_line_spacing(
+    hints: &RunningSurfaceLineSpacingHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[Option<LineSpacingHint>] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header,
+        (true, RunningSurfaceVariant::First) => &hints.first_header,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header,
+        (false, RunningSurfaceVariant::Default) => &hints.footer,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer,
+    }
+}
+
+fn running_surface_tab_stops(
+    hints: &RunningSurfaceTabStopHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[Vec<TabStop>] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header,
+        (true, RunningSurfaceVariant::First) => &hints.first_header,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header,
+        (false, RunningSurfaceVariant::Default) => &hints.footer,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer,
+    }
+}
+
+fn running_surface_table_cell_line_spacing(
+    hints: &RunningSurfaceLineSpacingHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[TableCellLineSpacingHints] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header_table_cells,
+        (true, RunningSurfaceVariant::First) => &hints.first_header_table_cells,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header_table_cells,
+        (false, RunningSurfaceVariant::Default) => &hints.footer_table_cells,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer_table_cells,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer_table_cells,
+    }
+}
+
+fn running_surface_table_cell_tab_stops(
+    hints: &RunningSurfaceTableCellTabStopHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[TableCellTabStopHints] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header,
+        (true, RunningSurfaceVariant::First) => &hints.first_header,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header,
+        (false, RunningSurfaceVariant::Default) => &hints.footer,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer,
+    }
 }
 
 impl RunningSurfaceSetup for crate::model::DocSetup {
@@ -3649,23 +4617,17 @@ fn running_header_footer_blocks_for_page<T: RunningSurfaceSetup + ?Sized>(
     page_number: usize,
     is_first_section_page: bool,
 ) -> (&[Block], &[Block]) {
-    let title_page = is_first_section_page
-        && (setup.title_page()
-            || !setup.first_header().is_empty()
-            || !setup.first_footer().is_empty());
-    let header = if title_page {
-        setup.first_header()
-    } else if page_number % 2 == 0 && !setup.even_header().is_empty() {
-        setup.even_header()
-    } else {
-        setup.header()
+    let (header_variant, footer_variant) =
+        running_surface_variants_for_page(setup, page_number, is_first_section_page);
+    let header = match header_variant {
+        RunningSurfaceVariant::Default => setup.header(),
+        RunningSurfaceVariant::First => setup.first_header(),
+        RunningSurfaceVariant::Even => setup.even_header(),
     };
-    let footer = if title_page {
-        setup.first_footer()
-    } else if page_number % 2 == 0 && !setup.even_footer().is_empty() {
-        setup.even_footer()
-    } else {
-        setup.footer()
+    let footer = match footer_variant {
+        RunningSurfaceVariant::Default => setup.footer(),
+        RunningSurfaceVariant::First => setup.first_footer(),
+        RunningSurfaceVariant::Even => setup.even_footer(),
     };
     (header, footer)
 }
@@ -3675,6 +4637,7 @@ fn assign_section_to_render_pages(
     start_page_index: usize,
     end_page_index: usize,
     setup: &SectionSetup,
+    section_index: usize,
 ) {
     if page_sections.is_empty() {
         return;
@@ -3689,6 +4652,7 @@ fn assign_section_to_render_pages(
         *page_section = Some(RenderPageSection {
             setup: setup.clone(),
             first_page_index: start,
+            section_index,
         });
     }
 }
@@ -3732,21 +4696,39 @@ fn collect_blocks(
 struct BlockCollectionOptions<'a> {
     include_block_anchors: bool,
     section_columns: Option<&'a [Option<u16>]>,
+    section_column_gap_pt: Option<&'a [Option<f32>]>,
+    section_column_layouts: Option<&'a [Option<&'a SectionColumnLayoutHints>]>,
+    section_column_rtl: Option<&'a [bool]>,
+    section_geometries: Option<&'a [Geom]>,
     pagination_hints: Option<&'a [PaginationHint]>,
+    line_spacing_hints: Option<&'a [Option<LineSpacingHint>]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
+    column_break_offsets: Option<&'a [Vec<usize>]>,
+    default_tab_stop_pt: Option<f32>,
     table_row_pagination: Option<&'a [Vec<TableRowPaginationHint>]>,
     table_cell_pagination: Option<&'a [TableCellPaginationHints]>,
+    table_cell_line_spacing: Option<&'a [TableCellLineSpacingHints]>,
     table_nested_pagination: Option<&'a [TableCellNestedPaginationHints]>,
+    table_cell_tab_stops: Option<&'a [TableCellTabStopHints]>,
     top_bottom_bands: Option<&'a [Vec<TopBottomBand>]>,
 }
 
 struct BodyCollectionSidecars<'a> {
     section_columns: &'a [Option<u16>],
+    section_column_gap_pt: &'a [Option<f32>],
+    section_column_layouts: &'a [Option<&'a SectionColumnLayoutHints>],
+    section_column_rtl: &'a [bool],
+    section_geometries: &'a [Geom],
     pagination_hints: &'a [PaginationHint],
+    line_spacing_hints: &'a [Option<LineSpacingHint>],
     tab_stops: &'a [Vec<TabStop>],
+    column_break_offsets: &'a [Vec<usize>],
+    default_tab_stop_pt: Option<f32>,
     table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     table_cell_pagination: &'a [TableCellPaginationHints],
+    table_cell_line_spacing: &'a [TableCellLineSpacingHints],
     table_nested_pagination: &'a [TableCellNestedPaginationHints],
+    table_cell_tab_stops: &'a [TableCellTabStopHints],
     top_bottom_bands: &'a [Vec<TopBottomBand>],
 }
 
@@ -3767,11 +4749,20 @@ fn collect_blocks_with_block_anchors(
         BlockCollectionOptions {
             include_block_anchors: true,
             section_columns: Some(sidecars.section_columns),
+            section_column_gap_pt: Some(sidecars.section_column_gap_pt),
+            section_column_layouts: Some(sidecars.section_column_layouts),
+            section_column_rtl: Some(sidecars.section_column_rtl),
+            section_geometries: Some(sidecars.section_geometries),
             pagination_hints: Some(sidecars.pagination_hints),
+            line_spacing_hints: Some(sidecars.line_spacing_hints),
             tab_stops: Some(sidecars.tab_stops),
+            column_break_offsets: Some(sidecars.column_break_offsets),
+            default_tab_stop_pt: sidecars.default_tab_stop_pt,
             table_row_pagination: Some(sidecars.table_row_pagination),
             table_cell_pagination: Some(sidecars.table_cell_pagination),
+            table_cell_line_spacing: Some(sidecars.table_cell_line_spacing),
             table_nested_pagination: Some(sidecars.table_nested_pagination),
+            table_cell_tab_stops: Some(sidecars.table_cell_tab_stops),
             top_bottom_bands: Some(sidecars.top_bottom_bands),
         },
     );
@@ -3787,11 +4778,28 @@ fn collect_blocks_inner(
 ) {
     let mut lists = ListState::default();
     for (block_index, b) in blocks.iter().enumerate() {
+        let section_geom = options
+            .section_geometries
+            .and_then(|geometries| geometries.get(block_index).copied())
+            .unwrap_or(geom);
         let block_geom = options
             .section_columns
             .and_then(|columns| columns.get(block_index).copied())
-            .map(|columns| geom.with_content_width(ColumnLayout::new(geom, columns).width))
-            .unwrap_or(geom);
+            .map(|columns| {
+                let gap_pt = options
+                    .section_column_gap_pt
+                    .and_then(|gaps| gaps.get(block_index).copied())
+                    .flatten();
+                let column_layout = options
+                    .section_column_layouts
+                    .and_then(|layouts| layouts.get(block_index).copied())
+                    .flatten();
+                section_geom.with_content_width(
+                    ColumnLayout::new_with_layout(section_geom, columns, gap_pt, column_layout)
+                        .shaping_width(),
+                )
+            })
+            .unwrap_or(section_geom);
         if options.include_block_anchors {
             out.push(FlowItem::BlockStart {
                 index: block_index,
@@ -3830,11 +4838,24 @@ fn collect_blocks_inner(
                     .and_then(|stops| stops.get(block_index))
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
+                let column_break_offsets = options
+                    .column_break_offsets
+                    .and_then(|breaks| breaks.get(block_index))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let line_spacing_hint = options
+                    .line_spacing_hints
+                    .and_then(|hints| hints.get(block_index))
+                    .copied()
+                    .flatten();
                 layout_paragraph(
                     p,
                     out,
                     marker.as_deref(),
                     tab_stops,
+                    column_break_offsets,
+                    options.default_tab_stop_pt,
+                    line_spacing_hint,
                     block_geom,
                     cx,
                     capture,
@@ -3858,8 +4879,14 @@ fn collect_blocks_inner(
                 let cell_pagination = options
                     .table_cell_pagination
                     .and_then(|tables| tables.get(block_index));
+                let cell_line_spacing = options
+                    .table_cell_line_spacing
+                    .and_then(|tables| tables.get(block_index));
                 let nested_pagination = options
                     .table_nested_pagination
+                    .and_then(|tables| tables.get(block_index));
+                let cell_tab_stops = options
+                    .table_cell_tab_stops
                     .and_then(|tables| tables.get(block_index));
                 layout_table_with_row_pagination_and_lists(
                     t,
@@ -3870,7 +4897,10 @@ fn collect_blocks_inner(
                     TablePaginationView {
                         rows: row_pagination,
                         cells: cell_pagination,
+                        cell_line_spacing,
                         nested: nested_pagination,
+                        cell_tabs: cell_tab_stops,
+                        default_tab_stop_pt: options.default_tab_stop_pt,
                     },
                     &mut lists,
                 );
@@ -3889,7 +4919,31 @@ fn collect_blocks_inner(
                 }
             }
             Block::PageBreak => out.push(FlowItem::PageBreak),
-            Block::SectionBreak(section) => out.push(FlowItem::SectionBreak(section.clone())),
+            Block::SectionBreak(section) => {
+                if let Some(gap_pt) = options
+                    .section_column_gap_pt
+                    .and_then(|gaps| gaps.get(block_index).copied())
+                    .flatten()
+                {
+                    out.push(FlowItem::SectionColumnGap(gap_pt));
+                }
+                if let Some(layout) = options
+                    .section_column_layouts
+                    .and_then(|layouts| layouts.get(block_index).copied())
+                    .flatten()
+                {
+                    out.push(FlowItem::SectionColumnLayout(Rc::new(layout.clone())));
+                }
+                if options
+                    .section_column_rtl
+                    .and_then(|directions| directions.get(block_index))
+                    .copied()
+                    .unwrap_or(false)
+                {
+                    out.push(FlowItem::SectionColumnRtl);
+                }
+                out.push(FlowItem::SectionBreak(section.clone()));
+            }
         }
     }
 }
@@ -3913,6 +4967,35 @@ fn fill_rect_color(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32, co
         }));
         surface.draw_path(&path);
     }
+}
+
+fn push_vertical_line_clip(
+    surface: &mut Surface<'_>,
+    left: f32,
+    top: f32,
+    height: f32,
+    width: f32,
+) -> bool {
+    if !left.is_finite()
+        || !top.is_finite()
+        || !height.is_finite()
+        || !width.is_finite()
+        || height <= 0.0
+        || width <= 0.0
+    {
+        return false;
+    }
+    let mut path = PathBuilder::new();
+    path.move_to(left, top);
+    path.line_to(left + width, top);
+    path.line_to(left + width, top + height);
+    path.line_to(left, top + height);
+    path.close();
+    let Some(path) = path.finish() else {
+        return false;
+    };
+    surface.push_clip_path(&path, &FillRule::NonZero);
+    true
 }
 
 fn fill_circle_color(surface: &mut Surface<'_>, cx: f32, cy: f32, radius: f32, color: rgb::Color) {
@@ -4287,6 +5370,13 @@ struct CellContentPlacement {
     row_height: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RowPaintPlacement {
+    x_offset: f32,
+    top: f32,
+    page_number: usize,
+}
+
 fn cell_lines_extent(lines: &[LineLayout]) -> f32 {
     lines.iter().map(LineLayout::cell_extent).sum()
 }
@@ -4307,9 +5397,11 @@ fn draw_table_cell_content(
     placement: CellContentPlacement,
     page_number: usize,
     cx: &mut TextCx<'_>,
-    page_links: &mut Vec<(f32, f32, f32, f32, Rc<str>)>,
+    page_links: &mut Vec<PageLink>,
 ) {
     let offset = cell_vertical_offset(&cell, placement.row_height);
+    let clip_left = placement.x;
+    let clip_width = cell.width;
     let mut line_top = placement.top + cell.insets.top + offset;
     for line in cell.lines {
         line_top += line.cell_spacing.before;
@@ -4317,22 +5409,159 @@ fn draw_table_cell_content(
         let line_height = line.height;
         let after = line.cell_spacing.after;
         let line_x = cell_line_origin(placement.x, cell.insets, &line);
+        let clip_content = line.clip_to_height
+            && push_vertical_line_clip(surface, clip_left, line_top, line_height, clip_width);
         draw_line_background(surface, &line, line_x, line_top);
-        for run in line.runs {
-            if let Some(url) = run.link.clone() {
-                let left = line_x + run.x;
-                page_links.push((
-                    left,
-                    line_top,
-                    left + run.width(),
-                    line_top + line_height,
-                    url,
-                ));
+        draw_line_leaders(surface, &line, line_x, line_top, baseline);
+        match line.cell_visual {
+            Some(CellVisual::Picture { image, layout }) => {
+                let inner_width =
+                    (cell.width - cell.insets.left - cell.insets.right).max(layout.bounds_w);
+                let x = placement.x
+                    + cell.insets.left
+                    + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
+                if let Some(size) = Size::from_wh(layout.image_w, layout.image_h) {
+                    surface.push_transform(&image_paint_transform(layout, x, line_top));
+                    surface.draw_image(image, size);
+                    surface.pop();
+                }
             }
-            draw_run_with_page_context(surface, run, line_x, baseline, page_number, cx);
+            Some(CellVisual::Chart {
+                chart,
+                width,
+                height,
+                layout,
+            }) => {
+                let inner_width =
+                    (cell.width - cell.insets.left - cell.insets.right).max(layout.bounds_w);
+                let x = placement.x
+                    + cell.insets.left
+                    + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
+                if push_vertical_line_clip(surface, x, line_top, layout.bounds_h, layout.bounds_w) {
+                    surface.push_transform(&Transform::from_row(
+                        layout.scale,
+                        0.0,
+                        0.0,
+                        layout.scale,
+                        x,
+                        line_top,
+                    ));
+                    draw_authored_chart(surface, &chart, 0.0, 0.0, width, height, cx);
+                    surface.pop();
+                    surface.pop();
+                }
+            }
+            None => {
+                for run in line.runs {
+                    if let Some(url) = run.link.clone() {
+                        let left = line_x + run.x;
+                        page_links.push((
+                            left,
+                            line_top,
+                            left + run.width(),
+                            line_top + line_height,
+                            url,
+                        ));
+                    }
+                    draw_run_with_page_context(surface, run, line_x, baseline, page_number, cx);
+                }
+            }
+        }
+        if clip_content {
+            surface.pop();
         }
         line_top += line_height + after;
     }
+}
+
+fn draw_row_layout(
+    surface: &mut Surface<'_>,
+    row: RowLayout,
+    placement: RowPaintPlacement,
+    cx: &mut TextCx<'_>,
+    page_links: &mut Vec<PageLink>,
+    previous: Option<&RenderedRowBorders>,
+) -> Option<RenderedRowBorders> {
+    let table_id = row.table_id;
+    let border = row.border;
+    let row_height = row.height;
+    let bottom = placement.top + row_height;
+    let current_vertical = row_vertical_border_lines(&row, placement.x_offset);
+    let junctions = match (table_id, previous) {
+        (Some(table_id), Some(previous))
+            if previous.table_id == table_id && (previous.bottom - placement.top).abs() < 0.01 =>
+        {
+            terminal_vertical_junctions(
+                &previous.vertical,
+                &row,
+                &current_vertical,
+                placement.x_offset,
+            )
+        }
+        _ => Vec::new(),
+    };
+    let cells = row.cells;
+    if junctions.is_empty() {
+        for cell in cells {
+            draw_table_cell_background_and_borders(
+                surface,
+                &cell,
+                placement.x_offset,
+                placement.top,
+                bottom,
+                row_height,
+                border,
+            );
+            let cell_x = placement.x_offset + cell.x;
+            draw_table_cell_content(
+                surface,
+                cell,
+                CellContentPlacement {
+                    x: cell_x,
+                    top: placement.top,
+                    row_height,
+                },
+                placement.page_number,
+                cx,
+                page_links,
+            );
+        }
+    } else {
+        for cell in &cells {
+            draw_table_cell_background_and_borders(
+                surface,
+                cell,
+                placement.x_offset,
+                placement.top,
+                bottom,
+                row_height,
+                border,
+            );
+        }
+        for (line, horizontal_width) in junctions {
+            draw_terminal_vertical_junction(surface, placement.top, line, horizontal_width);
+        }
+        for cell in cells {
+            let cell_x = placement.x_offset + cell.x;
+            draw_table_cell_content(
+                surface,
+                cell,
+                CellContentPlacement {
+                    x: cell_x,
+                    top: placement.top,
+                    row_height,
+                },
+                placement.page_number,
+                cx,
+                page_links,
+            );
+        }
+    }
+    table_id.map(|table_id| RenderedRowBorders {
+        table_id,
+        bottom,
+        vertical: current_vertical,
+    })
 }
 
 fn draw_line_background(surface: &mut Surface<'_>, line: &LineLayout, x_abs: f32, top: f32) {
@@ -4345,6 +5574,52 @@ fn draw_line_background(surface: &mut Surface<'_>, line: &LineLayout, x_abs: f32
             line.height,
             background.color,
         );
+    }
+}
+
+fn draw_line_leaders(
+    surface: &mut Surface<'_>,
+    line: &LineLayout,
+    x_abs: f32,
+    top: f32,
+    baseline: f32,
+) {
+    for leader in &line.leaders {
+        let start = x_abs + leader.start.min(leader.end);
+        let end = x_abs + leader.start.max(leader.end);
+        if !start.is_finite() || !end.is_finite() || !top.is_finite() || !baseline.is_finite() {
+            continue;
+        }
+        if leader.style == TabLeader::Bar {
+            fill_rect_color(
+                surface,
+                start - 0.4,
+                top + 1.0,
+                0.8,
+                (line.height - 2.0).max(0.8),
+                leader.color,
+            );
+            continue;
+        }
+        let (dash, gap, y, height): (f32, f32, f32, f32) = match leader.style {
+            TabLeader::Dot => (1.0, 3.0, baseline - 1.0, 1.0),
+            TabLeader::Hyphen => (3.0, 3.0, baseline - 1.2, 0.8),
+            TabLeader::Underscore => (end - start, 0.0, baseline + 1.0, 0.8),
+            TabLeader::Heavy => (4.0, 2.0, baseline - 1.8, 1.6),
+            TabLeader::MiddleDot => (2.0, 3.0, baseline - 1.8, 1.8),
+            TabLeader::None | TabLeader::Bar => continue,
+        };
+        if dash <= 0.0 || !dash.is_finite() || !gap.is_finite() {
+            continue;
+        }
+        let mut x = start;
+        let mut segments = 0usize;
+        while x < end && segments < 2048 {
+            let width = dash.min(end - x);
+            fill_rect_color(surface, x, y, width, height, leader.color);
+            x += dash + gap;
+            segments += 1;
+        }
     }
 }
 
@@ -6376,60 +7651,219 @@ type Pages = Vec<Vec<PlacedItem>>;
 #[derive(Debug, Clone, Copy)]
 struct ColumnLayout {
     count: usize,
-    width: f32,
+    widths: [f32; MAX_SECTION_COLUMNS],
+    origins: [f32; MAX_SECTION_COLUMNS],
 }
 
 impl ColumnLayout {
-    fn new(geom: Geom, requested: Option<u16>) -> Self {
+    fn new_with_layout(
+        geom: Geom,
+        requested: Option<u16>,
+        gap_pt: Option<f32>,
+        custom: Option<&SectionColumnLayoutHints>,
+    ) -> Self {
+        if let Some(layout) = custom.and_then(|layout| Self::from_custom(geom, layout)) {
+            return layout;
+        }
+        Self::equal(geom, requested, gap_pt)
+    }
+
+    fn equal(geom: Geom, requested: Option<u16>, gap_pt: Option<f32>) -> Self {
         let content_width = geom.content_w();
-        let max_by_width = ((content_width + COLUMN_GAP_PT) / (MIN_COLUMN_WIDTH_PT + COLUMN_GAP_PT))
+        let gap = gap_pt
+            .filter(|gap| gap.is_finite() && *gap >= 0.0)
+            .unwrap_or(COLUMN_GAP_PT);
+        let max_by_width = ((content_width + gap) / (MIN_COLUMN_WIDTH_PT + gap))
             .floor()
             .max(1.0) as usize;
         let count = usize::from(requested.unwrap_or(1).max(1))
             .min(MAX_SECTION_COLUMNS)
             .min(max_by_width);
-        let gaps = COLUMN_GAP_PT * count.saturating_sub(1) as f32;
+        let gaps = gap * count.saturating_sub(1) as f32;
+        let width = ((content_width - gaps) / count as f32).max(MIN_COLUMN_WIDTH_PT);
+        let mut widths = [0.0; MAX_SECTION_COLUMNS];
+        let mut origins = [0.0; MAX_SECTION_COLUMNS];
+        for index in 0..count {
+            widths[index] = width;
+            origins[index] = index as f32 * (width + gap);
+        }
         Self {
             count,
-            width: ((content_width - gaps) / count as f32).max(MIN_COLUMN_WIDTH_PT),
+            widths,
+            origins,
         }
     }
 
+    fn from_custom(geom: Geom, layout: &SectionColumnLayoutHints) -> Option<Self> {
+        let count = layout.columns.len();
+        if count == 0 || count > MAX_SECTION_COLUMNS {
+            return None;
+        }
+        if layout.columns.iter().any(|column| {
+            !column.width_pt.is_finite()
+                || column.width_pt <= 0.0
+                || !column.space_after_pt.is_finite()
+                || column.space_after_pt < 0.0
+        }) {
+            return None;
+        }
+        let source_total = layout
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(index, column)| {
+                column.width_pt
+                    + if index + 1 < count {
+                        column.space_after_pt
+                    } else {
+                        0.0
+                    }
+            })
+            .sum::<f32>();
+        if !source_total.is_finite() || source_total <= 0.0 {
+            return None;
+        }
+        let content_width = geom.content_w();
+        let scale = if source_total > content_width {
+            content_width / source_total
+        } else {
+            1.0
+        };
+        if scale < 1.0
+            && layout
+                .columns
+                .iter()
+                .any(|column| column.width_pt * scale < MIN_COLUMN_WIDTH_PT)
+        {
+            return None;
+        }
+
+        let mut widths = [0.0; MAX_SECTION_COLUMNS];
+        let mut origins = [0.0; MAX_SECTION_COLUMNS];
+        let mut x = 0.0;
+        for (index, column) in layout.columns.iter().enumerate() {
+            origins[index] = x;
+            widths[index] = column.width_pt * scale;
+            x += widths[index];
+            if index + 1 < count {
+                x += column.space_after_pt * scale;
+            }
+        }
+        Some(Self {
+            count,
+            widths,
+            origins,
+        })
+    }
+
     fn x(self, index: usize) -> f32 {
-        index.min(self.count.saturating_sub(1)) as f32 * (self.width + COLUMN_GAP_PT)
+        self.origins[index.min(self.count.saturating_sub(1))]
+    }
+
+    fn width(self, index: usize) -> f32 {
+        self.widths[index.min(self.count.saturating_sub(1))]
+    }
+
+    fn shaping_width(self) -> f32 {
+        self.widths[..self.count]
+            .iter()
+            .copied()
+            .reduce(f32::min)
+            .unwrap_or_else(|| self.widths[0])
+    }
+
+    fn separator_x(self, index: usize) -> Option<f32> {
+        let next = index.checked_add(1)?;
+        if next >= self.count {
+            return None;
+        }
+        Some((self.origins[index] + self.widths[index] + self.origins[next]) * 0.5)
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct SectionColumnPaintHints<'a> {
+    gap_pt: Option<f32>,
+    layout: Option<&'a SectionColumnLayoutHints>,
+    separator: bool,
+}
+
+fn draw_section_column_separators(
+    surface: &mut Surface<'_>,
+    geom: Geom,
+    setup: &SectionSetup,
+    hints: SectionColumnPaintHints<'_>,
+) {
+    if !hints.separator {
+        return;
+    }
+    let layout = ColumnLayout::new_with_layout(geom, setup.columns, hints.gap_pt, hints.layout);
+    let top = geom.top();
+    let height = (geom.bottom() - top).max(0.0);
+    for index in 0..layout.count.saturating_sub(1) {
+        let Some(separator_x) = layout.separator_x(index) else {
+            continue;
+        };
+        fill_rect_color(
+            surface,
+            geom.left + separator_x - COLUMN_SEPARATOR_WIDTH_PT * 0.5,
+            top,
+            COLUMN_SEPARATOR_WIDTH_PT,
+            height,
+            rgb::Color::new(0, 0, 0),
+        );
     }
 }
 
 struct FlowCursor {
     columns: ColumnLayout,
     column_index: usize,
+    rtl: bool,
     y: f32,
     column_nonempty: bool,
 }
 
 impl FlowCursor {
-    fn new(geom: Geom, columns: Option<u16>) -> Self {
+    fn new(
+        geom: Geom,
+        columns: Option<u16>,
+        column_gap_pt: Option<f32>,
+        column_layout: Option<&SectionColumnLayoutHints>,
+        rtl: bool,
+    ) -> Self {
+        let columns = ColumnLayout::new_with_layout(geom, columns, column_gap_pt, column_layout);
         Self {
-            columns: ColumnLayout::new(geom, columns),
-            column_index: 0,
+            column_index: Self::initial_column_index(columns, rtl),
+            columns,
+            rtl,
             y: geom.top(),
             column_nonempty: false,
         }
     }
 
-    fn set_columns(&mut self, geom: Geom, columns: Option<u16>) {
-        self.columns = ColumnLayout::new(geom, columns);
-        self.column_index = 0;
+    fn set_columns(
+        &mut self,
+        geom: Geom,
+        columns: Option<u16>,
+        column_gap_pt: Option<f32>,
+        column_layout: Option<&SectionColumnLayoutHints>,
+        rtl: bool,
+    ) {
+        self.columns = ColumnLayout::new_with_layout(geom, columns, column_gap_pt, column_layout);
+        self.rtl = rtl;
+        self.column_index = Self::initial_column_index(self.columns, self.rtl);
         self.y = geom.top();
         self.column_nonempty = false;
     }
 
     fn advance(&mut self, pages: &mut Pages, geom: Geom) {
-        if self.column_index + 1 < self.columns.count {
+        if self.rtl && self.column_index > 0 {
+            self.column_index -= 1;
+        } else if !self.rtl && self.column_index + 1 < self.columns.count {
             self.column_index += 1;
         } else {
             pages.push(Vec::new());
-            self.column_index = 0;
+            self.column_index = Self::initial_column_index(self.columns, self.rtl);
         }
         self.y = geom.top();
         self.column_nonempty = false;
@@ -6437,9 +7871,17 @@ impl FlowCursor {
 
     fn force_page(&mut self, pages: &mut Pages, geom: Geom) {
         pages.push(Vec::new());
-        self.column_index = 0;
+        self.column_index = Self::initial_column_index(self.columns, self.rtl);
         self.y = geom.top();
         self.column_nonempty = false;
+    }
+
+    fn initial_column_index(columns: ColumnLayout, rtl: bool) -> usize {
+        if rtl {
+            columns.count.saturating_sub(1)
+        } else {
+            0
+        }
     }
 }
 
@@ -6492,7 +7934,7 @@ fn place_item(pages: &mut Pages, cursor: &mut FlowCursor, item: FlowItem, h: f32
     if let Some(p) = pages.last_mut() {
         p.push(PlacedItem {
             x: cursor.columns.x(cursor.column_index),
-            width: cursor.columns.width,
+            width: cursor.columns.width(cursor.column_index),
             top: cursor.y,
             item,
         });
@@ -6691,12 +8133,11 @@ fn place_table(
     geom: Geom,
 ) -> Option<usize> {
     let mut headers: Vec<RowLayout> = rows.iter().take(header_rows).cloned().collect();
-    // Only repeat headers that fit a page. A header taller than the content box would overflow
-    // on every page (place_item does not split it), forcing each following body row to break to
-    // a fresh page and re-clone the whole header — O(rows × header_lines). Dropping the repeat
-    // for an over-tall header keeps pagination linear (the header still renders inline once).
+    // Only repeat headers that leave body space. A header that fills or exceeds the content box
+    // would overflow or force a zero-height body fragment on every page. Dropping the repeat keeps
+    // pagination linear; the header still renders inline once.
     let page_h = geom.bottom() - geom.top();
-    if headers.iter().map(|h| h.height).sum::<f32>() > page_h {
+    if headers.iter().map(|h| h.height).sum::<f32>() >= page_h {
         headers.clear();
     }
     let mut first_page = None;
@@ -6742,6 +8183,77 @@ fn section_columns_by_item(items: &[FlowItem], final_columns: Option<u16>) -> Ve
         }
     }
     columns
+}
+
+fn section_column_gaps_by_item(
+    items: &[FlowItem],
+    final_column_gap_pt: Option<f32>,
+) -> Vec<Option<f32>> {
+    let mut gaps = vec![final_column_gap_pt; items.len()];
+    let mut section_start = 0usize;
+    let mut ending_gap = None;
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            FlowItem::SectionColumnGap(gap_pt) => ending_gap = Some(*gap_pt),
+            FlowItem::SectionBreak(_) => {
+                gaps[section_start..=index].fill(ending_gap);
+                section_start = index + 1;
+                ending_gap = None;
+            }
+            _ => {}
+        }
+    }
+    gaps
+}
+
+fn section_column_layouts_by_item(
+    items: &[FlowItem],
+    final_layout: Option<&SectionColumnLayoutHints>,
+) -> Vec<Option<Rc<SectionColumnLayoutHints>>> {
+    let mut layouts = vec![final_layout.cloned().map(Rc::new); items.len()];
+    let mut section_start = 0usize;
+    let mut ending_layout = None;
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            FlowItem::SectionColumnLayout(layout) => ending_layout = Some(Rc::clone(layout)),
+            FlowItem::SectionBreak(_) => {
+                layouts[section_start..=index].fill(ending_layout.clone());
+                section_start = index + 1;
+                ending_layout = None;
+            }
+            _ => {}
+        }
+    }
+    layouts
+}
+
+fn section_column_rtl_by_item(items: &[FlowItem], final_rtl: bool) -> Vec<bool> {
+    let mut directions = vec![final_rtl; items.len()];
+    let mut section_start = 0usize;
+    let mut ending_rtl = false;
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            FlowItem::SectionColumnRtl => ending_rtl = true,
+            FlowItem::SectionBreak(_) => {
+                directions[section_start..=index].fill(ending_rtl);
+                section_start = index + 1;
+                ending_rtl = false;
+            }
+            _ => {}
+        }
+    }
+    directions
+}
+
+fn same_section_column_layout(
+    left: &Option<Rc<SectionColumnLayoutHints>>,
+    right: &Option<Rc<SectionColumnLayoutHints>>,
+) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => Rc::ptr_eq(left, right),
+        (None, None) => true,
+        _ => false,
+    }
 }
 
 #[derive(Clone)]
@@ -6796,6 +8308,10 @@ fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMet
                 FlowItem::PaginationBoundary
                 | FlowItem::Row(_)
                 | FlowItem::PageBreak
+                | FlowItem::ColumnBreak
+                | FlowItem::SectionColumnGap(_)
+                | FlowItem::SectionColumnLayout(_)
+                | FlowItem::SectionColumnRtl
                 | FlowItem::SectionBreak(_)
                 | FlowItem::Table { .. }
                 | FlowItem::Picture { .. }
@@ -6904,19 +8420,55 @@ fn page_after_section_break(current_page: usize, section_break: Option<SectionBr
     }
 }
 
+#[cfg(test)]
 fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup) -> Pagination {
-    // Paginate: flow items top-to-bottom through equal-width columns and then
-    // across pages. Tables repeat headers after each break and split oversized rows.
+    paginate_with_column_gap(items, geom, final_section_setup, None, None, false)
+}
+
+fn paginate_with_column_gap(
+    items: Vec<FlowItem>,
+    geom: Geom,
+    final_section_setup: &SectionSetup,
+    final_column_gap_pt: Option<f32>,
+    final_column_layout: Option<&SectionColumnLayoutHints>,
+    final_column_rtl: bool,
+) -> Pagination {
+    // Paginate flow items top-to-bottom through section columns and then across
+    // pages. Tables repeat headers after each break and split oversized rows.
     let columns_by_item = section_columns_by_item(&items, final_section_setup.columns);
+    let column_gaps_by_item = section_column_gaps_by_item(&items, final_column_gap_pt);
+    let column_layouts_by_item = section_column_layouts_by_item(&items, final_column_layout);
+    let column_rtl_by_item = section_column_rtl_by_item(&items, final_column_rtl);
+    let geometries_by_item = section_geometries_by_item(&items, geom);
     let block_metrics = block_pagination_metrics(&items);
     let mut pages: Pages = vec![Vec::new()];
     let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
     let mut section_start_page_index = 0usize;
+    let mut section_index = 0usize;
+    let mut active_geom = geometries_by_item.first().copied().unwrap_or(geom);
     let mut active_columns = columns_by_item
         .first()
         .copied()
         .unwrap_or(final_section_setup.columns);
-    let mut cursor = FlowCursor::new(geom, active_columns);
+    let mut active_column_gap_pt = column_gaps_by_item
+        .first()
+        .copied()
+        .unwrap_or(final_column_gap_pt);
+    let mut active_column_layout = column_layouts_by_item.first().cloned().flatten();
+    let mut cursor = FlowCursor::new(
+        active_geom,
+        active_columns,
+        active_column_gap_pt,
+        active_column_layout.as_deref(),
+        column_rtl_by_item
+            .first()
+            .copied()
+            .unwrap_or(final_column_rtl),
+    );
+    let mut active_column_rtl = column_rtl_by_item
+        .first()
+        .copied()
+        .unwrap_or(final_column_rtl);
     let mut block_pages = HashMap::new();
     let mut block_line_pages: HashMap<usize, Vec<BlockLinePage>> = HashMap::new();
     let mut pending_block = None;
@@ -6930,10 +8482,40 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
     let mut previous_keep_next = false;
     let mut defer_current_top_bottom_bands = false;
     for (item_index, item) in items.into_iter().enumerate() {
+        let item_geom = geometries_by_item[item_index];
+        if item_geom != active_geom {
+            active_geom = item_geom;
+            cursor.set_columns(
+                active_geom,
+                columns_by_item[item_index],
+                column_gaps_by_item[item_index],
+                column_layouts_by_item[item_index].as_deref(),
+                column_rtl_by_item[item_index],
+            );
+            active_columns = columns_by_item[item_index];
+            active_column_gap_pt = column_gaps_by_item[item_index];
+            active_column_layout = column_layouts_by_item[item_index].clone();
+            active_column_rtl = column_rtl_by_item[item_index];
+        }
         let item_columns = columns_by_item[item_index];
-        if item_columns != active_columns {
-            cursor.set_columns(geom, item_columns);
+        let item_column_gap_pt = column_gaps_by_item[item_index];
+        let item_column_layout = &column_layouts_by_item[item_index];
+        if item_columns != active_columns
+            || item_column_gap_pt != active_column_gap_pt
+            || !same_section_column_layout(item_column_layout, &active_column_layout)
+            || column_rtl_by_item[item_index] != active_column_rtl
+        {
+            cursor.set_columns(
+                active_geom,
+                item_columns,
+                item_column_gap_pt,
+                item_column_layout.as_deref(),
+                column_rtl_by_item[item_index],
+            );
             active_columns = item_columns;
+            active_column_gap_pt = item_column_gap_pt;
+            active_column_layout = item_column_layout.clone();
+            active_column_rtl = column_rtl_by_item[item_index];
         }
         match item {
             FlowItem::BlockStart {
@@ -6964,7 +8546,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                                 &mut pages,
                                 &mut cursor,
                                 height,
-                                geom,
+                                active_geom,
                                 &active_top_bottom_bands,
                             );
                         }
@@ -6972,13 +8554,13 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     let keep_whole_paragraph = pagination.keep_lines
                         || (pagination.widow_control
                             && metric.line_heights.len() <= 3
-                            && metric.last_line_extent <= geom.bottom() - geom.top());
+                            && metric.last_line_extent <= active_geom.bottom() - active_geom.top());
                     if keep_whole_paragraph {
                         move_to_fresh_column_for_required_height(
                             &mut pages,
                             &mut cursor,
                             metric.last_line_extent,
-                            geom,
+                            active_geom,
                             &active_top_bottom_bands,
                         );
                     }
@@ -7014,8 +8596,8 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     pending_top_bottom_bands.push(PendingTopBottomBand {
                         owner_block: current_block,
                         anchor_offset,
-                        top: top.max(geom.top()),
-                        bottom: bottom.min(geom.bottom()),
+                        top: top.max(active_geom.top()),
+                        bottom: bottom.min(active_geom.bottom()),
                     });
                 }
             }
@@ -7026,7 +8608,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     &mut pages,
                     &mut cursor,
                     h,
-                    geom,
+                    active_geom,
                     &active_top_bottom_bands,
                     None,
                 );
@@ -7037,7 +8619,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                 {
                     loop {
                         if widow_break_before == Some(current_line_index) {
-                            cursor.advance(&mut pages, geom);
+                            cursor.advance(&mut pages, active_geom);
                             widow_break_before = None;
                             continue;
                         }
@@ -7049,12 +8631,12 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                                 &metric.line_heights[current_line_index..],
                                 cursor.y,
                                 pages.len().saturating_sub(1),
-                                geom,
+                                active_geom,
                                 &active_top_bottom_bands,
                             );
                             if fits < remaining {
                                 if fits < 2 && cursor.column_nonempty {
-                                    cursor.advance(&mut pages, geom);
+                                    cursor.advance(&mut pages, active_geom);
                                     continue;
                                 }
                                 if remaining - fits == 1 {
@@ -7068,9 +8650,10 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                                             .iter()
                                             .sum::<f32>();
                                         if cursor.column_nonempty
-                                            && remaining_height <= geom.bottom() - geom.top()
+                                            && remaining_height
+                                                <= active_geom.bottom() - active_geom.top()
                                         {
-                                            cursor.advance(&mut pages, geom);
+                                            cursor.advance(&mut pages, active_geom);
                                             continue;
                                         }
                                     }
@@ -7084,7 +8667,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     &mut pages,
                     &mut cursor,
                     h,
-                    geom,
+                    active_geom,
                     &active_top_bottom_bands,
                     None,
                 );
@@ -7109,7 +8692,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     &mut pages,
                     &mut cursor,
                     layout.bounds_h,
-                    geom,
+                    active_geom,
                     &active_top_bottom_bands,
                     current_block,
                 );
@@ -7130,7 +8713,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     &mut pages,
                     &mut cursor,
                     h,
-                    geom,
+                    active_geom,
                     &active_top_bottom_bands,
                     None,
                 );
@@ -7143,23 +8726,35 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
             }
             FlowItem::Table { rows, header_rows } => {
                 let fallback_page = pages.len().saturating_sub(1);
-                let first_page = place_table(&mut pages, &mut cursor, rows, header_rows, geom)
-                    .unwrap_or(fallback_page);
+                let first_page =
+                    place_table(&mut pages, &mut cursor, rows, header_rows, active_geom)
+                        .unwrap_or(fallback_page);
                 record_pending_block_page(&mut block_pages, &mut pending_block, first_page);
             }
             FlowItem::PageBreak => {
-                cursor.force_page(&mut pages, geom);
+                cursor.force_page(&mut pages, active_geom);
                 record_pending_block_page(
                     &mut block_pages,
                     &mut pending_block,
                     pages.len().saturating_sub(1),
                 );
             }
+            FlowItem::ColumnBreak => {
+                cursor.advance(&mut pages, active_geom);
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+            }
+            FlowItem::SectionColumnGap(_) => {}
+            FlowItem::SectionColumnLayout(_) => {}
+            FlowItem::SectionColumnRtl => {}
             FlowItem::SectionBreak(section) => {
                 let next_section_page =
                     page_after_section_break(pages.len(), section.section_break);
                 while pages.len() < next_section_page {
-                    cursor.force_page(&mut pages, geom);
+                    cursor.force_page(&mut pages, active_geom);
                 }
                 page_sections.resize(pages.len(), None);
                 assign_section_to_render_pages(
@@ -7167,6 +8762,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     section_start_page_index,
                     next_section_page.saturating_sub(2),
                     &section,
+                    section_index,
                 );
                 record_pending_block_page(
                     &mut block_pages,
@@ -7174,6 +8770,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     pages.len().saturating_sub(1),
                 );
                 section_start_page_index = next_section_page.saturating_sub(1);
+                section_index = section_index.saturating_add(1);
             }
             // Rows reach pagination only inside a Table; place defensively.
             FlowItem::Row(r) => {
@@ -7182,7 +8779,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     &mut pages,
                     &mut cursor,
                     h,
-                    geom,
+                    active_geom,
                     &active_top_bottom_bands,
                     None,
                 );
@@ -7206,6 +8803,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
         section_start_page_index,
         pages.len().saturating_sub(1),
         final_section_setup,
+        section_index,
     );
     Pagination {
         pages,
@@ -7228,6 +8826,17 @@ fn collect_pdf_flow_items(
     let mut items: Vec<FlowItem> = Vec::new();
     let final_section_setup = SectionSetup::from(&model.setup);
     let body_columns = section_columns_by_block(&model.blocks, final_section_setup.columns);
+    let body_column_gaps = section_column_gaps_by_block(
+        &model.blocks,
+        source_hints.section_column_gap_pt,
+        source_hints.final_section_column_gap_pt,
+    );
+    let body_column_layouts = section_column_layouts_by_block(
+        &model.blocks,
+        source_hints.section_column_layouts,
+        source_hints.final_section_column_layout,
+    );
+    let body_geometries = section_geometries_by_block(&model.blocks, geom);
     let top_bottom_bands = top_bottom_bands_by_block(model, floating_shapes, geom);
     collect_blocks_with_block_anchors(
         &model.blocks,
@@ -7237,17 +8846,33 @@ fn collect_pdf_flow_items(
         capture,
         BodyCollectionSidecars {
             section_columns: &body_columns,
+            section_column_gap_pt: &body_column_gaps,
+            section_column_layouts: &body_column_layouts,
+            section_column_rtl: source_hints.section_column_rtl,
+            section_geometries: &body_geometries,
             pagination_hints: source_hints.pagination,
+            line_spacing_hints: source_hints.line_spacing,
             tab_stops: source_hints.tab_stops,
+            column_break_offsets: source_hints.column_break_offsets,
+            default_tab_stop_pt: source_hints.default_tab_stop_pt,
             table_row_pagination: source_hints.table_row_pagination,
             table_cell_pagination: source_hints.table_cell_pagination,
+            table_cell_line_spacing: source_hints.table_cell_line_spacing,
             table_nested_pagination: source_hints.table_nested_pagination,
+            table_cell_tab_stops: source_hints.table_cell_tab_stops,
             top_bottom_bands: &top_bottom_bands,
         },
     );
     items.push(FlowItem::PaginationBoundary);
-    let final_column_geom =
-        geom.with_content_width(ColumnLayout::new(geom, final_section_setup.columns).width);
+    let final_column_geom = geom.with_content_width(
+        ColumnLayout::new_with_layout(
+            geom,
+            final_section_setup.columns,
+            source_hints.final_section_column_gap_pt,
+            source_hints.final_section_column_layout,
+        )
+        .shaping_width(),
+    );
     if let Some(features) = unsupported_features {
         let placeholders = unsupported_placeholder_blocks(
             features,
@@ -7301,6 +8926,118 @@ fn section_columns_by_block(blocks: &[Block], final_columns: Option<u16>) -> Vec
         }
     }
     columns
+}
+
+fn section_column_gaps_by_block(
+    blocks: &[Block],
+    ending_section_gap_pt: &[Option<f32>],
+    final_section_gap_pt: Option<f32>,
+) -> Vec<Option<f32>> {
+    let mut gaps = vec![final_section_gap_pt; blocks.len()];
+    let mut section_start = 0usize;
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            let gap = ending_section_gap_pt.get(index).copied().flatten();
+            gaps[section_start..=index].fill(gap);
+            section_start = index + 1;
+        }
+    }
+    gaps
+}
+
+fn section_column_layouts_by_block<'a>(
+    blocks: &[Block],
+    ending_section_layouts: &'a [Option<SectionColumnLayoutHints>],
+    final_section_layout: Option<&'a SectionColumnLayoutHints>,
+) -> Vec<Option<&'a SectionColumnLayoutHints>> {
+    let mut layouts = vec![final_section_layout; blocks.len()];
+    let mut section_start = 0usize;
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            let layout = ending_section_layouts.get(index).and_then(Option::as_ref);
+            layouts[section_start..=index].fill(layout);
+            section_start = index + 1;
+        }
+    }
+    layouts
+}
+
+fn section_column_paint_hints_by_section<'a>(
+    blocks: &[Block],
+    ending_section_gap_pt: &[Option<f32>],
+    ending_section_layouts: &'a [Option<SectionColumnLayoutHints>],
+    ending_section_separators: &[bool],
+    final_section_gap_pt: Option<f32>,
+    final_section_layout: Option<&'a SectionColumnLayoutHints>,
+    final_section_separator: bool,
+) -> Vec<SectionColumnPaintHints<'a>> {
+    let mut hints = Vec::new();
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            hints.push(SectionColumnPaintHints {
+                gap_pt: ending_section_gap_pt.get(index).copied().flatten(),
+                layout: ending_section_layouts.get(index).and_then(Option::as_ref),
+                separator: ending_section_separators
+                    .get(index)
+                    .copied()
+                    .unwrap_or(false),
+            });
+        }
+    }
+    hints.push(SectionColumnPaintHints {
+        gap_pt: final_section_gap_pt,
+        layout: final_section_layout,
+        separator: final_section_separator,
+    });
+    hints
+}
+
+fn section_geometries_by_item(items: &[FlowItem], base: Geom) -> Vec<Geom> {
+    let mut current = items
+        .iter()
+        .find_map(|item| match item {
+            FlowItem::SectionBreak(setup) => Some(Geom::from_section(setup)),
+            _ => None,
+        })
+        .unwrap_or(base);
+    let mut geometries = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        geometries.push(current);
+        if matches!(item, FlowItem::SectionBreak(_)) {
+            current = items[index + 1..]
+                .iter()
+                .find_map(|next| match next {
+                    FlowItem::SectionBreak(setup) => Some(Geom::from_section(setup)),
+                    _ => None,
+                })
+                .unwrap_or(base);
+        }
+    }
+    geometries
+}
+
+fn section_geometries_by_block(blocks: &[Block], base: Geom) -> Vec<Geom> {
+    let mut current = blocks
+        .iter()
+        .find_map(|block| match block {
+            Block::SectionBreak(setup) => Some(Geom::from_section(setup)),
+            _ => None,
+        })
+        .unwrap_or(base);
+    let mut geometries = Vec::with_capacity(blocks.len());
+    for (index, block) in blocks.iter().enumerate() {
+        geometries.push(current);
+        if matches!(block, Block::SectionBreak(_)) {
+            current = blocks[index + 1..]
+                .iter()
+                .find_map(|next| match next {
+                    Block::SectionBreak(setup) => Some(Geom::from_section(setup)),
+                    _ => None,
+                })
+                .unwrap_or(base);
+        }
+    }
+    geometries
 }
 
 fn strict_font_context(fonts: &[Vec<u8>]) -> Result<FontContext> {
@@ -7378,6 +9115,10 @@ fn record_page_fields(pages: &Pages, page_fields: &mut [Option<usize>]) {
                 | FlowItem::PaginationBoundary
                 | FlowItem::Gap(_)
                 | FlowItem::PageBreak
+                | FlowItem::ColumnBreak
+                | FlowItem::SectionColumnGap(_)
+                | FlowItem::SectionColumnLayout(_)
+                | FlowItem::SectionColumnRtl
                 | FlowItem::SectionBreak(_)
                 | FlowItem::Table { .. }
                 | FlowItem::Picture { .. }
@@ -7424,7 +9165,14 @@ pub(crate) fn layout_pages_with_fonts_and_pagination(
         None,
     );
     let final_section_setup = SectionSetup::from(&model.setup);
-    let pagination = paginate(items, geom, &final_section_setup);
+    let pagination = paginate_with_column_gap(
+        items,
+        geom,
+        &final_section_setup,
+        source_hints.final_section_column_gap_pt,
+        source_hints.final_section_column_layout,
+        source_hints.final_section_column_rtl,
+    );
     let mut page_fields = capture.page_fields;
     record_page_fields(&pagination.pages, &mut page_fields);
     let block_pages = (0..model.blocks.len())
@@ -7613,13 +9361,40 @@ fn render_pdf(
         unsupported_features,
     );
     let final_section_setup = SectionSetup::from(&model.setup);
-    let pagination = paginate(items, geom, &final_section_setup);
+    let pagination = paginate_with_column_gap(
+        items,
+        geom,
+        &final_section_setup,
+        source_hints.final_section_column_gap_pt,
+        source_hints.final_section_column_layout,
+        source_hints.final_section_column_rtl,
+    );
+    let section_column_paint_hints = section_column_paint_hints_by_section(
+        &model.blocks,
+        source_hints.section_column_gap_pt,
+        source_hints.section_column_layouts,
+        source_hints.section_column_separators,
+        source_hints.final_section_column_gap_pt,
+        source_hints.final_section_column_layout,
+        source_hints.final_section_column_separator,
+    );
+    let page_geometries = pagination
+        .page_sections
+        .iter()
+        .map(|section| {
+            section
+                .as_ref()
+                .map(|section| Geom::from_section(&section.setup))
+                .unwrap_or(geom)
+        })
+        .collect::<Vec<_>>();
     let pages = pagination.pages;
     let page_sections = pagination.page_sections;
     let section_start_page_index = pagination.final_section_start_page_index;
     let floating_shape_overlays = floating_shape_overlays_for_pages(
         floating_shapes,
         geom,
+        &page_geometries,
         &pagination.block_pages,
         &pagination.block_line_pages,
     );
@@ -7628,13 +9403,6 @@ fn render_pdf(
     let mut document = PdfDoc::new();
     let page_count = pages.len();
     for (page_index, page_items) in pages.into_iter().enumerate() {
-        let Some(settings) = PageSettings::from_wh(geom.page_w, geom.page_h) else {
-            continue;
-        };
-        let mut page = document.start_page_with(settings);
-        // Link rects collected while drawing (top-down coords); added as annotations
-        // after the surface is finished (which releases its borrow on the page).
-        let mut page_links: Vec<(f32, f32, f32, f32, Rc<str>)> = Vec::new();
         let page_number = page_index + 1;
         let fallback_page_section;
         let page_section = match page_sections.get(page_index).and_then(Option::as_ref) {
@@ -7643,17 +9411,104 @@ fn render_pdf(
                 fallback_page_section = RenderPageSection {
                     setup: final_section_setup.clone(),
                     first_page_index: section_start_page_index,
+                    section_index: source_hints.running_line_spacing.len().saturating_sub(1),
                 };
                 &fallback_page_section
             }
         };
+        let page_geom = page_geometries.get(page_index).copied().unwrap_or(geom);
+        let Some(settings) = PageSettings::from_wh(page_geom.page_w, page_geom.page_h) else {
+            continue;
+        };
+        let mut page = document.start_page_with(settings);
+        // Link rects collected while drawing (top-down coords); added as annotations
+        // after the surface is finished (which releases its borrow on the page).
+        let mut page_links: Vec<PageLink> = Vec::new();
         let (header_blocks, footer_blocks) = running_header_footer_blocks_for_page(
             &page_section.setup,
             page_number,
             page_index == page_section.first_page_index,
         );
-        let header_lines = layout_lines(header_blocks, geom, &mut tcx);
-        let footer_lines = layout_lines(footer_blocks, geom, &mut tcx);
+        let (header_variant, footer_variant) = running_surface_variants_for_page(
+            &page_section.setup,
+            page_number,
+            page_index == page_section.first_page_index,
+        );
+        let running_spacing = source_hints
+            .running_line_spacing
+            .get(page_section.section_index);
+        let running_tabs = source_hints
+            .running_tab_stops
+            .get(page_section.section_index);
+        let running_table_tabs = source_hints
+            .running_table_cell_tab_stops
+            .get(page_section.section_index);
+        let running_distances = source_hints
+            .running_surface_distances
+            .get(page_section.section_index)
+            .copied()
+            .unwrap_or_default();
+        let header_spacing = running_spacing
+            .map(|hints| running_surface_line_spacing(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_spacing = running_spacing
+            .map(|hints| running_surface_line_spacing(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_tabs = running_tabs
+            .map(|hints| running_surface_tab_stops(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_tabs = running_tabs
+            .map(|hints| running_surface_tab_stops(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_table_cell_spacing = running_spacing
+            .map(|hints| running_surface_table_cell_line_spacing(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_table_cell_spacing = running_spacing
+            .map(|hints| running_surface_table_cell_line_spacing(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_table_cell_tabs = running_table_tabs
+            .map(|hints| running_surface_table_cell_tab_stops(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_table_cell_tabs = running_table_tabs
+            .map(|hints| running_surface_table_cell_tab_stops(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_items = layout_running_surface_items(
+            header_blocks,
+            RunningSurfaceLayoutHints {
+                line_spacing: header_spacing,
+                tab_stops: header_tabs,
+                table_cell_line_spacing: header_table_cell_spacing,
+                table_cell_tab_stops: header_table_cell_tabs,
+                default_tab_stop_pt: source_hints.default_tab_stop_pt,
+            },
+            page_geom,
+            &mut tcx,
+        );
+        let mut footer_items = layout_running_surface_items(
+            footer_blocks,
+            RunningSurfaceLayoutHints {
+                line_spacing: footer_spacing,
+                tab_stops: footer_tabs,
+                table_cell_line_spacing: footer_table_cell_spacing,
+                table_cell_tab_stops: footer_table_cell_tabs,
+                default_tab_stop_pt: source_hints.default_tab_stop_pt,
+            },
+            page_geom,
+            &mut tcx,
+        );
+        let explicit_footer_distance =
+            normalized_running_surface_distance(running_distances.footer_pt);
+        if page_section.setup.page_numbers && explicit_footer_distance.is_some() {
+            if let Some(line) = layout_page_number_line(page_index + 1, page_geom, &mut tcx) {
+                footer_items.push(RunningSurfaceItem::Line(line));
+            }
+        }
+        let header_bounds = running_header_vertical_bounds(page_geom, running_distances.header_pt);
+        let footer_bounds = running_footer_vertical_bounds(
+            page_geom,
+            explicit_footer_distance,
+            running_surface_items_extent(&footer_items, page_geom),
+        );
         let mut surface = page.surface();
         for overlay in floating_shape_overlays
             .iter()
@@ -7661,63 +9516,50 @@ fn render_pdf(
         {
             draw_floating_shape_overlay(&mut surface, overlay, &mut tcx);
         }
-        // Running header (top margin) and footer (below the content box), on every
-        // page. Lines are cloned because drawing consumes the glyph runs.
-        let mut hy = HEADER_Y;
-        for line in &header_lines {
-            // Clamp to the top margin so a tall/multi-line header can't bleed into
-            // the body content area.
-            if hy + line.height > geom.top() {
-                break;
-            }
-            let baseline = hy + line.baseline;
-            let x0 = geom.left + line.x_indent;
-            draw_line_background(&mut surface, line, x0, hy);
-            for run in &line.runs {
-                draw_run_with_page_context(
-                    &mut surface,
-                    run.clone(),
-                    x0,
-                    baseline,
-                    page_index + 1,
-                    &mut tcx,
-                );
-            }
-            hy += line.height;
-        }
-        let mut fy = geom.bottom() + FOOTER_GAP;
-        for line in &footer_lines {
-            // Clamp to the page so a tall footer doesn't run off the bottom edge.
-            if fy + line.height > geom.page_h {
-                break;
-            }
-            let baseline = fy + line.baseline;
-            let x0 = geom.left + line.x_indent;
-            draw_line_background(&mut surface, line, x0, fy);
-            for run in &line.runs {
-                draw_run_with_page_context(
-                    &mut surface,
-                    run.clone(),
-                    x0,
-                    baseline,
-                    page_index + 1,
-                    &mut tcx,
-                );
-            }
-            fy += line.height;
-        }
-        if page_section.setup.page_numbers {
-            if let Some(line) = layout_page_number_line(page_index + 1, geom, &mut tcx) {
-                if fy + line.height <= geom.page_h {
+        // Running surfaces are bounded to their margin bands so text and images
+        // cannot bleed into body content or beyond the physical page.
+        draw_running_surface_items(
+            &mut surface,
+            header_items,
+            header_bounds,
+            page_geom,
+            page_number,
+            &mut page_links,
+            &mut tcx,
+        );
+        let fy = draw_running_surface_items(
+            &mut surface,
+            footer_items,
+            footer_bounds,
+            page_geom,
+            page_number,
+            &mut page_links,
+            &mut tcx,
+        );
+        if page_section.setup.page_numbers && explicit_footer_distance.is_none() {
+            if let Some(line) = layout_page_number_line(page_index + 1, page_geom, &mut tcx) {
+                if fy + line.height <= page_geom.page_h {
                     let baseline = fy + line.baseline;
-                    let x0 = geom.left + line.x_indent;
+                    let x0 = page_geom.left + line.x_indent;
                     draw_line_background(&mut surface, &line, x0, fy);
+                    draw_line_leaders(&mut surface, &line, x0, fy, baseline);
                     for run in line.runs {
                         draw_run(&mut surface, run, x0, baseline);
                     }
                 }
             }
         }
+        let column_paint_hints = section_column_paint_hints
+            .get(page_section.section_index)
+            .copied()
+            .or_else(|| section_column_paint_hints.last().copied())
+            .unwrap_or_default();
+        draw_section_column_separators(
+            &mut surface,
+            page_geom,
+            &page_section.setup,
+            column_paint_hints,
+        );
         let mut previous_row_borders: Option<RenderedRowBorders> = None;
         for placed in page_items {
             let top = placed.top;
@@ -7728,12 +9570,17 @@ fn render_pdf(
                 | FlowItem::PaginationBoundary
                 | FlowItem::Gap(_)
                 | FlowItem::PageBreak
+                | FlowItem::ColumnBreak
+                | FlowItem::SectionColumnGap(_)
+                | FlowItem::SectionColumnLayout(_)
+                | FlowItem::SectionColumnRtl
                 | FlowItem::SectionBreak(_)
                 | FlowItem::Table { .. } => {}
                 FlowItem::Picture { image, layout } => {
                     // Center the rotated visual bounds within the active body column.
-                    let bounds_x =
-                        geom.left + column_x + ((placed.width - layout.bounds_w) * 0.5).max(0.0);
+                    let bounds_x = page_geom.left
+                        + column_x
+                        + ((placed.width - layout.bounds_w) * 0.5).max(0.0);
                     if let Some(sz) = Size::from_wh(layout.image_w, layout.image_h) {
                         surface.push_transform(&image_paint_transform(layout, bounds_x, top));
                         surface.draw_image(image, sz);
@@ -7741,14 +9588,17 @@ fn render_pdf(
                     }
                 }
                 FlowItem::Chart { chart, w, h } => {
-                    let x = geom.left + column_x + ((placed.width - w) * 0.5).max(0.0);
+                    let x = page_geom.left + column_x + ((placed.width - w) * 0.5).max(0.0);
                     draw_authored_chart(&mut surface, &chart, x, top, w, h, &mut tcx);
                 }
                 FlowItem::Line(line) => {
                     let baseline = top + line.baseline;
-                    let x0 = geom.left + column_x + line.x_indent;
+                    let x0 = page_geom.left + column_x + line.x_indent;
                     let lh = line.height;
+                    let clip_content = line.clip_to_height
+                        && push_vertical_line_clip(&mut surface, 0.0, top, lh, page_geom.page_w);
                     draw_line_background(&mut surface, &line, x0, top);
+                    draw_line_leaders(&mut surface, &line, x0, top, baseline);
                     for run in line.runs {
                         if let Some(url) = run.link.clone() {
                             let l = x0 + run.x;
@@ -7763,95 +9613,23 @@ fn render_pdf(
                             &mut tcx,
                         );
                     }
+                    if clip_content {
+                        surface.pop();
+                    }
                 }
                 FlowItem::Row(row) => {
-                    let table_id = row.table_id;
-                    let border = row.border;
-                    let row_height = row.height;
-                    let bottom = top + row_height;
-                    let x_offset = geom.left + column_x;
-                    let current_vertical = row_vertical_border_lines(&row, x_offset);
-                    let junctions = match (table_id, previous_row_borders.as_ref()) {
-                        (Some(table_id), Some(previous))
-                            if previous.table_id == table_id
-                                && (previous.bottom - top).abs() < 0.01 =>
-                        {
-                            terminal_vertical_junctions(
-                                &previous.vertical,
-                                &row,
-                                &current_vertical,
-                                x_offset,
-                            )
-                        }
-                        _ => Vec::new(),
-                    };
-                    let cells = row.cells;
-                    if junctions.is_empty() {
-                        for cell in cells {
-                            draw_table_cell_background_and_borders(
-                                &mut surface,
-                                &cell,
-                                x_offset,
-                                top,
-                                bottom,
-                                row_height,
-                                border,
-                            );
-                            let cell_x = x_offset + cell.x;
-                            draw_table_cell_content(
-                                &mut surface,
-                                cell,
-                                CellContentPlacement {
-                                    x: cell_x,
-                                    top,
-                                    row_height,
-                                },
-                                page_number,
-                                &mut tcx,
-                                &mut page_links,
-                            );
-                        }
-                    } else {
-                        for cell in &cells {
-                            draw_table_cell_background_and_borders(
-                                &mut surface,
-                                cell,
-                                x_offset,
-                                top,
-                                bottom,
-                                row_height,
-                                border,
-                            );
-                        }
-                        for (line, horizontal_width) in junctions {
-                            draw_terminal_vertical_junction(
-                                &mut surface,
-                                top,
-                                line,
-                                horizontal_width,
-                            );
-                        }
-                        for cell in cells {
-                            let cell_x = x_offset + cell.x;
-                            draw_table_cell_content(
-                                &mut surface,
-                                cell,
-                                CellContentPlacement {
-                                    x: cell_x,
-                                    top,
-                                    row_height,
-                                },
-                                page_number,
-                                &mut tcx,
-                                &mut page_links,
-                            );
-                        }
-                    }
-                    previous_row_borders = table_id.map(|table_id| RenderedRowBorders {
-                        table_id,
-                        bottom,
-                        vertical: current_vertical,
-                    });
+                    previous_row_borders = draw_row_layout(
+                        &mut surface,
+                        row,
+                        RowPaintPlacement {
+                            x_offset: page_geom.left + column_x,
+                            top,
+                            page_number,
+                        },
+                        &mut tcx,
+                        &mut page_links,
+                        previous_row_borders.as_ref(),
+                    );
                 }
             }
         }
@@ -7887,19 +9665,25 @@ mod tests {
     use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
     use parley::{FontContext, LayoutContext};
     use std::collections::HashMap;
+    use std::rc::Rc;
 
     use super::{
         assign_section_to_render_pages, cell_insets, cell_line_origin, count_missing_image_bytes,
-        display_text, first_row_fragment_height, image_layout, image_paint_transform,
-        layout_page_number_line, layout_paragraph, layout_table, layout_table_with_row_pagination,
-        page_field_text, paginate, rgb, running_header_footer_blocks_for_page, shape, shape_cell,
-        split_row, unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout,
-        StyledText, TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
+        display_text, first_row_fragment_height, fit_chart_layout_to_box, fit_image_layout_to_box,
+        image_layout, image_paint_transform, layout_page_number_line, layout_paragraph,
+        layout_table, layout_table_with_row_pagination, page_field_text, paginate,
+        paginate_with_column_gap, push_clipped_page_link, render_pdf, rgb,
+        running_footer_vertical_bounds, running_header_footer_blocks_for_page,
+        running_header_vertical_bounds, running_surface_tab_stops, shape, shape_cell, split_row,
+        unsupported_placeholder_texts, ColumnLayout, FlowItem, Geom, LayoutCapture, LineLayout,
+        RunningSurfaceDistanceHints, RunningSurfaceTabStopHints, RunningSurfaceVariant,
+        SourceRenderHints, StyledText, TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
     };
     use crate::model::{
-        Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
-        ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind,
-        SectionSetup, Spacing, TabAlignment, TabStop, Table, TableBorderSide, TablePaginationHints,
+        Align, Block, Cell, CellMargins, CharProps, Chart, ChartSeries, Color, DocModel, FieldRole,
+        Image, Indent, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
+        Row, Run, SectionBreakKind, SectionColumnHint, SectionColumnLayoutHints, SectionSetup,
+        Spacing, TabAlignment, TabLeader, TabStop, Table, TableBorderSide, TablePaginationHints,
         TableRowPaginationHint, VCell, VertAlign,
     };
     use crate::report::FeatureInventory;
@@ -7924,6 +9708,134 @@ mod tests {
             (actual - expected).abs() < 0.001,
             "expected {expected}, got {actual}"
         );
+    }
+
+    #[test]
+    fn running_surface_tab_selector_keeps_six_stories_independent() {
+        let stops = |position_pt| {
+            vec![vec![TabStop {
+                position_pt,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            }]]
+        };
+        let hints = RunningSurfaceTabStopHints {
+            header: stops(1.0),
+            first_header: stops(2.0),
+            even_header: stops(3.0),
+            footer: stops(4.0),
+            first_footer: stops(5.0),
+            even_footer: stops(6.0),
+        };
+
+        for (header, variant, expected) in [
+            (true, RunningSurfaceVariant::Default, &hints.header),
+            (true, RunningSurfaceVariant::First, &hints.first_header),
+            (true, RunningSurfaceVariant::Even, &hints.even_header),
+            (false, RunningSurfaceVariant::Default, &hints.footer),
+            (false, RunningSurfaceVariant::First, &hints.first_footer),
+            (false, RunningSurfaceVariant::Even, &hints.even_footer),
+        ] {
+            assert_eq!(running_surface_tab_stops(&hints, variant, header), expected);
+        }
+    }
+
+    #[test]
+    fn explicit_running_surface_distances_clamp_to_non_overlapping_bands() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 300.0,
+            margin_pt: 40.0,
+            ..PageSetup::default()
+        });
+
+        assert_eq!(running_header_vertical_bounds(geom, None), (24.0, 40.0));
+        assert_eq!(running_header_vertical_bounds(geom, Some(0.0)), (0.0, 40.0));
+        assert_eq!(
+            running_header_vertical_bounds(geom, Some(30.0)),
+            (30.0, 40.0)
+        );
+        assert_eq!(
+            running_header_vertical_bounds(geom, Some(80.0)),
+            (40.0, 40.0)
+        );
+        assert_eq!(
+            running_header_vertical_bounds(geom, Some(f32::NAN)),
+            (24.0, 40.0)
+        );
+
+        assert_eq!(
+            running_footer_vertical_bounds(geom, None, Some(14.0)),
+            (268.0, 300.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(0.0), Some(14.0)),
+            (286.0, 300.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(10.0), Some(14.0)),
+            (276.0, 290.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(40.0), Some(14.0)),
+            (260.0, 260.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(400.0), Some(14.0)),
+            (260.0, 260.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(-1.0), Some(14.0)),
+            (268.0, 300.0)
+        );
+    }
+
+    #[test]
+    fn explicit_footer_distance_bottom_anchors_generated_page_numbers() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let model = DocModel {
+            setup: crate::model::DocSetup {
+                page: PageSetup {
+                    width_pt: 220.0,
+                    height_pt: 300.0,
+                    margin_pt: 40.0,
+                    ..PageSetup::default()
+                },
+                page_numbers: true,
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let explicit = [RunningSurfaceDistanceHints {
+            footer_pt: Some(0.0),
+            ..RunningSurfaceDistanceHints::default()
+        }];
+        let invalid = [RunningSurfaceDistanceHints {
+            footer_pt: Some(f32::NAN),
+            ..RunningSurfaceDistanceHints::default()
+        }];
+        let render = |distances: &[RunningSurfaceDistanceHints]| {
+            render_pdf(
+                &model,
+                &fonts,
+                None,
+                &[],
+                SourceRenderHints {
+                    running_surface_distances: distances,
+                    ..SourceRenderHints::default()
+                },
+            )
+            .expect("page-number render succeeds")
+            .pdf
+        };
+
+        let baseline = render(&[]);
+        let anchored = render(&explicit);
+        assert!(baseline.starts_with(b"%PDF-"));
+        assert!(anchored.starts_with(b"%PDF-"));
+        assert_ne!(anchored, baseline);
+        assert_eq!(baseline, render(&invalid));
+        assert_eq!(anchored, render(&explicit));
     }
 
     /// Pins the parley contract the tab-aware breaking path relies on: driving
@@ -8116,6 +10028,80 @@ mod tests {
     }
 
     #[test]
+    fn running_surface_image_fit_respects_remaining_rotated_margin_bounds() {
+        let rotated = image_layout(200, 100, Some(90), 1_000.0, 1_000.0).unwrap();
+        let fitted = fit_image_layout_to_box(rotated, 60.0, 30.0).unwrap();
+
+        assert_eq!(fitted.rotation_degrees, 90);
+        assert_close(fitted.image_w, 30.0);
+        assert_close(fitted.image_h, 15.0);
+        assert_close(fitted.bounds_w, 15.0);
+        assert_close(fitted.bounds_h, 30.0);
+        assert_eq!(
+            fit_image_layout_to_box(rotated, 1_000.0, 1_000.0),
+            Some(rotated)
+        );
+        assert!(fit_image_layout_to_box(rotated, 60.0, 0.0).is_none());
+        assert!(fit_image_layout_to_box(rotated, f32::NAN, 30.0).is_none());
+    }
+
+    #[test]
+    fn running_surface_chart_fit_preserves_aspect_ratio_without_upscaling() {
+        let height_limited = fit_chart_layout_to_box(120.0, 60.0, 80.0, 30.0).unwrap();
+        assert_close(height_limited.scale, 0.5);
+        assert_close(height_limited.bounds_w, 60.0);
+        assert_close(height_limited.bounds_h, 30.0);
+
+        let unchanged = fit_chart_layout_to_box(120.0, 60.0, 200.0, 200.0).unwrap();
+        assert_close(unchanged.scale, 1.0);
+        assert_close(unchanged.bounds_w, 120.0);
+        assert_close(unchanged.bounds_h, 60.0);
+    }
+
+    #[test]
+    fn running_surface_chart_fit_rejects_invalid_bounds() {
+        for value in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert!(fit_chart_layout_to_box(value, 60.0, 80.0, 30.0).is_none());
+            assert!(fit_chart_layout_to_box(120.0, value, 80.0, 30.0).is_none());
+            assert!(fit_chart_layout_to_box(120.0, 60.0, value, 30.0).is_none());
+            assert!(fit_chart_layout_to_box(120.0, 60.0, 80.0, value).is_none());
+        }
+    }
+
+    #[test]
+    fn running_surface_link_rectangles_are_clipped_to_visible_finite_bounds() {
+        let target: Rc<str> = Rc::from("https://example.com/clipped");
+        let mut links = Vec::new();
+        push_clipped_page_link(
+            &mut links,
+            (10.0, 10.0, 50.0, 40.0, target.clone()),
+            20.0,
+            15.0,
+            45.0,
+            30.0,
+        );
+        assert_eq!(links, vec![(20.0, 15.0, 45.0, 30.0, target.clone())]);
+
+        for link in [
+            (0.0, 0.0, 10.0, 10.0, target.clone()),
+            (50.0, 20.0, 60.0, 25.0, target.clone()),
+            (20.0, 30.0, 30.0, 40.0, target.clone()),
+            (f32::NAN, 20.0, 30.0, 25.0, target.clone()),
+        ] {
+            push_clipped_page_link(&mut links, link, 20.0, 15.0, 45.0, 30.0);
+        }
+        push_clipped_page_link(
+            &mut links,
+            (20.0, 20.0, 30.0, 25.0, target),
+            45.0,
+            15.0,
+            20.0,
+            30.0,
+        );
+        assert_eq!(links.len(), 1, "hidden or invalid links must be dropped");
+    }
+
+    #[test]
     fn image_paint_transform_rotates_clockwise_within_visual_bounds() {
         let layout = image_layout(200, 100, Some(90), 1_000.0, 1_000.0).unwrap();
         let transform = image_paint_transform(layout, 10.0, 20.0);
@@ -8280,6 +10266,9 @@ mod tests {
             &mut flow,
             marker,
             tab_stops,
+            &[],
+            None,
+            None,
             geom,
             &mut tcx,
             &mut capture,
@@ -8327,6 +10316,7 @@ mod tests {
                 TabAlignment::Left | TabAlignment::Decimal => bounds.0,
                 TabAlignment::Center => (bounds.0 + bounds.1) / 2.0,
                 TabAlignment::Right => bounds.1,
+                TabAlignment::Bar => unreachable!(),
                 TabAlignment::Clear => unreachable!(),
             }
     }
@@ -8750,6 +10740,7 @@ mod tests {
                 &[TabStop {
                     position_pt: 100.0,
                     alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
                 }],
             );
             let line = &lines[0];
@@ -8822,6 +10813,7 @@ mod tests {
             &[TabStop {
                 position_pt: 100.0,
                 alignment: TabAlignment::Left,
+                leader: TabLeader::None,
             }],
         );
         let line = &lines[0];
@@ -8844,7 +10836,59 @@ mod tests {
     }
 
     #[test]
-    fn rtl_non_start_custom_tabs_remain_outside_the_bounded_path() {
+    fn rtl_explicit_center_end_and_decimal_tabs_use_their_stops() {
+        let cases = [
+            ("א\tב", TabAlignment::Center, TabAlignment::Center),
+            ("א\tאב", TabAlignment::Right, TabAlignment::Left),
+            ("א\t12.34", TabAlignment::Decimal, TabAlignment::Right),
+        ];
+        for (text, alignment, measured_alignment) in cases {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    bidi: true,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt: 100.0,
+                    alignment,
+                    leader: TabLeader::None,
+                }],
+            );
+            let rendered = &lines[0].runs[0].text;
+            let field_start = if alignment == TabAlignment::Decimal {
+                rendered.find('.').expect("decimal field")
+            } else {
+                rendered.find('\t').expect("tab marker") + '\t'.len_utf8()
+            };
+            let field_end = if alignment == TabAlignment::Decimal {
+                field_start + '.'.len_utf8()
+            } else {
+                rendered.len()
+            };
+            let bounds = text_bounds(&lines[0], field_start..field_end).expect("field glyph");
+            let actual = lines[0].x_indent
+                + match measured_alignment {
+                    TabAlignment::Left | TabAlignment::Decimal => bounds.0,
+                    TabAlignment::Center => (bounds.0 + bounds.1) / 2.0,
+                    TabAlignment::Right => bounds.1,
+                    TabAlignment::Bar => unreachable!(),
+                    TabAlignment::Clear => unreachable!(),
+                };
+            assert!(
+                (actual - 80.0).abs() <= 1.5,
+                "alignment={alignment:?} actual={actual}"
+            );
+        }
+    }
+
+    #[test]
+    fn rtl_unreachable_non_start_custom_tabs_keep_the_baseline() {
         let field_bounds = |position_pt| {
             let lines = paragraph_lines_with_marker_and_tabs(
                 ParaProps {
@@ -8860,6 +10904,7 @@ mod tests {
                 &[TabStop {
                     position_pt,
                     alignment: TabAlignment::Center,
+                    leader: TabLeader::None,
                 }],
             );
             let rendered = &lines[0].runs[0].text;
@@ -8867,7 +10912,7 @@ mod tests {
             text_bounds(&lines[0], field_start..field_start + 'ב'.len_utf8()).expect("field glyph")
         };
 
-        assert_eq!(field_bounds(60.0), field_bounds(120.0));
+        assert_eq!(field_bounds(1.0), field_bounds(2.0));
     }
 
     #[test]
@@ -8886,6 +10931,7 @@ mod tests {
                 &[TabStop {
                     position_pt,
                     alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
                 }],
             );
             let rendered = &lines[0].runs[0].text;
@@ -9095,9 +11141,9 @@ mod tests {
     }
 
     #[test]
-    fn tab_reflow_only_applies_to_left_and_start_aligned_ltr_text() {
-        // Centered text keeps parley's own breaking: the reservation pass is
-        // scoped to the alignments whose tab positions rwml resolves.
+    fn default_tab_reflow_applies_to_non_left_aligned_ltr_text() {
+        // Default tabs use the same bounded reservation path for every
+        // supported LTR paragraph alignment.
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
         let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
@@ -9116,11 +11162,7 @@ mod tests {
             180.0,
             &mut tcx,
         );
-        assert_eq!(
-            centered.len(),
-            1,
-            "centered text must keep parley's breaking untouched"
-        );
+        assert_eq!(centered.len(), 2, "centered text must reflow around tabs");
     }
 
     #[test]
@@ -9151,6 +11193,7 @@ mod tests {
                     &[TabStop {
                         position_pt,
                         alignment,
+                        leader: TabLeader::None,
                     }],
                 );
                 let actual = tab_aligned_position(&lines[0], measured, alignment);
@@ -9159,6 +11202,168 @@ mod tests {
                     "left={left_pt:?} alignment={alignment:?} actual={actual} expected={position_pt}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn tab_leaders_and_bar_tabs_create_bounded_line_decorations() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps::default(),
+            vec![Run {
+                text: "A\tB\tC".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[
+                TabStop {
+                    position_pt: 100.0,
+                    alignment: TabAlignment::Right,
+                    leader: TabLeader::Dot,
+                },
+                TabStop {
+                    position_pt: 140.0,
+                    alignment: TabAlignment::Bar,
+                    leader: TabLeader::None,
+                },
+            ],
+        );
+        let leaders = &lines[0].leaders;
+        assert_eq!(leaders.len(), 2);
+        assert_eq!(leaders[0].style, TabLeader::Dot);
+        assert!(leaders[0].start < leaders[0].end);
+        assert_eq!(leaders[1].style, TabLeader::Bar);
+        assert_eq!(leaders[1].start, leaders[1].end);
+        assert!((leaders[1].start - 140.0).abs() <= 0.01);
+        assert!(leaders.iter().all(|leader| {
+            [leader.start, leader.end]
+                .into_iter()
+                .all(|value| value.is_finite() && (0.0..=220.0).contains(&value))
+        }));
+    }
+
+    #[test]
+    fn rtl_tab_leaders_and_bar_tabs_create_bounded_line_decorations() {
+        let leader_lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "א\tב".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 100.0,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::Dot,
+            }],
+        );
+        assert_eq!(leader_lines[0].leaders.len(), 1);
+        assert_eq!(leader_lines[0].leaders[0].style, TabLeader::Dot);
+        assert!(leader_lines[0].leaders[0].start < leader_lines[0].leaders[0].end);
+
+        let bar_lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "א\tב".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 140.0,
+                alignment: TabAlignment::Bar,
+                leader: TabLeader::None,
+            }],
+        );
+        assert_eq!(bar_lines[0].leaders.len(), 1);
+        assert_eq!(bar_lines[0].leaders[0].style, TabLeader::Bar);
+        assert_eq!(bar_lines[0].leaders[0].start, bar_lines[0].leaders[0].end);
+        assert!(bar_lines[0].leaders.iter().all(|leader| {
+            [leader.start, leader.end]
+                .into_iter()
+                .all(|value| value.is_finite() && (0.0..=220.0).contains(&value))
+        }));
+    }
+
+    #[test]
+    fn explicit_left_tabs_in_non_left_paragraph_alignments_use_their_stops() {
+        for (align, position_pt) in [
+            (Align::Center, 100.0),
+            (Align::Right, 170.0),
+            (Align::Justify, 100.0),
+        ] {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "A\tB".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt,
+                    alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
+                }],
+            );
+            let field_start = "A\t".len();
+            let actual =
+                tab_aligned_position(&lines[0], field_start..field_start + 1, TabAlignment::Left);
+            assert!(
+                (actual - position_pt).abs() <= 1.5,
+                "align={align:?} actual={actual} expected={position_pt}"
+            );
+
+            let baseline = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "A\tB".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[],
+            );
+            let unreachable = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "A\tB".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt: 1.0,
+                    alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
+                }],
+            );
+            let baseline_position = tab_aligned_position(
+                &baseline[0],
+                field_start..field_start + 1,
+                TabAlignment::Left,
+            );
+            let unreachable_position = tab_aligned_position(
+                &unreachable[0],
+                field_start..field_start + 1,
+                TabAlignment::Left,
+            );
+            assert!(
+                (baseline_position - unreachable_position).abs() <= 1.5,
+                "unreachable custom stop changed default behavior for {align:?}"
+            );
         }
     }
 
@@ -9192,6 +11397,7 @@ mod tests {
             &[TabStop {
                 position_pt: 100.0,
                 alignment: TabAlignment::Left,
+                leader: TabLeader::None,
             }],
         );
         let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
@@ -9248,6 +11454,7 @@ mod tests {
                     &[TabStop {
                         position_pt: 100.0,
                         alignment,
+                        leader: TabLeader::None,
                     }],
                 );
                 let actual = tab_aligned_position(&lines[0], measured, alignment);
@@ -9280,6 +11487,7 @@ mod tests {
             &[TabStop {
                 position_pt: 100.0,
                 alignment: TabAlignment::Left,
+                leader: TabLeader::None,
             }],
         );
         let b_start = text.find('B').unwrap();
@@ -9320,6 +11528,7 @@ mod tests {
                 &[TabStop {
                     position_pt,
                     alignment,
+                    leader: TabLeader::None,
                 }],
             );
             let field_start = text.find('\t').unwrap() + 1;
@@ -9383,6 +11592,7 @@ mod tests {
             &[TabStop {
                 position_pt: DEFAULT_TAB_STOP_PT,
                 alignment: TabAlignment::Left,
+                leader: TabLeader::None,
             }],
         );
         let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
@@ -9413,6 +11623,7 @@ mod tests {
             &[TabStop {
                 position_pt: 1_000.0,
                 alignment: TabAlignment::Left,
+                leader: TabLeader::None,
             }],
         );
         let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
@@ -9450,6 +11661,7 @@ mod tests {
             &[TabStop {
                 position_pt: 160.0,
                 alignment: TabAlignment::Right,
+                leader: TabLeader::None,
             }],
         );
         let field_start = text.find('\t').unwrap() + 1;
@@ -9493,6 +11705,59 @@ mod tests {
             single[0].0,
             double[0].0
         );
+    }
+
+    #[test]
+    fn absolute_line_spacing_exactly_sizes_and_at_least_expands_line_boxes() {
+        let natural = paragraph_lines(
+            ParaProps::default(),
+            vec![Run {
+                text: "Absolute spacing".to_string(),
+                ..Run::default()
+            }],
+        );
+        assert_eq!(natural.len(), 1);
+
+        let mut expanded = natural.clone();
+        let minimum = natural[0].height + 20.0;
+        super::apply_line_spacing_hint(&mut expanded, Some(LineSpacingHint::AtLeast(minimum)));
+        assert_close(expanded[0].height, minimum);
+        assert_close(expanded[0].baseline, natural[0].baseline + 10.0);
+        assert!(!expanded[0].clip_to_height);
+
+        let mut unchanged = natural.clone();
+        super::apply_line_spacing_hint(
+            &mut unchanged,
+            Some(LineSpacingHint::AtLeast(natural[0].height / 2.0)),
+        );
+        assert_close(unchanged[0].height, natural[0].height);
+        assert_close(unchanged[0].baseline, natural[0].baseline);
+
+        let mut centered = natural.clone();
+        super::apply_line_spacing_hint(&mut centered, Some(LineSpacingHint::Exact(40.0)));
+        assert_close(centered[0].height, 40.0);
+        assert!(centered[0].clip_to_height);
+        let centered_top = centered[0]
+            .runs
+            .iter()
+            .map(|run| centered[0].baseline + run.baseline_shift - run.ascent)
+            .fold(f32::INFINITY, f32::min);
+        let centered_bottom = centered[0]
+            .runs
+            .iter()
+            .map(|run| centered[0].baseline + run.baseline_shift + run.descent)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert_close(centered_top, centered[0].height - centered_bottom);
+
+        let mut clipped = natural;
+        super::apply_line_spacing_hint(&mut clipped, Some(LineSpacingHint::Exact(8.0)));
+        assert_close(clipped[0].height, 8.0);
+        let clipped_bottom = clipped[0]
+            .runs
+            .iter()
+            .map(|run| clipped[0].baseline + run.baseline_shift + run.descent)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert_close(clipped_bottom, clipped[0].height);
     }
 
     #[test]
@@ -10694,6 +12959,85 @@ mod tests {
     }
 
     #[test]
+    fn table_cell_absolute_line_spacing_reaches_direct_and_nested_paragraphs() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let paragraph = |text: &str| {
+            Block::Paragraph(Paragraph {
+                runs: vec![Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                }],
+                ..Paragraph::default()
+            })
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        paragraph("direct"),
+                        Block::Table(Table {
+                            rows: vec![Row {
+                                cells: vec![Cell {
+                                    blocks: vec![paragraph("nested")],
+                                    ..Cell::default()
+                                }],
+                            }],
+                            ..Table::default()
+                        }),
+                    ],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let cell_line_spacing = vec![vec![vec![Some(LineSpacingHint::Exact(8.0)), None]]];
+        let nested_pagination = vec![vec![vec![
+            None,
+            Some(TablePaginationHints {
+                rows: vec![TableRowPaginationHint::default()],
+                cells: vec![vec![vec![None]]],
+                cell_line_spacing: vec![vec![vec![Some(LineSpacingHint::AtLeast(40.0))]]],
+                #[cfg(feature = "docx")]
+                cell_column_breaks: Vec::new(),
+                nested: vec![vec![vec![None]]],
+                cell_tabs: vec![vec![vec![Vec::new()]]],
+            }),
+        ]]];
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table_with_row_pagination(
+            &table,
+            &mut flow,
+            Geom::from_setup(&PageSetup::default()),
+            &mut tcx,
+            &mut capture,
+            TablePaginationView {
+                cell_line_spacing: Some(&cell_line_spacing),
+                nested: Some(&nested_pagination),
+                ..TablePaginationView::default()
+            },
+        );
+        let FlowItem::Table { rows, .. } = &flow[0] else {
+            panic!("table flow item");
+        };
+        let lines = &rows[0].cells[0].lines;
+
+        assert_eq!(lines.len(), 2);
+        assert_close(lines[0].height, 8.0);
+        assert!(lines[0].clip_to_height);
+        assert_close(lines[1].height, 40.0);
+        assert!(!lines[1].clip_to_height);
+    }
+
+    #[test]
     fn table_cell_explicit_paragraph_spacing_expands_row_not_line_box() {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
@@ -11463,9 +13807,19 @@ mod tests {
                         .collect::<Vec<_>>()
                 })
                 .collect()],
+            cell_line_spacing: vec![nested_cells
+                .iter()
+                .map(|paragraphs| vec![None; paragraphs.len()])
+                .collect()],
+            #[cfg(feature = "docx")]
+            cell_column_breaks: Vec::new(),
             nested: vec![nested_cells
                 .iter()
                 .map(|paragraphs| vec![None; paragraphs.len()])
+                .collect()],
+            cell_tabs: vec![nested_cells
+                .iter()
+                .map(|paragraphs| vec![Vec::new(); paragraphs.len()])
                 .collect()],
         })]]];
         let mut flow = Vec::new();
@@ -11523,7 +13877,11 @@ mod tests {
             let table_hints = TablePaginationHints {
                 rows: vec![TableRowPaginationHint::default()],
                 cells: vec![vec![direct_hints]],
+                cell_line_spacing: vec![vec![vec![None]]],
+                #[cfg(feature = "docx")]
+                cell_column_breaks: Vec::new(),
                 nested: vec![vec![nested_hints]],
+                cell_tabs: vec![vec![vec![Vec::new()]]],
             };
             cell = Cell {
                 blocks: vec![Block::Table(Table {
@@ -12206,6 +14564,7 @@ mod tests {
                 }),
             }],
             geom,
+            &[],
             &HashMap::new(),
             &HashMap::new(),
         );
@@ -12338,6 +14697,7 @@ mod tests {
                 },
             ],
             geom,
+            &[],
             &HashMap::new(),
             &HashMap::new(),
         );
@@ -12352,6 +14712,13 @@ mod tests {
     #[test]
     fn floating_shape_overlays_use_anchor_block_page() {
         let geom = Geom::from_setup(&PageSetup::default());
+        let page_two_geom = Geom::from_setup(&PageSetup {
+            width_pt: 300.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            landscape: true,
+            ..PageSetup::default()
+        });
         let mut block_pages = HashMap::new();
         block_pages.insert(2, 1);
         let overlays = super::floating_shape_overlays_for_pages(
@@ -12369,8 +14736,15 @@ mod tests {
                 anchor_block_index: Some(2),
                 anchor_text: None,
                 anchor_char_offset: None,
-                extent: None,
-                horizontal_position: None,
+                extent: Some(ShapeExtent {
+                    cx_emu: 304_800,
+                    cy_emu: 304_800,
+                }),
+                horizontal_position: Some(ShapePosition {
+                    relative_from: Some("page".to_string()),
+                    offset_emu: None,
+                    align: Some("right".to_string()),
+                }),
                 vertical_position: None,
                 relative_height: None,
                 behind_doc: None,
@@ -12381,12 +14755,14 @@ mod tests {
                 wrapping: None,
             }],
             geom,
+            &[geom, page_two_geom],
             &block_pages,
             &HashMap::new(),
         );
 
         assert_eq!(overlays.len(), 1);
         assert_eq!(overlays[0].page_index, 1);
+        assert_close(overlays[0].x, 276.0);
     }
 
     #[test]
@@ -12468,6 +14844,7 @@ mod tests {
                 wrapping: None,
             }],
             geom,
+            &[],
             &pagination.block_pages,
             &pagination.block_line_pages,
         );
@@ -12595,15 +14972,17 @@ mod tests {
         };
         let mut page_sections = vec![None, None, None, None];
 
-        assign_section_to_render_pages(&mut page_sections, 0, 1, &first);
-        assign_section_to_render_pages(&mut page_sections, 2, 3, &final_setup);
+        assign_section_to_render_pages(&mut page_sections, 0, 1, &first, 0);
+        assign_section_to_render_pages(&mut page_sections, 2, 3, &final_setup, 1);
 
         let first_page = page_sections[0].as_ref().expect("first page section");
         assert_eq!(first_page.first_page_index, 0);
+        assert_eq!(first_page.section_index, 0);
         let second_page = page_sections[1].as_ref().expect("second page section");
         assert_eq!(second_page.first_page_index, 0);
         let final_first_page = page_sections[2].as_ref().expect("final first page section");
         assert_eq!(final_first_page.first_page_index, 2);
+        assert_eq!(final_first_page.section_index, 1);
 
         let (header, _) = running_header_footer_blocks_for_page(
             &final_first_page.setup,
@@ -12695,6 +15074,12 @@ mod tests {
         });
         let ending = SectionSetup {
             section_break: Some(SectionBreakKind::EvenPage),
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
             header: vec![para("ending section", None)],
             ..SectionSetup::default()
         };
@@ -12738,12 +15123,15 @@ mod tests {
             FlowItem::Line(LineLayout {
                 height: 10.0,
                 baseline: 8.0,
+                clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
                 cell_cant_split_group: None,
+                cell_visual: None,
+                leaders: Vec::new(),
                 runs: Vec::new(),
             })
         };
@@ -12764,16 +15152,551 @@ mod tests {
         assert!(x_positions[6..].iter().all(|x| *x > 90.0));
     }
 
+    #[test]
+    fn manual_column_breaks_advance_columns_before_pages() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate(items, geom, &setup);
+
+        assert_eq!(pagination.pages.len(), 2);
+        let first_page_lines = pagination.pages[0]
+            .iter()
+            .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .collect::<Vec<_>>();
+        assert_eq!(first_page_lines.len(), 2);
+        assert!(first_page_lines[0].x.abs() < 0.1);
+        assert!(first_page_lines[1].x > 90.0);
+        let second_page_line = pagination.pages[1]
+            .iter()
+            .find(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .expect("line after the second manual column break");
+        assert!(second_page_line.x.abs() < 0.1);
+    }
+
+    #[test]
+    fn explicit_equal_column_gap_controls_column_width_and_origin() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+
+        let pagination = paginate_with_column_gap(
+            (0..8).map(|_| pagination_line(10.0)).collect(),
+            geom,
+            &setup,
+            Some(40.0),
+            None,
+            false,
+        );
+
+        let second_column = pagination.pages[0]
+            .iter()
+            .find(|placed| matches!(&placed.item, FlowItem::Line(_)) && placed.x > 0.0)
+            .expect("second-column line");
+        assert_close(second_column.width, 70.0);
+        assert_close(second_column.x, 110.0);
+    }
+
+    #[test]
+    fn column_separator_midpoints_follow_equal_fitting_and_scaled_layouts() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let equal = ColumnLayout::new_with_layout(geom, Some(2), Some(40.0), None);
+        assert_close(equal.separator_x(0).unwrap(), 90.0);
+        assert_eq!(equal.separator_x(1), None);
+
+        let fitting_source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 80.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let fitting = ColumnLayout::new_with_layout(geom, Some(9), None, Some(&fitting_source));
+        assert_close(fitting.separator_x(0).unwrap(), 70.0);
+
+        let scaled_source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 120.0,
+                    space_after_pt: 60.0,
+                },
+                SectionColumnHint {
+                    width_pt: 120.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let scaled = ColumnLayout::new_with_layout(geom, Some(2), None, Some(&scaled_source));
+        assert_close(scaled.separator_x(0).unwrap(), 90.0);
+
+        let single = ColumnLayout::new_with_layout(geom, Some(1), None, None);
+        assert_eq!(single.separator_x(0), None);
+    }
+
+    #[test]
+    fn unequal_column_layout_preserves_fitting_widths_and_origins() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 80.0,
+                    space_after_pt: 999.0,
+                },
+            ],
+        };
+
+        let layout = ColumnLayout::new_with_layout(geom, Some(9), Some(40.0), Some(&source));
+
+        assert_eq!(layout.count, 2);
+        assert_close(layout.width(0), 60.0);
+        assert_close(layout.x(0), 0.0);
+        assert_close(layout.width(1), 80.0);
+        assert_close(layout.x(1), 80.0);
+        assert_close(layout.shaping_width(), 60.0);
+    }
+
+    #[test]
+    fn unequal_column_layout_scales_overwide_geometry_when_columns_remain_legible() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 120.0,
+                    space_after_pt: 60.0,
+                },
+                SectionColumnHint {
+                    width_pt: 120.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+
+        let layout = ColumnLayout::new_with_layout(geom, Some(2), None, Some(&source));
+
+        assert_close(layout.width(0), 72.0);
+        assert_close(layout.x(1), 108.0);
+        assert_close(layout.width(1), 72.0);
+    }
+
+    #[test]
+    fn unequal_column_layout_falls_back_when_scaling_would_make_a_column_too_narrow() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 20.0,
+                    space_after_pt: 60.0,
+                },
+                SectionColumnHint {
+                    width_pt: 200.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+
+        let layout = ColumnLayout::new_with_layout(geom, Some(2), None, Some(&source));
+
+        assert_close(layout.width(0), 81.0);
+        assert_close(layout.x(1), 99.0);
+        assert_close(layout.width(1), 81.0);
+    }
+
+    #[test]
+    fn unequal_columns_control_manual_column_break_placement() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate_with_column_gap(items, geom, &setup, None, Some(&source), false);
+        let lines = pagination.pages[0]
+            .iter()
+            .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(lines.len(), 2);
+        assert_close(lines[0].x, 0.0);
+        assert_close(lines[0].width, 60.0);
+        assert_close(lines[1].x, 80.0);
+        assert_close(lines[1].width, 100.0);
+    }
+
+    #[test]
+    fn rtl_unequal_columns_advance_left_and_reset_right_after_manual_breaks() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate_with_column_gap(items, geom, &setup, None, Some(&source), true);
+        let first_page = pagination.pages[0]
+            .iter()
+            .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .collect::<Vec<_>>();
+        let second_page = pagination.pages[1]
+            .iter()
+            .find(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .expect("line after RTL page reset");
+
+        assert_eq!(first_page.len(), 2);
+        assert_close(first_page[0].x, 80.0);
+        assert_close(first_page[0].width, 100.0);
+        assert_close(first_page[1].x, 0.0);
+        assert_close(first_page[1].width, 60.0);
+        assert_close(second_page.x, 80.0);
+        assert_close(second_page.width, 100.0);
+    }
+
+    #[test]
+    fn rtl_columns_advance_left_on_overflow_and_reset_right_on_new_page() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 60.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let lines_per_column = ((geom.bottom() - geom.top()) / 10.0).floor() as usize;
+        let pagination = paginate_with_column_gap(
+            (0..lines_per_column * 2 + 1)
+                .map(|_| pagination_line(10.0))
+                .collect(),
+            geom,
+            &setup,
+            Some(20.0),
+            None,
+            true,
+        );
+        let page_xs = pagination
+            .pages
+            .iter()
+            .map(|page| {
+                page.iter()
+                    .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+                    .map(|placed| placed.x)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(page_xs.len(), 2);
+        assert_eq!(page_xs[0].len(), lines_per_column * 2);
+        for x in &page_xs[0][..lines_per_column] {
+            assert_close(*x, 100.0);
+        }
+        for x in &page_xs[0][lines_per_column..] {
+            assert_close(*x, 0.0);
+        }
+        assert_close(page_xs[1][0], 100.0);
+    }
+
+    #[test]
+    fn section_column_direction_state_resets_at_each_boundary() {
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::SectionColumnRtl,
+            FlowItem::SectionBreak(setup.clone()),
+            pagination_line(10.0),
+            FlowItem::SectionBreak(setup.clone()),
+            pagination_line(10.0),
+        ];
+
+        assert_eq!(
+            super::section_column_rtl_by_item(&items, true),
+            vec![true, true, true, false, false, true]
+        );
+
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate_with_column_gap(items, geom, &setup, None, None, true);
+        let first_line_x = |page: &[super::PlacedItem]| {
+            page.iter()
+                .find(|placed| matches!(&placed.item, FlowItem::Line(_)))
+                .map(|placed| placed.x)
+                .expect("section line")
+        };
+
+        assert_eq!(pagination.pages.len(), 3);
+        assert!(first_line_x(&pagination.pages[0]) > 90.0);
+        assert_close(first_line_x(&pagination.pages[1]), 0.0);
+        assert!(first_line_x(&pagination.pages[2]) > 90.0);
+    }
+
+    #[test]
+    fn one_column_layout_is_invariant_under_section_rtl() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(1),
+            ..SectionSetup::default()
+        };
+        let ltr =
+            paginate_with_column_gap(vec![pagination_line(10.0)], geom, &setup, None, None, false);
+        let rtl =
+            paginate_with_column_gap(vec![pagination_line(10.0)], geom, &setup, None, None, true);
+
+        assert_eq!(ltr.pages.len(), rtl.pages.len());
+        assert_close(ltr.pages[0][0].x, rtl.pages[0][0].x);
+        assert_close(ltr.pages[0][0].width, rtl.pages[0][0].width);
+    }
+
+    #[test]
+    fn section_local_column_gaps_follow_ending_section_boundaries() {
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::SectionColumnGap(40.0),
+            FlowItem::SectionBreak(setup),
+            pagination_line(10.0),
+        ];
+
+        assert_eq!(
+            super::section_column_gaps_by_item(&items, Some(10.0)),
+            vec![Some(40.0), Some(40.0), Some(40.0), Some(10.0)]
+        );
+
+        let blocks = vec![
+            para("ending", None),
+            Block::SectionBreak(SectionSetup::default()),
+            para("final", None),
+        ];
+        assert_eq!(
+            super::section_column_gaps_by_block(&blocks, &[None, Some(40.0), None], Some(10.0),),
+            vec![Some(40.0), Some(40.0), Some(10.0)]
+        );
+    }
+
+    #[test]
+    fn section_local_unequal_layouts_follow_ending_section_boundaries() {
+        let ending = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let final_layout = SectionColumnLayoutHints {
+            columns: vec![SectionColumnHint {
+                width_pt: 180.0,
+                space_after_pt: 0.0,
+            }],
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::SectionColumnLayout(Rc::new(ending.clone())),
+            FlowItem::SectionBreak(SectionSetup::default()),
+            pagination_line(10.0),
+        ];
+
+        assert_eq!(
+            super::section_column_layouts_by_item(&items, Some(&final_layout)),
+            vec![
+                Some(Rc::new(ending.clone())),
+                Some(Rc::new(ending.clone())),
+                Some(Rc::new(ending.clone())),
+                Some(Rc::new(final_layout.clone())),
+            ]
+        );
+
+        let blocks = vec![
+            para("ending", None),
+            Block::SectionBreak(SectionSetup::default()),
+            para("final", None),
+        ];
+        assert_eq!(
+            super::section_column_layouts_by_block(
+                &blocks,
+                &[None, Some(ending.clone()), None],
+                Some(&final_layout),
+            ),
+            vec![Some(&ending), Some(&ending), Some(&final_layout)]
+        );
+    }
+
+    #[test]
+    fn column_paint_hints_follow_section_boundaries_and_final_state() {
+        let ending_layout = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let final_layout = SectionColumnLayoutHints {
+            columns: vec![SectionColumnHint {
+                width_pt: 180.0,
+                space_after_pt: 0.0,
+            }],
+        };
+        let blocks = vec![
+            para("first", None),
+            Block::SectionBreak(SectionSetup::default()),
+            para("second", None),
+            Block::SectionBreak(SectionSetup::default()),
+            para("final", None),
+        ];
+        let ending_layouts = [None, Some(ending_layout.clone()), None, None, None];
+        let hints = super::section_column_paint_hints_by_section(
+            &blocks,
+            &[None, Some(40.0), None, Some(20.0), None],
+            &ending_layouts,
+            &[false, true, false, false, false],
+            Some(10.0),
+            Some(&final_layout),
+            true,
+        );
+
+        assert_eq!(hints.len(), 3);
+        assert_eq!(hints[0].gap_pt, Some(40.0));
+        assert_eq!(hints[0].layout, Some(&ending_layout));
+        assert!(hints[0].separator);
+        assert_eq!(hints[1].gap_pt, Some(20.0));
+        assert_eq!(hints[1].layout, None);
+        assert!(!hints[1].separator);
+        assert_eq!(hints[2].gap_pt, Some(10.0));
+        assert_eq!(hints[2].layout, Some(&final_layout));
+        assert!(hints[2].separator);
+    }
+
     fn pagination_line(height: f32) -> FlowItem {
         FlowItem::Line(LineLayout {
             height,
             baseline: height * 0.8,
+            clip_to_height: false,
             x_indent: 0.0,
             char_range: None,
             background: None,
             cell_spacing: Default::default(),
             cell_paragraph: None,
             cell_cant_split_group: None,
+            cell_visual: None,
+            leaders: Vec::new(),
             runs: Vec::new(),
         })
     }
@@ -12795,12 +15718,15 @@ mod tests {
             .map(|_| LineLayout {
                 height: 10.0,
                 baseline: 8.0,
+                clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
                 cell_cant_split_group: None,
+                cell_visual: None,
+                leaders: Vec::new(),
                 runs: Vec::new(),
             })
             .collect::<Vec<_>>();
@@ -13643,6 +16569,89 @@ mod tests {
     }
 
     #[test]
+    fn top_and_bottom_bands_use_anchor_section_geometry() {
+        let first_page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let final_page = PageSetup {
+            width_pt: 300.0,
+            height_pt: 200.0,
+            margin_pt: 20.0,
+            landscape: true,
+            ..PageSetup::default()
+        };
+        let model = DocModel {
+            blocks: vec![
+                para("first anchor", None),
+                Block::SectionBreak(SectionSetup {
+                    page: first_page,
+                    ..SectionSetup::default()
+                }),
+                para("final anchor", None),
+            ],
+            setup: crate::model::DocSetup {
+                page: final_page,
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let shape = FloatingShape {
+            id: "section-wrap".to_string(),
+            name: None,
+            description: None,
+            text: None,
+            preset_geometry: None,
+            fill_color: None,
+            outline_color: None,
+            simple_position_enabled: Some(false),
+            simple_position: None,
+            effect_extent: None,
+            anchor_block_index: Some(0),
+            anchor_text: Some("first anchor".to_string()),
+            anchor_char_offset: Some(0),
+            extent: Some(ShapeExtent {
+                cx_emu: 254_000,
+                cy_emu: 254_000,
+            }),
+            horizontal_position: None,
+            vertical_position: Some(ShapePosition {
+                relative_from: Some("page".to_string()),
+                offset_emu: None,
+                align: Some("center".to_string()),
+            }),
+            relative_height: None,
+            behind_doc: Some(false),
+            layout_in_cell: Some(false),
+            locked: None,
+            allow_overlap: None,
+            distance: crate::ShapeDistance::default(),
+            wrapping: Some(crate::ShapeWrapping {
+                kind: "topAndBottom".to_string(),
+                text: None,
+                distance: crate::ShapeDistance::default(),
+                polygon: Vec::new(),
+            }),
+        };
+        let mut final_shape = shape.clone();
+        final_shape.id = "final-section-wrap".to_string();
+        final_shape.anchor_block_index = Some(2);
+        final_shape.anchor_text = Some("final anchor".to_string());
+        let bands = super::top_bottom_bands_by_block(
+            &model,
+            &[shape, final_shape],
+            Geom::from_setup(&final_page),
+        );
+
+        assert_close(bands[0][0].top, 40.0);
+        assert_close(bands[0][0].bottom, 60.0);
+        assert_close(bands[2][0].top, 90.0);
+        assert_close(bands[2][0].bottom, 110.0);
+    }
+
+    #[test]
     fn keep_lines_moves_a_bounded_paragraph_to_a_fresh_page() {
         let geom = Geom::from_setup(&PageSetup {
             width_pt: 220.0,
@@ -13819,16 +16828,25 @@ mod tests {
             FlowItem::Line(LineLayout {
                 height: 20.0,
                 baseline: 15.0,
+                clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
                 cell_cant_split_group: None,
+                cell_visual: None,
+                leaders: Vec::new(),
                 runs: Vec::new(),
             })
         };
         let first = SectionSetup {
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
             header: vec![para("first section", None)],
             ..SectionSetup::default()
         };
@@ -13853,6 +16871,166 @@ mod tests {
         assert_eq!(
             block_text(&pagination.page_sections[2].as_ref().unwrap().setup.header),
             "final section"
+        );
+    }
+
+    #[test]
+    fn section_break_uses_ending_section_vertical_geometry() {
+        let first = SectionSetup {
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 220.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let line = || {
+            FlowItem::Line(LineLayout {
+                height: 20.0,
+                baseline: 15.0,
+                clip_to_height: false,
+                x_indent: 0.0,
+                char_range: None,
+                background: None,
+                cell_spacing: Default::default(),
+                cell_paragraph: None,
+                cell_cant_split_group: None,
+                cell_visual: None,
+                leaders: Vec::new(),
+                runs: Vec::new(),
+            })
+        };
+        let mut items = (0..5).map(|_| line()).collect::<Vec<_>>();
+        items.push(FlowItem::SectionBreak(first));
+
+        let pagination = paginate(items, Geom::from_setup(&final_setup.page), &final_setup);
+
+        assert_eq!(pagination.pages.len(), 3);
+    }
+
+    #[test]
+    fn section_break_uses_ending_section_horizontal_geometry() {
+        let first = SectionSetup {
+            page: PageSetup {
+                width_pt: 140.0,
+                height_pt: 220.0,
+                margin_pt: 20.0,
+                margin_left_pt: Some(10.0),
+                margin_right_pt: Some(30.0),
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            page: PageSetup {
+                width_pt: 300.0,
+                height_pt: 140.0,
+                margin_pt: 20.0,
+                margin_left_pt: Some(40.0),
+                margin_right_pt: Some(20.0),
+                landscape: true,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(20.0),
+            FlowItem::SectionBreak(first),
+            pagination_line(20.0),
+        ];
+        let geometries =
+            super::section_geometries_by_item(&items, Geom::from_setup(&final_setup.page));
+
+        assert_close(geometries[0].page_w, 140.0);
+        assert_close(geometries[0].left, 10.0);
+        assert_close(geometries[0].right, 30.0);
+        assert_close(geometries[1].page_w, 140.0);
+        assert_close(geometries[2].page_w, 300.0);
+        assert_close(geometries[2].left, 40.0);
+        assert_close(geometries[2].right, 20.0);
+    }
+
+    #[test]
+    fn body_paragraphs_shape_to_their_section_page_width() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let narrow_page = PageSetup {
+            width_pt: 140.0,
+            height_pt: 220.0,
+            margin_pt: 20.0,
+            margin_left_pt: Some(10.0),
+            margin_right_pt: Some(30.0),
+            ..PageSetup::default()
+        };
+        let wide_page = PageSetup {
+            width_pt: 300.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            margin_left_pt: Some(40.0),
+            margin_right_pt: Some(20.0),
+            landscape: true,
+            ..PageSetup::default()
+        };
+        let text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi";
+        let model = DocModel {
+            blocks: vec![
+                para(text, None),
+                Block::SectionBreak(SectionSetup {
+                    page: narrow_page,
+                    ..SectionSetup::default()
+                }),
+                para(text, None),
+            ],
+            setup: crate::model::DocSetup {
+                page: wide_page,
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let geom = Geom::from_setup(&wide_page);
+        let mut capture = LayoutCapture::default();
+        let items = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            &[],
+            None,
+        );
+        let section_break = items
+            .iter()
+            .position(|item| matches!(item, FlowItem::SectionBreak(_)))
+            .expect("section break flow item");
+        let narrow_lines = items[..section_break]
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+        let wide_lines = items[section_break + 1..]
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+
+        assert!(
+            narrow_lines > wide_lines,
+            "narrow section should wrap more: narrow={narrow_lines}, wide={wide_lines}"
         );
     }
 
@@ -13920,6 +17098,74 @@ mod tests {
         assert!(pagination.pages[0]
             .iter()
             .any(|placed| matches!(&placed.item, FlowItem::Line(_)) && placed.x > 90.0));
+    }
+
+    #[test]
+    fn explicit_final_column_gap_shapes_to_the_placed_column_width() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let model = DocModel {
+            blocks: vec![para(
+                "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi",
+                None,
+            )],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let geom = Geom::from_setup(&page);
+        let mut capture = LayoutCapture::default();
+        let default_items = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            &[],
+            None,
+        );
+        let default_lines = default_items
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+
+        let hints = super::SourceRenderHints {
+            final_section_column_gap_pt: Some(40.0),
+            ..super::SourceRenderHints::default()
+        };
+        let mut capture = LayoutCapture::default();
+        let explicit_items =
+            super::collect_pdf_flow_items(&model, geom, &mut tcx, &mut capture, hints, &[], None);
+        let explicit_lines = explicit_items
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+        let setup = SectionSetup::from(&model.setup);
+        let pagination =
+            paginate_with_column_gap(explicit_items, geom, &setup, Some(40.0), None, false);
+
+        assert!(explicit_lines > default_lines);
+        assert!(pagination.pages[0].iter().any(|placed| {
+            matches!(&placed.item, FlowItem::Line(_))
+                && (placed.width - 70.0).abs() < 0.1
+                && (placed.x - 110.0).abs() < 0.1
+        }));
     }
 
     fn block_text(blocks: &[Block]) -> String {
@@ -14310,6 +17556,636 @@ mod tests {
             ..DocModel::default()
         };
         assert!(super::to_pdf(&bad).starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn renders_rasters_and_authored_charts_inside_body_and_running_table_cells() {
+        let image = Image {
+            bytes: Some([0, 64, 128, 255].repeat(80 * 40)),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(80),
+            height_px: Some(40),
+            rotation_degrees: Some(90),
+            ..Image::default()
+        };
+        let chart = Chart {
+            categories: vec!["A".to_string(), "B".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![1.0, 3.0],
+                ..ChartSeries::default()
+            }],
+            width_px: Some(120),
+            height_px: Some(80),
+            ..Chart::default()
+        };
+        let table = |blocks| {
+            Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks,
+                        valign: VCell::Center,
+                        ..Cell::default()
+                    }],
+                }],
+                border_size_eighths: Some(8),
+                ..Table::default()
+            })
+        };
+        let body_model = |blocks| DocModel {
+            blocks: vec![table(blocks)],
+            ..DocModel::default()
+        };
+        let running_model = |blocks| DocModel {
+            setup: crate::model::DocSetup {
+                header: vec![table(blocks)],
+                ..crate::model::DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let inline_image = vec![Block::Paragraph(Paragraph {
+            runs: vec![Run {
+                image: Some(image.clone()),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        })];
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let render = |model: &DocModel| super::to_pdf_with_fonts(model, &fonts);
+
+        let body_baseline_model = body_model(Vec::new());
+        let body_image_model = body_model(vec![Block::Image(image.clone())]);
+        let body_inline_model = body_model(inline_image.clone());
+        let body_chart_model = body_model(vec![Block::Chart(chart.clone())]);
+        let body_baseline = render(&body_baseline_model);
+        let body_image = render(&body_image_model);
+        let body_inline = render(&body_inline_model);
+        let body_chart = render(&body_chart_model);
+        assert_ne!(body_image, body_baseline, "block cell raster was dropped");
+        assert_ne!(body_inline, body_baseline, "inline cell raster was dropped");
+        assert_ne!(body_chart, body_baseline, "cell chart was dropped");
+        assert_ne!(body_image, body_inline);
+        assert_ne!(body_image, body_chart);
+        assert_ne!(body_inline, body_chart);
+
+        let running_baseline_model = running_model(Vec::new());
+        let running_image_model = running_model(vec![Block::Image(image)]);
+        let running_inline_model = running_model(inline_image);
+        let running_chart_model = running_model(vec![Block::Chart(chart)]);
+        let running_baseline = render(&running_baseline_model);
+        let running_image = render(&running_image_model);
+        let running_inline = render(&running_inline_model);
+        let running_chart = render(&running_chart_model);
+        assert_ne!(
+            running_image, running_baseline,
+            "running cell raster was dropped"
+        );
+        assert_ne!(
+            running_inline, running_baseline,
+            "running inline cell raster was dropped"
+        );
+        assert_ne!(
+            running_chart, running_baseline,
+            "running cell chart was dropped"
+        );
+        assert_eq!(body_image, render(&body_image_model));
+        assert_eq!(body_inline, render(&body_inline_model));
+        assert_eq!(body_chart, render(&body_chart_model));
+        assert_eq!(running_image, render(&running_image_model));
+        assert_eq!(running_inline, render(&running_inline_model));
+        assert_eq!(running_chart, render(&running_chart_model));
+    }
+
+    #[test]
+    fn table_cell_media_preserve_source_order_bounds_and_atomic_row_splits() {
+        let image = Image {
+            bytes: Some([16, 64, 128, 255].repeat(200 * 100)),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(200),
+            height_px: Some(100),
+            rotation_degrees: Some(90),
+            ..Image::default()
+        };
+        let chart = Chart {
+            categories: vec!["A".to_string(), "B".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![2.0, 5.0],
+                ..ChartSeries::default()
+            }],
+            width_px: Some(300),
+            height_px: Some(200),
+            ..Chart::default()
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        para("before", None),
+                        Block::Image(image.clone()),
+                        Block::Chart(chart),
+                        Block::Paragraph(Paragraph {
+                            runs: vec![Run {
+                                text: "after".to_string(),
+                                image: Some(image),
+                                ..Run::default()
+                            }],
+                            ..Paragraph::default()
+                        }),
+                    ],
+                    margins: Some(CellMargins {
+                        top: 100,
+                        right: 100,
+                        bottom: 100,
+                        left: 100,
+                    }),
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        let row = rows.remove(0);
+        let cell = &row.cells[0];
+
+        assert_eq!(cell.lines.len(), 5);
+        assert_eq!(shaped_line_text(&cell.lines[0]), "before");
+        assert!(matches!(
+            cell.lines[1].cell_visual,
+            Some(super::CellVisual::Picture { .. })
+        ));
+        assert!(matches!(
+            cell.lines[2].cell_visual,
+            Some(super::CellVisual::Chart { .. })
+        ));
+        assert_eq!(shaped_line_text(&cell.lines[3]), "after");
+        assert!(matches!(
+            cell.lines[4].cell_visual,
+            Some(super::CellVisual::Picture { .. })
+        ));
+
+        let inner_width = cell.width - cell.insets.left - cell.insets.right;
+        let max_visual_height = geom.bottom() - geom.top() - cell.insets.top - cell.insets.bottom;
+        let Some(super::CellVisual::Picture { layout, .. }) = &cell.lines[1].cell_visual else {
+            unreachable!()
+        };
+        assert_eq!(layout.rotation_degrees, 90);
+        assert!(layout.bounds_w <= inner_width);
+        assert_close(layout.bounds_h, max_visual_height);
+        let block_picture_height = layout.bounds_h;
+        let Some(super::CellVisual::Chart { layout, .. }) = &cell.lines[2].cell_visual else {
+            unreachable!()
+        };
+        assert!(layout.bounds_w <= inner_width);
+        assert_close(layout.bounds_h, max_visual_height);
+        let Some(super::CellVisual::Picture { layout, .. }) = &cell.lines[4].cell_visual else {
+            unreachable!()
+        };
+        assert!(layout.bounds_w <= inner_width);
+        assert_close(layout.bounds_h + super::PARA_GAP, max_visual_height);
+        assert_close(
+            row.height,
+            super::cell_lines_extent(&cell.lines) + cell.insets.top + cell.insets.bottom,
+        );
+
+        let first_budget = cell.insets.top
+            + cell.lines[0].cell_extent()
+            + block_picture_height * 0.5
+            + cell.insets.bottom;
+        let (first, rest) = split_row(row, first_budget);
+        assert_eq!(first.cells[0].lines.len(), 1);
+        let rest = rest.expect("media remains after the first split");
+        assert_eq!(rest.cells[0].lines.len(), 4);
+        let picture_budget = rest.cells[0].lines[0].cell_extent() + rest.cells[0].insets.bottom;
+        let (picture, rest) = split_row(rest, picture_budget);
+        assert_eq!(picture.cells[0].lines.len(), 1);
+        let Some(super::CellVisual::Picture { layout, .. }) =
+            &picture.cells[0].lines[0].cell_visual
+        else {
+            panic!("the second fragment must retain the complete picture")
+        };
+        assert_close(layout.bounds_h, block_picture_height);
+        assert_eq!(rest.expect("later records remain").cells[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn repeated_header_refits_atomic_cell_media_to_the_remaining_page_box() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("header image"), cell("header chart")],
+                },
+                Row {
+                    cells: vec![
+                        Cell {
+                            blocks: vec![Block::Image(Image {
+                                bytes: Some([16, 64, 128, 255].repeat(200 * 100)),
+                                mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+                                width_px: Some(200),
+                                height_px: Some(100),
+                                rotation_degrees: Some(90),
+                                ..Image::default()
+                            })],
+                            margins: Some(CellMargins {
+                                top: 100,
+                                right: 100,
+                                bottom: 100,
+                                left: 100,
+                            }),
+                            ..Cell::default()
+                        },
+                        Cell {
+                            blocks: vec![Block::Chart(Chart {
+                                categories: vec!["A".to_string(), "B".to_string()],
+                                series: vec![ChartSeries {
+                                    name: "Series".to_string(),
+                                    values: vec![1.0, 3.0],
+                                    ..ChartSeries::default()
+                                }],
+                                width_px: Some(80),
+                                height_px: Some(300),
+                                ..Chart::default()
+                            })],
+                            margins: Some(CellMargins {
+                                top: 100,
+                                right: 100,
+                                bottom: 100,
+                                left: 100,
+                            }),
+                            ..Cell::default()
+                        },
+                    ],
+                },
+            ],
+            header_rows: 1,
+            ..Table::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let pagination = paginate(flow, geom, &SectionSetup::default());
+
+        assert_eq!(pagination.pages.len(), 2);
+        let body = pagination.pages[1]
+            .iter()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some((placed.top, row)),
+                _ => None,
+            })
+            .next_back()
+            .expect("second page contains the body row after its repeated header");
+        let picture_line = &body.1.cells[0].lines[0];
+        let Some(super::CellVisual::Picture {
+            layout: picture_layout,
+            ..
+        }) = &picture_line.cell_visual
+        else {
+            panic!("body row retains its picture")
+        };
+        let picture_height =
+            body.1.height - body.1.cells[0].insets.top - body.1.cells[0].insets.bottom;
+        assert!(picture_layout.bounds_h <= picture_height);
+        let chart_line = &body.1.cells[1].lines[0];
+        let Some(super::CellVisual::Chart {
+            layout: chart_layout,
+            ..
+        }) = &chart_line.cell_visual
+        else {
+            panic!("body row retains its chart")
+        };
+        let chart_height =
+            body.1.height - body.1.cells[1].insets.top - body.1.cells[1].insets.bottom;
+        assert!(chart_layout.bounds_h <= chart_height);
+        assert!(body.0 + body.1.height <= geom.bottom());
+    }
+
+    #[test]
+    fn page_filling_table_header_is_not_repeated_ahead_of_body_rows() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Image(Image {
+                            bytes: Some([16, 64, 128, 255].repeat(200 * 100)),
+                            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+                            width_px: Some(200),
+                            height_px: Some(100),
+                            rotation_degrees: Some(90),
+                            ..Image::default()
+                        })],
+                        margins: Some(CellMargins {
+                            top: 100,
+                            right: 100,
+                            bottom: 100,
+                            left: 100,
+                        }),
+                        ..Cell::default()
+                    }],
+                },
+                Row {
+                    cells: vec![cell("body")],
+                },
+            ],
+            header_rows: 1,
+            ..Table::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let pagination = paginate(flow, geom, &SectionSetup::default());
+
+        assert_eq!(pagination.pages.len(), 2);
+        let second_page_rows = pagination.pages[1]
+            .iter()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some((placed.top, row)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(second_page_rows.len(), 1);
+        let (top, body) = second_page_rows[0];
+        assert!(body.height > 0.0);
+        assert_eq!(shaped_line_text(&body.cells[0].lines[0]), "body");
+        assert!(top + body.height <= geom.bottom());
+    }
+
+    #[test]
+    fn table_cells_skip_missing_and_undecodable_media_and_empty_charts() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let lines = shape_cell(
+            &Cell {
+                blocks: vec![
+                    Block::Image(Image::default()),
+                    Block::Image(Image {
+                        bytes: Some(vec![1, 2, 3]),
+                        mime: Some("image/png".to_string()),
+                        ..Image::default()
+                    }),
+                    Block::Image(Image {
+                        bytes: Some(vec![0, 0, 0, 255]),
+                        mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+                        width_px: Some(2),
+                        height_px: Some(2),
+                        ..Image::default()
+                    }),
+                    Block::Chart(Chart::default()),
+                ],
+                ..Cell::default()
+            },
+            160.0,
+            0,
+            &mut tcx,
+            &mut capture,
+        );
+
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn renders_block_and_inline_images_in_running_surface_bands() {
+        let image = Image {
+            bytes: Some([0, 64, 128, 255].repeat(16)),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(4),
+            height_px: Some(4),
+            ..Image::default()
+        };
+        let baseline = super::to_pdf(&DocModel::default());
+        let header_model = DocModel {
+            setup: crate::model::DocSetup {
+                header: vec![Block::Image(image.clone())],
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let footer_model = DocModel {
+            setup: crate::model::DocSetup {
+                footer: vec![Block::Paragraph(Paragraph {
+                    runs: vec![Run {
+                        image: Some(image),
+                        ..Run::default()
+                    }],
+                    ..Paragraph::default()
+                })],
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+
+        let header = super::to_pdf(&header_model);
+        let footer = super::to_pdf(&footer_model);
+        assert_ne!(header, baseline);
+        assert_ne!(footer, baseline);
+        assert_ne!(header, footer);
+        assert_eq!(header, super::to_pdf(&header_model));
+        assert_eq!(footer, super::to_pdf(&footer_model));
+    }
+
+    #[test]
+    fn running_surface_table_rows_clip_without_paginating_body() {
+        let first_row = Row {
+            cells: vec![Cell {
+                blocks: vec![para("clipped header row", None)],
+                shading: Some(Color {
+                    r: 0xFF,
+                    g: 0xE6,
+                    b: 0x99,
+                }),
+                ..Cell::default()
+            }],
+        };
+        let table = |include_second_row| Table {
+            rows: if include_second_row {
+                vec![
+                    first_row.clone(),
+                    Row {
+                        cells: vec![cell("must remain outside the clipped band")],
+                    },
+                ]
+            } else {
+                vec![first_row.clone()]
+            },
+            border_color: Some(Color {
+                r: 0x80,
+                g: 0x40,
+                b: 0x00,
+            }),
+            border_size_eighths: Some(8),
+            ..Table::default()
+        };
+        let model = |header| DocModel {
+            blocks: vec![para("body stays on its original page", None)],
+            setup: crate::model::DocSetup {
+                page: PageSetup {
+                    width_pt: 200.0,
+                    height_pt: 160.0,
+                    margin_pt: 30.0,
+                    ..PageSetup::default()
+                },
+                header,
+                ..crate::model::DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let baseline = super::to_pdf_with_fonts_and_report(
+            &model(Vec::new()),
+            &fonts,
+            FeatureInventory::default(),
+        );
+        let clipped = model(vec![Block::Table(table(false))]);
+        let clipped_render =
+            super::to_pdf_with_fonts_and_report(&clipped, &fonts, FeatureInventory::default());
+        let extra_row_render = super::to_pdf_with_fonts_and_report(
+            &model(vec![Block::Table(table(true))]),
+            &fonts,
+            FeatureInventory::default(),
+        );
+
+        assert_eq!(baseline.report.pages, 1);
+        assert_eq!(clipped_render.report.pages, 1);
+        assert_eq!(extra_row_render.report.pages, 1);
+        assert_ne!(clipped_render.pdf, baseline.pdf);
+        assert_eq!(
+            clipped_render.pdf, extra_row_render.pdf,
+            "rows after an over-tall first row must not paint outside the header band"
+        );
+        assert_eq!(
+            clipped_render.pdf,
+            super::to_pdf_with_fonts_and_report(&clipped, &fonts, FeatureInventory::default()).pdf
+        );
+    }
+
+    #[test]
+    fn running_surface_paragraph_gaps_are_bounded_and_do_not_paginate_body() {
+        let running_paragraph = |text: &str, before_pt| {
+            let Block::Paragraph(mut paragraph) = para(text, None) else {
+                unreachable!()
+            };
+            paragraph.props.spacing = Spacing {
+                before_pt: Some(before_pt),
+                after_pt: Some(0.0),
+                ..Spacing::default()
+            };
+            Block::Paragraph(paragraph)
+        };
+        let model = |header, footer| DocModel {
+            blocks: vec![para("body stays on its original page", None)],
+            setup: crate::model::DocSetup {
+                page: PageSetup {
+                    width_pt: 200.0,
+                    height_pt: 200.0,
+                    margin_pt: 60.0,
+                    ..PageSetup::default()
+                },
+                header,
+                footer,
+                page_numbers: true,
+                ..crate::model::DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let paired = |second_gap| {
+            vec![
+                running_paragraph("FIRST", 0.0),
+                running_paragraph("SECOND", second_gap),
+            ]
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let render = |model: &DocModel| {
+            super::to_pdf_with_fonts_and_report(model, &fonts, FeatureInventory::default())
+        };
+        let baseline = model(paired(0.0), paired(0.0));
+        let header_gap = model(paired(10.0), paired(0.0));
+        let footer_gap = model(paired(0.0), paired(10.0));
+        let overflow_first = model(vec![running_paragraph("HEADER", 0.0)], Vec::new());
+        let overflow_gap = model(
+            vec![
+                running_paragraph("HEADER", 0.0),
+                running_paragraph("HEADER", 100.0),
+            ],
+            Vec::new(),
+        );
+
+        let baseline_render = render(&baseline);
+        let header_render = render(&header_gap);
+        let footer_render = render(&footer_gap);
+        let overflow_first_render = render(&overflow_first);
+        let overflow_gap_render = render(&overflow_gap);
+        for rendered in [
+            &baseline_render,
+            &header_render,
+            &footer_render,
+            &overflow_first_render,
+            &overflow_gap_render,
+        ] {
+            assert_eq!(rendered.report.pages, 1);
+        }
+        assert_ne!(header_render.pdf, baseline_render.pdf);
+        assert_ne!(footer_render.pdf, baseline_render.pdf);
+        assert_ne!(header_render.pdf, footer_render.pdf);
+        assert_eq!(overflow_gap_render.pdf, overflow_first_render.pdf);
+        assert_eq!(header_render.pdf, render(&header_gap).pdf);
+        assert_eq!(footer_render.pdf, render(&footer_gap).pdf);
     }
 
     #[test]

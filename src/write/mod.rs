@@ -11,7 +11,7 @@
 mod docx;
 mod opc;
 
-pub(crate) use docx::{to_docx, try_to_docx};
+pub(crate) use docx::{to_docx, to_docx_with_source_hints, try_to_docx, SourceWriteHints};
 
 fn is_xml_legal_char(c: char) -> bool {
     matches!(c, '\t' | '\n' | '\r')

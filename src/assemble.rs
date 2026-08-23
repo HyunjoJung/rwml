@@ -17,9 +17,21 @@ use crate::fib::{self, Fib};
 use crate::list::Numberer;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocGrid, DocGridType, DocMeta, DocModel,
-    DocSetup, FieldRole, Image, Indent, ListInfo, PageNumberFormat, PageSetup, PaginationHint,
-    ParaProps, Paragraph, SectionBreakKind, SectionSetup, SourceRegion, SourceRegionKind, Spacing,
-    Stats, TableCellPaginationHints, TableRowPaginationHint, TextDirection,
+    DocSetup, FieldRole, Image, Indent, LineSpacingHint, ListInfo, PageNumberFormat, PageSetup,
+    PaginationHint, ParaProps, Paragraph, RunningSurfaceDistanceHints, SectionBreakKind,
+    SectionColumnHint, SectionColumnLayoutHints, SectionSetup, SourceRegion, SourceRegionKind,
+    Spacing, Stats, TableCellLineSpacingHints, TableCellPaginationHints, TableRowPaginationHint,
+    TextDirection,
+};
+#[cfg(feature = "docx")]
+use crate::model::{
+    RunningBlockPaginationHints, RunningSurfaceColumnBreakHints, RunningSurfacePaginationHints,
+    TableCellColumnBreakHints,
+};
+#[cfg(any(feature = "docx", feature = "render"))]
+use crate::model::{
+    RunningSurfaceLineSpacingHints, RunningSurfaceTabStopHints,
+    RunningSurfaceTableCellTabStopHints, TabStop, TableCellTabStopHints,
 };
 use crate::papx::{
     PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
@@ -53,6 +65,7 @@ struct RegionSpec {
     source_len_cp: usize,
     source_story_index: Option<usize>,
     include_empty: bool,
+    suppress_terminal_page_break: bool,
 }
 
 /// Parsed structures needed to build the model, passed to [`build_model`].
@@ -72,9 +85,52 @@ pub(crate) struct BuildInputs<'a> {
 
 pub(crate) struct LegacyBuildOutput {
     pub(crate) model: DocModel,
+    #[cfg(feature = "docx")]
+    pub(crate) promoted_running_block_ranges: Vec<(usize, usize)>,
     pub(crate) pagination_hints: Vec<PaginationHint>,
+    pub(crate) line_spacing_hints: Vec<Option<LineSpacingHint>>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub(crate) tab_stops: Vec<Vec<TabStop>>,
+    #[cfg(feature = "render")]
+    pub(crate) render_tab_stops: Vec<Vec<TabStop>>,
+    #[cfg(feature = "docx")]
+    pub(crate) note_reference_anchors: Vec<Vec<LegacyNoteReferenceAnchor>>,
+    pub(crate) column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(feature = "docx")]
+    pub(crate) table_cell_column_break_offsets: Vec<TableCellColumnBreakHints>,
+    pub(crate) section_column_gap_pt: Vec<Option<f32>>,
+    pub(crate) final_section_column_gap_pt: Option<f32>,
+    pub(crate) section_column_layouts: Vec<Option<SectionColumnLayoutHints>>,
+    pub(crate) final_section_column_layout: Option<SectionColumnLayoutHints>,
+    pub(crate) section_column_separators: Vec<bool>,
+    pub(crate) final_section_column_separator: bool,
+    pub(crate) section_column_rtl: Vec<bool>,
+    pub(crate) final_section_column_rtl: bool,
     pub(crate) table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     pub(crate) table_cell_pagination: Vec<TableCellPaginationHints>,
+    pub(crate) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub(crate) table_cell_tab_stops: Vec<TableCellTabStopHints>,
+    #[cfg(feature = "render")]
+    pub(crate) render_table_cell_tab_stops: Vec<TableCellTabStopHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub(crate) running_line_spacing_hints: Vec<RunningSurfaceLineSpacingHints>,
+    #[cfg(feature = "docx")]
+    pub(crate) running_pagination_hints: Vec<RunningSurfacePaginationHints>,
+    #[cfg(feature = "docx")]
+    pub(crate) running_column_break_offsets: Vec<RunningSurfaceColumnBreakHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub(crate) running_tab_stops: Vec<RunningSurfaceTabStopHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub(crate) running_table_cell_tab_stops: Vec<RunningSurfaceTableCellTabStopHints>,
+    pub(crate) running_surface_distances: Vec<RunningSurfaceDistanceHints>,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LegacyNoteReferenceAnchor {
+    pub(crate) source_cp: usize,
+    pub(crate) text_offset: usize,
 }
 
 pub(crate) fn build_model_with_render_hints(
@@ -110,14 +166,80 @@ pub(crate) fn build_model_with_render_hints(
     let LegacyRegionOutput {
         blocks,
         regions,
-        pagination_hints,
-        table_row_pagination,
-        table_cell_pagination,
+        mut pagination_hints,
+        mut line_spacing_hints,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        tab_stops,
+        #[cfg(feature = "render")]
+        note_tab_stops,
+        #[cfg(feature = "docx")]
+        note_reference_anchors,
+        column_break_offsets,
+        #[cfg(feature = "docx")]
+        table_cell_column_break_offsets,
+        mut table_row_pagination,
+        mut table_cell_pagination,
+        mut table_cell_line_spacing,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        table_cell_tab_stops,
+        #[cfg(feature = "render")]
+        note_table_cell_tab_stops,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        running_tab_regions,
+        #[cfg(feature = "docx")]
+        running_column_break_regions,
         text_start: _,
     } = build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
+    #[cfg(any(feature = "docx", feature = "render"))]
+    let running_line_spacing_hints = legacy_running_line_spacing_from_regions(
+        &blocks,
+        &regions,
+        &line_spacing_hints,
+        &table_cell_line_spacing,
+    );
+    #[cfg(feature = "docx")]
+    let running_pagination_hints = legacy_running_pagination_from_regions(
+        &blocks,
+        &regions,
+        &pagination_hints,
+        &table_row_pagination,
+        &table_cell_pagination,
+    );
+    #[cfg(feature = "docx")]
+    let running_column_break_offsets =
+        legacy_running_column_breaks_from_regions(&blocks, &running_column_break_regions);
+    clear_legacy_running_layout_hints(
+        &blocks,
+        &regions,
+        &mut pagination_hints,
+        &mut line_spacing_hints,
+        &mut table_row_pagination,
+        &mut table_cell_pagination,
+        &mut table_cell_line_spacing,
+    );
+    #[cfg(any(feature = "docx", feature = "render"))]
+    let (running_tab_stops, running_table_cell_tab_stops) =
+        legacy_running_tab_stops_from_regions(&blocks, &running_tab_regions);
+    #[cfg(feature = "render")]
+    let render_tab_stops = overlay_aligned_nonempty(&tab_stops, &note_tab_stops);
+    #[cfg(feature = "render")]
+    let render_table_cell_tab_stops =
+        overlay_aligned_nonempty(&table_cell_tab_stops, &note_table_cell_tab_stops);
     let mut blocks = blocks;
     let stats = compute_stats(&blocks);
-    let setup = legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
+    let (setup, promoted_running_block_ranges) =
+        legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
+    #[cfg(not(feature = "docx"))]
+    let _ = promoted_running_block_ranges;
+    let (section_column_gap_pt, final_section_column_gap_pt) =
+        legacy_section_column_gap_hints(&blocks, &section_spans);
+    let (section_column_layouts, final_section_column_layout) =
+        legacy_section_column_layout_hints(&blocks, &section_spans);
+    let (section_column_separators, final_section_column_separator) =
+        legacy_section_column_separator_hints(&blocks, &section_spans);
+    let (section_column_rtl, final_section_column_rtl) =
+        legacy_section_column_rtl_hints(&blocks, &section_spans);
+    let running_surface_distances = legacy_running_surface_distance_hints(&section_spans);
     LegacyBuildOutput {
         model: DocModel {
             blocks,
@@ -131,17 +253,136 @@ pub(crate) fn build_model_with_render_hints(
             custom_xml_items: Vec::new(),
             setup,
         },
+        #[cfg(feature = "docx")]
+        promoted_running_block_ranges,
         pagination_hints,
+        line_spacing_hints,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        tab_stops,
+        #[cfg(feature = "render")]
+        render_tab_stops,
+        #[cfg(feature = "docx")]
+        note_reference_anchors,
+        column_break_offsets,
+        #[cfg(feature = "docx")]
+        table_cell_column_break_offsets,
+        section_column_gap_pt,
+        final_section_column_gap_pt,
+        section_column_layouts,
+        final_section_column_layout,
+        section_column_separators,
+        final_section_column_separator,
+        section_column_rtl,
+        final_section_column_rtl,
         table_row_pagination,
         table_cell_pagination,
+        table_cell_line_spacing,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        table_cell_tab_stops,
+        #[cfg(feature = "render")]
+        render_table_cell_tab_stops,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        running_line_spacing_hints,
+        #[cfg(feature = "docx")]
+        running_pagination_hints,
+        #[cfg(feature = "docx")]
+        running_column_break_offsets,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        running_tab_stops,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        running_table_cell_tab_stops,
+        running_surface_distances,
     }
+}
+
+fn legacy_running_surface_distance_hints(
+    section_spans: &[LegacySectionSpan],
+) -> Vec<RunningSurfaceDistanceHints> {
+    section_spans
+        .iter()
+        .map(|span| RunningSurfaceDistanceHints {
+            header_pt: span.header_distance_pt,
+            footer_pt: span.footer_distance_pt,
+        })
+        .collect()
+}
+
+fn legacy_section_column_gap_hints(
+    blocks: &[Block],
+    section_spans: &[LegacySectionSpan],
+) -> (Vec<Option<f32>>, Option<f32>) {
+    let mut hints = vec![None; blocks.len()];
+    let mut ending_sections = section_spans.iter();
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            hints[index] = ending_sections.next().and_then(|span| span.column_gap_pt);
+        }
+    }
+    let final_gap = section_spans.last().and_then(|span| span.column_gap_pt);
+    (hints, final_gap)
+}
+
+fn legacy_section_column_layout_hints(
+    blocks: &[Block],
+    section_spans: &[LegacySectionSpan],
+) -> (
+    Vec<Option<SectionColumnLayoutHints>>,
+    Option<SectionColumnLayoutHints>,
+) {
+    let mut hints = vec![None; blocks.len()];
+    let mut ending_sections = section_spans.iter();
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            hints[index] = ending_sections
+                .next()
+                .and_then(|span| span.column_layout.clone());
+        }
+    }
+    let final_layout = section_spans
+        .last()
+        .and_then(|span| span.column_layout.clone());
+    (hints, final_layout)
+}
+
+fn legacy_section_column_separator_hints(
+    blocks: &[Block],
+    section_spans: &[LegacySectionSpan],
+) -> (Vec<bool>, bool) {
+    let mut hints = vec![false; blocks.len()];
+    let mut ending_sections = section_spans.iter();
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            hints[index] = ending_sections
+                .next()
+                .is_some_and(|span| span.column_separator);
+        }
+    }
+    let final_separator = section_spans
+        .last()
+        .is_some_and(|span| span.column_separator);
+    (hints, final_separator)
+}
+
+fn legacy_section_column_rtl_hints(
+    blocks: &[Block],
+    section_spans: &[LegacySectionSpan],
+) -> (Vec<bool>, bool) {
+    let mut hints = vec![false; blocks.len()];
+    let mut ending_sections = section_spans.iter();
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            hints[index] = ending_sections.next().is_some_and(|span| span.column_rtl);
+        }
+    }
+    let final_rtl = section_spans.last().is_some_and(|span| span.column_rtl);
+    (hints, final_rtl)
 }
 
 fn legacy_doc_setup_from_regions(
     blocks: &mut [Block],
     regions: &[SourceRegion],
     section_spans: &[LegacySectionSpan],
-) -> DocSetup {
+) -> (DocSetup, Vec<(usize, usize)>) {
     let section_count = blocks
         .iter()
         .filter(|block| matches!(block, Block::SectionBreak(_)))
@@ -155,7 +396,7 @@ fn legacy_doc_setup_from_regions(
             section_spans,
         );
     }
-    let mut setup = legacy_doc_flat_setup_from_regions(blocks, regions);
+    let (mut setup, promoted_ranges) = legacy_doc_flat_setup_from_regions(blocks, regions);
     if let [span] = section_spans {
         setup.page = span.page;
         setup.columns = span.columns;
@@ -165,11 +406,15 @@ fn legacy_doc_setup_from_regions(
         setup.text_direction = span.text_direction;
         setup.doc_grid = span.doc_grid;
     }
-    setup
+    (setup, promoted_ranges)
 }
 
-fn legacy_doc_flat_setup_from_regions(blocks: &[Block], regions: &[SourceRegion]) -> DocSetup {
+fn legacy_doc_flat_setup_from_regions(
+    blocks: &[Block],
+    regions: &[SourceRegion],
+) -> (DocSetup, Vec<(usize, usize)>) {
     let mut setup = DocSetup::default();
+    let mut promoted_ranges = Vec::new();
     for region in regions.iter().filter(|region| {
         region.kind == SourceRegionKind::HeaderFooter && region.block_start < region.block_end
     }) {
@@ -179,10 +424,11 @@ fn legacy_doc_flat_setup_from_regions(blocks: &[Block], regions: &[SourceRegion]
             let slot = legacy_header_footer_setup_slot(&mut setup, region.source_story_index);
             if slot.is_empty() {
                 *slot = blocks[start..end].to_vec();
+                promoted_ranges.push((start, end));
             }
         }
     }
-    setup
+    (setup, promoted_ranges)
 }
 
 fn legacy_doc_section_setups_from_regions(
@@ -190,8 +436,9 @@ fn legacy_doc_section_setups_from_regions(
     regions: &[SourceRegion],
     section_count: usize,
     section_spans: &[LegacySectionSpan],
-) -> DocSetup {
+) -> (DocSetup, Vec<(usize, usize)>) {
     let mut section_setups = vec![SectionSetup::default(); section_count];
+    let mut promoted_ranges = Vec::new();
     for (setup, span) in section_setups.iter_mut().zip(section_spans) {
         setup.page = span.page;
         setup.columns = span.columns;
@@ -211,10 +458,15 @@ fn legacy_doc_section_setups_from_regions(
             continue;
         }
         if region.source_story_index.is_none() {
+            let mut promoted = false;
             for section_setup in &mut section_setups {
                 if section_setup.header.is_empty() {
                     section_setup.header = blocks[start..end].to_vec();
+                    promoted = true;
                 }
+            }
+            if promoted {
+                promoted_ranges.push((start, end));
             }
             continue;
         }
@@ -232,6 +484,7 @@ fn legacy_doc_section_setups_from_regions(
         };
         if slot.is_empty() {
             *slot = blocks[start..end].to_vec();
+            promoted_ranges.push((start, end));
         }
     }
 
@@ -251,7 +504,7 @@ fn legacy_doc_section_setups_from_regions(
     if let Some(final_section) = section_setups.last() {
         apply_legacy_section_setup_to_doc_setup(final_section, &mut setup);
     }
-    setup
+    (setup, promoted_ranges)
 }
 
 fn apply_legacy_section_setup_to_doc_setup(section: &SectionSetup, setup: &mut DocSetup) {
@@ -308,6 +561,7 @@ fn build_legacy_region_blocks(
                         source_len_cp: story.end_cp.saturating_sub(story.start_cp),
                         source_story_index: Some(story.story_index),
                         include_empty: false,
+                        suppress_terminal_page_break: false,
                     },
                 );
             }
@@ -322,6 +576,7 @@ fn build_legacy_region_blocks(
                     source_len_cp,
                     source_story_index: None,
                     include_empty: kind == SourceRegionKind::Main,
+                    suppress_terminal_page_break: false,
                 },
             );
         }
@@ -350,6 +605,7 @@ fn push_legacy_main_section_regions(
                 source_len_cp: span.end_cp.saturating_sub(span.start_cp),
                 source_story_index: None,
                 include_empty: true,
+                suppress_terminal_page_break: index + 1 < section_spans.len(),
             },
         );
         if index + 1 < section_spans.len() {
@@ -361,8 +617,23 @@ fn push_legacy_main_section_regions(
                     span.columns,
                 )));
             output.pagination_hints.push(PaginationHint::default());
+            output.line_spacing_hints.push(None);
+            #[cfg(any(feature = "docx", feature = "render"))]
+            output.tab_stops.push(Vec::new());
+            #[cfg(feature = "render")]
+            output.note_tab_stops.push(Vec::new());
+            #[cfg(feature = "docx")]
+            output.note_reference_anchors.push(Vec::new());
+            output.column_break_offsets.push(Vec::new());
+            #[cfg(feature = "docx")]
+            output.table_cell_column_break_offsets.push(Vec::new());
             output.table_row_pagination.push(Vec::new());
             output.table_cell_pagination.push(Vec::new());
+            output.table_cell_line_spacing.push(Vec::new());
+            #[cfg(any(feature = "docx", feature = "render"))]
+            output.table_cell_tab_stops.push(Vec::new());
+            #[cfg(feature = "render")]
+            output.note_table_cell_tab_stops.push(Vec::new());
         }
     }
 }
@@ -392,6 +663,7 @@ fn push_legacy_region(
         source_len_cp,
         source_story_index,
         include_empty,
+        suppress_terminal_page_break,
     } = spec;
     let block_start = output.blocks.len();
     let actual_start = source_start_cp.min(src.units.len()).min(src.fcs.len());
@@ -409,28 +681,121 @@ fn push_legacy_region(
             numberer,
         );
         asm.prm1_patches = src.prm1_patches;
+        asm.suppress_terminal_page_break = suppress_terminal_page_break;
         let prm_start = actual_start.min(src.prms.len());
         let prm_end = actual_end.min(src.prms.len());
         asm.run_with_prms(
             &src.units[actual_start..actual_end],
             &src.fcs[actual_start..actual_end],
             &src.prms[prm_start..prm_end],
+            actual_start,
         );
         asm.finish_with_render_hints()
     } else {
         LegacyBlockOutput::default()
     };
     let text_len = compute_stats(&region_output.blocks).text_chars;
+    if kind == SourceRegionKind::Main {
+        region_output = promote_legacy_manual_page_breaks(region_output);
+    }
+    #[cfg(feature = "render")]
+    let mut note_tab_stops =
+        if matches!(kind, SourceRegionKind::Footnote | SourceRegionKind::Endnote) {
+            std::mem::take(&mut region_output.tab_stops)
+        } else {
+            vec![Vec::new(); region_output.blocks.len()]
+        };
+    #[cfg(feature = "render")]
+    let mut note_table_cell_tab_stops =
+        if matches!(kind, SourceRegionKind::Footnote | SourceRegionKind::Endnote) {
+            std::mem::take(&mut region_output.table_cell_tab_stops)
+        } else {
+            vec![Vec::new(); region_output.blocks.len()]
+        };
+    #[cfg(feature = "docx")]
+    let mut note_reference_anchors = if kind == SourceRegionKind::Main {
+        std::mem::take(&mut region_output.note_reference_anchors)
+    } else {
+        vec![Vec::new(); region_output.blocks.len()]
+    };
+    #[cfg(any(feature = "docx", feature = "render"))]
+    let running_tab_region = (kind == SourceRegionKind::HeaderFooter
+        && !region_output.blocks.is_empty())
+    .then(|| LegacyRunningTabRegion {
+        source_story_index,
+        tab_stops: std::mem::take(&mut region_output.tab_stops),
+        table_cell_tab_stops: std::mem::take(&mut region_output.table_cell_tab_stops),
+    });
+    #[cfg(feature = "docx")]
+    let running_column_break_region = (kind == SourceRegionKind::HeaderFooter
+        && !region_output.blocks.is_empty())
+    .then(|| LegacyRunningColumnBreakRegion {
+        source_story_index,
+        column_break_offsets: std::mem::take(&mut region_output.column_break_offsets),
+    });
+    #[cfg(any(feature = "docx", feature = "render"))]
+    if kind != SourceRegionKind::Main {
+        region_output.tab_stops = vec![Vec::new(); region_output.blocks.len()];
+        region_output.table_cell_tab_stops = vec![Vec::new(); region_output.blocks.len()];
+    }
+    let mut column_break_offsets = if kind == SourceRegionKind::Main {
+        std::mem::take(&mut region_output.column_break_offsets)
+    } else {
+        vec![Vec::new(); region_output.blocks.len()]
+    };
+    #[cfg(feature = "docx")]
+    let mut table_cell_column_break_offsets = if kind == SourceRegionKind::Main {
+        std::mem::take(&mut region_output.table_cell_column_break_offsets)
+    } else {
+        vec![Vec::new(); region_output.blocks.len()]
+    };
     output.blocks.append(&mut region_output.blocks);
     output
         .pagination_hints
         .append(&mut region_output.pagination_hints);
+    output
+        .line_spacing_hints
+        .append(&mut region_output.line_spacing_hints);
+    #[cfg(any(feature = "docx", feature = "render"))]
+    output.tab_stops.append(&mut region_output.tab_stops);
+    #[cfg(feature = "render")]
+    output.note_tab_stops.append(&mut note_tab_stops);
+    #[cfg(feature = "docx")]
+    output
+        .note_reference_anchors
+        .append(&mut note_reference_anchors);
+    output
+        .column_break_offsets
+        .append(&mut column_break_offsets);
+    #[cfg(feature = "docx")]
+    output
+        .table_cell_column_break_offsets
+        .append(&mut table_cell_column_break_offsets);
     output
         .table_row_pagination
         .append(&mut region_output.table_row_pagination);
     output
         .table_cell_pagination
         .append(&mut region_output.table_cell_pagination);
+    output
+        .table_cell_line_spacing
+        .append(&mut region_output.table_cell_line_spacing);
+    #[cfg(any(feature = "docx", feature = "render"))]
+    output
+        .table_cell_tab_stops
+        .append(&mut region_output.table_cell_tab_stops);
+    #[cfg(feature = "render")]
+    output
+        .note_table_cell_tab_stops
+        .append(&mut note_table_cell_tab_stops);
+    #[cfg(any(feature = "docx", feature = "render"))]
+    if let Some(region) = running_tab_region {
+        output.running_tab_regions.push(region);
+    }
+    #[cfg(feature = "docx")]
+    if let Some(region) = running_column_break_region {
+        output.running_column_break_regions.push(region);
+    }
     let block_end = output.blocks.len();
 
     if source_len_cp > 0 || include_empty {
@@ -454,9 +819,58 @@ struct LegacyRegionOutput {
     blocks: Vec<Block>,
     regions: Vec<SourceRegion>,
     pagination_hints: Vec<PaginationHint>,
+    line_spacing_hints: Vec<Option<LineSpacingHint>>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    tab_stops: Vec<Vec<TabStop>>,
+    #[cfg(feature = "render")]
+    note_tab_stops: Vec<Vec<TabStop>>,
+    #[cfg(feature = "docx")]
+    note_reference_anchors: Vec<Vec<LegacyNoteReferenceAnchor>>,
+    column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(feature = "docx")]
+    table_cell_column_break_offsets: Vec<TableCellColumnBreakHints>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
+    table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    table_cell_tab_stops: Vec<TableCellTabStopHints>,
+    #[cfg(feature = "render")]
+    note_table_cell_tab_stops: Vec<TableCellTabStopHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    running_tab_regions: Vec<LegacyRunningTabRegion>,
+    #[cfg(feature = "docx")]
+    running_column_break_regions: Vec<LegacyRunningColumnBreakRegion>,
     text_start: usize,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+struct LegacyRunningTabRegion {
+    source_story_index: Option<usize>,
+    tab_stops: Vec<Vec<TabStop>>,
+    table_cell_tab_stops: Vec<TableCellTabStopHints>,
+}
+
+#[cfg(feature = "docx")]
+struct LegacyRunningColumnBreakRegion {
+    source_story_index: Option<usize>,
+    column_break_offsets: Vec<Vec<usize>>,
+}
+
+#[cfg(feature = "render")]
+fn overlay_aligned_nonempty<T: Clone>(base: &[Vec<T>], overlay: &[Vec<T>]) -> Vec<Vec<T>> {
+    if base.len() != overlay.len() {
+        return base.to_vec();
+    }
+    base.iter()
+        .zip(overlay)
+        .map(|(base, overlay)| {
+            if overlay.is_empty() {
+                base.clone()
+            } else {
+                overlay.clone()
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -469,12 +883,20 @@ struct HeaderStoryRange {
 const HEADER_FOOTER_STORY_BASE: usize = 6;
 const FIB_FCLCB_PLCF_SED: usize = 6;
 const SED_RECORD_LEN: usize = 12;
+const MAX_LEGACY_SECTION_COLUMNS: usize = 44;
+const SPRM_S_DXA_COL_WIDTH: u16 = 0xF203;
+const SPRM_S_DXA_COL_SPACING: u16 = 0xF204;
 const SPRM_S_F_EVENLY_SPACED: u16 = 0x3005;
 const SPRM_S_BKC: u16 = 0x3009;
 const SPRM_S_F_TITLE_PAGE: u16 = 0x300A;
 const SPRM_S_C_COLUMNS: u16 = 0x500B;
+const SPRM_S_DXA_COLUMNS: u16 = 0x900C;
 const SPRM_S_NFC_PGN: u16 = 0x300E;
 const SPRM_S_F_PGN_RESTART: u16 = 0x3011;
+const SPRM_S_L_BETWEEN: u16 = 0x3019;
+const SPRM_S_F_BIDI: u16 = 0x3228;
+const SPRM_S_DYA_HDR_TOP: u16 = 0xB017;
+const SPRM_S_DYA_HDR_BOTTOM: u16 = 0xB018;
 const SPRM_S_PGN_START_97: u16 = 0x501C;
 const SPRM_S_B_ORIENTATION: u16 = 0x301D;
 const SPRM_S_XA_PAGE: u16 = 0xB01F;
@@ -532,6 +954,469 @@ fn legacy_header_footer_section_index(story_index: Option<usize>) -> Option<usiz
         .map(|index| index / 6)
 }
 
+#[cfg(feature = "docx")]
+fn legacy_running_pagination_from_regions(
+    blocks: &[Block],
+    regions: &[SourceRegion],
+    pagination_hints: &[PaginationHint],
+    table_row_pagination: &[Vec<TableRowPaginationHint>],
+    table_cell_pagination: &[TableCellPaginationHints],
+) -> Vec<RunningSurfacePaginationHints> {
+    debug_assert_eq!(blocks.len(), pagination_hints.len());
+    debug_assert_eq!(blocks.len(), table_row_pagination.len());
+    debug_assert_eq!(blocks.len(), table_cell_pagination.len());
+    let section_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count()
+        .saturating_add(1);
+    let mut sections = vec![RunningSurfacePaginationHints::default(); section_count];
+
+    for region in regions.iter().filter(|region| {
+        region.kind == SourceRegionKind::HeaderFooter && region.block_start < region.block_end
+    }) {
+        let start = region.block_start.min(blocks.len());
+        let end = region.block_end.min(blocks.len());
+        let Some(paragraphs) = pagination_hints.get(start..end).map(|hints| hints.to_vec()) else {
+            continue;
+        };
+        let Some(table_rows) = table_row_pagination
+            .get(start..end)
+            .map(|hints| hints.to_vec())
+        else {
+            continue;
+        };
+        let Some(table_cells) = table_cell_pagination
+            .get(start..end)
+            .map(|hints| hints.to_vec())
+        else {
+            continue;
+        };
+        if paragraphs.is_empty() {
+            continue;
+        }
+        let captured = RunningBlockPaginationHints {
+            paragraphs,
+            table_rows,
+            table_cells,
+        };
+
+        if section_count == 1 {
+            let slot = legacy_running_pagination_slot(&mut sections[0], region.source_story_index);
+            if slot.paragraphs.is_empty() {
+                *slot = captured;
+            }
+            continue;
+        }
+        if region.source_story_index.is_none() {
+            for section in &mut sections {
+                if section.header.paragraphs.is_empty() {
+                    section.header = captured.clone();
+                }
+            }
+            continue;
+        }
+        let Some(section_index) = legacy_header_footer_section_index(region.source_story_index)
+        else {
+            continue;
+        };
+        let Some(section) = sections.get_mut(section_index) else {
+            continue;
+        };
+        let Some(slot) = legacy_running_pagination_section_slot(section, region.source_story_index)
+        else {
+            continue;
+        };
+        if slot.paragraphs.is_empty() {
+            *slot = captured;
+        }
+    }
+
+    sections
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_pagination_slot(
+    hints: &mut RunningSurfacePaginationHints,
+    story_index: Option<usize>,
+) -> &mut RunningBlockPaginationHints {
+    match legacy_header_footer_story_position(story_index) {
+        Some(0) => &mut hints.even_header,
+        Some(1) | None => &mut hints.header,
+        Some(2) => &mut hints.even_footer,
+        Some(3) => &mut hints.footer,
+        Some(4) => &mut hints.first_header,
+        _ => &mut hints.first_footer,
+    }
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_pagination_section_slot(
+    hints: &mut RunningSurfacePaginationHints,
+    story_index: Option<usize>,
+) -> Option<&mut RunningBlockPaginationHints> {
+    match legacy_header_footer_story_position(story_index)? {
+        0 => Some(&mut hints.even_header),
+        1 => Some(&mut hints.header),
+        2 => Some(&mut hints.even_footer),
+        3 => Some(&mut hints.footer),
+        4 => Some(&mut hints.first_header),
+        _ => Some(&mut hints.first_footer),
+    }
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_column_breaks_from_regions(
+    blocks: &[Block],
+    regions: &[LegacyRunningColumnBreakRegion],
+) -> Vec<RunningSurfaceColumnBreakHints> {
+    let section_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count()
+        .saturating_add(1);
+    let mut sections = vec![RunningSurfaceColumnBreakHints::default(); section_count];
+
+    for region in regions
+        .iter()
+        .filter(|region| !region.column_break_offsets.is_empty())
+    {
+        if section_count == 1 {
+            let slot =
+                legacy_running_column_break_slot(&mut sections[0], region.source_story_index);
+            if slot.is_empty() {
+                *slot = region.column_break_offsets.clone();
+            }
+            continue;
+        }
+        if region.source_story_index.is_none() {
+            for section in &mut sections {
+                if section.header.is_empty() {
+                    section.header = region.column_break_offsets.clone();
+                }
+            }
+            continue;
+        }
+        let Some(section_index) = legacy_header_footer_section_index(region.source_story_index)
+        else {
+            continue;
+        };
+        let Some(section) = sections.get_mut(section_index) else {
+            continue;
+        };
+        let Some(slot) =
+            legacy_running_column_break_section_slot(section, region.source_story_index)
+        else {
+            continue;
+        };
+        if slot.is_empty() {
+            *slot = region.column_break_offsets.clone();
+        }
+    }
+
+    sections
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_column_break_slot(
+    hints: &mut RunningSurfaceColumnBreakHints,
+    story_index: Option<usize>,
+) -> &mut Vec<Vec<usize>> {
+    match legacy_header_footer_story_position(story_index) {
+        Some(0) => &mut hints.even_header,
+        Some(1) | None => &mut hints.header,
+        Some(2) => &mut hints.even_footer,
+        Some(3) => &mut hints.footer,
+        Some(4) => &mut hints.first_header,
+        _ => &mut hints.first_footer,
+    }
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_column_break_section_slot(
+    hints: &mut RunningSurfaceColumnBreakHints,
+    story_index: Option<usize>,
+) -> Option<&mut Vec<Vec<usize>>> {
+    match legacy_header_footer_story_position(story_index)? {
+        0 => Some(&mut hints.even_header),
+        1 => Some(&mut hints.header),
+        2 => Some(&mut hints.even_footer),
+        3 => Some(&mut hints.footer),
+        4 => Some(&mut hints.first_header),
+        _ => Some(&mut hints.first_footer),
+    }
+}
+
+fn clear_legacy_running_layout_hints(
+    blocks: &[Block],
+    regions: &[SourceRegion],
+    pagination_hints: &mut [PaginationHint],
+    line_spacing_hints: &mut [Option<LineSpacingHint>],
+    table_row_pagination: &mut [Vec<TableRowPaginationHint>],
+    table_cell_pagination: &mut [TableCellPaginationHints],
+    table_cell_line_spacing: &mut [TableCellLineSpacingHints],
+) {
+    for region in regions
+        .iter()
+        .filter(|region| region.kind == SourceRegionKind::HeaderFooter)
+    {
+        let start = region.block_start.min(blocks.len());
+        let end = region.block_end.min(blocks.len());
+        for index in start..end {
+            if let Some(hint) = pagination_hints.get_mut(index) {
+                *hint = PaginationHint {
+                    widow_control: true,
+                    ..PaginationHint::default()
+                };
+            }
+            if let Some(hint) = line_spacing_hints.get_mut(index) {
+                *hint = None;
+            }
+            if let Some(rows) = table_row_pagination.get_mut(index) {
+                for row in rows {
+                    row.cant_split = false;
+                }
+            }
+            if let Some(rows) = table_cell_pagination.get_mut(index) {
+                for cells in rows {
+                    for blocks in cells {
+                        for paragraph in blocks {
+                            *paragraph = None;
+                        }
+                    }
+                }
+            }
+            if let Some(rows) = table_cell_line_spacing.get_mut(index) {
+                for cells in rows {
+                    for blocks in cells {
+                        for paragraph in blocks {
+                            *paragraph = None;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn legacy_running_line_spacing_from_regions(
+    blocks: &[Block],
+    regions: &[SourceRegion],
+    line_spacing_hints: &[Option<LineSpacingHint>],
+    table_cell_line_spacing: &[TableCellLineSpacingHints],
+) -> Vec<RunningSurfaceLineSpacingHints> {
+    debug_assert_eq!(blocks.len(), line_spacing_hints.len());
+    debug_assert_eq!(blocks.len(), table_cell_line_spacing.len());
+    let section_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count()
+        .saturating_add(1);
+    let mut sections = vec![RunningSurfaceLineSpacingHints::default(); section_count];
+
+    for region in regions.iter().filter(|region| {
+        region.kind == SourceRegionKind::HeaderFooter && region.block_start < region.block_end
+    }) {
+        let start = region.block_start.min(blocks.len());
+        let end = region.block_end.min(blocks.len());
+        let Some(spacing) = line_spacing_hints
+            .get(start..end)
+            .map(|slice| slice.to_vec())
+        else {
+            continue;
+        };
+        let Some(table_cell_spacing) = table_cell_line_spacing
+            .get(start..end)
+            .map(|slice| slice.to_vec())
+        else {
+            continue;
+        };
+        if spacing.is_empty() {
+            continue;
+        }
+
+        if section_count == 1 {
+            let (slot, table_cell_slot) =
+                legacy_running_line_spacing_slots(&mut sections[0], region.source_story_index);
+            if slot.is_empty() {
+                *slot = spacing;
+                *table_cell_slot = table_cell_spacing;
+            }
+            continue;
+        }
+        if region.source_story_index.is_none() {
+            for section in &mut sections {
+                if section.header.is_empty() {
+                    section.header = spacing.clone();
+                    section.header_table_cells = table_cell_spacing.clone();
+                }
+            }
+            continue;
+        }
+        let Some(section_index) = legacy_header_footer_section_index(region.source_story_index)
+        else {
+            continue;
+        };
+        let Some(section) = sections.get_mut(section_index) else {
+            continue;
+        };
+        let Some((slot, table_cell_slot)) =
+            legacy_running_line_spacing_section_slots(section, region.source_story_index)
+        else {
+            continue;
+        };
+        if slot.is_empty() {
+            *slot = spacing;
+            *table_cell_slot = table_cell_spacing;
+        }
+    }
+
+    sections
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn legacy_running_line_spacing_slots(
+    hints: &mut RunningSurfaceLineSpacingHints,
+    story_index: Option<usize>,
+) -> (
+    &mut Vec<Option<LineSpacingHint>>,
+    &mut Vec<TableCellLineSpacingHints>,
+) {
+    let Some(position) = legacy_header_footer_story_position(story_index) else {
+        return (&mut hints.header, &mut hints.header_table_cells);
+    };
+    match position {
+        0 => (&mut hints.even_header, &mut hints.even_header_table_cells),
+        1 => (&mut hints.header, &mut hints.header_table_cells),
+        2 => (&mut hints.even_footer, &mut hints.even_footer_table_cells),
+        3 => (&mut hints.footer, &mut hints.footer_table_cells),
+        4 => (&mut hints.first_header, &mut hints.first_header_table_cells),
+        _ => (&mut hints.first_footer, &mut hints.first_footer_table_cells),
+    }
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn legacy_running_line_spacing_section_slots(
+    hints: &mut RunningSurfaceLineSpacingHints,
+    story_index: Option<usize>,
+) -> Option<(
+    &mut Vec<Option<LineSpacingHint>>,
+    &mut Vec<TableCellLineSpacingHints>,
+)> {
+    match legacy_header_footer_story_position(story_index)? {
+        0 => Some((&mut hints.even_header, &mut hints.even_header_table_cells)),
+        1 => Some((&mut hints.header, &mut hints.header_table_cells)),
+        2 => Some((&mut hints.even_footer, &mut hints.even_footer_table_cells)),
+        3 => Some((&mut hints.footer, &mut hints.footer_table_cells)),
+        4 => Some((&mut hints.first_header, &mut hints.first_header_table_cells)),
+        _ => Some((&mut hints.first_footer, &mut hints.first_footer_table_cells)),
+    }
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn legacy_running_tab_stops_from_regions(
+    blocks: &[Block],
+    regions: &[LegacyRunningTabRegion],
+) -> (
+    Vec<RunningSurfaceTabStopHints>,
+    Vec<RunningSurfaceTableCellTabStopHints>,
+) {
+    let section_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count()
+        .saturating_add(1);
+    let mut paragraph_sections = vec![RunningSurfaceTabStopHints::default(); section_count];
+    let mut table_sections = vec![RunningSurfaceTableCellTabStopHints::default(); section_count];
+
+    for region in regions.iter().filter(|region| !region.tab_stops.is_empty()) {
+        debug_assert_eq!(region.tab_stops.len(), region.table_cell_tab_stops.len());
+        if section_count == 1 {
+            let (paragraph_slot, table_slot) = legacy_running_tab_slots(
+                &mut paragraph_sections[0],
+                &mut table_sections[0],
+                region.source_story_index,
+            );
+            if paragraph_slot.is_empty() {
+                *paragraph_slot = region.tab_stops.clone();
+                *table_slot = region.table_cell_tab_stops.clone();
+            }
+            continue;
+        }
+
+        if region.source_story_index.is_none() {
+            for (paragraph, table) in paragraph_sections.iter_mut().zip(&mut table_sections) {
+                if paragraph.header.is_empty() {
+                    paragraph.header = region.tab_stops.clone();
+                    table.header = region.table_cell_tab_stops.clone();
+                }
+            }
+            continue;
+        }
+        let Some(section_index) = legacy_header_footer_section_index(region.source_story_index)
+        else {
+            continue;
+        };
+        let Some((paragraph, table)) = paragraph_sections
+            .get_mut(section_index)
+            .zip(table_sections.get_mut(section_index))
+        else {
+            continue;
+        };
+        let Some((paragraph_slot, table_slot)) =
+            legacy_running_tab_section_slots(paragraph, table, region.source_story_index)
+        else {
+            continue;
+        };
+        if paragraph_slot.is_empty() {
+            *paragraph_slot = region.tab_stops.clone();
+            *table_slot = region.table_cell_tab_stops.clone();
+        }
+    }
+
+    (paragraph_sections, table_sections)
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn legacy_running_tab_slots<'a>(
+    paragraph: &'a mut RunningSurfaceTabStopHints,
+    table: &'a mut RunningSurfaceTableCellTabStopHints,
+    story_index: Option<usize>,
+) -> (
+    &'a mut Vec<Vec<TabStop>>,
+    &'a mut Vec<TableCellTabStopHints>,
+) {
+    match legacy_header_footer_story_position(story_index) {
+        Some(0) => (&mut paragraph.even_header, &mut table.even_header),
+        Some(1) => (&mut paragraph.header, &mut table.header),
+        Some(2) => (&mut paragraph.even_footer, &mut table.even_footer),
+        Some(3) => (&mut paragraph.footer, &mut table.footer),
+        Some(4) => (&mut paragraph.first_header, &mut table.first_header),
+        Some(_) => (&mut paragraph.first_footer, &mut table.first_footer),
+        None => (&mut paragraph.header, &mut table.header),
+    }
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn legacy_running_tab_section_slots<'a>(
+    paragraph: &'a mut RunningSurfaceTabStopHints,
+    table: &'a mut RunningSurfaceTableCellTabStopHints,
+    story_index: Option<usize>,
+) -> Option<(
+    &'a mut Vec<Vec<TabStop>>,
+    &'a mut Vec<TableCellTabStopHints>,
+)> {
+    match legacy_header_footer_story_position(story_index)? {
+        0 => Some((&mut paragraph.even_header, &mut table.even_header)),
+        1 => Some((&mut paragraph.header, &mut table.header)),
+        2 => Some((&mut paragraph.even_footer, &mut table.even_footer)),
+        3 => Some((&mut paragraph.footer, &mut table.footer)),
+        4 => Some((&mut paragraph.first_header, &mut table.first_header)),
+        _ => Some((&mut paragraph.first_footer, &mut table.first_footer)),
+    }
+}
+
 fn header_footer_story_ranges(fib: &Fib, table: &[u8]) -> Vec<HeaderStoryRange> {
     if fib.ccp_hdd == 0 || fib.lcb_plcf_hdd < 12 {
         return Vec::new();
@@ -563,29 +1448,41 @@ fn header_footer_story_ranges(fib: &Fib, table: &[u8]) -> Vec<HeaderStoryRange> 
     stories
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct LegacySectionSpan {
     start_cp: usize,
     end_cp: usize,
     page: PageSetup,
     columns: Option<u16>,
+    column_gap_pt: Option<f32>,
+    column_layout: Option<SectionColumnLayoutHints>,
+    column_separator: bool,
+    column_rtl: bool,
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
     text_direction: Option<TextDirection>,
     doc_grid: Option<DocGrid>,
+    header_distance_pt: Option<f32>,
+    footer_distance_pt: Option<f32>,
     section_break: SectionBreakKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct LegacySectionProperties {
     page: PageSetup,
     columns: Option<u16>,
+    column_gap_pt: Option<f32>,
+    column_layout: Option<SectionColumnLayoutHints>,
+    column_separator: bool,
+    column_rtl: bool,
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
     text_direction: Option<TextDirection>,
     doc_grid: Option<DocGrid>,
+    header_distance_pt: Option<f32>,
+    footer_distance_pt: Option<f32>,
     section_break: SectionBreakKind,
 }
 
@@ -648,11 +1545,17 @@ fn parse_legacy_section_spans(
             end_cp: bounded_end_cp,
             page: properties.page,
             columns: properties.columns,
+            column_gap_pt: properties.column_gap_pt,
+            column_layout: properties.column_layout,
+            column_separator: properties.column_separator,
+            column_rtl: properties.column_rtl,
             title_page: properties.title_page,
             page_number_start: properties.page_number_start,
             page_number_format: properties.page_number_format,
             text_direction: properties.text_direction,
             doc_grid: properties.doc_grid,
+            header_distance_pt: properties.header_distance_pt,
+            footer_distance_pt: properties.footer_distance_pt,
             section_break: properties.section_break,
         });
     }
@@ -682,6 +1585,9 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
     let mut properties = legacy_section_properties_default();
     // [MS-DOC] 2.6.4 defaults to equal spacing and stores the count minus one.
     let mut column_count = None;
+    let mut column_gap_pt = None;
+    let mut column_width_twips = [None; MAX_LEGACY_SECTION_COLUMNS];
+    let mut column_spacing_twips = [None; MAX_LEGACY_SECTION_COLUMNS];
     let mut columns_evenly_spaced = true;
     let mut page_number_restart = false;
     let mut page_number_start = None;
@@ -698,6 +1604,22 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
         let operand = grpprl.get(operand_start..operand_end)?;
 
         match sprm {
+            SPRM_S_DXA_COL_WIDTH => {
+                let index = usize::from(*operand.first()?);
+                if index < MAX_LEGACY_SECTION_COLUMNS {
+                    if let Some(value @ 718..=31_680) = u16le(operand, 1) {
+                        column_width_twips[index] = Some(value);
+                    }
+                }
+            }
+            SPRM_S_DXA_COL_SPACING => {
+                let index = usize::from(*operand.first()?);
+                if index < MAX_LEGACY_SECTION_COLUMNS {
+                    if let Some(value @ 0..=31_680) = u16le(operand, 1) {
+                        column_spacing_twips[index] = Some(value);
+                    }
+                }
+            }
             SPRM_S_F_EVENLY_SPACED => match operand.first().copied() {
                 Some(0) => columns_evenly_spaced = false,
                 Some(1) => columns_evenly_spaced = true,
@@ -720,6 +1642,12 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
                     column_count = value.checked_add(1);
                 }
             }
+            SPRM_S_DXA_COLUMNS => {
+                let value = u16le(operand, 0)? as i16;
+                if (0..=31_680).contains(&value) {
+                    column_gap_pt = Some(f32::from(value) / 20.0);
+                }
+            }
             SPRM_S_NFC_PGN => {
                 if let Some(format) = operand.first().copied().and_then(legacy_page_number_format) {
                     properties.page_number_format = Some(format);
@@ -730,6 +1658,26 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
                 Some(1) => page_number_restart = true,
                 _ => {}
             },
+            SPRM_S_L_BETWEEN => match operand.first().copied() {
+                Some(0) => properties.column_separator = false,
+                Some(1) => properties.column_separator = true,
+                _ => {}
+            },
+            SPRM_S_F_BIDI => match operand.first().copied() {
+                Some(0) => properties.column_rtl = false,
+                Some(1) => properties.column_rtl = true,
+                _ => {}
+            },
+            SPRM_S_DYA_HDR_TOP => {
+                if let Some(value @ 0..=31_680) = u16le(operand, 0) {
+                    properties.header_distance_pt = Some(twips_to_points(value));
+                }
+            }
+            SPRM_S_DYA_HDR_BOTTOM => {
+                if let Some(value @ 0..=31_680) = u16le(operand, 0) {
+                    properties.footer_distance_pt = Some(twips_to_points(value));
+                }
+            }
             SPRM_S_PGN_START_97 => {
                 if let Some(value) = u16le(operand, 0) {
                     page_number_start = Some(u32::from(value));
@@ -811,7 +1759,20 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
         }
         pos = operand_end;
     }
-    properties.columns = columns_evenly_spaced.then_some(column_count).flatten();
+    if columns_evenly_spaced {
+        properties.columns = column_count;
+        properties.column_gap_pt = column_count
+            .is_some_and(|count| count > 1)
+            .then_some(column_gap_pt)
+            .flatten();
+    } else if column_count == Some(1) {
+        properties.columns = Some(1);
+    } else if let Some(layout) =
+        legacy_custom_column_layout(column_count, &column_width_twips, &column_spacing_twips)
+    {
+        properties.columns = u16::try_from(layout.columns.len()).ok();
+        properties.column_layout = Some(layout);
+    }
     properties.page_number_start =
         page_number_restart.then_some(page_number_start.unwrap_or(0).max(1));
     properties.doc_grid = doc_grid_type
@@ -822,6 +1783,29 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
             character_space: doc_grid_character_space,
         });
     Some(properties)
+}
+
+fn legacy_custom_column_layout(
+    column_count: Option<u16>,
+    widths_twips: &[Option<u16>; MAX_LEGACY_SECTION_COLUMNS],
+    spacing_twips: &[Option<u16>; MAX_LEGACY_SECTION_COLUMNS],
+) -> Option<SectionColumnLayoutHints> {
+    let count = usize::from(column_count?);
+    if !(2..=MAX_LEGACY_SECTION_COLUMNS).contains(&count) {
+        return None;
+    }
+    let mut columns = Vec::with_capacity(count);
+    for index in 0..count {
+        columns.push(SectionColumnHint {
+            width_pt: twips_to_points(widths_twips[index]?),
+            space_after_pt: if index + 1 < count {
+                twips_to_points(spacing_twips[index].unwrap_or(0))
+            } else {
+                0.0
+            },
+        });
+    }
+    Some(SectionColumnLayoutHints { columns })
 }
 
 fn legacy_text_direction(text_flow: u16) -> Option<TextDirection> {
@@ -875,11 +1859,17 @@ fn legacy_section_properties_default() -> LegacySectionProperties {
     LegacySectionProperties {
         page: legacy_section_page_setup_default(),
         columns: None,
+        column_gap_pt: None,
+        column_layout: None,
+        column_separator: false,
+        column_rtl: false,
         title_page: false,
         page_number_start: None,
         page_number_format: None,
         text_direction: None,
         doc_grid: None,
+        header_distance_pt: None,
+        footer_distance_pt: None,
         section_break: SectionBreakKind::NextPage,
     }
 }
@@ -1046,8 +2036,20 @@ struct Asm<'a, 'l> {
 
     blocks: Vec<Block>,
     pagination_hints: Vec<PaginationHint>,
+    line_spacing_hints: Vec<Option<LineSpacingHint>>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    tab_stops: Vec<Vec<TabStop>>,
+    #[cfg(feature = "docx")]
+    note_reference_anchors: Vec<Vec<LegacyNoteReferenceAnchor>>,
+    column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(feature = "docx")]
+    table_cell_column_break_offsets: Vec<TableCellColumnBreakHints>,
+    page_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
+    table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    table_cell_tab_stops: Vec<TableCellTabStopHints>,
 
     // Current run being coalesced. `run_chp` is the (cheap, `Copy`) source the current
     // `run_props` was built from — comparing it per code unit avoids rebuilding the owned
@@ -1061,6 +2063,14 @@ struct Asm<'a, 'l> {
 
     // Current paragraph's runs.
     para_runs: Vec<Run_>,
+    para_text_chars: usize,
+    #[cfg(feature = "docx")]
+    para_note_reference_anchors: Vec<LegacyNoteReferenceAnchor>,
+    para_column_break_offsets: Vec<usize>,
+    para_page_break_offsets: Vec<usize>,
+
+    // A non-final PlcfSed range ends in a section mark, not a manual page break.
+    suppress_terminal_page_break: bool,
 
     // Table-building state.
     cur_rows: Vec<RowBuild>,
@@ -1069,6 +2079,11 @@ struct Asm<'a, 'l> {
     cur_row_cells: Vec<CellBuild>,
     cell_blocks: Vec<Block>,
     cell_pagination: Vec<Option<PaginationHint>>,
+    cell_line_spacing: Vec<Option<LineSpacingHint>>,
+    #[cfg(feature = "docx")]
+    cell_column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    cell_tab_stops: Vec<Vec<TabStop>>,
 
     // Field state. `field_stack` holds one entry per currently-open field
     // (`0x13`..`0x15`), each recording whether that field has passed its `0x14`
@@ -1138,10 +2153,41 @@ fn resolve_paragraph_spacing(source: ParagraphSpacingOverrides) -> Spacing {
         after_pt: Some(source.after_twips.unwrap_or(0) as f32 / 20.0),
         line_pct: match source.line {
             Some(ParagraphLineSpacing::ProportionalTwips(value)) => Some(value as f32 / 240.0),
-            Some(ParagraphLineSpacing::Unrepresentable) => None,
+            Some(
+                ParagraphLineSpacing::ExactTwips(_)
+                | ParagraphLineSpacing::AtLeastTwips(_)
+                | ParagraphLineSpacing::Unrepresentable,
+            ) => None,
             None => Some(1.0),
         },
     }
+}
+
+fn resolve_absolute_line_spacing(source: ParagraphSpacingOverrides) -> Option<LineSpacingHint> {
+    match source.line {
+        Some(ParagraphLineSpacing::ExactTwips(value)) => {
+            Some(LineSpacingHint::Exact(value as f32 / 20.0))
+        }
+        Some(ParagraphLineSpacing::AtLeastTwips(value)) => {
+            Some(LineSpacingHint::AtLeast(value as f32 / 20.0))
+        }
+        Some(
+            ParagraphLineSpacing::ProportionalTwips(_) | ParagraphLineSpacing::Unrepresentable,
+        )
+        | None => None,
+    }
+}
+
+struct CompletedLegacyParagraph {
+    paragraph: Paragraph,
+    pagination: PaginationHint,
+    line_spacing_hint: Option<LineSpacingHint>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    tab_stops: Vec<TabStop>,
+    #[cfg(feature = "docx")]
+    note_reference_anchors: Vec<LegacyNoteReferenceAnchor>,
+    column_break_offsets: Vec<usize>,
+    page_break_offsets: Vec<usize>,
 }
 
 impl<'a, 'l> Asm<'a, 'l> {
@@ -1163,19 +2209,42 @@ impl<'a, 'l> Asm<'a, 'l> {
             numberer,
             blocks: Vec::new(),
             pagination_hints: Vec::new(),
+            line_spacing_hints: Vec::new(),
+            #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stops: Vec::new(),
+            #[cfg(feature = "docx")]
+            note_reference_anchors: Vec::new(),
+            column_break_offsets: Vec::new(),
+            #[cfg(feature = "docx")]
+            table_cell_column_break_offsets: Vec::new(),
+            page_break_offsets: Vec::new(),
             table_row_pagination: Vec::new(),
             table_cell_pagination: Vec::new(),
+            table_cell_line_spacing: Vec::new(),
+            #[cfg(any(feature = "docx", feature = "render"))]
+            table_cell_tab_stops: Vec::new(),
             run_buf: Vec::new(),
             run_chp: Chp::default(),
             run_props: CharProps::default(),
             run_field: FieldRole::None,
             para_runs: Vec::new(),
+            para_text_chars: 0,
+            #[cfg(feature = "docx")]
+            para_note_reference_anchors: Vec::new(),
+            para_column_break_offsets: Vec::new(),
+            para_page_break_offsets: Vec::new(),
+            suppress_terminal_page_break: false,
             cur_rows: Vec::new(),
             cur_row_pagination: Vec::new(),
             cur_table_bidi_visual: None,
             cur_row_cells: Vec::new(),
             cell_blocks: Vec::new(),
             cell_pagination: Vec::new(),
+            cell_line_spacing: Vec::new(),
+            #[cfg(feature = "docx")]
+            cell_column_break_offsets: Vec::new(),
+            #[cfg(any(feature = "docx", feature = "render"))]
+            cell_tab_stops: Vec::new(),
             field_stack: Vec::new(),
             unseparated: 0,
             img_cache: HashMap::new(),
@@ -1214,13 +2283,15 @@ impl<'a, 'l> Asm<'a, 'l> {
 
     #[cfg(test)]
     fn run(&mut self, units: &[u16], fcs: &[u32]) {
-        self.run_with_prms(units, fcs, &[]);
+        self.run_with_prms(units, fcs, &[], 0);
     }
 
-    fn run_with_prms(&mut self, units: &[u16], fcs: &[u32], prms: &[u16]) {
+    fn run_with_prms(&mut self, units: &[u16], fcs: &[u32], prms: &[u16], source_cp_base: usize) {
         for (i, &u) in units.iter().enumerate() {
             let fc = fcs.get(i).copied().unwrap_or(0);
             let prm = prms.get(i).copied().unwrap_or(0);
+            let terminal_section_mark =
+                self.suppress_terminal_page_break && i + 1 == units.len() && u == 0x000C;
             match u {
                 FIELD_BEGIN => {
                     self.flush_run();
@@ -1252,7 +2323,13 @@ impl<'a, 'l> Asm<'a, 'l> {
                 PARA_MARK => self.end_paragraph(fc, false),
                 CELL_MARK => self.end_paragraph(fc, true),
                 0x0001 => self.picture(fc),
-                _ => self.push_content(u, fc, prm),
+                _ => self.push_content(
+                    u,
+                    fc,
+                    prm,
+                    terminal_section_mark,
+                    source_cp_base.saturating_add(i),
+                ),
             }
         }
     }
@@ -1324,7 +2401,27 @@ impl<'a, 'l> Asm<'a, 'l> {
 
     /// Append a content code unit to the current run, splitting the run when the
     /// character properties or field role change.
-    fn push_content(&mut self, u: u16, fc: u32, prm: u16) {
+    fn push_content(
+        &mut self,
+        u: u16,
+        fc: u32,
+        prm: u16,
+        terminal_section_mark: bool,
+        _source_cp: usize,
+    ) {
+        if terminal_section_mark {
+            return;
+        }
+        #[cfg(feature = "docx")]
+        if u == 0x0002 {
+            let buffered_chars = String::from_utf16_lossy(&self.run_buf).chars().count();
+            self.para_note_reference_anchors
+                .push(LegacyNoteReferenceAnchor {
+                    source_cp: _source_cp,
+                    text_offset: self.para_text_chars.saturating_add(buffered_chars),
+                });
+            return;
+        }
         // Map Word control characters to plain text; drop the unrenderable ones.
         let mapped: Option<u16> = match u {
             0x0B | 0x0C | 0x0E => Some(0x000A), // line / page / column break → newline
@@ -1336,6 +2433,8 @@ impl<'a, 'l> Asm<'a, 'l> {
             c => Some(c),
         };
         let Some(unit) = mapped else { return };
+        let is_column_break = u == 0x000E;
+        let is_page_break = u == 0x000C;
 
         let mut chp = self.chpx.chp_at(fc);
         chp.apply_pcd_prm(prm, self.prm1_patches);
@@ -1364,6 +2463,14 @@ impl<'a, 'l> Asm<'a, 'l> {
             };
             self.run_field = self.active_field_role();
         }
+        if is_page_break || (is_column_break && !chp.hidden) {
+            self.flush_run();
+            if is_page_break {
+                self.para_page_break_offsets.push(self.para_text_chars);
+            } else {
+                self.para_column_break_offsets.push(self.para_text_chars);
+            }
+        }
         self.run_buf.push(unit);
     }
 
@@ -1373,6 +2480,7 @@ impl<'a, 'l> Asm<'a, 'l> {
         }
         let text = String::from_utf16_lossy(&self.run_buf);
         self.run_buf.clear();
+        self.para_text_chars = self.para_text_chars.saturating_add(text.chars().count());
         self.para_runs.push(Run_ {
             text,
             props: self.run_props.clone(),
@@ -1389,9 +2497,14 @@ impl<'a, 'l> Asm<'a, 'l> {
     }
 
     /// Finalize the runs collected so far into a [`Paragraph`] with list info.
-    fn take_paragraph(&mut self, fc: u32) -> (Paragraph, PaginationHint) {
+    fn take_paragraph(&mut self, fc: u32) -> CompletedLegacyParagraph {
         self.flush_run();
         let runs = std::mem::take(&mut self.para_runs);
+        self.para_text_chars = 0;
+        #[cfg(feature = "docx")]
+        let note_reference_anchors = std::mem::take(&mut self.para_note_reference_anchors);
+        let column_break_offsets = std::mem::take(&mut self.para_column_break_offsets);
+        let page_break_offsets = std::mem::take(&mut self.para_page_break_offsets);
         let (ilfo, ilvl) = self.papx.list_at(fc);
         let list = if ilfo > 0 {
             self.numberer.label(ilfo, ilvl).map(|label| ListInfo {
@@ -1416,11 +2529,19 @@ impl<'a, 'l> Asm<'a, 'l> {
                 .apply(self.papx.paragraph_indent_overrides_at(fc)),
             bidi,
         );
-        let spacing = resolve_paragraph_spacing(
-            self.stylesheet
-                .paragraph_spacing(istd)
-                .apply(self.papx.paragraph_spacing_overrides_at(fc)),
-        );
+        let source_spacing = self
+            .stylesheet
+            .paragraph_spacing(istd)
+            .apply(self.papx.paragraph_spacing_overrides_at(fc));
+        let spacing = resolve_paragraph_spacing(source_spacing);
+        let line_spacing_hint = resolve_absolute_line_spacing(source_spacing);
+        #[cfg(any(feature = "docx", feature = "render"))]
+        let tab_stops = self
+            .stylesheet
+            .paragraph_tab_stops(istd)
+            .and_then(|inherited| self.papx.resolve_paragraph_tab_stops_at(fc, inherited))
+            .map(|stops| stops.into_iter().map(|stop| stop.to_model()).collect())
+            .unwrap_or_default();
         let source_pagination = self
             .stylesheet
             .paragraph_pagination(istd)
@@ -1488,22 +2609,57 @@ impl<'a, 'l> Asm<'a, 'l> {
             keep_lines: source_pagination.keep_lines,
             widow_control: source_pagination.widow_control,
         };
-        (paragraph, pagination)
+        CompletedLegacyParagraph {
+            paragraph,
+            pagination,
+            line_spacing_hint,
+            #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stops,
+            #[cfg(feature = "docx")]
+            note_reference_anchors,
+            column_break_offsets,
+            page_break_offsets,
+        }
     }
 
     /// Handle a paragraph (`0x0D`) or cell (`0x07`) mark: finalize the paragraph
     /// and route it into the body or the current table.
     fn end_paragraph(&mut self, fc: u32, is_cell_mark: bool) {
         let (in_table, ttp) = self.papx.at(fc);
-        let (para, pagination) = self.take_paragraph(fc);
+        let CompletedLegacyParagraph {
+            paragraph: para,
+            pagination,
+            line_spacing_hint,
+            #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stops,
+            #[cfg(feature = "docx")]
+            note_reference_anchors,
+            column_break_offsets,
+            page_break_offsets,
+        } = self.take_paragraph(fc);
 
         if !in_table {
             self.flush_table();
-            if !para.is_blank() {
+            if !para.is_blank()
+                || !column_break_offsets.is_empty()
+                || !page_break_offsets.is_empty()
+            {
                 self.blocks.push(Block::Paragraph(para));
                 self.pagination_hints.push(pagination);
+                self.line_spacing_hints.push(line_spacing_hint);
+                #[cfg(any(feature = "docx", feature = "render"))]
+                self.tab_stops.push(tab_stops);
+                #[cfg(feature = "docx")]
+                self.note_reference_anchors.push(note_reference_anchors);
+                self.column_break_offsets.push(column_break_offsets);
+                #[cfg(feature = "docx")]
+                self.table_cell_column_break_offsets.push(Vec::new());
+                self.page_break_offsets.push(page_break_offsets);
                 self.table_row_pagination.push(Vec::new());
                 self.table_cell_pagination.push(Vec::new());
+                self.table_cell_line_spacing.push(Vec::new());
+                #[cfg(any(feature = "docx", feature = "render"))]
+                self.table_cell_tab_stops.push(Vec::new());
             }
             return;
         }
@@ -1513,6 +2669,11 @@ impl<'a, 'l> Asm<'a, 'l> {
         if !is_cell_mark {
             self.cell_blocks.push(Block::Paragraph(para));
             self.cell_pagination.push(Some(pagination));
+            self.cell_line_spacing.push(line_spacing_hint);
+            #[cfg(feature = "docx")]
+            self.cell_column_break_offsets.push(column_break_offsets);
+            #[cfg(any(feature = "docx", feature = "render"))]
+            self.cell_tab_stops.push(tab_stops);
             return;
         }
         // The row-terminating paragraph (`fTtp`) is an empty marker, not a real
@@ -1521,13 +2682,28 @@ impl<'a, 'l> Asm<'a, 'l> {
         if !blank_terminator {
             self.cell_blocks.push(Block::Paragraph(para));
             self.cell_pagination.push(Some(pagination));
+            self.cell_line_spacing.push(line_spacing_hint);
+            #[cfg(feature = "docx")]
+            self.cell_column_break_offsets.push(column_break_offsets);
+            #[cfg(any(feature = "docx", feature = "render"))]
+            self.cell_tab_stops.push(tab_stops);
             self.cur_row_cells.push(CellBuild {
                 blocks: std::mem::take(&mut self.cell_blocks),
                 pagination: std::mem::take(&mut self.cell_pagination),
+                line_spacing: std::mem::take(&mut self.cell_line_spacing),
+                #[cfg(feature = "docx")]
+                column_break_offsets: std::mem::take(&mut self.cell_column_break_offsets),
+                #[cfg(any(feature = "docx", feature = "render"))]
+                tab_stops: std::mem::take(&mut self.cell_tab_stops),
             });
         } else {
             self.cell_blocks.clear();
             self.cell_pagination.clear();
+            self.cell_line_spacing.clear();
+            #[cfg(feature = "docx")]
+            self.cell_column_break_offsets.clear();
+            #[cfg(any(feature = "docx", feature = "render"))]
+            self.cell_tab_stops.clear();
         }
         if ttp {
             // The row definition (column geometry + merge flags) is carried on the
@@ -1569,6 +2745,11 @@ impl<'a, 'l> Asm<'a, 'l> {
         }
         self.cell_blocks.clear();
         self.cell_pagination.clear();
+        self.cell_line_spacing.clear();
+        #[cfg(feature = "docx")]
+        self.cell_column_break_offsets.clear();
+        #[cfg(any(feature = "docx", feature = "render"))]
+        self.cell_tab_stops.clear();
         let bidi_visual = self.cur_table_bidi_visual.take().unwrap_or(false);
         if !self.cur_rows.is_empty() {
             let built =
@@ -1577,10 +2758,26 @@ impl<'a, 'l> Asm<'a, 'l> {
             if !built.table.rows.is_empty() {
                 debug_assert_eq!(row_pagination.len(), built.table.rows.len());
                 debug_assert_eq!(built.cell_pagination.len(), built.table.rows.len());
+                debug_assert_eq!(built.cell_line_spacing.len(), built.table.rows.len());
+                #[cfg(any(feature = "docx", feature = "render"))]
+                debug_assert_eq!(built.cell_tab_stops.len(), built.table.rows.len());
                 self.blocks.push(Block::Table(built.table));
                 self.pagination_hints.push(PaginationHint::default());
+                self.line_spacing_hints.push(None);
+                #[cfg(any(feature = "docx", feature = "render"))]
+                self.tab_stops.push(Vec::new());
+                #[cfg(feature = "docx")]
+                self.note_reference_anchors.push(Vec::new());
+                self.column_break_offsets.push(Vec::new());
+                #[cfg(feature = "docx")]
+                self.table_cell_column_break_offsets
+                    .push(built.cell_column_breaks);
+                self.page_break_offsets.push(Vec::new());
                 self.table_row_pagination.push(row_pagination);
                 self.table_cell_pagination.push(built.cell_pagination);
+                self.table_cell_line_spacing.push(built.cell_line_spacing);
+                #[cfg(any(feature = "docx", feature = "render"))]
+                self.table_cell_tab_stops.push(built.cell_tab_stops);
             }
         }
     }
@@ -1589,23 +2786,75 @@ impl<'a, 'l> Asm<'a, 'l> {
     fn finish_with_render_hints(mut self) -> LegacyBlockOutput {
         // A trailing paragraph with no final mark.
         if !self.para_runs.is_empty() || !self.run_buf.is_empty() {
-            let (para, pagination) = self.take_paragraph(u32::MAX);
-            if !para.is_blank() {
+            let CompletedLegacyParagraph {
+                paragraph: para,
+                pagination,
+                line_spacing_hint,
+                #[cfg(any(feature = "docx", feature = "render"))]
+                tab_stops,
+                #[cfg(feature = "docx")]
+                note_reference_anchors,
+                column_break_offsets,
+                page_break_offsets,
+            } = self.take_paragraph(u32::MAX);
+            if !para.is_blank()
+                || !column_break_offsets.is_empty()
+                || !page_break_offsets.is_empty()
+            {
                 self.blocks.push(Block::Paragraph(para));
                 self.pagination_hints.push(pagination);
+                self.line_spacing_hints.push(line_spacing_hint);
+                #[cfg(any(feature = "docx", feature = "render"))]
+                self.tab_stops.push(tab_stops);
+                #[cfg(feature = "docx")]
+                self.note_reference_anchors.push(note_reference_anchors);
+                self.column_break_offsets.push(column_break_offsets);
+                #[cfg(feature = "docx")]
+                self.table_cell_column_break_offsets.push(Vec::new());
+                self.page_break_offsets.push(page_break_offsets);
                 self.table_row_pagination.push(Vec::new());
                 self.table_cell_pagination.push(Vec::new());
+                self.table_cell_line_spacing.push(Vec::new());
+                #[cfg(any(feature = "docx", feature = "render"))]
+                self.table_cell_tab_stops.push(Vec::new());
             }
         }
         self.flush_table();
         debug_assert_eq!(self.pagination_hints.len(), self.blocks.len());
+        debug_assert_eq!(self.line_spacing_hints.len(), self.blocks.len());
+        #[cfg(any(feature = "docx", feature = "render"))]
+        debug_assert_eq!(self.tab_stops.len(), self.blocks.len());
+        #[cfg(feature = "docx")]
+        debug_assert_eq!(self.note_reference_anchors.len(), self.blocks.len());
+        debug_assert_eq!(self.column_break_offsets.len(), self.blocks.len());
+        #[cfg(feature = "docx")]
+        debug_assert_eq!(
+            self.table_cell_column_break_offsets.len(),
+            self.blocks.len()
+        );
+        debug_assert_eq!(self.page_break_offsets.len(), self.blocks.len());
         debug_assert_eq!(self.table_row_pagination.len(), self.blocks.len());
         debug_assert_eq!(self.table_cell_pagination.len(), self.blocks.len());
+        debug_assert_eq!(self.table_cell_line_spacing.len(), self.blocks.len());
+        #[cfg(any(feature = "docx", feature = "render"))]
+        debug_assert_eq!(self.table_cell_tab_stops.len(), self.blocks.len());
         LegacyBlockOutput {
             blocks: self.blocks,
             pagination_hints: self.pagination_hints,
+            line_spacing_hints: self.line_spacing_hints,
+            #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stops: self.tab_stops,
+            #[cfg(feature = "docx")]
+            note_reference_anchors: self.note_reference_anchors,
+            column_break_offsets: self.column_break_offsets,
+            #[cfg(feature = "docx")]
+            table_cell_column_break_offsets: self.table_cell_column_break_offsets,
+            page_break_offsets: self.page_break_offsets,
             table_row_pagination: self.table_row_pagination,
             table_cell_pagination: self.table_cell_pagination,
+            table_cell_line_spacing: self.table_cell_line_spacing,
+            #[cfg(any(feature = "docx", feature = "render"))]
+            table_cell_tab_stops: self.table_cell_tab_stops,
         }
     }
 
@@ -1619,8 +2868,274 @@ impl<'a, 'l> Asm<'a, 'l> {
 struct LegacyBlockOutput {
     blocks: Vec<Block>,
     pagination_hints: Vec<PaginationHint>,
+    line_spacing_hints: Vec<Option<LineSpacingHint>>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    tab_stops: Vec<Vec<TabStop>>,
+    #[cfg(feature = "docx")]
+    note_reference_anchors: Vec<Vec<LegacyNoteReferenceAnchor>>,
+    column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(feature = "docx")]
+    table_cell_column_break_offsets: Vec<TableCellColumnBreakHints>,
+    page_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
+    table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    table_cell_tab_stops: Vec<TableCellTabStopHints>,
+}
+
+fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOutput {
+    let LegacyBlockOutput {
+        blocks,
+        pagination_hints,
+        line_spacing_hints,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        tab_stops,
+        #[cfg(feature = "docx")]
+        note_reference_anchors,
+        column_break_offsets,
+        #[cfg(feature = "docx")]
+        table_cell_column_break_offsets,
+        page_break_offsets,
+        table_row_pagination,
+        table_cell_pagination,
+        table_cell_line_spacing,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        table_cell_tab_stops,
+    } = output;
+    debug_assert_eq!(pagination_hints.len(), blocks.len());
+    debug_assert_eq!(line_spacing_hints.len(), blocks.len());
+    #[cfg(any(feature = "docx", feature = "render"))]
+    debug_assert_eq!(tab_stops.len(), blocks.len());
+    #[cfg(feature = "docx")]
+    debug_assert_eq!(note_reference_anchors.len(), blocks.len());
+    debug_assert_eq!(column_break_offsets.len(), blocks.len());
+    #[cfg(feature = "docx")]
+    debug_assert_eq!(table_cell_column_break_offsets.len(), blocks.len());
+    debug_assert_eq!(page_break_offsets.len(), blocks.len());
+    debug_assert_eq!(table_row_pagination.len(), blocks.len());
+    debug_assert_eq!(table_cell_pagination.len(), blocks.len());
+    debug_assert_eq!(table_cell_line_spacing.len(), blocks.len());
+    #[cfg(any(feature = "docx", feature = "render"))]
+    debug_assert_eq!(table_cell_tab_stops.len(), blocks.len());
+
+    let mut pagination_hints = pagination_hints.into_iter();
+    let mut line_spacing_hints = line_spacing_hints.into_iter();
+    #[cfg(any(feature = "docx", feature = "render"))]
+    let mut tab_stops = tab_stops.into_iter();
+    #[cfg(feature = "docx")]
+    let mut note_reference_anchors = note_reference_anchors.into_iter();
+    let mut column_break_offsets = column_break_offsets.into_iter();
+    #[cfg(feature = "docx")]
+    let mut table_cell_column_break_offsets = table_cell_column_break_offsets.into_iter();
+    let mut page_break_offsets = page_break_offsets.into_iter();
+    let mut table_row_pagination = table_row_pagination.into_iter();
+    let mut table_cell_pagination = table_cell_pagination.into_iter();
+    let mut table_cell_line_spacing = table_cell_line_spacing.into_iter();
+    #[cfg(any(feature = "docx", feature = "render"))]
+    let mut table_cell_tab_stops = table_cell_tab_stops.into_iter();
+    let mut promoted = LegacyBlockOutput::default();
+
+    for block in blocks {
+        let pagination = pagination_hints.next().unwrap_or_default();
+        let line_spacing_hint = line_spacing_hints.next().unwrap_or_default();
+        #[cfg(any(feature = "docx", feature = "render"))]
+        let paragraph_tab_stops = tab_stops.next().unwrap_or_default();
+        #[cfg(feature = "docx")]
+        let paragraph_note_anchors = note_reference_anchors.next().unwrap_or_default();
+        let column_offsets = column_break_offsets.next().unwrap_or_default();
+        #[cfg(feature = "docx")]
+        let cell_column_offsets = table_cell_column_break_offsets.next().unwrap_or_default();
+        let page_offsets = page_break_offsets.next().unwrap_or_default();
+        let row_pagination = table_row_pagination.next().unwrap_or_default();
+        let cell_pagination = table_cell_pagination.next().unwrap_or_default();
+        let cell_line_spacing = table_cell_line_spacing.next().unwrap_or_default();
+        #[cfg(any(feature = "docx", feature = "render"))]
+        let cell_tab_stops = table_cell_tab_stops.next().unwrap_or_default();
+        match block {
+            Block::Paragraph(paragraph) if !page_offsets.is_empty() => {
+                debug_assert!(row_pagination.is_empty());
+                debug_assert!(cell_pagination.is_empty());
+                debug_assert!(cell_line_spacing.is_empty());
+                #[cfg(feature = "docx")]
+                debug_assert!(cell_column_offsets.is_empty());
+                #[cfg(any(feature = "docx", feature = "render"))]
+                debug_assert!(cell_tab_stops.is_empty());
+                promote_legacy_paragraph_page_breaks(
+                    paragraph,
+                    pagination,
+                    line_spacing_hint,
+                    #[cfg(any(feature = "docx", feature = "render"))]
+                    &paragraph_tab_stops,
+                    &column_offsets,
+                    &page_offsets,
+                    &mut promoted,
+                );
+            }
+            block => {
+                debug_assert!(page_offsets.is_empty());
+                promoted.blocks.push(block);
+                promoted.pagination_hints.push(pagination);
+                promoted.line_spacing_hints.push(line_spacing_hint);
+                #[cfg(any(feature = "docx", feature = "render"))]
+                promoted.tab_stops.push(paragraph_tab_stops);
+                #[cfg(feature = "docx")]
+                promoted.note_reference_anchors.push(paragraph_note_anchors);
+                promoted.column_break_offsets.push(column_offsets);
+                #[cfg(feature = "docx")]
+                promoted
+                    .table_cell_column_break_offsets
+                    .push(cell_column_offsets);
+                promoted.page_break_offsets.push(Vec::new());
+                promoted.table_row_pagination.push(row_pagination);
+                promoted.table_cell_pagination.push(cell_pagination);
+                promoted.table_cell_line_spacing.push(cell_line_spacing);
+                #[cfg(any(feature = "docx", feature = "render"))]
+                promoted.table_cell_tab_stops.push(cell_tab_stops);
+            }
+        }
+    }
+    promoted
+}
+
+fn promote_legacy_paragraph_page_breaks(
+    paragraph: Paragraph,
+    pagination: PaginationHint,
+    line_spacing_hint: Option<LineSpacingHint>,
+    #[cfg(any(feature = "docx", feature = "render"))] tab_stops: &[TabStop],
+    column_break_offsets: &[usize],
+    page_break_offsets: &[usize],
+    output: &mut LegacyBlockOutput,
+) {
+    let props = paragraph.props;
+    let mut current = Paragraph {
+        props: props.clone(),
+        runs: Vec::new(),
+    };
+    let mut page_breaks = page_break_offsets.iter().copied().peekable();
+    let mut source_chars = 0usize;
+    let mut segment_start = 0usize;
+    let hints = LegacyParagraphPromotionHints {
+        pagination,
+        line_spacing: line_spacing_hint,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        tab_stops,
+        column_break_offsets,
+    };
+
+    for run in paragraph.runs {
+        if run.text.is_empty() {
+            current.runs.push(run);
+            continue;
+        }
+        let mut text = String::new();
+        for ch in run.text.chars() {
+            if page_breaks.peek().copied() == Some(source_chars) {
+                debug_assert_eq!(ch, '\n');
+                push_legacy_run_fragment(&mut current, &run, &mut text);
+                push_legacy_page_break_segment(
+                    output,
+                    &mut current,
+                    &props,
+                    hints,
+                    segment_start..source_chars,
+                );
+                output.blocks.push(Block::PageBreak);
+                output.pagination_hints.push(PaginationHint::default());
+                output.line_spacing_hints.push(None);
+                #[cfg(any(feature = "docx", feature = "render"))]
+                output.tab_stops.push(Vec::new());
+                #[cfg(feature = "docx")]
+                output.note_reference_anchors.push(Vec::new());
+                output.column_break_offsets.push(Vec::new());
+                #[cfg(feature = "docx")]
+                output.table_cell_column_break_offsets.push(Vec::new());
+                output.page_break_offsets.push(Vec::new());
+                output.table_row_pagination.push(Vec::new());
+                output.table_cell_pagination.push(Vec::new());
+                output.table_cell_line_spacing.push(Vec::new());
+                #[cfg(any(feature = "docx", feature = "render"))]
+                output.table_cell_tab_stops.push(Vec::new());
+                page_breaks.next();
+                source_chars = source_chars.saturating_add(1);
+                segment_start = source_chars;
+            } else {
+                text.push(ch);
+                source_chars = source_chars.saturating_add(1);
+            }
+        }
+        push_legacy_run_fragment(&mut current, &run, &mut text);
+    }
+
+    debug_assert!(page_breaks.next().is_none());
+    push_legacy_page_break_segment(
+        output,
+        &mut current,
+        &props,
+        hints,
+        segment_start..source_chars,
+    );
+}
+
+fn push_legacy_run_fragment(current: &mut Paragraph, run: &Run_, text: &mut String) {
+    if text.is_empty() {
+        return;
+    }
+    let mut fragment = run.clone();
+    fragment.text = std::mem::take(text);
+    current.runs.push(fragment);
+}
+
+#[derive(Clone, Copy)]
+struct LegacyParagraphPromotionHints<'a> {
+    pagination: PaginationHint,
+    line_spacing: Option<LineSpacingHint>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    tab_stops: &'a [TabStop],
+    column_break_offsets: &'a [usize],
+}
+
+fn push_legacy_page_break_segment(
+    output: &mut LegacyBlockOutput,
+    current: &mut Paragraph,
+    props: &ParaProps,
+    hints: LegacyParagraphPromotionHints<'_>,
+    segment: std::ops::Range<usize>,
+) {
+    if current.runs.is_empty() {
+        return;
+    }
+    let paragraph = std::mem::replace(
+        current,
+        Paragraph {
+            props: props.clone(),
+            runs: Vec::new(),
+        },
+    );
+    output.blocks.push(Block::Paragraph(paragraph));
+    output.pagination_hints.push(hints.pagination);
+    output.line_spacing_hints.push(hints.line_spacing);
+    #[cfg(any(feature = "docx", feature = "render"))]
+    output.tab_stops.push(hints.tab_stops.to_vec());
+    #[cfg(feature = "docx")]
+    output.note_reference_anchors.push(Vec::new());
+    output.column_break_offsets.push(
+        hints
+            .column_break_offsets
+            .iter()
+            .copied()
+            .filter(|offset| segment.contains(offset))
+            .map(|offset| offset - segment.start)
+            .collect(),
+    );
+    #[cfg(feature = "docx")]
+    output.table_cell_column_break_offsets.push(Vec::new());
+    output.page_break_offsets.push(Vec::new());
+    output.table_row_pagination.push(Vec::new());
+    output.table_cell_pagination.push(Vec::new());
+    output.table_cell_line_spacing.push(Vec::new());
+    #[cfg(any(feature = "docx", feature = "render"))]
+    output.table_cell_tab_stops.push(Vec::new());
 }
 
 /// Extract the target URL from a `HYPERLINK` field instruction, e.g.
@@ -1694,6 +3209,27 @@ mod tests {
         asm.finish()
     }
 
+    fn push_test_section_column_count(grpprl: &mut Vec<u8>, columns_minus_one: u16) {
+        grpprl.extend_from_slice(&SPRM_S_C_COLUMNS.to_le_bytes());
+        grpprl.extend_from_slice(&columns_minus_one.to_le_bytes());
+    }
+
+    fn push_test_section_evenly_spaced(grpprl: &mut Vec<u8>, evenly_spaced: u8) {
+        grpprl.extend_from_slice(&SPRM_S_F_EVENLY_SPACED.to_le_bytes());
+        grpprl.push(evenly_spaced);
+    }
+
+    fn push_test_section_indexed_column_value(
+        grpprl: &mut Vec<u8>,
+        sprm: u16,
+        index: u8,
+        twips: u16,
+    ) {
+        grpprl.extend_from_slice(&sprm.to_le_bytes());
+        grpprl.push(index);
+        grpprl.extend_from_slice(&twips.to_le_bytes());
+    }
+
     #[test]
     fn legacy_assembly_aligns_row_pagination_with_emitted_blocks() {
         let units = [b'A' as u16, CELL_MARK, CELL_MARK, b'X' as u16, PARA_MARK];
@@ -1718,6 +3254,221 @@ mod tests {
         assert_eq!(assembled.table_row_pagination[0].len(), 1);
         assert!(assembled.table_row_pagination[0][0].cant_split);
         assert!(assembled.table_row_pagination[1].is_empty());
+    }
+
+    #[test]
+    fn legacy_assembly_records_manual_column_break_offsets() {
+        let units = [
+            b'A' as u16,
+            0x000E,
+            b'B' as u16,
+            0x000E,
+            b'C' as u16,
+            PARA_MARK,
+        ];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::default();
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        assert_eq!(assembled.blocks.len(), 1);
+        let Block::Paragraph(paragraph) = &assembled.blocks[0] else {
+            panic!("legacy block must be a paragraph");
+        };
+        assert_eq!(paragraph.text(), "A\nB\nC");
+        assert_eq!(assembled.column_break_offsets, vec![vec![1, 3]]);
+    }
+
+    #[test]
+    fn legacy_assembly_keeps_marker_only_column_break_paragraphs() {
+        let units = [0x000E, PARA_MARK, b'X' as u16, PARA_MARK];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::default();
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        assert_eq!(assembled.blocks.len(), 2);
+        assert_eq!(assembled.column_break_offsets, vec![vec![0], vec![]]);
+        let Block::Paragraph(marker) = &assembled.blocks[0] else {
+            panic!("marker block must be a paragraph");
+        };
+        assert_eq!(marker.text(), "\n");
+    }
+
+    #[test]
+    fn legacy_assembly_aligns_table_cell_column_break_offsets() {
+        let units = [
+            b'A' as u16,
+            0x000E,
+            CELL_MARK,
+            CELL_MARK,
+            b'X' as u16,
+            PARA_MARK,
+        ];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::from_test_entries(&[
+            (3, true, false, false),
+            (4, true, true, true),
+            (6, false, false, false),
+        ]);
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        assert!(matches!(assembled.blocks[0], Block::Table(_)));
+        assert!(matches!(assembled.blocks[1], Block::Paragraph(_)));
+        assert_eq!(assembled.column_break_offsets, vec![vec![], vec![]]);
+        #[cfg(feature = "docx")]
+        assert_eq!(
+            assembled.table_cell_column_break_offsets,
+            vec![vec![vec![vec![vec![1]]]], Vec::new()]
+        );
+    }
+
+    #[test]
+    fn legacy_page_break_promotion_remaps_column_offsets() {
+        let units = [
+            b'A' as u16,
+            0x000E,
+            b'B' as u16,
+            0x000C,
+            b'C' as u16,
+            0x000E,
+            b'D' as u16,
+            PARA_MARK,
+        ];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::default();
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let mut assembled = asm.finish_with_render_hints();
+        assert_eq!(assembled.column_break_offsets, vec![vec![1, 5]]);
+        assert_eq!(assembled.page_break_offsets, vec![vec![3]]);
+        assembled.line_spacing_hints[0] = Some(LineSpacingHint::Exact(8.0));
+        #[cfg(any(feature = "docx", feature = "render"))]
+        {
+            assembled.tab_stops[0] = vec![TabStop {
+                position_pt: 54.0,
+                alignment: crate::model::TabAlignment::Right,
+                leader: crate::model::TabLeader::Dot,
+            }];
+        }
+
+        let promoted = promote_legacy_manual_page_breaks(assembled);
+        let [Block::Paragraph(before), Block::PageBreak, Block::Paragraph(after)] =
+            promoted.blocks.as_slice()
+        else {
+            panic!("manual page break must split the paragraph");
+        };
+        assert_eq!(before.text(), "A\nB");
+        assert_eq!(after.text(), "C\nD");
+        assert_eq!(
+            promoted.column_break_offsets,
+            vec![vec![1], vec![], vec![1]]
+        );
+        assert_eq!(
+            promoted.line_spacing_hints,
+            vec![
+                Some(LineSpacingHint::Exact(8.0)),
+                None,
+                Some(LineSpacingHint::Exact(8.0))
+            ]
+        );
+        #[cfg(any(feature = "docx", feature = "render"))]
+        assert_eq!(
+            promoted.tab_stops,
+            vec![
+                vec![TabStop {
+                    position_pt: 54.0,
+                    alignment: crate::model::TabAlignment::Right,
+                    leader: crate::model::TabLeader::Dot,
+                }],
+                vec![],
+                vec![TabStop {
+                    position_pt: 54.0,
+                    alignment: crate::model::TabAlignment::Right,
+                    leader: crate::model::TabLeader::Dot,
+                }],
+            ]
+        );
+        assert!(promoted.page_break_offsets.iter().all(Vec::is_empty));
+    }
+
+    #[test]
+    fn legacy_page_break_promotion_keeps_repeated_marker_only_breaks() {
+        let units = [0x000C, 0x000C, b'X' as u16, PARA_MARK];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::default();
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let promoted = promote_legacy_manual_page_breaks(asm.finish_with_render_hints());
+
+        assert!(matches!(promoted.blocks[0], Block::PageBreak));
+        assert!(matches!(promoted.blocks[1], Block::PageBreak));
+        let Block::Paragraph(after) = &promoted.blocks[2] else {
+            panic!("text after repeated page breaks must remain a paragraph");
+        };
+        assert_eq!(after.text(), "X");
+    }
+
+    #[test]
+    fn legacy_assembly_does_not_promote_table_cell_page_breaks() {
+        let units = [
+            b'A' as u16,
+            0x000C,
+            b'B' as u16,
+            CELL_MARK,
+            CELL_MARK,
+            b'X' as u16,
+            PARA_MARK,
+        ];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::from_test_entries(&[
+            (4, true, false, false),
+            (5, true, true, true),
+            (7, false, false, false),
+        ]);
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        let Block::Table(table) = &assembled.blocks[0] else {
+            panic!("first block must remain a table");
+        };
+        assert_eq!(table.rows[0].cells[0].text(), "A\nB");
+        assert!(assembled.page_break_offsets.iter().all(Vec::is_empty));
     }
 
     #[test]
@@ -2226,6 +3977,41 @@ mod tests {
     }
 
     #[test]
+    fn legacy_sepx_scanner_preserves_bounded_running_surface_distances() {
+        let mut grpprl = Vec::new();
+        let push_distance = |grpprl: &mut Vec<u8>, sprm: u16, value: u16| {
+            grpprl.extend_from_slice(&sprm.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        };
+
+        let defaults = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(defaults.header_distance_pt, None);
+        assert_eq!(defaults.footer_distance_pt, None);
+
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_TOP, 0);
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_BOTTOM, 31_680);
+        let bounds = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(bounds.header_distance_pt, Some(0.0));
+        assert_eq!(bounds.footer_distance_pt, Some(1_584.0));
+
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_TOP, 720);
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_BOTTOM, 1_440);
+        for invalid in [31_681, u16::MAX] {
+            push_distance(&mut grpprl, SPRM_S_DYA_HDR_TOP, invalid);
+            push_distance(&mut grpprl, SPRM_S_DYA_HDR_BOTTOM, invalid);
+        }
+        let last_valid = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(last_valid.header_distance_pt, Some(36.0));
+        assert_eq!(last_valid.footer_distance_pt, Some(72.0));
+
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_TOP, 2_000);
+        push_distance(&mut grpprl, SPRM_S_DYA_HDR_BOTTOM, 3_000);
+        let replaced = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(replaced.header_distance_pt, Some(100.0));
+        assert_eq!(replaced.footer_distance_pt, Some(150.0));
+    }
+
+    #[test]
     fn legacy_sepx_scanner_preserves_bounded_column_counts() {
         let mut grpprl = Vec::new();
         let push_columns = |grpprl: &mut Vec<u8>, value: u16| {
@@ -2286,6 +4072,272 @@ mod tests {
         assert_eq!(
             scan_legacy_section_grpprl(&grpprl).unwrap().columns,
             Some(5)
+        );
+    }
+
+    #[test]
+    fn legacy_sepx_scanner_applies_column_separator_bool8_in_source_order() {
+        let mut grpprl = Vec::new();
+        let push_separator = |grpprl: &mut Vec<u8>, value| {
+            grpprl.extend_from_slice(&SPRM_S_L_BETWEEN.to_le_bytes());
+            grpprl.push(value);
+        };
+
+        assert!(
+            !scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+        push_separator(&mut grpprl, 1);
+        assert!(
+            scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+        push_separator(&mut grpprl, 2);
+        assert!(
+            scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+        push_separator(&mut grpprl, 0);
+        assert!(
+            !scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+        push_separator(&mut grpprl, u8::MAX);
+        assert!(
+            !scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+        push_separator(&mut grpprl, 1);
+        assert!(
+            scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+    }
+
+    #[test]
+    fn legacy_sepx_scanner_applies_section_bidi_bool8_in_source_order() {
+        let mut grpprl = Vec::new();
+        let push_bidi = |grpprl: &mut Vec<u8>, value| {
+            grpprl.extend_from_slice(&SPRM_S_F_BIDI.to_le_bytes());
+            grpprl.push(value);
+        };
+
+        assert!(!scan_legacy_section_grpprl(&grpprl).unwrap().column_rtl);
+        push_bidi(&mut grpprl, 1);
+        assert!(scan_legacy_section_grpprl(&grpprl).unwrap().column_rtl);
+        push_bidi(&mut grpprl, 2);
+        assert!(scan_legacy_section_grpprl(&grpprl).unwrap().column_rtl);
+        push_bidi(&mut grpprl, 0);
+        assert!(!scan_legacy_section_grpprl(&grpprl).unwrap().column_rtl);
+        push_bidi(&mut grpprl, u8::MAX);
+        assert!(!scan_legacy_section_grpprl(&grpprl).unwrap().column_rtl);
+        push_bidi(&mut grpprl, 1);
+        assert!(scan_legacy_section_grpprl(&grpprl).unwrap().column_rtl);
+    }
+
+    #[test]
+    fn legacy_sepx_scanner_recovers_complete_unequal_column_count() {
+        let mut grpprl = Vec::new();
+        push_test_section_column_count(&mut grpprl, 1);
+        for (index, width_twips) in [(0, 2_000u16), (1, 4_000)] {
+            push_test_section_indexed_column_value(
+                &mut grpprl,
+                SPRM_S_DXA_COL_WIDTH,
+                index,
+                width_twips,
+            );
+        }
+        push_test_section_evenly_spaced(&mut grpprl, 0);
+
+        let properties = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(properties.columns, Some(2));
+        assert_eq!(
+            properties.column_layout,
+            Some(SectionColumnLayoutHints {
+                columns: vec![
+                    SectionColumnHint {
+                        width_pt: 100.0,
+                        space_after_pt: 0.0,
+                    },
+                    SectionColumnHint {
+                        width_pt: 200.0,
+                        space_after_pt: 0.0,
+                    },
+                ],
+            })
+        );
+        assert_eq!(properties.column_gap_pt, None);
+    }
+
+    #[test]
+    fn legacy_sepx_scanner_bounds_custom_columns_and_keeps_last_valid_values() {
+        let mut grpprl = Vec::new();
+        push_test_section_column_count(&mut grpprl, 1);
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 0, 718);
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 1, 31_680);
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_SPACING, 0, 31_680);
+        push_test_section_evenly_spaced(&mut grpprl, 0);
+
+        let bounded = scan_legacy_section_grpprl(&grpprl).unwrap();
+        let bounded_layout = bounded.column_layout.unwrap();
+        assert_eq!(bounded_layout.columns[0].width_pt, 35.9);
+        assert_eq!(bounded_layout.columns[0].space_after_pt, 1_584.0);
+        assert_eq!(bounded_layout.columns[1].width_pt, 1_584.0);
+
+        for (sprm, index, value) in [
+            (SPRM_S_DXA_COL_WIDTH, 0, 717),
+            (SPRM_S_DXA_COL_WIDTH, 1, 31_681),
+            (SPRM_S_DXA_COL_WIDTH, 44, 2_000),
+            (SPRM_S_DXA_COL_SPACING, 0, 31_681),
+            (SPRM_S_DXA_COL_SPACING, 44, 720),
+        ] {
+            push_test_section_indexed_column_value(&mut grpprl, sprm, index, value);
+        }
+        let retained = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(retained.column_layout, Some(bounded_layout));
+
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 0, 1_440);
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_SPACING, 0, 720);
+        let replaced = scan_legacy_section_grpprl(&grpprl).unwrap();
+        let replaced_layout = replaced.column_layout.unwrap();
+        assert_eq!(replaced_layout.columns[0].width_pt, 72.0);
+        assert_eq!(replaced_layout.columns[0].space_after_pt, 36.0);
+    }
+
+    #[test]
+    fn legacy_sepx_scanner_requires_complete_final_custom_geometry() {
+        let mut grpprl = Vec::new();
+        push_test_section_column_count(&mut grpprl, 1);
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 0, 2_000);
+        push_test_section_evenly_spaced(&mut grpprl, 0);
+
+        let incomplete = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(incomplete.columns, None);
+        assert_eq!(incomplete.column_layout, None);
+
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 1, 4_000);
+        let complete = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(complete.columns, Some(2));
+        assert_eq!(
+            complete.column_layout.unwrap().columns[0].space_after_pt,
+            0.0
+        );
+
+        push_test_section_evenly_spaced(&mut grpprl, 1);
+        grpprl.extend_from_slice(&SPRM_S_DXA_COLUMNS.to_le_bytes());
+        grpprl.extend_from_slice(&800u16.to_le_bytes());
+        let equal = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(equal.columns, Some(2));
+        assert_eq!(equal.column_gap_pt, Some(40.0));
+        assert_eq!(equal.column_layout, None);
+
+        push_test_section_evenly_spaced(&mut grpprl, 0);
+        push_test_section_column_count(&mut grpprl, 2);
+        let changed_count = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(changed_count.columns, None);
+        assert_eq!(changed_count.column_layout, None);
+
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 2, 3_000);
+        push_test_section_evenly_spaced(&mut grpprl, 2);
+        let completed_changed_count = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(completed_changed_count.columns, Some(3));
+        assert_eq!(
+            completed_changed_count.column_layout.unwrap().columns.len(),
+            3
+        );
+
+        push_test_section_column_count(&mut grpprl, 0);
+        let single = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(single.columns, Some(1));
+        assert_eq!(single.column_layout, None);
+    }
+
+    #[test]
+    fn legacy_sepx_scanner_accepts_the_exact_custom_column_cap() {
+        let mut grpprl = Vec::new();
+        push_test_section_column_count(&mut grpprl, 43);
+        for index in 0..44 {
+            push_test_section_indexed_column_value(
+                &mut grpprl,
+                SPRM_S_DXA_COL_WIDTH,
+                index,
+                718 + u16::from(index),
+            );
+        }
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_SPACING, 43, 1_440);
+        push_test_section_evenly_spaced(&mut grpprl, 0);
+
+        let capped = scan_legacy_section_grpprl(&grpprl).unwrap();
+        let capped_layout = capped.column_layout.unwrap();
+        assert_eq!(capped.columns, Some(44));
+        assert_eq!(capped_layout.columns.len(), 44);
+        assert_eq!(capped_layout.columns[43].width_pt, twips_to_points(761));
+        assert_eq!(capped_layout.columns[43].space_after_pt, 0.0);
+
+        push_test_section_column_count(&mut grpprl, 44);
+        let invalid_count = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(invalid_count.columns, Some(44));
+        assert_eq!(invalid_count.column_layout, Some(capped_layout));
+    }
+
+    #[test]
+    fn legacy_sepx_scanner_preserves_bounded_equal_column_spacing() {
+        let mut grpprl = Vec::new();
+        let push_columns = |grpprl: &mut Vec<u8>, value: u16| {
+            grpprl.extend_from_slice(&SPRM_S_C_COLUMNS.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        };
+        let push_spacing = |grpprl: &mut Vec<u8>, value: u16| {
+            grpprl.extend_from_slice(&SPRM_S_DXA_COLUMNS.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        };
+        let push_evenly_spaced = |grpprl: &mut Vec<u8>, value| {
+            grpprl.extend_from_slice(&SPRM_S_F_EVENLY_SPACED.to_le_bytes());
+            grpprl.push(value);
+        };
+
+        push_spacing(&mut grpprl, 720);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+            None
+        );
+
+        push_columns(&mut grpprl, 1);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+            Some(36.0)
+        );
+
+        for invalid in [31_681, u16::MAX] {
+            push_spacing(&mut grpprl, invalid);
+            assert_eq!(
+                scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+                Some(36.0)
+            );
+        }
+
+        push_evenly_spaced(&mut grpprl, 0);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+            None
+        );
+        push_evenly_spaced(&mut grpprl, 1);
+        push_spacing(&mut grpprl, 0);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+            Some(0.0)
+        );
+
+        push_columns(&mut grpprl, 0);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().column_gap_pt,
+            None
         );
     }
 
@@ -2461,11 +4513,17 @@ mod tests {
                     end_cp: 2,
                     page: PageSetup::default(),
                     columns: Some(2),
+                    column_gap_pt: None,
+                    column_layout: None,
+                    column_separator: false,
+                    column_rtl: false,
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,
                     text_direction: None,
                     doc_grid: None,
+                    header_distance_pt: None,
+                    footer_distance_pt: None,
                     section_break: SectionBreakKind::NextPage,
                 },
                 LegacySectionSpan {
@@ -2473,11 +4531,17 @@ mod tests {
                     end_cp: 4,
                     page: PageSetup::default(),
                     columns: Some(3),
+                    column_gap_pt: None,
+                    column_layout: None,
+                    column_separator: false,
+                    column_rtl: false,
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,
                     text_direction: None,
                     doc_grid: None,
+                    header_distance_pt: None,
+                    footer_distance_pt: None,
                     section_break: SectionBreakKind::NextPage,
                 },
             ],
@@ -2556,6 +4620,355 @@ mod tests {
         }
     }
 
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn legacy_running_line_spacing_maps_six_story_slots_per_section() {
+        let mut blocks = vec![
+            Block::PageBreak,
+            Block::SectionBreak(SectionSetup::default()),
+            Block::PageBreak,
+        ];
+        blocks.extend((0..12).map(|_| Block::PageBreak));
+        let mut line_spacing = vec![None; blocks.len()];
+        let mut table_cell_line_spacing = vec![Vec::new(); blocks.len()];
+        let mut regions = Vec::new();
+        for story_offset in 0..12 {
+            let block_index = story_offset + 3;
+            line_spacing[block_index] = Some(LineSpacingHint::Exact((story_offset + 1) as f32));
+            table_cell_line_spacing[block_index] = vec![vec![vec![Some(
+                LineSpacingHint::AtLeast((story_offset + 101) as f32),
+            )]]];
+            regions.push(SourceRegion {
+                kind: SourceRegionKind::HeaderFooter,
+                source_story_index: Some(HEADER_FOOTER_STORY_BASE + story_offset),
+                block_start: block_index,
+                block_end: block_index + 1,
+                source_start_cp: story_offset,
+                source_len_cp: 1,
+                text_start: 0,
+                text_len: 0,
+            });
+        }
+
+        let mapped = legacy_running_line_spacing_from_regions(
+            &blocks,
+            &regions,
+            &line_spacing,
+            &table_cell_line_spacing,
+        );
+        let values = |hints: &RunningSurfaceLineSpacingHints| {
+            [
+                hints.even_header.first().copied().flatten(),
+                hints.header.first().copied().flatten(),
+                hints.even_footer.first().copied().flatten(),
+                hints.footer.first().copied().flatten(),
+                hints.first_header.first().copied().flatten(),
+                hints.first_footer.first().copied().flatten(),
+            ]
+        };
+        let table_values = |hints: &RunningSurfaceLineSpacingHints| {
+            [
+                &hints.even_header_table_cells,
+                &hints.header_table_cells,
+                &hints.even_footer_table_cells,
+                &hints.footer_table_cells,
+                &hints.first_header_table_cells,
+                &hints.first_footer_table_cells,
+            ]
+            .map(|blocks| blocks[0][0][0][0])
+        };
+
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(
+            values(&mapped[0]),
+            [
+                Some(LineSpacingHint::Exact(1.0)),
+                Some(LineSpacingHint::Exact(2.0)),
+                Some(LineSpacingHint::Exact(3.0)),
+                Some(LineSpacingHint::Exact(4.0)),
+                Some(LineSpacingHint::Exact(5.0)),
+                Some(LineSpacingHint::Exact(6.0)),
+            ]
+        );
+        assert_eq!(
+            values(&mapped[1]),
+            [
+                Some(LineSpacingHint::Exact(7.0)),
+                Some(LineSpacingHint::Exact(8.0)),
+                Some(LineSpacingHint::Exact(9.0)),
+                Some(LineSpacingHint::Exact(10.0)),
+                Some(LineSpacingHint::Exact(11.0)),
+                Some(LineSpacingHint::Exact(12.0)),
+            ]
+        );
+        assert_eq!(
+            table_values(&mapped[0]),
+            [
+                Some(LineSpacingHint::AtLeast(101.0)),
+                Some(LineSpacingHint::AtLeast(102.0)),
+                Some(LineSpacingHint::AtLeast(103.0)),
+                Some(LineSpacingHint::AtLeast(104.0)),
+                Some(LineSpacingHint::AtLeast(105.0)),
+                Some(LineSpacingHint::AtLeast(106.0)),
+            ]
+        );
+        assert_eq!(
+            table_values(&mapped[1]),
+            [
+                Some(LineSpacingHint::AtLeast(107.0)),
+                Some(LineSpacingHint::AtLeast(108.0)),
+                Some(LineSpacingHint::AtLeast(109.0)),
+                Some(LineSpacingHint::AtLeast(110.0)),
+                Some(LineSpacingHint::AtLeast(111.0)),
+                Some(LineSpacingHint::AtLeast(112.0)),
+            ]
+        );
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn legacy_running_line_spacing_repeats_unindexed_header_fallback() {
+        let blocks = vec![
+            Block::SectionBreak(SectionSetup::default()),
+            Block::PageBreak,
+        ];
+        let regions = vec![SourceRegion {
+            kind: SourceRegionKind::HeaderFooter,
+            source_story_index: None,
+            block_start: 1,
+            block_end: 2,
+            source_start_cp: 0,
+            source_len_cp: 1,
+            text_start: 0,
+            text_len: 0,
+        }];
+        let line_spacing = vec![None, Some(LineSpacingHint::AtLeast(24.0))];
+        let table_cell_line_spacing = vec![
+            Vec::new(),
+            vec![vec![vec![Some(LineSpacingHint::Exact(7.0))]]],
+        ];
+
+        let mapped = legacy_running_line_spacing_from_regions(
+            &blocks,
+            &regions,
+            &line_spacing,
+            &table_cell_line_spacing,
+        );
+
+        assert_eq!(mapped.len(), 2);
+        for section in mapped {
+            assert_eq!(section.header, vec![Some(LineSpacingHint::AtLeast(24.0))]);
+            assert_eq!(
+                section.header_table_cells,
+                vec![vec![vec![vec![Some(LineSpacingHint::Exact(7.0))]]]]
+            );
+            assert!(section.even_header.is_empty());
+            assert!(section.even_header_table_cells.is_empty());
+            assert!(section.first_header.is_empty());
+            assert!(section.first_header_table_cells.is_empty());
+            assert!(section.footer.is_empty());
+            assert!(section.footer_table_cells.is_empty());
+            assert!(section.even_footer.is_empty());
+            assert!(section.even_footer_table_cells.is_empty());
+            assert!(section.first_footer.is_empty());
+            assert!(section.first_footer_table_cells.is_empty());
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_running_column_breaks_map_six_story_slots_per_section_and_keep_first_owner() {
+        let blocks = vec![
+            Block::PageBreak,
+            Block::SectionBreak(SectionSetup::default()),
+            Block::PageBreak,
+        ];
+        let mut regions = (0..12)
+            .map(|story_offset| LegacyRunningColumnBreakRegion {
+                source_story_index: Some(HEADER_FOOTER_STORY_BASE + story_offset),
+                column_break_offsets: vec![vec![story_offset + 1]],
+            })
+            .collect::<Vec<_>>();
+        regions.push(LegacyRunningColumnBreakRegion {
+            source_story_index: Some(HEADER_FOOTER_STORY_BASE),
+            column_break_offsets: vec![vec![999]],
+        });
+
+        let mapped = legacy_running_column_breaks_from_regions(&blocks, &regions);
+        let values = |hints: &RunningSurfaceColumnBreakHints| {
+            [
+                &hints.even_header,
+                &hints.header,
+                &hints.even_footer,
+                &hints.footer,
+                &hints.first_header,
+                &hints.first_footer,
+            ]
+            .map(|blocks| blocks[0][0])
+        };
+
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(values(&mapped[0]), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(values(&mapped[1]), [7, 8, 9, 10, 11, 12]);
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_running_column_breaks_repeat_unindexed_header_fallback() {
+        let blocks = vec![
+            Block::SectionBreak(SectionSetup::default()),
+            Block::PageBreak,
+        ];
+        let regions = [LegacyRunningColumnBreakRegion {
+            source_story_index: None,
+            column_break_offsets: vec![vec![4]],
+        }];
+
+        let mapped = legacy_running_column_breaks_from_regions(&blocks, &regions);
+
+        assert_eq!(mapped.len(), 2);
+        for section in mapped {
+            assert_eq!(section.header, vec![vec![4]]);
+            assert!(section.even_header.is_empty());
+            assert!(section.first_header.is_empty());
+            assert!(section.footer.is_empty());
+            assert!(section.even_footer.is_empty());
+            assert!(section.first_footer.is_empty());
+        }
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn legacy_running_tabs_map_six_story_slots_per_section_and_keep_first_owner() {
+        let blocks = vec![
+            Block::PageBreak,
+            Block::SectionBreak(SectionSetup::default()),
+            Block::PageBreak,
+        ];
+        let tab = |position_pt| TabStop {
+            position_pt,
+            alignment: crate::model::TabAlignment::Left,
+            leader: crate::model::TabLeader::None,
+        };
+        let mut regions = (0..12)
+            .map(|story_offset| LegacyRunningTabRegion {
+                source_story_index: Some(HEADER_FOOTER_STORY_BASE + story_offset),
+                tab_stops: vec![vec![tab((story_offset + 1) as f32)]],
+                table_cell_tab_stops: vec![vec![vec![vec![vec![
+                    tab((story_offset + 101) as f32),
+                ]]]]],
+            })
+            .collect::<Vec<_>>();
+        regions.push(LegacyRunningTabRegion {
+            source_story_index: Some(HEADER_FOOTER_STORY_BASE),
+            tab_stops: vec![vec![tab(999.0)]],
+            table_cell_tab_stops: vec![vec![vec![vec![vec![tab(1_999.0)]]]]],
+        });
+
+        let (paragraphs, tables) = legacy_running_tab_stops_from_regions(&blocks, &regions);
+        let paragraph_values = |hints: &RunningSurfaceTabStopHints| {
+            [
+                &hints.even_header,
+                &hints.header,
+                &hints.even_footer,
+                &hints.footer,
+                &hints.first_header,
+                &hints.first_footer,
+            ]
+            .map(|blocks| blocks[0][0].position_pt)
+        };
+        let table_values = |hints: &RunningSurfaceTableCellTabStopHints| {
+            [
+                &hints.even_header,
+                &hints.header,
+                &hints.even_footer,
+                &hints.footer,
+                &hints.first_header,
+                &hints.first_footer,
+            ]
+            .map(|blocks| blocks[0][0][0][0][0].position_pt)
+        };
+
+        assert_eq!(paragraphs.len(), 2);
+        assert_eq!(tables.len(), 2);
+        assert_eq!(
+            paragraph_values(&paragraphs[0]),
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        );
+        assert_eq!(
+            paragraph_values(&paragraphs[1]),
+            [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        );
+        assert_eq!(
+            table_values(&tables[0]),
+            [101.0, 102.0, 103.0, 104.0, 105.0, 106.0]
+        );
+        assert_eq!(
+            table_values(&tables[1]),
+            [107.0, 108.0, 109.0, 110.0, 111.0, 112.0]
+        );
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn legacy_running_tabs_repeat_unindexed_header_fallback() {
+        let blocks = vec![
+            Block::SectionBreak(SectionSetup::default()),
+            Block::PageBreak,
+        ];
+        let paragraph_tab = TabStop {
+            position_pt: 36.0,
+            alignment: crate::model::TabAlignment::Center,
+            leader: crate::model::TabLeader::Dot,
+        };
+        let table_tab = TabStop {
+            position_pt: 72.0,
+            alignment: crate::model::TabAlignment::Right,
+            leader: crate::model::TabLeader::Hyphen,
+        };
+        let regions = [LegacyRunningTabRegion {
+            source_story_index: None,
+            tab_stops: vec![Vec::new(), vec![paragraph_tab]],
+            table_cell_tab_stops: vec![
+                vec![vec![vec![vec![table_tab]]]],
+                TableCellTabStopHints::new(),
+            ],
+        }];
+
+        let (paragraphs, tables) = legacy_running_tab_stops_from_regions(&blocks, &regions);
+        assert_eq!(paragraphs.len(), 2);
+        assert_eq!(tables.len(), 2);
+        for (paragraph, table) in paragraphs.iter().zip(tables) {
+            assert_eq!(paragraph.header, vec![Vec::new(), vec![paragraph_tab]]);
+            assert_eq!(
+                table.header,
+                vec![vec![vec![vec![vec![table_tab]]]], Vec::new()]
+            );
+            assert!(paragraph.even_header.is_empty());
+            assert!(paragraph.first_header.is_empty());
+            assert!(paragraph.footer.is_empty());
+            assert!(table.even_header.is_empty());
+            assert!(table.first_header.is_empty());
+            assert!(table.footer.is_empty());
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn legacy_note_tab_overlay_requires_exact_alignment() {
+        let base = vec![vec![1], vec![2], vec![3]];
+        let overlay = vec![Vec::new(), vec![20], Vec::new()];
+        assert_eq!(
+            overlay_aligned_nonempty(&base, &overlay),
+            vec![vec![1], vec![20], vec![3]]
+        );
+        assert_eq!(
+            overlay_aligned_nonempty(&base, &overlay[..2]),
+            base,
+            "a truncated note sidecar must not shift any value"
+        );
+    }
+
     #[test]
     fn field_without_separator_does_not_swallow_following_text() {
         // 0x13 "AB" 0x15 (field begin, instruction, end — NO 0x14 separator),
@@ -2579,7 +4992,13 @@ mod tests {
         for cp in [0u32, units.len() as u32, units.len() as u32] {
             plcf_hdd.extend_from_slice(&cp.to_le_bytes());
         }
+        #[cfg(not(any(feature = "docx", feature = "render")))]
         let papx = PapxTable::default();
+        #[cfg(any(feature = "docx", feature = "render"))]
+        let papx = PapxTable::from_test_entries_with_tab_grpprls(&[(
+            units.len() as u32,
+            &[0x0D, 0xC6, 5, 0, 1, 0xD0, 0x02, 0],
+        )]);
         let chpx = ChpxTable::default();
         let stsh = StyleSheet::default();
         let lists = Lists::default();
@@ -2601,13 +5020,85 @@ mod tests {
             blocks,
             regions,
             pagination_hints,
+            line_spacing_hints,
+            #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stops,
+            #[cfg(feature = "render")]
+            note_tab_stops,
+            #[cfg(feature = "docx")]
+            note_reference_anchors,
+            column_break_offsets,
+            #[cfg(feature = "docx")]
+            table_cell_column_break_offsets,
             table_row_pagination,
             table_cell_pagination,
+            table_cell_line_spacing,
+            #[cfg(any(feature = "docx", feature = "render"))]
+            table_cell_tab_stops,
+            #[cfg(feature = "render")]
+            note_table_cell_tab_stops,
+            #[cfg(any(feature = "docx", feature = "render"))]
+            running_tab_regions,
+            #[cfg(feature = "docx")]
+            running_column_break_regions,
             text_start: _,
         } = build_legacy_region_blocks(&src, &mut numberer, &fib, &plcf_hdd, &[]);
         assert_eq!(pagination_hints.len(), blocks.len());
+        assert_eq!(line_spacing_hints.len(), blocks.len());
+        #[cfg(any(feature = "docx", feature = "render"))]
+        {
+            assert_eq!(tab_stops.len(), blocks.len());
+            assert!(tab_stops.iter().all(Vec::is_empty));
+        }
+        assert_eq!(column_break_offsets.len(), blocks.len());
+        #[cfg(feature = "docx")]
+        assert_eq!(table_cell_column_break_offsets.len(), blocks.len());
         assert_eq!(table_row_pagination.len(), blocks.len());
         assert_eq!(table_cell_pagination.len(), blocks.len());
+        assert_eq!(table_cell_line_spacing.len(), blocks.len());
+        #[cfg(any(feature = "docx", feature = "render"))]
+        {
+            assert_eq!(table_cell_tab_stops.len(), blocks.len());
+            assert!(table_cell_tab_stops.iter().all(Vec::is_empty));
+            assert_eq!(running_tab_regions.len(), 1);
+            assert_eq!(running_tab_regions[0].source_story_index, None);
+            assert_eq!(running_tab_regions[0].tab_stops.len(), 1);
+            assert_eq!(
+                running_tab_regions[0].table_cell_tab_stops,
+                vec![TableCellTabStopHints::new()]
+            );
+            assert_eq!(running_tab_regions[0].tab_stops[0].len(), 1);
+            assert_eq!(running_tab_regions[0].tab_stops[0][0].position_pt, 36.0);
+
+            let (running_tabs, running_table_tabs) =
+                legacy_running_tab_stops_from_regions(&blocks, &running_tab_regions);
+            assert_eq!(running_tabs.len(), 1);
+            assert_eq!(running_tabs[0].header, running_tab_regions[0].tab_stops);
+            assert_eq!(running_table_tabs.len(), 1);
+            assert_eq!(
+                running_table_tabs[0].header,
+                running_tab_regions[0].table_cell_tab_stops
+            );
+        }
+        #[cfg(feature = "render")]
+        {
+            assert_eq!(note_tab_stops, vec![Vec::new(); blocks.len()]);
+            assert_eq!(
+                note_table_cell_tab_stops,
+                vec![TableCellTabStopHints::new(); blocks.len()]
+            );
+        }
+        #[cfg(feature = "docx")]
+        {
+            assert_eq!(note_reference_anchors, vec![Vec::new(); blocks.len()]);
+            assert_eq!(running_column_break_regions.len(), 1);
+            assert_eq!(running_column_break_regions[0].source_story_index, None);
+            assert_eq!(
+                running_column_break_regions[0].column_break_offsets.len(),
+                1
+            );
+            assert!(running_column_break_regions[0].column_break_offsets[0].is_empty());
+        }
 
         let header_region = regions
             .iter()
@@ -2808,7 +5299,7 @@ mod tests {
         let mut numberer = Numberer::new(&lists);
         let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
 
-        asm.run_with_prms(&units, &fcs, &prms);
+        asm.run_with_prms(&units, &fcs, &prms, 0);
         let blocks = asm.finish();
         let [Block::Paragraph(paragraph)] = blocks.as_slice() else {
             panic!("expected one paragraph");
@@ -2837,7 +5328,7 @@ mod tests {
         let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
         asm.prm1_patches = &prm1_patches;
 
-        asm.run_with_prms(&units, &fcs, &prms);
+        asm.run_with_prms(&units, &fcs, &prms, 0);
         let blocks = asm.finish();
         let [Block::Paragraph(paragraph)] = blocks.as_slice() else {
             panic!("expected one paragraph");

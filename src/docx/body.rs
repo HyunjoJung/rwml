@@ -26,7 +26,7 @@ use super::styles::{
 use super::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree};
 use super::{
     attr_f32, attr_i32, attr_i64, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8,
-    field_char_type, is_page_break_type, local, toggle_on,
+    field_char_type, is_column_break_type, is_page_break_type, local, toggle_on,
 };
 use crate::annotation::{
     barcode_field_syntax, direct_ref_field_syntax, instruction_parts, legacy_form_field_syntax,
@@ -34,12 +34,14 @@ use crate::annotation::{
     page_ref_field_syntax, ref_field_syntax, toc_field_syntax, FieldKind,
 };
 use crate::model::{
-    Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
-    DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, ListInfo, PageNumberFormat,
-    PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup,
-    TabAlignment, TabStop, Table, TableBorderColors, TableBorderSide, TableBorderSizes,
-    TableBorderStyle, TableBorderStyles, TableCellNestedPaginationHints, TableCellPaginationHints,
-    TablePaginationHints, TableRowPaginationHint, TextDirection, VCell, MAX_TAB_STOPS,
+    Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Chart, Color, DocGrid,
+    DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, LineSpacingHint, ListInfo,
+    PageNumberFormat, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind,
+    SectionColumnHint, SectionColumnLayoutHints, SectionSetup, TabAlignment, TabStop, Table,
+    TableBorderColors, TableBorderSide, TableBorderSizes, TableBorderStyle, TableBorderStyles,
+    TableCellColumnBreakHints, TableCellLineSpacingHints, TableCellNestedPaginationHints,
+    TableCellPaginationHints, TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint,
+    TextDirection, VCell, MAX_TAB_STOPS,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -69,26 +71,63 @@ type Xml<'a> = Reader<&'a [u8]>;
 /// this depth the subtree is skipped rather than recursed into.
 const MAX_DEPTH: u32 = 128;
 const MAX_TABLE_GRID_COLS: usize = 1024;
+const MAX_UNEQUAL_SECTION_COLUMNS: usize = 64;
+const MAX_SECTION_COLUMN_TWIPS: u32 = 31_680;
 const PAGE_BREAK_MARKER: char = '\u{000C}';
+const COLUMN_BREAK_MARKER: char = '\u{000B}';
 
 #[derive(Default)]
 pub(super) struct PaginationCapture {
     hints: Vec<PaginationHint>,
+    line_spacing: Vec<Option<LineSpacingHint>>,
     tab_stops: Vec<Vec<TabStop>>,
+    column_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
+    table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
+    table_cell_column_breaks: Vec<TableCellColumnBreakHints>,
     table_nested_pagination: Vec<TableCellNestedPaginationHints>,
+    table_cell_tab_stops: Vec<TableCellTabStopHints>,
     suspended: usize,
 }
 
-#[cfg(feature = "render")]
 #[derive(Default)]
-pub(super) struct BodyRenderHints {
+pub(super) struct SectionColumnCapture {
+    gaps: Vec<Option<f32>>,
+    layouts: Vec<Option<SectionColumnLayoutHints>>,
+    separators: Vec<bool>,
+    rtl: Vec<bool>,
+    suspended: usize,
+}
+
+#[derive(Default)]
+pub(super) struct BodySectionColumnHints {
+    pub(super) gaps: Vec<Option<f32>>,
+    pub(super) layouts: Vec<Option<SectionColumnLayoutHints>>,
+    pub(super) separators: Vec<bool>,
+    pub(super) rtl: Vec<bool>,
+}
+
+#[derive(Default)]
+pub(super) struct BodyLayoutHints {
     pub(super) pagination: Vec<PaginationHint>,
+    pub(super) line_spacing: Vec<Option<LineSpacingHint>>,
     pub(super) tab_stops: Vec<Vec<TabStop>>,
+    pub(super) column_break_offsets: Vec<Vec<usize>>,
     pub(super) table_rows: Vec<Vec<TableRowPaginationHint>>,
     pub(super) table_cells: Vec<TableCellPaginationHints>,
+    pub(super) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
+    pub(super) table_cell_column_breaks: Vec<TableCellColumnBreakHints>,
     pub(super) table_nested: Vec<TableCellNestedPaginationHints>,
+    pub(super) table_cell_tabs: Vec<TableCellTabStopHints>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct BlockSectionColumnHints<'a> {
+    gap_pt: Option<f32>,
+    layout: Option<&'a SectionColumnLayoutHints>,
+    separator: bool,
+    rtl: bool,
 }
 
 /// Resolved supplementary tables, passed down the descent.
@@ -97,6 +136,7 @@ pub(crate) struct Ctx<'a> {
     pub numbering: &'a Numbering,
     pub rels: &'a HashMap<String, (String, bool)>,
     pub media: &'a HashMap<String, Image>,
+    pub charts: &'a HashMap<String, Chart>,
     pub ref_targets: &'a HashMap<String, String>,
     pub ref_position_context: &'a super::fields::RefPositionContext,
     pub ref_number_context: &'a super::fields::RefNumberContext,
@@ -113,6 +153,7 @@ pub(crate) struct Ctx<'a> {
     pub document_variables: &'a HashMap<String, String>,
     pub extended_properties: &'a HashMap<String, String>,
     pub file_size_bytes: Option<usize>,
+    pub preserve_note_local_fields: bool,
     pub ref_field_cursor: std::cell::RefCell<usize>,
     pub page_field_cursor: std::cell::RefCell<usize>,
     pub last_page_field_unsupported_display_format: std::cell::RefCell<Option<bool>>,
@@ -122,6 +163,7 @@ pub(crate) struct Ctx<'a> {
     pub style_ref_field_cursor: std::cell::RefCell<usize>,
     pub form_field_cursor: std::cell::RefCell<usize>,
     pub formula_field_cursor: std::cell::RefCell<usize>,
+    pub last_formula_field_used_table_context: std::cell::Cell<bool>,
     pub sequence_counters: std::cell::RefCell<HashMap<String, i64>>,
     pub sequence_heading_counts: std::cell::RefCell<[u32; 9]>,
     pub sequence_heading_scopes: std::cell::RefCell<HashMap<(String, u8), u32>>,
@@ -132,77 +174,183 @@ pub(crate) struct Ctx<'a> {
     /// order as list paragraphs are finalized (interior-mutable: parsing is
     /// single-threaded and `finalize_paragraph` runs in reading order).
     pub counters: std::cell::RefCell<HashMap<String, [u32; 9]>>,
+    pub paragraph_charts: std::cell::RefCell<Vec<Vec<Chart>>>,
+    pub(super) section_column_capture: std::cell::RefCell<Option<SectionColumnCapture>>,
     pub(super) pagination_capture: std::cell::RefCell<Option<PaginationCapture>>,
 }
 
 impl Ctx<'_> {
-    #[cfg(feature = "render")]
-    pub(crate) fn begin_pagination_capture(&self) {
-        *self.pagination_capture.borrow_mut() = Some(PaginationCapture::default());
+    fn begin_paragraph_charts(&self) {
+        self.paragraph_charts.borrow_mut().push(Vec::new());
     }
 
-    #[cfg(feature = "render")]
-    pub(crate) fn take_render_hints(&self) -> BodyRenderHints {
-        self.pagination_capture
+    fn push_paragraph_chart(&self, chart: Chart) {
+        if let Some(charts) = self.paragraph_charts.borrow_mut().last_mut() {
+            charts.push(chart);
+        }
+    }
+
+    fn end_paragraph_charts(&self) -> Vec<Chart> {
+        self.paragraph_charts.borrow_mut().pop().unwrap_or_default()
+    }
+
+    pub(crate) fn begin_section_column_capture(&self) {
+        *self.section_column_capture.borrow_mut() = Some(SectionColumnCapture::default());
+    }
+
+    pub(crate) fn take_section_column_hints(&self) -> BodySectionColumnHints {
+        self.section_column_capture
             .borrow_mut()
             .take()
-            .map(|capture| BodyRenderHints {
-                pagination: capture.hints,
-                tab_stops: capture.tab_stops,
-                table_rows: capture.table_row_pagination,
-                table_cells: capture.table_cell_pagination,
-                table_nested: capture.table_nested_pagination,
+            .map(|capture| BodySectionColumnHints {
+                gaps: capture.gaps,
+                layouts: capture.layouts,
+                separators: capture.separators,
+                rtl: capture.rtl,
             })
             .unwrap_or_default()
     }
 
-    fn suspend_pagination_capture(&self) {
+    pub(crate) fn begin_pagination_capture(&self) {
+        *self.pagination_capture.borrow_mut() = Some(PaginationCapture::default());
+    }
+
+    pub(crate) fn take_layout_hints(&self) -> BodyLayoutHints {
+        self.pagination_capture
+            .borrow_mut()
+            .take()
+            .map(|capture| BodyLayoutHints {
+                pagination: capture.hints,
+                line_spacing: capture.line_spacing,
+                tab_stops: capture.tab_stops,
+                column_break_offsets: capture.column_break_offsets,
+                table_rows: capture.table_row_pagination,
+                table_cells: capture.table_cell_pagination,
+                table_cell_line_spacing: capture.table_cell_line_spacing,
+                table_cell_column_breaks: capture.table_cell_column_breaks,
+                table_nested: capture.table_nested_pagination,
+                table_cell_tabs: capture.table_cell_tab_stops,
+            })
+            .unwrap_or_default()
+    }
+
+    fn suspend_block_captures(&self) {
+        if let Some(capture) = self.section_column_capture.borrow_mut().as_mut() {
+            capture.suspended = capture.suspended.saturating_add(1);
+        }
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             capture.suspended = capture.suspended.saturating_add(1);
         }
     }
 
-    fn resume_pagination_capture(&self) {
+    fn resume_block_captures(&self) {
+        if let Some(capture) = self.section_column_capture.borrow_mut().as_mut() {
+            capture.suspended = capture.suspended.saturating_sub(1);
+        }
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             capture.suspended = capture.suspended.saturating_sub(1);
         }
     }
 
-    fn capture_block_hints(&self, hint: PaginationHint, tab_stops: &[TabStop]) {
+    fn capture_block_hints(
+        &self,
+        hint: PaginationHint,
+        line_spacing: Option<LineSpacingHint>,
+        _tab_stops: &[TabStop],
+        section_columns: BlockSectionColumnHints<'_>,
+        _column_break_offsets: &[usize],
+    ) {
+        if let Some(capture) = self.section_column_capture.borrow_mut().as_mut() {
+            if capture.suspended == 0 {
+                capture.gaps.push(section_columns.gap_pt);
+                capture.layouts.push(section_columns.layout.cloned());
+                capture.separators.push(section_columns.separator);
+                capture.rtl.push(section_columns.rtl);
+            }
+        }
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
                 capture.hints.push(hint);
-                capture.tab_stops.push(tab_stops.to_vec());
+                capture.line_spacing.push(line_spacing);
                 capture.table_row_pagination.push(Vec::new());
                 capture.table_cell_pagination.push(Vec::new());
+                capture.table_cell_line_spacing.push(Vec::new());
+                capture.table_cell_column_breaks.push(Vec::new());
+                capture.tab_stops.push(_tab_stops.to_vec());
+                capture.table_cell_tab_stops.push(Vec::new());
+                capture
+                    .column_break_offsets
+                    .push(_column_break_offsets.to_vec());
                 capture.table_nested_pagination.push(Vec::new());
             }
         }
     }
 
     fn capture_table_block_hints(&self, table: &TablePaginationHints) {
+        if let Some(capture) = self.section_column_capture.borrow_mut().as_mut() {
+            if capture.suspended == 0 {
+                capture.gaps.push(None);
+                capture.layouts.push(None);
+                capture.separators.push(false);
+                capture.rtl.push(false);
+            }
+        }
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
                 capture.hints.push(PaginationHint::default());
-                capture.tab_stops.push(Vec::new());
+                capture.line_spacing.push(None);
                 capture.table_row_pagination.push(table.rows.clone());
                 capture.table_cell_pagination.push(table.cells.clone());
+                capture
+                    .table_cell_line_spacing
+                    .push(table.cell_line_spacing.clone());
+                capture
+                    .table_cell_column_breaks
+                    .push(table.cell_column_breaks.clone());
+                capture.tab_stops.push(Vec::new());
+                capture.table_cell_tab_stops.push(table.cell_tabs.clone());
+                capture.column_break_offsets.push(Vec::new());
                 capture.table_nested_pagination.push(table.nested.clone());
             }
         }
     }
 
-    fn capture_paragraph_blocks(
-        &self,
-        blocks: &[Block],
-        hint: PaginationHint,
-        tab_stops: &[TabStop],
-    ) {
-        for block in blocks {
+    fn capture_paragraph_blocks(&self, data: &ParagraphBlockData) {
+        for (index, block) in data.blocks.iter().enumerate() {
+            let break_offsets = data
+                .column_break_offsets
+                .get(index)
+                .map_or(&[][..], Vec::as_slice);
             if matches!(block, Block::Paragraph(_)) {
-                self.capture_block_hints(hint, tab_stops);
+                self.capture_block_hints(
+                    data.pagination,
+                    data.line_spacing,
+                    &data.tab_stops,
+                    BlockSectionColumnHints::default(),
+                    break_offsets,
+                );
             } else {
-                self.capture_block_hints(PaginationHint::default(), &[]);
+                let column_gap = matches!(block, Block::SectionBreak(_))
+                    .then_some(data.section_column_gap_pt)
+                    .flatten();
+                let column_layout = matches!(block, Block::SectionBreak(_))
+                    .then_some(data.section_column_layout.as_ref())
+                    .flatten();
+                let column_separator =
+                    matches!(block, Block::SectionBreak(_)) && data.section_column_separator;
+                let column_rtl = matches!(block, Block::SectionBreak(_)) && data.section_column_rtl;
+                self.capture_block_hints(
+                    PaginationHint::default(),
+                    None,
+                    &[],
+                    BlockSectionColumnHints {
+                        gap_pt: column_gap,
+                        layout: column_layout,
+                        separator: column_separator,
+                        rtl: column_rtl,
+                    },
+                    &[],
+                );
             }
         }
     }
@@ -236,6 +384,8 @@ pub(crate) struct HeaderFooterRef {
 pub(crate) struct HeaderFooterRefs {
     pub headers: Vec<HeaderFooterRef>,
     pub footers: Vec<HeaderFooterRef>,
+    pub header_distance_twips: Option<u32>,
+    pub footer_distance_twips: Option<u32>,
 }
 
 /// Scan `word/document.xml` for every `<w:headerReference>` / `<w:footerReference>`
@@ -327,10 +477,15 @@ fn read_hf_ref_section(r: &mut Xml<'_>) -> HeaderFooterRefs {
                     record_header_footer_ref(&mut refs, &e);
                     skip_subtree(r);
                 }
+                b"pgMar" => {
+                    record_header_footer_distances(&mut refs, &e);
+                    skip_subtree(r);
+                }
                 _ => skip_subtree(r),
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"headerReference" | b"footerReference" => record_header_footer_ref(&mut refs, &e),
+                b"pgMar" => record_header_footer_distances(&mut refs, &e),
                 _ => {}
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
@@ -378,10 +533,15 @@ fn read_hf_ref_alternate_content_branch(
                     record_header_footer_ref(refs, &e);
                     skip_subtree(r);
                 }
+                b"pgMar" => {
+                    record_header_footer_distances(refs, &e);
+                    skip_subtree(r);
+                }
                 _ => skip_subtree(r),
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"headerReference" | b"footerReference" => record_header_footer_ref(refs, &e),
+                b"pgMar" => record_header_footer_distances(refs, &e),
                 _ => {}
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
@@ -399,6 +559,15 @@ fn record_header_footer_ref(refs: &mut HeaderFooterRefs, e: &BytesStart<'_>) {
         b"headerReference" => refs.headers.push(reference),
         b"footerReference" => refs.footers.push(reference),
         _ => {}
+    }
+}
+
+fn record_header_footer_distances(refs: &mut HeaderFooterRefs, e: &BytesStart<'_>) {
+    if let Some(value) = attr_u32(e, b"header") {
+        refs.header_distance_twips = Some(value);
+    }
+    if let Some(value) = attr_u32(e, b"footer") {
+        refs.footer_distance_twips = Some(value);
     }
 }
 
@@ -552,6 +721,38 @@ fn apply_section_page_margins(
     page.margin_bottom_pt = bottom;
 }
 
+#[derive(Default)]
+pub(super) struct FinalSectionColumnHints {
+    pub(super) gap_pt: Option<f32>,
+    pub(super) layout: Option<SectionColumnLayoutHints>,
+    pub(super) separator: bool,
+    pub(super) rtl: bool,
+}
+
+pub(crate) fn scan_final_section_column_hints(xml: &str) -> FinalSectionColumnHints {
+    let mut r = Reader::from_str(xml);
+    let mut hints = FinalSectionColumnHints::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                let section = read_sect_pr(&mut r, 0);
+                hints = FinalSectionColumnHints {
+                    gap_pt: section.column_gap_pt,
+                    layout: section.column_layout,
+                    separator: section.column_separator,
+                    rtl: section.column_rtl,
+                };
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                hints = FinalSectionColumnHints::default();
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    hints
+}
+
 /// Scan the final/body section properties for text column count.
 pub(crate) fn scan_section_columns(xml: &str) -> Option<u16> {
     let mut r = Reader::from_str(xml);
@@ -667,16 +868,41 @@ pub(crate) fn scan_page_number_format(xml: &str) -> Option<PageNumberFormat> {
 }
 
 fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
-    let mut columns = None;
+    read_section_column_properties(r).count
+}
+
+#[derive(Default)]
+struct ParsedSectionColumns {
+    count: Option<u16>,
+    gap_pt: Option<f32>,
+    layout: Option<SectionColumnLayoutHints>,
+    separator: bool,
+}
+
+fn read_section_column_properties(r: &mut Xml<'_>) -> ParsedSectionColumns {
+    let mut columns = ParsedSectionColumns::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                if let Some(value) = read_section_setup_alternate_content(r).columns {
-                    columns = value;
+                let alternate = read_section_setup_alternate_content(r);
+                if let Some(value) = alternate.columns {
+                    columns.count = value;
+                }
+                if let Some(value) = alternate.column_gap_pt {
+                    columns.gap_pt = value;
+                }
+                if let Some(value) = alternate.column_layout {
+                    columns.layout = value;
+                }
+                if let Some(value) = alternate.column_separator {
+                    columns.separator = value;
                 }
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"cols" => {
-                columns = section_columns(&e);
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"cols" => {
+                columns = read_section_columns_element(r, &e);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"cols" => {
+                columns = section_columns_from_attrs(&e);
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
@@ -687,8 +913,117 @@ fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
     columns
 }
 
+fn section_columns_from_attrs(e: &BytesStart<'_>) -> ParsedSectionColumns {
+    let separator = section_column_separator(e);
+    if explicitly_unequal_columns(e) {
+        return ParsedSectionColumns {
+            separator,
+            ..ParsedSectionColumns::default()
+        };
+    }
+    ParsedSectionColumns {
+        count: section_columns(e),
+        gap_pt: section_column_gap_pt(e),
+        layout: None,
+        separator,
+    }
+}
+
+fn section_column_separator(e: &BytesStart<'_>) -> bool {
+    attr_local(e, b"sep").is_some_and(|value| toggle_on(Some(value)))
+}
+
+fn explicitly_unequal_columns(e: &BytesStart<'_>) -> bool {
+    attr_local_trimmed(e, b"equalWidth").is_some_and(|value| !toggle_on(Some(value)))
+}
+
+fn read_section_columns_element(r: &mut Xml<'_>, e: &BytesStart<'_>) -> ParsedSectionColumns {
+    if !explicitly_unequal_columns(e) {
+        let columns = section_columns_from_attrs(e);
+        skip_subtree(r);
+        return columns;
+    }
+
+    let separator = section_column_separator(e);
+    let mut values = Vec::new();
+    let mut valid = true;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(child)) if local(child.name().as_ref()) == b"col" => {
+                if let Some(column) = section_column_hint(&child) {
+                    if values.len() < MAX_UNEQUAL_SECTION_COLUMNS {
+                        values.push(column);
+                    } else {
+                        valid = false;
+                    }
+                } else {
+                    valid = false;
+                }
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(child)) if local(child.name().as_ref()) == b"col" => {
+                if let Some(column) = section_column_hint(&child) {
+                    if values.len() < MAX_UNEQUAL_SECTION_COLUMNS {
+                        values.push(column);
+                    } else {
+                        valid = false;
+                    }
+                } else {
+                    valid = false;
+                }
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(end)) if local(end.name().as_ref()) == b"cols" => break,
+            Ok(Event::Eof) | Err(_) => {
+                valid = false;
+                break;
+            }
+            _ => {}
+        }
+    }
+    if !valid || values.is_empty() {
+        return ParsedSectionColumns {
+            separator,
+            ..ParsedSectionColumns::default()
+        };
+    }
+    ParsedSectionColumns {
+        count: u16::try_from(values.len()).ok(),
+        gap_pt: None,
+        layout: Some(SectionColumnLayoutHints { columns: values }),
+        separator,
+    }
+}
+
+fn section_column_hint(e: &BytesStart<'_>) -> Option<SectionColumnHint> {
+    let width_twips = attr_u32(e, b"w")?;
+    if width_twips == 0 || width_twips > MAX_SECTION_COLUMN_TWIPS {
+        return None;
+    }
+    let space_twips = match attr_local_trimmed(e, b"space") {
+        Some(_) => attr_u32(e, b"space")?,
+        None => 0,
+    };
+    if space_twips > MAX_SECTION_COLUMN_TWIPS {
+        return None;
+    }
+    Some(SectionColumnHint {
+        width_pt: width_twips as f32 / 20.0,
+        space_after_pt: space_twips as f32 / 20.0,
+    })
+}
+
 fn section_columns(e: &BytesStart<'_>) -> Option<u16> {
     attr_u16(e, b"num").map(|value| value.max(1))
+}
+
+fn section_column_gap_pt(e: &BytesStart<'_>) -> Option<f32> {
+    if !toggle_on(attr_local(e, b"equalWidth")) || section_columns(e)? < 2 {
+        return None;
+    }
+    attr_local(e, b"space")
+        .and_then(|value| twips_to_pt(&value))
+        .filter(|value| *value >= 0.0)
 }
 
 fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
@@ -778,6 +1113,10 @@ fn read_section_title_page(r: &mut Xml<'_>) -> bool {
 #[derive(Default)]
 struct SectionSetupScan {
     columns: Option<Option<u16>>,
+    column_gap_pt: Option<Option<f32>>,
+    column_layout: Option<Option<SectionColumnLayoutHints>>,
+    column_separator: Option<bool>,
+    column_rtl: Option<bool>,
     text_direction: Option<Option<TextDirection>>,
     doc_grid: Option<Option<DocGrid>>,
     title_page: bool,
@@ -799,6 +1138,11 @@ fn read_section_setup_alternate_content(r: &mut Xml<'_>) -> SectionSetupScan {
                     _ => skip_subtree(r),
                 }
             }
+            Ok(Event::Empty(e))
+                if !took && matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") =>
+            {
+                took = true;
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -813,6 +1157,9 @@ fn read_section_setup_alternate_content_branch(r: &mut Xml<'_>, branch: &[u8]) -
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 merge_section_setup_scan(&mut setup, read_section_setup_alternate_content(r));
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"cols" => {
+                record_section_columns_scan(&mut setup, read_section_columns_element(r, &e));
             }
             Ok(Event::Start(e)) if !record_section_setup_child(&mut setup, &e) => {
                 skip_subtree(r);
@@ -832,6 +1179,18 @@ fn merge_section_setup_scan(target: &mut SectionSetupScan, source: SectionSetupS
     if source.columns.is_some() {
         target.columns = source.columns;
     }
+    if source.column_gap_pt.is_some() {
+        target.column_gap_pt = source.column_gap_pt;
+    }
+    if source.column_layout.is_some() {
+        target.column_layout = source.column_layout;
+    }
+    if source.column_separator.is_some() {
+        target.column_separator = source.column_separator;
+    }
+    if source.column_rtl.is_some() {
+        target.column_rtl = source.column_rtl;
+    }
     if source.text_direction.is_some() {
         target.text_direction = source.text_direction;
     }
@@ -844,11 +1203,15 @@ fn merge_section_setup_scan(target: &mut SectionSetupScan, source: SectionSetupS
 fn record_section_setup_child(setup: &mut SectionSetupScan, e: &BytesStart<'_>) -> bool {
     match local(e.name().as_ref()) {
         b"cols" => {
-            setup.columns = Some(section_columns(e));
+            record_section_columns_scan(setup, section_columns_from_attrs(e));
             true
         }
         b"textDirection" => {
             setup.text_direction = Some(section_text_direction(e));
+            true
+        }
+        b"bidi" => {
+            setup.column_rtl = Some(toggle_on(attr_local(e, b"val")));
             true
         }
         b"docGrid" => {
@@ -861,6 +1224,13 @@ fn record_section_setup_child(setup: &mut SectionSetupScan, e: &BytesStart<'_>) 
         }
         _ => false,
     }
+}
+
+fn record_section_columns_scan(setup: &mut SectionSetupScan, columns: ParsedSectionColumns) {
+    setup.columns = Some(columns.count);
+    setup.column_gap_pt = Some(columns.gap_pt);
+    setup.column_layout = Some(columns.layout);
+    setup.column_separator = Some(columns.separator);
 }
 
 fn read_section_page_number_start(r: &mut Xml<'_>) -> Option<u32> {
@@ -1143,12 +1513,51 @@ pub(crate) fn scan_note_ref_anchors(
     tag: &[u8],
     ctx: &super::fields::FieldResolutionContext<'_>,
 ) -> HashMap<String, String> {
-    let mut r = Reader::from_str(xml);
     let mut anchors = HashMap::new();
+    for reference in scan_note_ref_positions(xml, tag, ctx).references {
+        anchors
+            .entry(reference.id)
+            .or_insert_with(|| text::finalize(&reference.block_text));
+    }
+    anchors
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NoteRefPosition {
+    pub(crate) id: String,
+    pub(crate) block_index: usize,
+    pub(crate) block_text: String,
+    pub(crate) text_offset: usize,
+    pub(crate) paragraph: bool,
+    pub(crate) custom_mark: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct NoteRefPositionScan {
+    pub(crate) block_count: usize,
+    pub(crate) references: Vec<NoteRefPosition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PendingNoteRef {
+    id: String,
+    text_offset: usize,
+    custom_mark: bool,
+}
+
+pub(crate) fn scan_note_ref_positions(
+    xml: &str,
+    tag: &[u8],
+    ctx: &super::fields::FieldResolutionContext<'_>,
+) -> NoteRefPositionScan {
+    let mut r = Reader::from_str(xml);
+    let mut scan = NoteRefPositionScan::default();
     let mut in_body = false;
     let mut body_depth = 0usize;
     let mut body_block_candidate_depths = vec![0usize];
     let mut current_block_depth = None;
+    let mut current_block_index = None;
+    let mut current_block_is_paragraph = false;
     let mut current_block_text = String::new();
     let mut current_block_refs = Vec::new();
     let mut complex_field = NoteAnchorComplexField::default();
@@ -1172,8 +1581,11 @@ pub(crate) fn scan_note_ref_anchors(
                     body_block_candidate_depths.clear();
                     body_block_candidate_depths.push(0);
                     current_block_depth = None;
+                    current_block_index = None;
+                    current_block_is_paragraph = false;
                     current_block_text.clear();
                     current_block_refs.clear();
+                    scan.block_count = 0;
                     field_state.clear();
                     continue;
                 }
@@ -1189,6 +1601,9 @@ pub(crate) fn scan_note_ref_anchors(
                         && is_note_anchor_body_block(name)
                     {
                         current_block_depth = Some(body_depth + 1);
+                        current_block_index = Some(scan.block_count);
+                        current_block_is_paragraph = name == b"p";
+                        scan.block_count = scan.block_count.saturating_add(1);
                         current_block_text.clear();
                         current_block_refs.clear();
                         complex_field = NoteAnchorComplexField::default();
@@ -1201,8 +1616,8 @@ pub(crate) fn scan_note_ref_anchors(
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
                     } else if name == tag {
-                        if let Some(id) = attr_local_trimmed(&e, b"id") {
-                            current_block_refs.push(id);
+                        if let Some(reference) = pending_note_ref(&e, &current_block_text) {
+                            current_block_refs.push(reference);
                         }
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
@@ -1281,8 +1696,8 @@ pub(crate) fn scan_note_ref_anchors(
                 let name = local(qname.as_ref());
                 if current_block_depth.is_some() {
                     if name == tag {
-                        if let Some(id) = attr_local_trimmed(&e, b"id") {
-                            current_block_refs.push(id);
+                        if let Some(reference) = pending_note_ref(&e, &current_block_text) {
+                            current_block_refs.push(reference);
                         }
                     } else if name == b"fldChar" {
                         if let Some(text) = complex_field.apply_field_char(&e, &mut field_state) {
@@ -1313,6 +1728,8 @@ pub(crate) fn scan_note_ref_anchors(
                     body_block_candidate_depths.clear();
                     body_block_candidate_depths.push(0);
                     current_block_depth = None;
+                    current_block_index = None;
+                    current_block_is_paragraph = false;
                     current_block_text.clear();
                     current_block_refs.clear();
                     complex_field = NoteAnchorComplexField::default();
@@ -1323,9 +1740,11 @@ pub(crate) fn scan_note_ref_anchors(
                     let ending_current_block = current_block_depth == Some(body_depth);
                     if ending_current_block {
                         insert_note_anchor_block(
-                            &mut anchors,
+                            &mut scan.references,
                             &current_block_refs,
                             &current_block_text,
+                            current_block_index.unwrap_or_default(),
+                            current_block_is_paragraph,
                         );
                     }
                     if body_block_candidate_depths.last().copied() == Some(body_depth) {
@@ -1334,6 +1753,8 @@ pub(crate) fn scan_note_ref_anchors(
                     body_depth = body_depth.saturating_sub(1);
                     if ending_current_block {
                         current_block_depth = None;
+                        current_block_index = None;
+                        current_block_is_paragraph = false;
                         current_block_text.clear();
                         current_block_refs.clear();
                         complex_field = NoteAnchorComplexField::default();
@@ -1345,7 +1766,7 @@ pub(crate) fn scan_note_ref_anchors(
             _ => {}
         }
     }
-    anchors
+    scan
 }
 
 #[derive(Default)]
@@ -1560,7 +1981,7 @@ fn append_note_anchor_alternate_content(
     r: &mut Xml<'_>,
     tag: &[u8],
     text: &mut String,
-    refs: &mut Vec<String>,
+    refs: &mut Vec<PendingNoteRef>,
     complex_field: &mut NoteAnchorComplexField,
     field_state: &mut ContextlessFieldState<'_>,
     depth: u32,
@@ -1597,7 +2018,7 @@ fn append_note_anchor_content(
     r: &mut Xml<'_>,
     tag: &[u8],
     text: &mut String,
-    refs: &mut Vec<String>,
+    refs: &mut Vec<PendingNoteRef>,
     complex_field: &mut NoteAnchorComplexField,
     field_state: &mut ContextlessFieldState<'_>,
     depth: u32,
@@ -1612,8 +2033,8 @@ fn append_note_anchor_content(
                 let qname = e.name();
                 let name = local(qname.as_ref());
                 if name == tag {
-                    if let Some(id) = attr_local_trimmed(&e, b"id") {
-                        refs.push(id);
+                    if let Some(reference) = pending_note_ref(&e, text) {
+                        refs.push(reference);
                     }
                     skip_subtree(r);
                 } else if name == b"fldChar" {
@@ -1709,8 +2130,8 @@ fn append_note_anchor_content(
                 let qname = e.name();
                 let name = local(qname.as_ref());
                 if name == tag {
-                    if let Some(id) = attr_local_trimmed(&e, b"id") {
-                        refs.push(id);
+                    if let Some(reference) = pending_note_ref(&e, text) {
+                        refs.push(reference);
                     }
                 } else if name == b"fldChar" {
                     if let Some(computed) = complex_field.apply_field_char(&e, field_state) {
@@ -1737,17 +2158,34 @@ fn append_note_anchor_content(
     }
 }
 
+fn pending_note_ref(e: &BytesStart<'_>, text: &str) -> Option<PendingNoteRef> {
+    Some(PendingNoteRef {
+        id: attr_local_trimmed(e, b"id")?,
+        text_offset: text.chars().count(),
+        custom_mark: attr_local(e, b"customMarkFollows")
+            .is_some_and(|value| toggle_on(Some(value))),
+    })
+}
+
 fn insert_note_anchor_block(
-    anchors: &mut HashMap<String, String>,
-    refs: &[String],
+    anchors: &mut Vec<NoteRefPosition>,
+    refs: &[PendingNoteRef],
     raw_text: &str,
+    block_index: usize,
+    paragraph: bool,
 ) {
     if refs.is_empty() {
         return;
     }
-    let text = text::finalize(raw_text);
-    for id in refs {
-        anchors.entry(id.clone()).or_insert_with(|| text.clone());
+    for reference in refs {
+        anchors.push(NoteRefPosition {
+            id: reference.id.clone(),
+            block_index,
+            block_text: raw_text.to_string(),
+            text_offset: reference.text_offset,
+            paragraph,
+            custom_mark: reference.custom_mark,
+        });
     }
 }
 
@@ -1852,31 +2290,46 @@ fn read_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
 struct BlockBatch {
     blocks: Vec<Block>,
     pagination: Vec<Option<PaginationHint>>,
+    line_spacing: Vec<Option<LineSpacingHint>>,
     nested_tables: Vec<Option<TablePaginationHints>>,
+    tab_stops: Vec<Vec<TabStop>>,
+    column_break_offsets: Vec<Vec<usize>>,
 }
 
 impl BlockBatch {
     fn push_table(&mut self, block: Block, pagination: TablePaginationHints) {
         self.blocks.push(block);
         self.pagination.push(None);
+        self.line_spacing.push(None);
         self.nested_tables.push(Some(pagination));
+        self.tab_stops.push(Vec::new());
+        self.column_break_offsets.push(Vec::new());
     }
 
     fn extend(&mut self, other: Self) {
         self.blocks.extend(other.blocks);
         self.pagination.extend(other.pagination);
+        self.line_spacing.extend(other.line_spacing);
         self.nested_tables.extend(other.nested_tables);
+        self.tab_stops.extend(other.tab_stops);
+        self.column_break_offsets.extend(other.column_break_offsets);
     }
 
     fn append_to(
         self,
         blocks: &mut Vec<Block>,
         pagination: &mut Vec<Option<PaginationHint>>,
+        line_spacing: &mut Vec<Option<LineSpacingHint>>,
         nested_tables: &mut Vec<Option<TablePaginationHints>>,
+        tab_stops: &mut Vec<Vec<TabStop>>,
+        column_break_offsets: &mut Vec<Vec<usize>>,
     ) {
         blocks.extend(self.blocks);
         pagination.extend(self.pagination);
+        line_spacing.extend(self.line_spacing);
         nested_tables.extend(self.nested_tables);
+        tab_stops.extend(self.tab_stops);
+        column_break_offsets.extend(self.column_break_offsets);
     }
 }
 
@@ -2105,19 +2558,24 @@ fn read_paragraph(
     depth: u32,
 ) -> (
     Paragraph,
-    Option<SectionSetup>,
+    Vec<Chart>,
+    Option<ParsedSectionSetup>,
     PaginationHint,
     Vec<TabStop>,
+    Option<LineSpacingHint>,
 ) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
         return (
             Paragraph::default(),
+            Vec::new(),
             None,
             PaginationHint::default(),
             Vec::new(),
+            None,
         );
     }
+    ctx.begin_paragraph_charts();
     let mut runs: Vec<Run> = Vec::new();
     let mut pp = PPr::default();
     let mut sequence_heading_applied = false;
@@ -2225,8 +2683,16 @@ fn read_paragraph(
     }
     apply_sequence_heading_scope(&pp, ctx, &mut sequence_heading_applied);
     let section = pp.section.take();
-    let (paragraph, pagination, tab_stops) = finalize_paragraph(runs, pp, ctx);
-    (paragraph, section, pagination, tab_stops)
+    let (paragraph, pagination, tab_stops, line_spacing) = finalize_paragraph(runs, pp, ctx);
+    let charts = ctx.end_paragraph_charts();
+    (
+        paragraph,
+        charts,
+        section,
+        pagination,
+        tab_stops,
+        line_spacing,
+    )
 }
 
 fn push_active_bookmark(bookmarks: &mut Vec<(String, String)>, e: &BytesStart<'_>) {
@@ -2277,67 +2743,185 @@ fn mark_complex_field_result_runs(
     }
 }
 
-fn read_paragraph_blocks_data(
-    r: &mut Xml<'_>,
-    ctx: &Ctx<'_>,
-    depth: u32,
-) -> (Vec<Block>, PaginationHint, Vec<TabStop>) {
-    let (paragraph, section, pagination, tab_stops) = read_paragraph(r, ctx, depth);
-    let mut blocks = split_page_breaks(paragraph);
-    if let Some(mut section) = section {
-        if section.section_break.is_none() {
-            section.section_break = Some(SectionBreakKind::NextPage);
+struct ParagraphBlockData {
+    blocks: Vec<Block>,
+    pagination: PaginationHint,
+    line_spacing: Option<LineSpacingHint>,
+    tab_stops: Vec<TabStop>,
+    section_column_gap_pt: Option<f32>,
+    section_column_layout: Option<SectionColumnLayoutHints>,
+    section_column_separator: bool,
+    section_column_rtl: bool,
+    column_break_offsets: Vec<Vec<usize>>,
+}
+
+fn read_paragraph_blocks_data(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> ParagraphBlockData {
+    let (paragraph, charts, section, pagination, tab_stops, line_spacing) =
+        read_paragraph(r, ctx, depth);
+    let mut split = if !charts.is_empty() && paragraph.runs.is_empty() {
+        let blocks = charts.into_iter().map(Block::Chart).collect::<Vec<_>>();
+        let column_break_offsets = vec![Vec::new(); blocks.len()];
+        ParagraphBlockSplit {
+            blocks,
+            column_break_offsets,
         }
-        blocks.push(Block::SectionBreak(section));
+    } else {
+        split_page_breaks(paragraph)
+    };
+    let mut section_column_gap_pt = None;
+    let mut section_column_layout = None;
+    let mut section_column_separator = false;
+    let mut section_column_rtl = false;
+    if let Some(mut section) = section {
+        if section.setup.section_break.is_none() {
+            section.setup.section_break = Some(SectionBreakKind::NextPage);
+        }
+        section_column_gap_pt = section.column_gap_pt;
+        section_column_layout = section.column_layout;
+        section_column_separator = section.column_separator;
+        section_column_rtl = section.column_rtl;
+        split.push(Block::SectionBreak(section.setup), Vec::new());
     }
-    (blocks, pagination, tab_stops)
+    ParagraphBlockData {
+        blocks: split.blocks,
+        pagination,
+        line_spacing,
+        tab_stops,
+        section_column_gap_pt,
+        section_column_layout,
+        section_column_separator,
+        section_column_rtl,
+        column_break_offsets: split.column_break_offsets,
+    }
 }
 
 fn read_paragraph_block_batch(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> BlockBatch {
-    let (blocks, pagination, tab_stops) = read_paragraph_blocks_data(r, ctx, depth);
-    ctx.capture_paragraph_blocks(&blocks, pagination, &tab_stops);
-    let pagination = blocks
+    let data = read_paragraph_blocks_data(r, ctx, depth);
+    ctx.capture_paragraph_blocks(&data);
+    let pagination = data
+        .blocks
         .iter()
         .map(|block| {
             if matches!(block, Block::Paragraph(_)) {
-                Some(pagination)
+                Some(data.pagination)
             } else {
                 None
             }
         })
         .collect();
-    let nested_tables = vec![None; blocks.len()];
+    let nested_tables = vec![None; data.blocks.len()];
+    let line_spacing = data
+        .blocks
+        .iter()
+        .map(|block| {
+            if matches!(block, Block::Paragraph(_)) {
+                data.line_spacing
+            } else {
+                None
+            }
+        })
+        .collect();
+    let tab_stops = data
+        .blocks
+        .iter()
+        .map(|block| {
+            if matches!(block, Block::Paragraph(_)) {
+                data.tab_stops.clone()
+            } else {
+                Vec::new()
+            }
+        })
+        .collect();
     BlockBatch {
-        blocks,
+        blocks: data.blocks,
         pagination,
+        line_spacing,
         nested_tables,
+        tab_stops,
+        column_break_offsets: data.column_break_offsets,
     }
 }
 
-fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
+#[derive(Default)]
+struct ParagraphBlockSplit {
+    blocks: Vec<Block>,
+    column_break_offsets: Vec<Vec<usize>>,
+}
+
+impl ParagraphBlockSplit {
+    fn push(&mut self, block: Block, offsets: Vec<usize>) {
+        self.blocks.push(block);
+        self.column_break_offsets.push(offsets);
+    }
+}
+
+fn flush_split_paragraph(
+    split: &mut ParagraphBlockSplit,
+    current: &mut Paragraph,
+    props: &ParaProps,
+    column_break_offsets: &mut Vec<usize>,
+) {
+    if !current.is_blank() || paragraph_has_field_runs(current) {
+        let paragraph = std::mem::replace(
+            current,
+            Paragraph {
+                props: props.clone(),
+                runs: Vec::new(),
+            },
+        );
+        split.push(
+            Block::Paragraph(paragraph),
+            std::mem::take(column_break_offsets),
+        );
+    } else {
+        current.runs.clear();
+        column_break_offsets.clear();
+    }
+}
+
+fn normalize_column_breaks(
+    text: &str,
+    visible: bool,
+    source_chars: &mut usize,
+    offsets: &mut Vec<usize>,
+) -> String {
+    let mut normalized = String::with_capacity(text.len());
+    for ch in text.chars() {
+        if ch == COLUMN_BREAK_MARKER {
+            if visible {
+                offsets.push(*source_chars);
+            }
+            normalized.push('\n');
+        } else {
+            normalized.push(ch);
+        }
+        *source_chars = source_chars.saturating_add(1);
+    }
+    normalized
+}
+
+fn split_page_breaks(paragraph: Paragraph) -> ParagraphBlockSplit {
     if !paragraph
         .runs
         .iter()
-        .any(|run| run.text.contains(PAGE_BREAK_MARKER))
+        .any(|run| run.text.contains(PAGE_BREAK_MARKER) || run.text.contains(COLUMN_BREAK_MARKER))
     {
-        return if paragraph.is_blank() && !paragraph_has_field_runs(&paragraph) {
-            Vec::new()
-        } else {
-            vec![Block::Paragraph(paragraph)]
-        };
+        let mut split = ParagraphBlockSplit::default();
+        if !paragraph.is_blank() || paragraph_has_field_runs(&paragraph) {
+            split.push(Block::Paragraph(paragraph), Vec::new());
+        }
+        return split;
     }
 
     let props = paragraph.props;
-    let mut blocks = Vec::new();
+    let mut split = ParagraphBlockSplit::default();
     let mut current = Paragraph {
         props: props.clone(),
         runs: Vec::new(),
     };
+    let mut column_break_offsets = Vec::new();
+    let mut source_chars = 0usize;
     for run in paragraph.runs {
-        if !run.text.contains(PAGE_BREAK_MARKER) {
-            current.runs.push(run);
-            continue;
-        }
         let parts: Vec<_> = run
             .text
             .split(PAGE_BREAK_MARKER)
@@ -2345,19 +2929,16 @@ fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
             .collect();
         for (index, part) in parts.into_iter().enumerate() {
             if index > 0 {
-                if !current.is_blank() || paragraph_has_field_runs(&current) {
-                    blocks.push(Block::Paragraph(std::mem::replace(
-                        &mut current,
-                        Paragraph {
-                            props: props.clone(),
-                            runs: Vec::new(),
-                        },
-                    )));
-                } else {
-                    current.runs.clear();
-                }
-                blocks.push(Block::PageBreak);
+                flush_split_paragraph(&mut split, &mut current, &props, &mut column_break_offsets);
+                split.push(Block::PageBreak, Vec::new());
+                source_chars = 0;
             }
+            let part = normalize_column_breaks(
+                &part,
+                !run.props.hidden,
+                &mut source_chars,
+                &mut column_break_offsets,
+            );
             if !part.is_empty() {
                 let mut split_run = run.clone();
                 split_run.text = part;
@@ -2365,10 +2946,8 @@ fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
             }
         }
     }
-    if !current.is_blank() || paragraph_has_field_runs(&current) {
-        blocks.push(Block::Paragraph(current));
-    }
-    blocks
+    flush_split_paragraph(&mut split, &mut current, &props, &mut column_break_offsets);
+    split
 }
 
 fn paragraph_has_field_runs(paragraph: &Paragraph) -> bool {
@@ -2386,6 +2965,7 @@ struct ComplexFieldTracker {
     result_text: String,
     result_start: Option<usize>,
     pending: Option<PendingComplexField>,
+    preserve_empty_runs: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -2397,6 +2977,7 @@ enum ComplexFieldPhase {
 struct PendingComplexField {
     instruction: String,
     text: Option<String>,
+    preserve_instruction: bool,
     unsupported_reason: Option<FieldUnsupportedReason>,
     result_runs: Vec<ComplexFieldResultRun>,
     insert_at: usize,
@@ -2431,6 +3012,8 @@ impl ComplexFieldTracker {
             if !instruction.is_empty() {
                 let current_result = self.result_text.as_str();
                 let text = computed_simple_field_result(&instruction, ctx, current_result);
+                let preserve_instruction =
+                    text.is_some() && preserves_computed_field_instruction(&instruction, ctx);
                 let unsupported_reason = text
                     .is_none()
                     .then(|| unsupported_simple_field_reason_hint(&instruction, ctx))
@@ -2439,6 +3022,7 @@ impl ComplexFieldTracker {
                 self.pending = Some(PendingComplexField {
                     text,
                     instruction,
+                    preserve_instruction,
                     unsupported_reason,
                     result_runs: std::mem::take(&mut self.result_runs),
                     insert_at,
@@ -2480,7 +3064,11 @@ impl ComplexFieldTracker {
             if let Some(text) = computed.text {
                 runs.insert(
                     computed.insert_at.min(runs.len()),
-                    computed_simple_field_run(computed.instruction, text),
+                    computed_simple_field_run(
+                        computed.instruction,
+                        text,
+                        computed.preserve_instruction,
+                    ),
                 );
             } else {
                 runs.insert(
@@ -2494,15 +3082,12 @@ impl ComplexFieldTracker {
             let Some(run) = runs.get_mut(result_run.index) else {
                 continue;
             };
-            if let Some(text) = computed.text.as_deref() {
+            if computed.text.is_some() {
                 run.field = if result_run.preserve_hyperlink
                     && matches!(run.field, FieldRole::Hyperlink { .. })
                 {
                     run.field.clone()
-                } else if text.is_empty()
-                    && offset == 0
-                    && preserves_computed_empty_field_instruction(&computed.instruction)
-                {
+                } else if offset == 0 && computed.preserve_instruction {
                     FieldRole::Simple {
                         instruction: computed.instruction.clone(),
                     }
@@ -2543,19 +3128,69 @@ fn computed_field_run(text: String) -> Run {
     }
 }
 
-fn computed_simple_field_run(instruction: String, text: String) -> Run {
-    if text.is_empty() && preserves_computed_empty_field_instruction(&instruction) {
-        empty_simple_field_run(instruction, None)
+fn computed_simple_field_run(instruction: String, text: String, preserve_instruction: bool) -> Run {
+    if preserve_instruction {
+        Run {
+            text,
+            field: FieldRole::Simple { instruction },
+            ..Default::default()
+        }
     } else {
         computed_field_run(text)
     }
 }
 
+fn preserves_computed_field_instruction(instruction: &str, ctx: &Ctx<'_>) -> bool {
+    preserves_context_free_computed_field_instruction(instruction)
+        || super::fields::computed_preserved_document_info_result(
+            instruction,
+            ctx.core_properties,
+            ctx.custom_properties,
+        )
+        .is_some()
+        || super::fields::computed_preserved_revision_number_result(
+            instruction,
+            ctx.core_properties,
+        )
+        .is_some()
+        || (ctx.preserve_note_local_fields
+            && super::fields::computed_preserved_note_local_ref_result(
+                instruction,
+                ctx.ref_targets,
+            )
+            .is_some())
+        || (ctx.preserve_note_local_fields
+            && super::fields::computed_preserved_sequence_reset_result(instruction).is_some())
+        || (ctx.preserve_note_local_fields
+            && super::fields::computed_preserved_listnum_start_result(instruction).is_some())
+        || (ctx.preserve_note_local_fields
+            && super::fields::preserved_note_local_style_ref_target(instruction).is_some())
+        || (ctx.preserve_note_local_fields
+            && ctx.last_formula_field_used_table_context.get()
+            && matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::Dynamic(kind) if kind == "="
+            ))
+}
+
+fn preserves_context_free_computed_field_instruction(instruction: &str) -> bool {
+    preserves_computed_empty_field_instruction(instruction)
+        || super::fields::supports_computed_symbol_field_syntax(instruction)
+        || super::fields::supports_quote_field_syntax(instruction)
+        || super::fields::supports_context_free_if_compare_field_syntax(instruction)
+        || super::fields::supports_context_free_formula_field_syntax(instruction)
+        || super::fields::supports_context_free_fill_in_field_syntax(instruction)
+        || super::fields::supports_context_free_display_field_syntax(instruction)
+}
+
 fn preserves_computed_empty_field_instruction(instruction: &str) -> bool {
-    matches!(
-        FieldKind::from_instruction(instruction),
-        FieldKind::ReferenceIndex(ref kind) if is_reference_index_marker_kind(kind)
-    )
+    match FieldKind::from_instruction(instruction) {
+        FieldKind::TocEntry => super::fields::supports_toc_entry_field_syntax(instruction),
+        FieldKind::ReferenceIndex(_) => {
+            super::fields::supports_reference_index_marker_syntax(instruction)
+        }
+        _ => false,
+    }
 }
 
 fn empty_simple_field_run(
@@ -2586,7 +3221,7 @@ struct PPr {
     keep_lines: Option<bool>,
     widow_control: Option<bool>,
     tab_stops: Vec<TabStop>,
-    section: Option<SectionSetup>,
+    section: Option<ParsedSectionSetup>,
 }
 
 fn read_runs_container_with_complex(
@@ -2595,9 +3230,13 @@ fn read_runs_container_with_complex(
     paragraph_style_id: Option<&str>,
     link: Option<&str>,
     depth: u32,
+    preserve_empty_runs: bool,
 ) -> Vec<Run> {
     let mut runs = Vec::new();
-    let mut complex_field = ComplexFieldTracker::default();
+    let mut complex_field = ComplexFieldTracker {
+        preserve_empty_runs,
+        ..ComplexFieldTracker::default()
+    };
     append_runs_container_with_complex(
         r,
         ctx,
@@ -3127,7 +3766,7 @@ fn read_ppr_child(
             read_ppr_alternate_content(r, pp, num_id, ilvl, depth + 1);
         }
         b"sectPr" if is_start => pp.section = Some(read_sect_pr(r, depth + 1)),
-        b"sectPr" => pp.section = Some(SectionSetup::default()),
+        b"sectPr" => pp.section = Some(ParsedSectionSetup::default()),
         b"numPr" if is_start => read_num_pr(r, num_id, ilvl, depth + 1),
         b"tabs" if is_start => read_ppr_tabs(r, pp, depth + 1),
         name if is_ppr_leaf(name) => {
@@ -3386,12 +4025,21 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
     }
 }
 
-fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> SectionSetup {
+#[derive(Default)]
+struct ParsedSectionSetup {
+    setup: SectionSetup,
+    column_gap_pt: Option<f32>,
+    column_layout: Option<SectionColumnLayoutHints>,
+    column_separator: bool,
+    column_rtl: bool,
+}
+
+fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> ParsedSectionSetup {
     if depth > MAX_DEPTH {
         skip_subtree(r);
-        return SectionSetup::default();
+        return ParsedSectionSetup::default();
     }
-    let mut section = SectionSetup::default();
+    let mut section = ParsedSectionSetup::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPrChange" => {
@@ -3399,6 +4047,9 @@ fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> SectionSetup {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 read_sect_pr_alternate_content(r, &mut section, depth + 1);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"cols" => {
+                apply_parsed_section_columns(&mut section, read_section_columns_element(r, &e));
             }
             Ok(Event::Start(e)) if is_sect_pr_leaf(local(e.name().as_ref())) => {
                 apply_sect_pr_child(&mut section, &e);
@@ -3416,7 +4067,7 @@ fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> SectionSetup {
     section
 }
 
-fn read_sect_pr_alternate_content(r: &mut Xml<'_>, section: &mut SectionSetup, depth: u32) {
+fn read_sect_pr_alternate_content(r: &mut Xml<'_>, section: &mut ParsedSectionSetup, depth: u32) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
         return;
@@ -3449,7 +4100,7 @@ fn read_sect_pr_alternate_content(r: &mut Xml<'_>, section: &mut SectionSetup, d
 
 fn read_sect_pr_alternate_content_branch(
     r: &mut Xml<'_>,
-    section: &mut SectionSetup,
+    section: &mut ParsedSectionSetup,
     branch: &[u8],
     depth: u32,
 ) {
@@ -3460,6 +4111,9 @@ fn read_sect_pr_alternate_content_branch(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 read_sect_pr_alternate_content(r, section, depth + 1);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"cols" => {
+                apply_parsed_section_columns(section, read_section_columns_element(r, &e));
             }
             Ok(Event::Start(e)) if is_sect_pr_leaf(local(e.name().as_ref())) => {
                 apply_sect_pr_child(section, &e);
@@ -3487,41 +4141,52 @@ fn is_sect_pr_leaf(name: &[u8]) -> bool {
             | b"textDirection"
             | b"docGrid"
             | b"titlePg"
+            | b"bidi"
     )
 }
 
-fn apply_sect_pr_child(section: &mut SectionSetup, e: &BytesStart<'_>) {
+fn apply_sect_pr_child(section: &mut ParsedSectionSetup, e: &BytesStart<'_>) {
     match local(e.name().as_ref()) {
         b"pgSz" => {
             if let Some(size) = section_page_size(e) {
-                apply_section_page_size(&mut section.page, size);
+                apply_section_page_size(&mut section.setup.page, size);
             }
         }
         b"type" => {
-            section.section_break =
+            section.setup.section_break =
                 attr_local(e, b"val").and_then(|value| SectionBreakKind::from_wml_value(&value));
         }
         b"pgMar" => {
-            apply_section_page_margins(&mut section.page, section_page_margins(e));
+            apply_section_page_margins(&mut section.setup.page, section_page_margins(e));
         }
         b"pgNumType" => {
-            section.page_number_start = section_page_number_start(e);
-            section.page_number_format = section_page_number_format(e);
+            section.setup.page_number_start = section_page_number_start(e);
+            section.setup.page_number_format = section_page_number_format(e);
         }
         b"cols" => {
-            section.columns = section_columns(e);
+            apply_parsed_section_columns(section, section_columns_from_attrs(e));
         }
         b"textDirection" => {
-            section.text_direction = section_text_direction(e);
+            section.setup.text_direction = section_text_direction(e);
         }
         b"docGrid" => {
-            section.doc_grid = doc_grid_from_attrs(e);
+            section.setup.doc_grid = doc_grid_from_attrs(e);
         }
         b"titlePg" => {
-            section.title_page = true;
+            section.setup.title_page = true;
+        }
+        b"bidi" => {
+            section.column_rtl = toggle_on(attr_local(e, b"val"));
         }
         _ => {}
     }
+}
+
+fn apply_parsed_section_columns(section: &mut ParsedSectionSetup, columns: ParsedSectionColumns) {
+    section.setup.columns = columns.count;
+    section.column_gap_pt = columns.gap_pt;
+    section.column_layout = columns.layout;
+    section.column_separator = columns.separator;
 }
 
 /// Read a `<w:r>`: its `w:rPr` formatting plus text / breaks / drawings. Returns
@@ -3580,6 +4245,7 @@ fn read_run(
     let mut direct_props = DirectRunProps::default();
     let mut text = String::new();
     let mut text_is_field_result = false;
+    let mut has_field_markup = false;
     let mut images: Vec<Run> = Vec::new();
     let mut image_result_runs = Vec::new();
     loop {
@@ -3587,10 +4253,12 @@ fn read_run(
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"rPr" => direct_props = read_rpr(r),
                 b"fldChar" => {
+                    has_field_markup = true;
                     apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index);
                     skip_subtree(r);
                 }
                 b"instrText" => {
+                    has_field_markup = true;
                     let instruction = read_text(r);
                     if let Some(tracker) = complex_field.as_deref_mut() {
                         tracker.push_instruction(&instruction);
@@ -3660,6 +4328,7 @@ fn read_run(
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"fldChar" => {
+                    has_field_markup = true;
                     apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index)
                 }
                 b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
@@ -3686,7 +4355,13 @@ fn read_run(
         }
     }
     let mut runs = Vec::new();
-    if !text.is_empty() {
+    let preserve_empty_run = text.is_empty()
+        && images.is_empty()
+        && !has_field_markup
+        && complex_field
+            .as_deref()
+            .is_some_and(|tracker| tracker.preserve_empty_runs && tracker.phase.is_none());
+    if !text.is_empty() || preserve_empty_run {
         let props = effective_run_props(ctx, paragraph_style_id, &direct_props);
         if text_is_field_result {
             if let Some(tracker) = complex_field.as_deref_mut() {
@@ -3720,6 +4395,13 @@ fn read_run(
             }
         }
     }
+    if let Some(url) = link {
+        for run in &mut images {
+            run.field = FieldRole::Hyperlink {
+                url: url.to_string(),
+            };
+        }
+    }
     runs.extend(images);
     runs
 }
@@ -3734,6 +4416,8 @@ fn append_run_inline_marker(
         b"tab" => Some('\t'),
         b"br" => Some(if is_page_break_type(e) {
             PAGE_BREAK_MARKER
+        } else if is_column_break_type(e) {
+            COLUMN_BREAK_MARKER
         } else {
             '\n'
         }),
@@ -4123,88 +4807,109 @@ fn effective_run_props(
     props
 }
 
-/// Scan a `<w:drawing>`/`<w:pict>` subtree for (a) the first image blip, resolved
-/// to extracted bytes via the relationship/media tables, and (b) any text-box
-/// (`w:txbxContent`) text. Honors `mc:AlternateContent` (descends a single branch)
-/// so a box serialized as both DrawingML and VML isn't counted twice.
+/// Scan a `<w:drawing>`/`<w:pict>` subtree for the first image or modeled chart
+/// relationship plus any text-box (`w:txbxContent`) text. Honors
+/// `mc:AlternateContent` (descends a single branch) so duplicate DrawingML/VML
+/// representations are not counted twice.
+#[derive(Default)]
+struct DrawingReadState {
+    image: Option<Image>,
+    chart: Option<Chart>,
+    text: String,
+    anchor: DrawingAnchorOffset,
+    extent: Option<DrawingExtent>,
+    alt: Option<String>,
+}
+
 fn read_drawing(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Option<Image>, String) {
-    let mut img = None;
-    let mut text = String::new();
-    let mut anchor = DrawingAnchorOffset::default();
+    let mut state = DrawingReadState::default();
     // Start from the caller's structural depth (not 0) so the recursion budget is
     // continuous across the drawing/text-box boundary.
-    walk_drawing(r, ctx, &mut img, &mut text, &mut anchor, depth);
-    (img, text)
+    walk_drawing(r, ctx, &mut state, depth);
+    if let Some(mut chart) = state.chart.take() {
+        chart.alt = state.alt.take();
+        if let Some(extent) = state.extent {
+            chart.width_px = emu_to_px(extent.cx);
+            chart.height_px = emu_to_px(extent.cy);
+        }
+        ctx.push_paragraph_chart(chart);
+    }
+    (state.image, state.text)
 }
 
 /// Recursively consume a drawing subtree through its `End`, collecting the first
-/// blip image and all text-box text. `txbxContent` children hold body-level
-/// content, parsed with [`read_blocks`] and flattened to text.
-fn walk_drawing(
-    r: &mut Xml<'_>,
-    ctx: &Ctx<'_>,
-    img: &mut Option<Image>,
-    text: &mut String,
-    anchor: &mut DrawingAnchorOffset,
-    depth: u32,
-) {
+/// blip image or modeled chart and all text-box text. `txbxContent` children hold
+/// body-level content, parsed with [`read_blocks`] and flattened to text.
+fn walk_drawing(r: &mut Xml<'_>, ctx: &Ctx<'_>, state: &mut DrawingReadState, depth: u32) {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"anchor" => {
-                    let previous_anchor = *anchor;
-                    let had_image = img.is_some();
-                    *anchor = DrawingAnchorOffset {
+                    let previous_anchor = state.anchor;
+                    let had_image = state.image.is_some();
+                    state.anchor = DrawingAnchorOffset {
                         active: true,
                         ..DrawingAnchorOffset::default()
                     };
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, anchor, depth + 1);
+                        walk_drawing(r, ctx, state, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
                     if !had_image {
-                        apply_floating_anchor_offset(img, anchor);
+                        apply_floating_anchor_offset(&mut state.image, &state.anchor);
                     }
-                    *anchor = previous_anchor;
+                    state.anchor = previous_anchor;
                 }
                 b"positionH" => {
-                    anchor.horizontal_page_offset_emu = read_page_position_offset(r, &e);
+                    state.anchor.horizontal_page_offset_emu = read_page_position_offset(r, &e);
                 }
                 b"positionV" => {
-                    anchor.vertical_page_offset_emu = read_page_position_offset(r, &e);
+                    state.anchor.vertical_page_offset_emu = read_page_position_offset(r, &e);
                 }
                 b"txbxContent" => {
                     if depth < MAX_DEPTH {
                         let blocks = read_blocks(r, ctx, depth + 1);
-                        append_blocks_text(text, &blocks);
+                        append_blocks_text(&mut state.text, &blocks);
                     } else {
                         skip_subtree(r);
                     }
                 }
-                b"AlternateContent" => walk_alternate_content(r, ctx, img, text, anchor, depth + 1),
+                b"AlternateContent" => walk_alternate_content(r, ctx, state, depth + 1),
                 _ => {
+                    capture_drawing_alt(&e, &mut state.image, &mut state.alt);
+                    capture_drawing_extent(&e, &mut state.extent);
                     if local(e.name().as_ref()) == b"xfrm" {
-                        apply_image_rotation(img, &e);
+                        apply_image_rotation(&mut state.image, &e);
                     }
-                    if img.is_none() {
-                        *img = blip_image(&e, ctx);
-                        apply_floating_anchor_offset(img, anchor);
+                    if state.image.is_none() {
+                        state.image = blip_image(&e, ctx);
+                        apply_drawing_alt(&mut state.image, &state.alt);
+                        apply_floating_anchor_offset(&mut state.image, &state.anchor);
+                    }
+                    if state.chart.is_none() {
+                        state.chart = drawing_chart(&e, ctx);
                     }
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, anchor, depth + 1);
+                        walk_drawing(r, ctx, state, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
                 }
             },
             Ok(Event::Empty(e)) => {
+                capture_drawing_alt(&e, &mut state.image, &mut state.alt);
+                capture_drawing_extent(&e, &mut state.extent);
                 if local(e.name().as_ref()) == b"xfrm" {
-                    apply_image_rotation(img, &e);
+                    apply_image_rotation(&mut state.image, &e);
                 }
-                if img.is_none() {
-                    *img = blip_image(&e, ctx);
-                    apply_floating_anchor_offset(img, anchor);
+                if state.image.is_none() {
+                    state.image = blip_image(&e, ctx);
+                    apply_drawing_alt(&mut state.image, &state.alt);
+                    apply_floating_anchor_offset(&mut state.image, &state.anchor);
+                }
+                if state.chart.is_none() {
+                    state.chart = drawing_chart(&e, ctx);
                 }
             }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -4213,11 +4918,58 @@ fn walk_drawing(
     }
 }
 
+fn capture_drawing_alt(e: &BytesStart<'_>, img: &mut Option<Image>, alt: &mut Option<String>) {
+    if alt.is_some() || local(e.name().as_ref()) != b"docPr" {
+        return;
+    }
+    if let Some(description) = attr_local_trimmed(e, b"descr") {
+        *alt = Some(description);
+        apply_drawing_alt(img, alt);
+    }
+}
+
+fn apply_drawing_alt(img: &mut Option<Image>, alt: &Option<String>) {
+    if let (Some(image), Some(alt)) = (img.as_mut(), alt.as_ref()) {
+        image.alt = Some(alt.clone());
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct DrawingAnchorOffset {
     active: bool,
     horizontal_page_offset_emu: Option<i64>,
     vertical_page_offset_emu: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct DrawingExtent {
+    cx: i64,
+    cy: i64,
+}
+
+fn capture_drawing_extent(e: &BytesStart<'_>, extent: &mut Option<DrawingExtent>) {
+    if extent.is_some() || local(e.name().as_ref()) != b"extent" {
+        return;
+    }
+    let Some(cx) = attr_i64(e, b"cx").filter(|value| *value > 0) else {
+        return;
+    };
+    let Some(cy) = attr_i64(e, b"cy").filter(|value| *value > 0) else {
+        return;
+    };
+    *extent = Some(DrawingExtent { cx, cy });
+}
+
+fn emu_to_px(value: i64) -> Option<u32> {
+    u32::try_from(value.saturating_add(4_762) / 9_525).ok()
+}
+
+fn drawing_chart(e: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<Chart> {
+    if local(e.name().as_ref()) != b"chart" {
+        return None;
+    }
+    let id = attr_local_trimmed(e, b"id")?;
+    ctx.charts.get(&id).cloned()
 }
 
 fn read_page_position_offset(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<i64> {
@@ -4275,9 +5027,7 @@ fn apply_image_rotation(img: &mut Option<Image>, e: &BytesStart<'_>) {
 fn walk_alternate_content(
     r: &mut Xml<'_>,
     ctx: &Ctx<'_>,
-    img: &mut Option<Image>,
-    text: &mut String,
-    anchor: &mut DrawingAnchorOffset,
+    state: &mut DrawingReadState,
     depth: u32,
 ) {
     let mut took = false;
@@ -4287,7 +5037,7 @@ fn walk_alternate_content(
                 b"Choice" | b"Fallback" if !took => {
                     took = true;
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, anchor, depth + 1);
+                        walk_drawing(r, ctx, state, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
@@ -4353,7 +5103,7 @@ fn read_hyperlink(
     depth: u32,
 ) -> Vec<Run> {
     let url = hyperlink_url(start, ctx);
-    read_runs_container_with_complex(r, ctx, paragraph_style_id, url.as_deref(), depth + 1)
+    read_runs_container_with_complex(r, ctx, paragraph_style_id, url.as_deref(), depth + 1, false)
 }
 
 fn hyperlink_url(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<String> {
@@ -4366,7 +5116,7 @@ fn hyperlink_url(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<String> {
 }
 
 /// Read `<w:fldSimple>`: hyperlinks keep link semantics; other simple fields
-/// keep their normalized instruction on the cached result runs.
+/// keep normalized instructions, including formatted empty marker results.
 fn read_fldsimple(
     r: &mut Xml<'_>,
     start: &BytesStart<'_>,
@@ -4374,51 +5124,62 @@ fn read_fldsimple(
     paragraph_style_id: Option<&str>,
     depth: u32,
 ) -> Vec<Run> {
-    let instruction = attr_local(start, b"instr").unwrap_or_default();
-    let url = hyperlink_instr_url(&instruction);
-    let mut runs =
-        read_runs_container_with_complex(r, ctx, paragraph_style_id, url.as_deref(), depth + 1);
-    if url.is_none() {
-        let instruction = normalized_field_instruction(&instruction);
-        if !instruction.is_empty() {
-            let current_result = runs.iter().map(|run| run.text.as_str()).collect::<String>();
-            let computed = computed_simple_field_result(&instruction, ctx, &current_result);
-            if runs.is_empty() {
-                if let Some(text) = computed {
-                    runs.push(computed_simple_field_run(instruction.clone(), text));
-                } else {
-                    runs.push(empty_simple_field_run(
-                        instruction.clone(),
-                        unsupported_simple_field_reason_hint(&instruction, ctx),
-                    ));
-                }
-                return runs;
+    ctx.last_formula_field_used_table_context.set(false);
+    let source_instruction = attr_local(start, b"instr").unwrap_or_default();
+    let url = hyperlink_instr_url(&source_instruction);
+    let instruction = normalized_field_instruction(&source_instruction);
+    let preserve_instruction = url.is_none()
+        && !instruction.is_empty()
+        && preserves_computed_field_instruction(&instruction, ctx);
+    let mut runs = read_runs_container_with_complex(
+        r,
+        ctx,
+        paragraph_style_id,
+        url.as_deref(),
+        depth + 1,
+        preserve_instruction,
+    );
+    if url.is_none() && !instruction.is_empty() {
+        let current_result = runs.iter().map(|run| run.text.as_str()).collect::<String>();
+        let computed = computed_simple_field_result(&instruction, ctx, &current_result);
+        let preserve_result_instruction =
+            computed.is_some() && preserves_computed_field_instruction(&instruction, ctx);
+        if runs.is_empty() {
+            if let Some(text) = computed {
+                runs.push(computed_simple_field_run(
+                    instruction.clone(),
+                    text,
+                    preserve_result_instruction,
+                ));
+            } else {
+                runs.push(empty_simple_field_run(
+                    instruction.clone(),
+                    unsupported_simple_field_reason_hint(&instruction, ctx),
+                ));
             }
-            for (index, run) in runs.iter_mut().enumerate() {
-                if let Some(text) = computed.as_deref() {
-                    run.field = if text.is_empty()
-                        && index == 0
-                        && preserves_computed_empty_field_instruction(&instruction)
-                    {
-                        FieldRole::Simple {
-                            instruction: instruction.clone(),
-                        }
-                    } else {
-                        FieldRole::Other
-                    };
-                    run.field_unsupported_reason = None;
-                    run.text = if index == 0 {
-                        text.to_string()
-                    } else {
-                        String::new()
-                    };
-                } else {
-                    run.field = FieldRole::Simple {
+            return runs;
+        }
+        for (index, run) in runs.iter_mut().enumerate() {
+            if let Some(text) = computed.as_deref() {
+                run.field = if index == 0 && preserve_result_instruction {
+                    FieldRole::Simple {
                         instruction: instruction.clone(),
-                    };
-                    run.field_unsupported_reason =
-                        unsupported_simple_field_reason_hint(&instruction, ctx);
-                }
+                    }
+                } else {
+                    FieldRole::Other
+                };
+                run.field_unsupported_reason = None;
+                run.text = if index == 0 {
+                    text.to_string()
+                } else {
+                    String::new()
+                };
+            } else {
+                run.field = FieldRole::Simple {
+                    instruction: instruction.clone(),
+                };
+                run.field_unsupported_reason =
+                    unsupported_simple_field_reason_hint(&instruction, ctx);
             }
         }
     }
@@ -4431,8 +5192,11 @@ fn read_empty_fldsimple(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<Run> {
     if instruction.is_empty() {
         return None;
     }
-    computed_simple_field_result(&instruction, ctx, "")
-        .map(|text| computed_simple_field_run(instruction.clone(), text))
+    let computed = computed_simple_field_result(&instruction, ctx, "");
+    let preserve_instruction =
+        computed.is_some() && preserves_computed_field_instruction(&instruction, ctx);
+    computed
+        .map(|text| computed_simple_field_run(instruction.clone(), text, preserve_instruction))
         .or_else(|| {
             Some(empty_simple_field_run(
                 instruction.clone(),
@@ -4923,6 +5687,7 @@ fn computed_simple_field_result(
     ctx: &Ctx<'_>,
     current_result: &str,
 ) -> Option<String> {
+    ctx.last_formula_field_used_table_context.set(false);
     let (ref_position, note_ref_position) = ref_field_positions(instruction, ctx);
     let ref_result = {
         let field_bookmarks = ctx.field_bookmarks.borrow();
@@ -5169,6 +5934,7 @@ fn computed_dynamic_field_result(instruction: &str, ctx: &Ctx<'_>) -> Option<Str
             index
         };
         if let Some(result) = ctx.table_formula_context.field_result(index) {
+            ctx.last_formula_field_used_table_context.set(true);
             return Some(result);
         }
         let field_bookmarks = ctx.field_bookmarks.borrow();
@@ -5295,7 +6061,12 @@ fn finalize_paragraph(
     runs: Vec<Run>,
     pp: PPr,
     ctx: &Ctx<'_>,
-) -> (Paragraph, PaginationHint, Vec<TabStop>) {
+) -> (
+    Paragraph,
+    PaginationHint,
+    Vec<TabStop>,
+    Option<LineSpacingHint>,
+) {
     let PPr {
         style_id,
         num,
@@ -5407,6 +6178,7 @@ fn finalize_paragraph(
         }
     };
     let spacing = resolved_layout.spacing();
+    let line_spacing = resolved_layout.line_spacing_hint();
     let shading = resolved_layout.shading();
     let page_break_before = resolved_layout.page_break_before();
     let paragraph = Paragraph {
@@ -5425,7 +6197,7 @@ fn finalize_paragraph(
         },
         runs,
     };
-    (paragraph, pagination, resolved_tab_stops)
+    (paragraph, pagination, resolved_tab_stops, line_spacing)
 }
 
 const DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS: u32 = 115;
@@ -5597,7 +6369,10 @@ impl NamedCellStyleRegions {
 struct CellRaw {
     blocks: Vec<Block>,
     pagination: Vec<Option<PaginationHint>>,
+    line_spacing: Vec<Option<LineSpacingHint>>,
     nested_tables: Vec<Option<TablePaginationHints>>,
+    tab_stops: Vec<Vec<TabStop>>,
+    column_break_offsets: Vec<Vec<usize>>,
     col_span: u16,
     vmerge: VMerge,
     shading: Option<Color>,
@@ -5668,9 +6443,9 @@ fn read_table_block(
     ctx: &Ctx<'_>,
     depth: u32,
 ) -> Option<(Block, TablePaginationHints)> {
-    ctx.suspend_pagination_capture();
+    ctx.suspend_block_captures();
     let (table, pagination) = read_table(r, ctx, depth);
-    ctx.resume_pagination_capture();
+    ctx.resume_block_captures();
     if table.rows.is_empty() {
         None
     } else {
@@ -5719,6 +6494,13 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
         .or_else(|| ctx.styles.table_col_band_size(props.style_id.as_deref()))
         // Word also uses zero for an omitted column-band size.
         .unwrap_or(0);
+    let style_geometry = ctx.styles.table_geometry(props.style_id.as_deref());
+    if !props.fixed_layout_declared {
+        props.fixed_layout = style_geometry.fixed_layout.unwrap_or(props.fixed_layout);
+    }
+    if !props.bidi_visual_declared {
+        props.bidi_visual = style_geometry.bidi_visual.unwrap_or(props.bidi_visual);
+    }
     let row_regions: Vec<_> = rows
         .iter()
         .enumerate()
@@ -5728,7 +6510,20 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
                     index,
                     row_count,
                     row_band_size,
+                    col_band_size,
+                    grid_widths.len().max(
+                        rows.iter()
+                            .map(|row| {
+                                row.cells
+                                    .iter()
+                                    .map(|cell| cell.col_span as usize)
+                                    .sum::<usize>()
+                            })
+                            .max()
+                            .unwrap_or(0),
+                    ),
                     row.props.header.unwrap_or(false),
+                    props.bidi_visual,
                 )
             })
         })
@@ -5745,16 +6540,9 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
         .collect();
     let style_cell_props = ctx.styles.table_cell_props(props.style_id.as_deref());
     // A table style's geometry fills in only what the table left unset.
-    let style_geometry = ctx.styles.table_geometry(props.style_id.as_deref());
     props.width_pct = props.width_pct.or(style_geometry.width_pct);
     props.indent_twips = props.indent_twips.or(style_geometry.indent_twips);
     props.align = props.align.or(style_geometry.align);
-    if !props.fixed_layout_declared {
-        props.fixed_layout = style_geometry.fixed_layout.unwrap_or(props.fixed_layout);
-    }
-    if !props.bidi_visual_declared {
-        props.bidi_visual = style_geometry.bidi_visual.unwrap_or(props.bidi_visual);
-    }
     // A table style's borders apply unless the table declares its own.
     if !props.borders_declared {
         if let Some(borders) = ctx.styles.table_borders(props.style_id.as_deref()) {
@@ -5766,7 +6554,14 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
             props.border_styles = borders.5;
         }
     }
-    let (table, cell_pagination, nested_pagination) = build_table(
+    let (
+        table,
+        cell_pagination,
+        cell_line_spacing,
+        cell_column_breaks,
+        nested_pagination,
+        cell_tab_stops,
+    ) = build_table(
         rows,
         props,
         grid_widths,
@@ -5780,7 +6575,10 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
         TablePaginationHints {
             rows: row_pagination,
             cells: cell_pagination,
+            cell_line_spacing,
+            cell_column_breaks,
             nested: nested_pagination,
+            cell_tabs: cell_tab_stops,
         },
     )
 }
@@ -5953,23 +6751,48 @@ impl TableLook {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn row_regions(
         self,
         index: usize,
         row_count: usize,
         row_band_size: u8,
+        col_band_size: u8,
+        column_count: usize,
         is_header: bool,
+        bidi_visual: bool,
     ) -> TableRowStyleRegions {
-        let band = self
+        let horizontal_band = self
             .horizontal_banding
             .then_some(row_band_size)
             .filter(|size| *size != 0)
             .map(|size| (index / size as usize) % 2);
+        let vertical_band = self
+            .vertical_banding
+            .then_some(col_band_size)
+            .filter(|size| *size != 0);
+        let first_row = self.first_row && (index == 0 || is_header);
+        let last_row = self.last_row && index.checked_add(1) == Some(row_count);
+        let first_column = self.first_column && column_count != 0;
+        let last_column = self.last_column && column_count != 0;
+        let (west, east) = if bidi_visual {
+            (last_column, first_column)
+        } else {
+            (first_column, last_column)
+        };
         TableRowStyleRegions {
-            first_row: self.first_row && (index == 0 || is_header),
-            last_row: self.last_row && index.checked_add(1) == Some(row_count),
-            band1_horizontal: band == Some(0),
-            band2_horizontal: band == Some(1),
+            first_row,
+            last_row,
+            first_column,
+            last_column,
+            band1_vertical: vertical_band.is_some(),
+            band2_vertical: vertical_band.is_some_and(|size| column_count > size as usize),
+            band1_horizontal: horizontal_band == Some(0),
+            band2_horizontal: horizontal_band == Some(1),
+            north_west: first_row && index == 0 && west,
+            north_east: first_row && index == 0 && east,
+            south_west: last_row && index.checked_add(1) == Some(row_count) && west,
+            south_east: last_row && index.checked_add(1) == Some(row_count) && east,
         }
     }
 
@@ -6775,9 +7598,21 @@ fn read_row_style_regions(e: &BytesStart<'_>) -> Option<TableRowStyleRegions> {
         return Some(TableRowStyleRegions {
             first_row: attr_local(e, b"firstRow").is_some_and(|value| toggle_on(Some(value))),
             last_row: attr_local(e, b"lastRow").is_some_and(|value| toggle_on(Some(value))),
+            first_column: attr_local(e, b"firstColumn").is_some_and(|value| toggle_on(Some(value))),
+            last_column: attr_local(e, b"lastColumn").is_some_and(|value| toggle_on(Some(value))),
+            band1_vertical: attr_local(e, b"oddVBand").is_some_and(|value| toggle_on(Some(value))),
+            band2_vertical: attr_local(e, b"evenVBand").is_some_and(|value| toggle_on(Some(value))),
             band1_horizontal: attr_local(e, b"oddHBand")
                 .is_some_and(|value| toggle_on(Some(value))),
             band2_horizontal: attr_local(e, b"evenHBand")
+                .is_some_and(|value| toggle_on(Some(value))),
+            north_west: attr_local(e, b"firstRowFirstColumn")
+                .is_some_and(|value| toggle_on(Some(value))),
+            north_east: attr_local(e, b"firstRowLastColumn")
+                .is_some_and(|value| toggle_on(Some(value))),
+            south_west: attr_local(e, b"lastRowFirstColumn")
+                .is_some_and(|value| toggle_on(Some(value))),
+            south_east: attr_local(e, b"lastRowLastColumn")
                 .is_some_and(|value| toggle_on(Some(value))),
         });
     }
@@ -6791,8 +7626,16 @@ fn read_row_style_regions(e: &BytesStart<'_>) -> Option<TableRowStyleRegions> {
     Some(TableRowStyleRegions {
         first_row: mask[0] == b'1',
         last_row: mask[1] == b'1',
+        first_column: mask[2] == b'1',
+        last_column: mask[3] == b'1',
+        band1_vertical: mask[4] == b'1',
+        band2_vertical: mask[5] == b'1',
         band1_horizontal: mask[6] == b'1',
         band2_horizontal: mask[7] == b'1',
+        north_east: mask[8] == b'1',
+        north_west: mask[9] == b'1',
+        south_east: mask[10] == b'1',
+        south_west: mask[11] == b'1',
     })
 }
 
@@ -6964,7 +7807,10 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         return CellRaw {
             blocks: Vec::new(),
             pagination: Vec::new(),
+            line_spacing: Vec::new(),
             nested_tables: Vec::new(),
+            tab_stops: Vec::new(),
+            column_break_offsets: Vec::new(),
             col_span: 1,
             vmerge: VMerge::None,
             shading: None,
@@ -6979,7 +7825,10 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
     }
     let mut blocks = Vec::new();
     let mut pagination = Vec::new();
+    let mut line_spacing = Vec::new();
     let mut nested_tables = Vec::new();
+    let mut tab_stops = Vec::new();
+    let mut column_break_offsets = Vec::new();
     let mut tc: Option<TcPr> = None;
     loop {
         match r.read_event() {
@@ -6989,13 +7838,19 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
                     read_paragraph_block_batch(r, ctx, depth + 1).append_to(
                         &mut blocks,
                         &mut pagination,
+                        &mut line_spacing,
                         &mut nested_tables,
+                        &mut tab_stops,
+                        &mut column_break_offsets,
                     );
                 }
                 b"tbl" => {
                     if let Some((table, table_pagination)) = read_table_block(r, ctx, depth + 1) {
                         pagination.push(None);
+                        line_spacing.push(None);
                         nested_tables.push(Some(table_pagination));
+                        tab_stops.push(Vec::new());
+                        column_break_offsets.push(Vec::new());
                         blocks.push(table);
                     }
                 }
@@ -7003,11 +7858,21 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
                     read_blocks_with_pagination(r, ctx, depth + 1).append_to(
                         &mut blocks,
                         &mut pagination,
+                        &mut line_spacing,
                         &mut nested_tables,
+                        &mut tab_stops,
+                        &mut column_break_offsets,
                     );
                 }
                 b"AlternateContent" => read_cell_alternate_content(r, ctx, depth + 1, &mut tc)
-                    .append_to(&mut blocks, &mut pagination, &mut nested_tables),
+                    .append_to(
+                        &mut blocks,
+                        &mut pagination,
+                        &mut line_spacing,
+                        &mut nested_tables,
+                        &mut tab_stops,
+                        &mut column_break_offsets,
+                    ),
                 _ => skip_subtree(r),
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -7029,7 +7894,10 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
     CellRaw {
         blocks,
         pagination,
+        line_spacing,
         nested_tables,
+        tab_stops,
+        column_break_offsets,
         col_span: tc.gs,
         vmerge: tc.vm,
         shading: tc.shading,
@@ -7454,7 +8322,10 @@ fn build_table(
 ) -> (
     Table,
     TableCellPaginationHints,
+    TableCellLineSpacingHints,
+    TableCellColumnBreakHints,
     TableCellNestedPaginationHints,
+    TableCellTabStopHints,
 ) {
     let header_rows = raw_rows
         .iter()
@@ -7464,7 +8335,10 @@ fn build_table(
     struct Placed {
         blocks: Vec<Block>,
         pagination: Vec<Option<PaginationHint>>,
+        line_spacing: Vec<Option<LineSpacingHint>>,
+        column_break_offsets: Vec<Vec<usize>>,
         nested_tables: Vec<Option<TablePaginationHints>>,
+        tab_stops: Vec<Vec<TabStop>>,
         col: usize,
         col_span: u16,
         row_span: u16,
@@ -7494,7 +8368,10 @@ fn build_table(
             row.push(Placed {
                 blocks: c.blocks,
                 pagination: c.pagination,
+                line_spacing: c.line_spacing,
+                column_break_offsets: c.column_break_offsets,
                 nested_tables: c.nested_tables,
+                tab_stops: c.tab_stops,
                 col,
                 col_span: cs,
                 row_span: 1,
@@ -7568,12 +8445,18 @@ fn build_table(
         });
     let mut rows = Vec::with_capacity(grid.len());
     let mut table_cell_pagination = Vec::with_capacity(grid.len());
+    let mut table_cell_line_spacing = Vec::with_capacity(grid.len());
+    let mut table_cell_column_breaks = Vec::with_capacity(grid.len());
     let mut table_nested_pagination = Vec::with_capacity(grid.len());
+    let mut table_cell_tab_stops = Vec::with_capacity(grid.len());
     for (row_index, row) in grid.into_iter().enumerate() {
         let row_regions = row_regions.get(row_index).copied().unwrap_or_default();
         let mut cells = Vec::with_capacity(row.len());
         let mut cell_pagination = Vec::with_capacity(row.len());
+        let mut cell_line_spacing = Vec::with_capacity(row.len());
+        let mut cell_column_breaks = Vec::with_capacity(row.len());
         let mut cell_nested_pagination = Vec::with_capacity(row.len());
+        let mut cell_tab_stops = Vec::with_capacity(row.len());
         for p in row.into_iter().filter(|p| !p.dropped) {
             let regions = effective_cell_style_regions(
                 p.style_regions,
@@ -7589,7 +8472,10 @@ fn build_table(
             );
             let style_presentation = style_cell_props.presentation_for_regions(regions);
             cell_pagination.push(p.pagination);
+            cell_line_spacing.push(p.line_spacing);
+            cell_column_breaks.push(p.column_break_offsets);
             cell_nested_pagination.push(p.nested_tables);
+            cell_tab_stops.push(p.tab_stops);
             cells.push(Cell {
                 blocks: p.blocks,
                 col_span: p.col_span,
@@ -7623,7 +8509,10 @@ fn build_table(
         }
         rows.push(Row { cells });
         table_cell_pagination.push(cell_pagination);
+        table_cell_line_spacing.push(cell_line_spacing);
+        table_cell_column_breaks.push(cell_column_breaks);
         table_nested_pagination.push(cell_nested_pagination);
+        table_cell_tab_stops.push(cell_tab_stops);
     }
     (
         Table {
@@ -7643,7 +8532,10 @@ fn build_table(
             border_styles: props.border_styles,
         },
         table_cell_pagination,
+        table_cell_line_spacing,
+        table_cell_column_breaks,
         table_nested_pagination,
+        table_cell_tab_stops,
     )
 }
 
@@ -7664,7 +8556,7 @@ fn normalize_table_grid_widths(widths: &[u32], model_grid_cols: usize) -> Vec<f3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Block, VertAlign};
+    use crate::model::{Block, TabLeader, VertAlign};
 
     type ParsedWithRenderHints = (
         Vec<Block>,
@@ -7673,6 +8565,7 @@ mod tests {
         Vec<Vec<TableRowPaginationHint>>,
         Vec<TableCellPaginationHints>,
         Vec<TableCellNestedPaginationHints>,
+        Vec<TableCellLineSpacingHints>,
     );
 
     fn parse(xml: &str) -> Vec<Block> {
@@ -7703,6 +8596,7 @@ mod tests {
     ) -> ParsedWithRenderHints {
         let numbering = Numbering::default();
         let rels = HashMap::new();
+        let charts = HashMap::new();
         let ref_targets = HashMap::new();
         let ref_position_context = super::super::fields::RefPositionContext::default();
         let ref_number_context = super::super::fields::RefNumberContext::empty();
@@ -7723,6 +8617,7 @@ mod tests {
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            charts: &charts,
             ref_targets: &ref_targets,
             ref_position_context: &ref_position_context,
             ref_number_context: &ref_number_context,
@@ -7739,6 +8634,7 @@ mod tests {
             document_variables: &document_variables,
             extended_properties: &extended_properties,
             file_size_bytes: None,
+            preserve_note_local_fields: false,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
             last_page_field_unsupported_display_format: Default::default(),
@@ -7748,6 +8644,7 @@ mod tests {
             style_ref_field_cursor: Default::default(),
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
+            last_formula_field_used_table_context: Default::default(),
             sequence_counters: Default::default(),
             sequence_heading_counts: Default::default(),
             sequence_heading_scopes: Default::default(),
@@ -7755,26 +8652,29 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            paragraph_charts: Default::default(),
+            section_column_capture: Default::default(),
             pagination_capture: Default::default(),
         };
         if capture_pagination {
             *ctx.pagination_capture.borrow_mut() = Some(PaginationCapture::default());
         }
         let blocks = parse_document(xml, &ctx);
-        let (hints, tab_stops, table_rows, table_cells, table_nested) = ctx
-            .pagination_capture
-            .borrow_mut()
-            .take()
-            .map(|capture| {
-                (
-                    capture.hints,
-                    capture.tab_stops,
-                    capture.table_row_pagination,
-                    capture.table_cell_pagination,
-                    capture.table_nested_pagination,
-                )
-            })
-            .unwrap_or_default();
+        let (hints, tab_stops, table_rows, table_cells, table_nested, table_cell_line_spacing) =
+            ctx.pagination_capture
+                .borrow_mut()
+                .take()
+                .map(|capture| {
+                    (
+                        capture.hints,
+                        capture.tab_stops,
+                        capture.table_row_pagination,
+                        capture.table_cell_pagination,
+                        capture.table_nested_pagination,
+                        capture.table_cell_line_spacing,
+                    )
+                })
+                .unwrap_or_default();
         (
             blocks,
             hints,
@@ -7782,6 +8682,7 @@ mod tests {
             table_rows,
             table_cells,
             table_nested,
+            table_cell_line_spacing,
         )
     }
 
@@ -7801,7 +8702,7 @@ mod tests {
             <w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>before</w:t><w:br w:type="page"/><w:t>after</w:t></w:r></w:p>
         </w:body></w:document>"#;
 
-        let (blocks, hints, _, _, _, _) =
+        let (blocks, hints, _, _, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(blocks.len(), 6);
@@ -7859,7 +8760,7 @@ mod tests {
             <w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
         </w:body></w:document>"#;
 
-        let (blocks, hints, tab_stops, _, _, _) =
+        let (blocks, hints, tab_stops, _, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(hints.len(), blocks.len());
@@ -7870,14 +8771,17 @@ mod tests {
                 TabStop {
                     position_pt: 72.0,
                     alignment: TabAlignment::Center,
+                    leader: TabLeader::None,
                 },
                 TabStop {
                     position_pt: 108.0,
                     alignment: TabAlignment::Right,
+                    leader: TabLeader::None,
                 },
                 TabStop {
                     position_pt: 144.0,
                     alignment: TabAlignment::Decimal,
+                    leader: TabLeader::None,
                 },
             ]
         );
@@ -7905,7 +8809,7 @@ mod tests {
             <w:p><w:r><w:t>after</w:t></w:r></w:p>
         </w:body></w:document>"#;
 
-        let (blocks, _, _, table_rows, _, _) =
+        let (blocks, _, _, table_rows, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
 
         assert_eq!(table_rows.len(), blocks.len());
@@ -7964,7 +8868,7 @@ mod tests {
             </w:tbl>
         </w:body></w:document>"#;
 
-        let (blocks, _, _, table_rows, _, _) =
+        let (blocks, _, _, table_rows, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(table_rows.len(), blocks.len());
@@ -8007,7 +8911,7 @@ mod tests {
             </w:tbl>
         </w:body></w:document>"#;
 
-        let (_, _, _, table_rows, _, _) =
+        let (_, _, _, table_rows, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(
@@ -8044,7 +8948,7 @@ mod tests {
             </w:tbl>
         </w:body></w:document>"#;
 
-        let (_, _, _, table_rows, _, _) =
+        let (_, _, _, table_rows, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(
@@ -8152,7 +9056,7 @@ mod tests {
             </w:tbl>
         </w:body></w:document>"#;
 
-        let (_, _, _, table_rows, _, _) =
+        let (_, _, _, table_rows, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(
@@ -8250,7 +9154,7 @@ mod tests {
             </w:tbl>
         </w:body></w:document>"#;
 
-        let (_, _, _, table_rows, _, _) =
+        let (_, _, _, table_rows, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(
@@ -8273,6 +9177,128 @@ mod tests {
                 ],
                 vec![TableRowPaginationHint { cant_split: false }],
                 vec![TableRowPaginationHint { cant_split: true }],
+            ]
+        );
+    }
+
+    #[test]
+    fn table_row_pagination_uses_all_explicit_conditional_region_masks() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="AllRows">
+                    <w:tblStylePr w:type="band1Vert"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band2Vert"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstCol"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastCol"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="nwCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="neCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="swCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="seCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="CornersOnly">
+                    <w:tblStylePr w:type="nwCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="neCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="swCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="seCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:trPr><w:cnfStyle w:oddVBand="1"/></w:trPr><w:tc><w:p><w:r><w:t>band one</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:evenVBand="1"/></w:trPr><w:tc><w:p><w:r><w:t>band two</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:firstColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>first column</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:lastColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>last column</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:firstRowFirstColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>north west</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:firstRowLastColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>north east</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:lastRowFirstColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>south west</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:lastRowLastColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>south east</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:val="111111111111"/></w:trPr><w:tc><w:p><w:r><w:t>all regions mask</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (_, _, _, table_rows, _, _, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(
+            table_rows,
+            vec![vec![
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+            ]]
+        );
+    }
+
+    #[test]
+    fn table_row_pagination_uses_table_look_for_vertical_and_corner_regions() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="AllRows">
+                    <w:tblPr><w:tblStyleColBandSize w:val="1"/></w:tblPr>
+                    <w:tblStylePr w:type="band1Vert"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band2Vert"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstCol"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastCol"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="nwCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="neCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="swCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="seCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document><w:body>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:noHBand="1" w:noVBand="0"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>band one</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:noHBand="1" w:noVBand="0"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>band two a</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>band two b</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:firstColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>first column</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>last column</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:firstRow="1" w:firstColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>north west</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:firstRow="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>north east</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:lastRow="1" w:firstColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>south west</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:lastRow="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>south east</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="CornersOnly"/><w:tblLook w:firstColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>corner selector disabled</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (_, _, _, table_rows, _, _, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(
+            table_rows,
+            vec![
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: false }],
             ]
         );
     }
@@ -8673,7 +9699,7 @@ mod tests {
             </w:tbl>
         </w:body></w:document>"#;
 
-        let (_, _, _, table_rows, _, _) =
+        let (_, _, _, table_rows, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(
@@ -8731,7 +9757,7 @@ mod tests {
             <w:p><w:r><w:t>after</w:t></w:r></w:p>
         </w:body></w:document>"#;
 
-        let (blocks, _, _, _, table_cells, _) =
+        let (blocks, _, _, _, table_cells, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(table_cells.len(), blocks.len());
@@ -8812,7 +9838,7 @@ mod tests {
             </w:tr></w:tbl>
         </w:body></w:document>"#;
 
-        let (blocks, _, _, _, table_cells, _) =
+        let (blocks, _, _, _, table_cells, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
 
         assert_eq!(blocks.len(), 1);
@@ -8876,7 +9902,7 @@ mod tests {
             </w:tc></w:tr></w:tbl>
         </w:body></w:document>"#;
 
-        let (blocks, _, _, _, _, nested_tables) =
+        let (blocks, _, _, _, _, nested_tables, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
 
         let nested = nested_tables[0][0][0][0]
@@ -8896,6 +9922,77 @@ mod tests {
         );
         assert_eq!(nested.nested, vec![vec![vec![None]]]);
         assert_eq!(blocks.len(), 1);
+    }
+
+    #[test]
+    fn table_cell_line_spacing_tracks_fragments_nested_tables_and_merge_owners() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tr>
+                    <w:tc>
+                        <w:tcPr><w:vMerge w:val="restart"/></w:tcPr>
+                        <w:p><w:pPr><w:spacing w:line="240" w:lineRule="exact"/></w:pPr>
+                            <w:r><w:t>before</w:t><w:br w:type="page"/><w:t>after</w:t></w:r>
+                        </w:p>
+                    </w:tc>
+                    <w:tc><w:customXml><mc:AlternateContent>
+                        <mc:Choice Requires="w14">
+                            <w:tbl><w:tr><w:tc>
+                                <w:p><w:pPr><w:spacing w:line="800" w:lineRule="atLeast"/></w:pPr>
+                                    <w:r><w:t>selected nested</w:t></w:r>
+                                </w:p>
+                            </w:tc></w:tr></w:tbl>
+                        </mc:Choice>
+                        <mc:Fallback>
+                            <w:p><w:pPr><w:spacing w:line="1980" w:lineRule="exact"/></w:pPr>
+                                <w:r><w:t>fallback</w:t></w:r>
+                            </w:p>
+                        </mc:Fallback>
+                    </mc:AlternateContent></w:customXml></w:tc>
+                </w:tr>
+                <w:tr>
+                    <w:tc>
+                        <w:tcPr><w:vMerge/></w:tcPr>
+                        <w:p><w:pPr><w:spacing w:line="2000" w:lineRule="exact"/></w:pPr>
+                            <w:r><w:t>dropped continuation</w:t></w:r>
+                        </w:p>
+                    </w:tc>
+                    <w:tc><w:p><w:pPr><w:spacing w:line="600" w:lineRule="atLeast"/></w:pPr>
+                        <w:r><w:t>survivor</w:t></w:r>
+                    </w:p></w:tc>
+                </w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (blocks, _, _, _, _, nested_tables, table_cell_line_spacing) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
+
+        assert_eq!(table_cell_line_spacing.len(), blocks.len());
+        assert_eq!(table_cell_line_spacing[0].len(), 2);
+        assert_eq!(table_cell_line_spacing[0][0].len(), 2);
+        assert_eq!(table_cell_line_spacing[0][1].len(), 1);
+        assert_eq!(
+            table_cell_line_spacing[0][0][0],
+            vec![
+                Some(LineSpacingHint::Exact(12.0)),
+                None,
+                Some(LineSpacingHint::Exact(12.0)),
+            ]
+        );
+        assert_eq!(table_cell_line_spacing[0][0][1], vec![None]);
+        assert_eq!(
+            table_cell_line_spacing[0][1][0],
+            vec![Some(LineSpacingHint::AtLeast(30.0))]
+        );
+
+        let nested = nested_tables[0][0][1][0]
+            .as_ref()
+            .expect("selected nested table carries line-spacing state");
+        assert_eq!(
+            nested.cell_line_spacing,
+            vec![vec![vec![Some(LineSpacingHint::AtLeast(40.0))]]]
+        );
+        assert_eq!(nested.nested, vec![vec![vec![None]]]);
     }
 
     #[test]
@@ -8944,7 +10041,7 @@ mod tests {
             </w:tbl>
         </w:body></w:document>"#;
 
-        let (blocks, _, _, _, _, nested_tables) =
+        let (blocks, _, _, _, _, nested_tables, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
 
         let Block::Table(outer) = &blocks[0] else {
@@ -9013,11 +10110,12 @@ mod tests {
         }
         xml.push_str("</w:body></w:document>");
 
-        let (blocks, _, _, _, _, nested_tables) =
+        let (blocks, _, _, _, _, nested_tables, table_cell_line_spacing) =
             parse_with_media_styles_and_pagination(&xml, HashMap::new(), Styles::default(), true);
 
         assert_eq!(blocks.len(), 1);
         assert_eq!(nested_tables.len(), blocks.len());
+        assert_eq!(table_cell_line_spacing.len(), blocks.len());
     }
 
     #[test]
@@ -9026,10 +10124,11 @@ mod tests {
             <w:tbl><w:tr><w:tc>
                 <w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>truncated</w:t></w:r>"#;
 
-        let (blocks, _, _, _, _, nested_tables) =
+        let (blocks, _, _, _, _, nested_tables, table_cell_line_spacing) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
 
         assert_eq!(nested_tables.len(), blocks.len());
+        assert_eq!(table_cell_line_spacing.len(), blocks.len());
     }
 
     #[test]
@@ -9045,7 +10144,7 @@ mod tests {
         }
         xml.push_str("</w:tc></w:tr></w:tbl></w:body></w:document>");
 
-        let (blocks, _, _, _, table_cells, _) =
+        let (blocks, _, _, _, table_cells, _, _) =
             parse_with_media_styles_and_pagination(&xml, HashMap::new(), Styles::default(), true);
 
         assert_eq!(blocks.len(), 1);
@@ -9175,7 +10274,10 @@ mod tests {
         CellRaw {
             blocks: Vec::new(),
             pagination: Vec::new(),
+            line_spacing: Vec::new(),
             nested_tables: Vec::new(),
+            tab_stops: Vec::new(),
+            column_break_offsets: Vec::new(),
             col_span: 1,
             vmerge,
             shading: None,
@@ -9305,6 +10407,64 @@ mod tests {
     }
 
     #[test]
+    fn drawing_image_uses_selected_docpr_description_as_alt_text() {
+        let mut media = HashMap::new();
+        media.insert("rIdImg".to_string(), Image::default());
+        let xml = r#"<w:document><w:body><w:p><w:r><w:drawing>
+            <mc:AlternateContent>
+                <mc:Choice Requires="w14"><wp:inline>
+                    <wp:docPr id="1" name="Choice" descr=" Choice &amp; alt "/>
+                    <a:blip r:embed="rIdImg"/>
+                </wp:inline></mc:Choice>
+                <mc:Fallback><wp:inline>
+                    <wp:docPr id="2" name="Fallback" descr="Fallback alt"/>
+                    <a:blip r:embed="rIdImg"/>
+                </wp:inline></mc:Fallback>
+            </mc:AlternateContent>
+        </w:drawing></w:r></w:p></w:body></w:document>"#;
+        let blocks = parse_with_media(xml, media);
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("para");
+        };
+        let image = p
+            .runs
+            .iter()
+            .find_map(|run| run.image.as_ref())
+            .expect("image run");
+        assert_eq!(image.alt.as_deref(), Some("Choice & alt"));
+    }
+
+    #[test]
+    fn drawing_alt_text_is_scoped_per_media_occurrence() {
+        let mut media = HashMap::new();
+        media.insert("rIdShared".to_string(), Image::default());
+        let xml = r#"<w:document><w:body>
+            <w:p><w:r><w:drawing><wp:inline>
+                <wp:docPr id="1" name="First" descr="First alt"/>
+                <a:blip r:embed="rIdShared"/>
+            </wp:inline></w:drawing></w:r></w:p>
+            <w:p><w:r><w:drawing><wp:inline>
+                <wp:docPr id="2" name="Second" descr="Second alt"/>
+                <a:blip r:embed="rIdShared"/>
+            </wp:inline></w:drawing></w:r></w:p>
+        </w:body></w:document>"#;
+        let blocks = parse_with_media(xml, media);
+        let observed = blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Paragraph(paragraph) => paragraph
+                    .runs
+                    .iter()
+                    .find_map(|run| run.image.as_ref())
+                    .and_then(|image| image.alt.as_deref()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(observed, ["First alt", "Second alt"]);
+    }
+
+    #[test]
     fn floating_image_offsets_trim_relative_from() {
         let mut media = HashMap::new();
         media.insert("rIdImg".to_string(), Image::default());
@@ -9396,6 +10556,50 @@ mod tests {
                 type_name: "first".to_string()
             }]
         );
+    }
+
+    #[test]
+    fn scans_header_footer_distances_by_revision_view_and_selected_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:del><w:sectPr><w:pgMar w:header="100" w:footer="200"/></w:sectPr></w:del>
+            <w:ins><w:sectPr><w:pgMar w:header="300" w:footer="400"/></w:sectPr></w:ins>
+            <w:sectPr>
+                <w:sectPrChange><w:sectPr><w:pgMar w:header="500" w:footer="600"/></w:sectPr></w:sectPrChange>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:pgMar w:header="700" w:footer="800"/></mc:Choice>
+                    <mc:Fallback><w:pgMar w:header="900" w:footer="1000"/></mc:Fallback>
+                </mc:AlternateContent>
+            </w:sectPr>
+        </w:body></w:document>"#;
+
+        let accepted = scan_hf_ref_sections(xml);
+        assert_eq!(accepted.len(), 2);
+        assert_eq!(accepted[0].header_distance_twips, Some(300));
+        assert_eq!(accepted[0].footer_distance_twips, Some(400));
+        assert_eq!(accepted[1].header_distance_twips, Some(700));
+        assert_eq!(accepted[1].footer_distance_twips, Some(800));
+
+        let rejected = scan_hf_ref_sections_for_revision_reject(xml);
+        assert_eq!(rejected.len(), 2);
+        assert_eq!(rejected[0].header_distance_twips, Some(100));
+        assert_eq!(rejected[0].footer_distance_twips, Some(200));
+        assert_eq!(rejected[1].header_distance_twips, Some(700));
+        assert_eq!(rejected[1].footer_distance_twips, Some(800));
+    }
+
+    #[test]
+    fn header_footer_distance_scanner_ignores_invalid_unsigned_twips() {
+        let xml = r#"<w:document><w:body>
+            <w:p><w:pPr><w:sectPr><w:pgMar w:header="-1" w:footer="invalid"/></w:sectPr></w:pPr></w:p>
+            <w:sectPr><w:pgMar w:header=" 720 " w:footer="4294967296"/></w:sectPr>
+        </w:body></w:document>"#;
+        let sections = scan_hf_ref_sections(xml);
+
+        assert_eq!(sections.len(), 2);
+        assert_eq!(sections[0].header_distance_twips, None);
+        assert_eq!(sections[0].footer_distance_twips, None);
+        assert_eq!(sections[1].header_distance_twips, Some(720));
+        assert_eq!(sections[1].footer_distance_twips, None);
     }
 
     #[test]
@@ -9521,6 +10725,210 @@ mod tests {
     }
 
     #[test]
+    fn final_section_column_spacing_uses_equal_current_branch_only() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:sectPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:cols w:num="2" w:equalWidth="true" w:space="960"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:cols w:num="2" w:space="240"/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:sectPr>
+        </w:body></w:document>"#;
+
+        assert_eq!(scan_final_section_column_hints(xml).gap_pt, Some(48.0));
+
+        let unequal = r#"<w:document><w:body><w:sectPr>
+            <w:cols w:num="2" w:equalWidth="0" w:space="960">
+                <w:col w:w="2400" w:space="480"/>
+                <w:col w:w="4800"/>
+            </w:cols>
+        </w:sectPr></w:body></w:document>"#;
+        assert_eq!(scan_final_section_column_hints(unequal).gap_pt, None);
+    }
+
+    #[test]
+    fn final_section_column_separator_follows_on_off_and_default_values() {
+        for value in ["true", "TRUE", "on", "1", "unexpected"] {
+            let xml = format!(
+                r#"<w:document><w:body><w:sectPr><w:cols w:num="2" w:sep="{value}"/></w:sectPr></w:body></w:document>"#
+            );
+            assert!(scan_final_section_column_hints(&xml).separator, "{value}");
+        }
+        for value in ["false", "FALSE", "off", "0"] {
+            let xml = format!(
+                r#"<w:document><w:body><w:sectPr><w:cols w:num="2" w:sep="{value}"/></w:sectPr></w:body></w:document>"#
+            );
+            assert!(!scan_final_section_column_hints(&xml).separator, "{value}");
+        }
+
+        let omitted =
+            r#"<w:document><w:body><w:sectPr><w:cols w:num="2"/></w:sectPr></w:body></w:document>"#;
+        assert!(!scan_final_section_column_hints(omitted).separator);
+
+        let last_definition_wins = r#"<w:document><w:body><w:sectPr>
+            <w:cols w:num="2" w:sep="1"/><w:cols w:num="2"/>
+        </w:sectPr></w:body></w:document>"#;
+        assert!(!scan_final_section_column_hints(last_definition_wins).separator);
+    }
+
+    #[test]
+    fn section_column_separator_uses_selected_mce_branch_and_survives_bad_geometry() {
+        let selected = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:sectPr>
+            <mc:AlternateContent>
+                <mc:Choice Requires="w14"><w:cols w:num="2" w:sep="on"/></mc:Choice>
+                <mc:Fallback><w:cols w:num="2" w:sep="off"/></mc:Fallback>
+            </mc:AlternateContent>
+        </w:sectPr></w:body></w:document>"#;
+        assert!(scan_final_section_column_hints(selected).separator);
+
+        let malformed = r#"<w:document><w:body><w:sectPr>
+            <w:cols w:equalWidth="0" w:sep="1"><w:col w:w="0"/></w:cols>
+        </w:sectPr></w:body></w:document>"#;
+        let malformed = scan_final_section_column_hints(malformed);
+        assert_eq!(malformed.layout, None);
+        assert!(malformed.separator);
+    }
+
+    #[test]
+    fn final_section_column_rtl_follows_on_off_source_order_and_selected_mce_branch() {
+        for value in ["1", "true", "on"] {
+            let xml = format!("<w:document><w:body><w:sectPr><w:bidi w:val=\"{value}\"/></w:sectPr></w:body></w:document>");
+            assert!(scan_final_section_column_hints(&xml).rtl, "{value}");
+        }
+        for value in ["0", "false", "off"] {
+            let xml = format!("<w:document><w:body><w:sectPr><w:bidi w:val=\"{value}\"/></w:sectPr></w:body></w:document>");
+            assert!(!scan_final_section_column_hints(&xml).rtl, "{value}");
+        }
+        assert!(
+            scan_final_section_column_hints(
+                "<w:document><w:body><w:sectPr><w:bidi></w:bidi></w:sectPr></w:body></w:document>"
+            )
+            .rtl
+        );
+        assert!(!scan_final_section_column_hints(
+            "<w:document><w:body><w:sectPr><w:bidi/><w:bidi w:val=\"0\"/></w:sectPr></w:body></w:document>"
+        )
+        .rtl);
+
+        let selected = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:sectPr>
+            <mc:AlternateContent><mc:Choice Requires="w14"><w:bidi/></mc:Choice><mc:Fallback><w:bidi w:val="0"/></mc:Fallback></mc:AlternateContent>
+        </w:sectPr></w:body></w:document>"#;
+        assert!(scan_final_section_column_hints(selected).rtl);
+
+        let empty_choice = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:sectPr>
+            <mc:AlternateContent><mc:Choice Requires="w14"/><mc:Fallback><w:bidi/></mc:Fallback></mc:AlternateContent>
+        </w:sectPr></w:body></w:document>"#;
+        assert!(!scan_final_section_column_hints(empty_choice).rtl);
+    }
+
+    #[test]
+    fn final_unequal_columns_use_direct_child_count() {
+        let xml = r#"<w:document><w:body><w:sectPr>
+            <w:cols w:num="9" w:equalWidth="0">
+                <w:col w:w="2400" w:space="480"/>
+                <w:col w:w="4800"/>
+            </w:cols>
+        </w:sectPr></w:body></w:document>"#;
+
+        assert_eq!(scan_section_columns(xml), Some(2));
+    }
+
+    #[test]
+    fn final_unequal_columns_preserve_bounded_direct_geometry() {
+        let xml = r#"<w:document><w:body><w:sectPr>
+            <w:cols w:num="9" w:equalWidth="false" w:space="960">
+                <w:col w:w="2400" w:space="480"/>
+                <w:col w:w="4800" w:space="120"/>
+            </w:cols>
+        </w:sectPr></w:body></w:document>"#;
+
+        let hints = scan_final_section_column_hints(xml);
+        let layout = hints.layout.expect("unequal column geometry");
+        assert_eq!(layout.columns.len(), 2);
+        assert_eq!(layout.columns[0].width_pt, 120.0);
+        assert_eq!(layout.columns[0].space_after_pt, 24.0);
+        assert_eq!(layout.columns[1].width_pt, 240.0);
+        assert_eq!(layout.columns[1].space_after_pt, 6.0);
+        assert_eq!(hints.gap_pt, None);
+    }
+
+    #[test]
+    fn unequal_columns_reject_malformed_or_excessive_direct_geometry() {
+        for cols in [
+            r#"<w:col w:w="0"/><w:col w:w="2400"/>"#,
+            r#"<w:col/><w:col w:w="2400"/>"#,
+            r#"<w:col w:w="31681"/><w:col w:w="2400"/>"#,
+            r#"<w:col w:w="2400" w:space="invalid"/><w:col w:w="2400"/>"#,
+            r#"<w:col w:w="2400" w:space="31681"/><w:col w:w="2400"/>"#,
+        ] {
+            let xml = format!(
+                r#"<w:document><w:body><w:sectPr><w:cols w:num="7" w:equalWidth="0">{cols}</w:cols></w:sectPr></w:body></w:document>"#
+            );
+            assert_eq!(scan_section_columns(&xml), None, "{cols}");
+            assert_eq!(scan_final_section_column_hints(&xml).layout, None, "{cols}");
+        }
+
+        let sixty_four = (0..64)
+            .map(|_| r#"<w:col w:w="2400"/>"#)
+            .collect::<String>();
+        let accepted = format!(
+            r#"<w:document><w:body><w:sectPr><w:cols w:equalWidth="0">{sixty_four}</w:cols></w:sectPr></w:body></w:document>"#
+        );
+        assert_eq!(scan_section_columns(&accepted), Some(64));
+        assert_eq!(
+            scan_final_section_column_hints(&accepted)
+                .layout
+                .expect("64 direct columns")
+                .columns
+                .len(),
+            64
+        );
+
+        let sixty_five = format!(r#"{sixty_four}<w:col w:w="2400"/>"#);
+        let rejected = format!(
+            r#"<w:document><w:body><w:sectPr><w:cols w:num="9" w:equalWidth="0">{sixty_five}</w:cols></w:sectPr></w:body></w:document>"#
+        );
+        assert_eq!(scan_section_columns(&rejected), None);
+        assert_eq!(scan_final_section_column_hints(&rejected).layout, None);
+    }
+
+    #[test]
+    fn unequal_columns_follow_selected_alternate_content_branch() {
+        let xml = r#"<w:document><w:body><w:sectPr><mc:AlternateContent>
+            <mc:Choice Requires="w14"><w:cols w:num="8" w:equalWidth="off">
+                <w:col w:w="2000" w:space="400"/><w:col w:w="4000"/>
+            </w:cols></mc:Choice>
+            <mc:Fallback><w:cols w:num="5"/></mc:Fallback>
+        </mc:AlternateContent></w:sectPr></w:body></w:document>"#;
+
+        assert_eq!(scan_section_columns(xml), Some(2));
+        let layout = scan_final_section_column_hints(xml)
+            .layout
+            .expect("selected Choice geometry");
+        assert_eq!(layout.columns[0].width_pt, 100.0);
+        assert_eq!(layout.columns[0].space_after_pt, 20.0);
+        assert_eq!(layout.columns[1].width_pt, 200.0);
+    }
+
+    #[test]
+    fn equal_columns_ignore_direct_geometry() {
+        let xml = r#"<w:document><w:body><w:sectPr>
+            <w:cols w:num="3" w:equalWidth="true" w:space="360">
+                <w:col w:w="2400"/><w:col w:w="4800"/>
+            </w:cols>
+        </w:sectPr></w:body></w:document>"#;
+
+        assert_eq!(scan_section_columns(xml), Some(3));
+        let hints = scan_final_section_column_hints(xml);
+        assert_eq!(hints.gap_pt, Some(18.0));
+        assert_eq!(hints.layout, None);
+    }
+
+    #[test]
     fn section_props_use_single_alternate_content_branch() {
         let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
             <w:p><w:pPr><w:sectPr>
@@ -9582,6 +10990,7 @@ mod tests {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let media = HashMap::new();
+        let charts = HashMap::new();
         let ref_targets = HashMap::new();
         let ref_position_context = super::super::fields::RefPositionContext::default();
         let ref_number_context = super::super::fields::RefNumberContext::empty();
@@ -9602,6 +11011,7 @@ mod tests {
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            charts: &charts,
             ref_targets: &ref_targets,
             ref_position_context: &ref_position_context,
             ref_number_context: &ref_number_context,
@@ -9618,6 +11028,7 @@ mod tests {
             document_variables: &document_variables,
             extended_properties: &extended_properties,
             file_size_bytes: None,
+            preserve_note_local_fields: false,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
             last_page_field_unsupported_display_format: Default::default(),
@@ -9627,6 +11038,7 @@ mod tests {
             style_ref_field_cursor: Default::default(),
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
+            last_formula_field_used_table_context: Default::default(),
             sequence_counters: Default::default(),
             sequence_heading_counts: Default::default(),
             sequence_heading_scopes: Default::default(),
@@ -9634,6 +11046,8 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            paragraph_charts: Default::default(),
+            section_column_capture: Default::default(),
             pagination_capture: Default::default(),
         };
         let xml = r#"<w:footnotes>
@@ -9659,6 +11073,7 @@ mod tests {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let media = HashMap::new();
+        let charts = HashMap::new();
         let ref_targets = HashMap::new();
         let ref_position_context = super::super::fields::RefPositionContext::default();
         let ref_number_context = super::super::fields::RefNumberContext::empty();
@@ -9679,6 +11094,7 @@ mod tests {
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            charts: &charts,
             ref_targets: &ref_targets,
             ref_position_context: &ref_position_context,
             ref_number_context: &ref_number_context,
@@ -9695,6 +11111,7 @@ mod tests {
             document_variables: &document_variables,
             extended_properties: &extended_properties,
             file_size_bytes: None,
+            preserve_note_local_fields: false,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
             last_page_field_unsupported_display_format: Default::default(),
@@ -9704,6 +11121,7 @@ mod tests {
             style_ref_field_cursor: Default::default(),
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
+            last_formula_field_used_table_context: Default::default(),
             sequence_counters: Default::default(),
             sequence_heading_counts: Default::default(),
             sequence_heading_scopes: Default::default(),
@@ -9711,6 +11129,8 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            paragraph_charts: Default::default(),
+            section_column_capture: Default::default(),
             pagination_capture: Default::default(),
         };
         let xml = r#"<w:footnotes xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
@@ -9749,6 +11169,7 @@ mod tests {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let media = HashMap::new();
+        let charts = HashMap::new();
         let ref_targets = HashMap::new();
         let ref_position_context = super::super::fields::RefPositionContext::default();
         let ref_number_context = super::super::fields::RefNumberContext::empty();
@@ -9769,6 +11190,7 @@ mod tests {
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            charts: &charts,
             ref_targets: &ref_targets,
             ref_position_context: &ref_position_context,
             ref_number_context: &ref_number_context,
@@ -9785,6 +11207,7 @@ mod tests {
             document_variables: &document_variables,
             extended_properties: &extended_properties,
             file_size_bytes: None,
+            preserve_note_local_fields: false,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
             last_page_field_unsupported_display_format: Default::default(),
@@ -9794,6 +11217,7 @@ mod tests {
             style_ref_field_cursor: Default::default(),
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
+            last_formula_field_used_table_context: Default::default(),
             sequence_counters: Default::default(),
             sequence_heading_counts: Default::default(),
             sequence_heading_scopes: Default::default(),
@@ -9801,6 +11225,8 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            paragraph_charts: Default::default(),
+            section_column_capture: Default::default(),
             pagination_capture: Default::default(),
         };
         let xml = r#"<w:hdr><w:p><w:r><w:t>헤더 텍스트</w:t></w:r></w:p></w:hdr>"#;
@@ -10666,7 +12092,7 @@ mod tests {
                 </mc:AlternateContent></w:tabs>
             </w:pPr><w:r><w:t>Empty selected branch</w:t></w:r></w:p>
         </w:body></w:document>"#;
-        let (blocks, _, tab_stops, _, _, _) =
+        let (blocks, _, tab_stops, _, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
         let Block::Paragraph(paragraph) = &blocks[0] else {
             panic!("paragraph")
@@ -10681,6 +12107,7 @@ mod tests {
             vec![TabStop {
                 position_pt: 72.0,
                 alignment: TabAlignment::Right,
+                leader: TabLeader::None,
             }]
         );
         let Block::Paragraph(empty_choice) = &blocks[1] else {

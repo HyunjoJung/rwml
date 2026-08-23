@@ -397,8 +397,11 @@ fn tdef_table_operand_len(data: &[u8], operand_start: usize) -> Option<usize> {
     Some(total_len)
 }
 
-fn pchg_tabs_operand_len(data: &[u8], operand_start: usize) -> Option<usize> {
+pub(crate) fn pchg_tabs_operand_len(data: &[u8], operand_start: usize) -> Option<usize> {
     let cb = usize::from(*data.get(operand_start)?);
+    if cb < 2 {
+        return None;
+    }
     let del_count_offset = operand_start.checked_add(1)?;
     let del_count = usize::from(*data.get(del_count_offset)?);
     if del_count > 64 {

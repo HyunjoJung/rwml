@@ -29,6 +29,10 @@ const ROOT_RELS: &str = r#"<?xml version="1.0"?><Relationships xmlns="http://sch
 
 const DOCUMENT_RELS_FOOTNOTES: &str = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#;
 
+const CONTENT_TYPES_WITH_ENDNOTES: &str = r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#;
+
+const DOCUMENT_RELS_ENDNOTES: &str = r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#;
+
 /// footnote #1 normal, footnote #2 with a custom mark (`w:customMarkFollows`),
 /// footnote #3 normal. A `NOTEREF` to footnote #3 must skip the custom-mark note
 /// in the auto-count and resolve to "2", not "3".
@@ -39,7 +43,7 @@ fn custom_mark_note_docx() -> Vec<u8> {
         ("word/_rels/document.xml.rels", DOCUMENT_RELS_FOOTNOTES),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:footnoteReference w:id="1"/></w:r></w:p><w:p><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>*</w:t></w:r><w:r><w:footnoteReference w:customMarkFollows="1" w:id="2"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="ThirdNote"/><w:r><w:footnoteReference w:id="3"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF ThirdNote "><w:r><w:t>stale third note</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:footnoteReference w:id="1"/></w:r></w:p><w:p><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:footnoteReference w:customMarkFollows="1" w:id="2"/><w:t>*</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="ThirdNote"/><w:r><w:footnoteReference w:id="3"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF ThirdNote "><w:r><w:t>stale third note</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
         (
             "word/footnotes.xml",
@@ -89,6 +93,96 @@ fn docx_plain_two_note_document_is_unchanged() {
     assert_eq!(fields[0].kind, FieldKind::NoteRef);
     assert_eq!(fields[0].instruction, "NOTEREF SecondNote");
     assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
+}
+
+fn custom_mark_target_docx(target_markup: &str, instruction: &str) -> Vec<u8> {
+    docx_fixture(&[
+        ("[Content_Types].xml", CONTENT_TYPES_WITH_FOOTNOTES),
+        ("_rels/.rels", ROOT_RELS),
+        ("word/_rels/document.xml.rels", DOCUMENT_RELS_FOOTNOTES),
+        (
+            "word/document.xml",
+            &format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p>{target_markup}</w:p><w:p><w:fldSimple w:instr=" {instruction} "><w:r><w:t>cached custom mark</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#
+            ),
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:t>Custom-mark footnote.</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
+fn custom_mark_endnote_target_docx() -> Vec<u8> {
+    docx_fixture(&[
+        ("[Content_Types].xml", CONTENT_TYPES_WITH_ENDNOTES),
+        ("_rels/.rels", ROOT_RELS),
+        ("word/_rels/document.xml.rels", DOCUMENT_RELS_ENDNOTES),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="8" w:name="CustomEndnote"/><w:r><w:endnoteReference w:customMarkFollows="1" w:id="1"/><w:t>+</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF CustomEndnote "><w:r><w:t>cached endnote mark</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote><w:endnote w:id="1"><w:p><w:r><w:t>Custom-mark endnote.</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
+#[test]
+fn docx_noteref_materializes_following_custom_mark_text() {
+    let doc = Document::open(&custom_mark_target_docx(
+        r#"<w:bookmarkStart w:id="7" w:name="CustomNote"/><w:r><w:footnoteReference w:customMarkFollows="1" w:id="1"/><w:t>a</w:t></w:r><w:bookmarkEnd w:id="7"/>"#,
+        r#"NOTEREF CustomNote \* Upper"#,
+    ))
+    .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::NoteRef);
+    assert_eq!(fields[0].computed_result.as_deref(), Some("A"));
+    assert!(!doc.text().contains("cached custom mark"));
+}
+
+#[test]
+fn docx_noteref_materializes_following_custom_endnote_mark_text() {
+    let doc = Document::open(&custom_mark_endnote_target_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::NoteRef);
+    assert_eq!(fields[0].computed_result.as_deref(), Some("+"));
+    assert!(!doc.text().contains("cached endnote mark"));
+}
+
+#[test]
+fn docx_noteref_does_not_claim_text_outside_custom_mark_bookmark() {
+    let doc = Document::open(&custom_mark_target_docx(
+        r#"<w:bookmarkStart w:id="7" w:name="CustomNote"/><w:r><w:footnoteReference w:customMarkFollows="1" w:id="1"/></w:r><w:bookmarkEnd w:id="7"/><w:r><w:t>ordinary text</w:t></w:r>"#,
+        "NOTEREF CustomNote",
+    ))
+    .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::NoteRef);
+    assert_eq!(fields[0].computed_result, None);
+    assert!(doc.text().contains("cached custom mark"));
+}
+
+#[test]
+fn docx_ref_f_does_not_invent_an_auto_number_for_custom_mark_target() {
+    let doc = Document::open(&custom_mark_target_docx(
+        r#"<w:bookmarkStart w:id="7" w:name="CustomNote"/><w:r><w:footnoteReference w:customMarkFollows="1" w:id="1"/><w:t>*</w:t></w:r><w:bookmarkEnd w:id="7"/>"#,
+        r#"REF CustomNote \f"#,
+    ))
+    .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Ref);
+    assert_eq!(fields[0].computed_result, None);
+    assert!(doc.text().contains("cached custom mark"));
 }
 
 const CONTENT_TYPES_WITH_FOOTNOTES_AND_SETTINGS: &str = r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>"#;

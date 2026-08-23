@@ -108,7 +108,8 @@ impl RunBuilder {
         }
     }
 
-    /// Mark the run as a relationship-backed external hyperlink.
+    /// Mark the run as a hyperlink. A target beginning with `#` names an
+    /// internal document bookmark; other targets use an external relationship.
     pub fn hyperlink(mut self, url: impl Into<String>) -> Self {
         self.run.field = hyperlink_field(url.into());
         self
@@ -2034,7 +2035,8 @@ impl DocBuilder {
         self
     }
 
-    /// Add a paragraph containing one hyperlink run.
+    /// Add a paragraph containing one hyperlink run. A target beginning with
+    /// `#` names an internal document bookmark.
     pub fn hyperlink(mut self, text: impl Into<String>, url: impl Into<String>) -> Self {
         self.model
             .blocks

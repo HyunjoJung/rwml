@@ -39,6 +39,20 @@ fn docx_fixture(document_xml: &str) -> Vec<u8> {
     out
 }
 
+fn docx_fixture_with_bytes(parts: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut out));
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, payload) in parts {
+            zip.start_file(*name, options).unwrap();
+            zip.write_all(payload).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+    out
+}
+
 fn package_parts(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut parts = BTreeMap::new();
@@ -257,4 +271,57 @@ fn insert_body_paragraph_rejects_invalid_positions_and_structural_hazards_atomic
             "failed structural preflight mutated the package: {body}"
         );
     }
+}
+
+#[test]
+fn remove_body_block_prunes_only_unreferenced_image_media() {
+    let bytes = docx_fixture_with_bytes(&[
+        (
+            "[Content_Types].xml",
+            br#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/media/removed.png" ContentType="image/png"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDocument" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdRemoved" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/removed.png"/><Relationship Id="rIdSharedRemoved" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/shared.png"/><Relationship Id="rIdKept" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/kept.png"/><Relationship Id="rIdSharedKept" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/shared.png"/><Relationship Id="rIdVendor" Type="https://vendor.example/image" Target="media/vendor.bin"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p data-id="removed"><w:r><w:drawing><w:opaque r:embed="rIdRemoved"/><w:opaque r:embed="rIdSharedRemoved"/><w:opaque r:embed="rIdVendor"/></w:drawing></w:r></w:p><w:p data-id="kept" data-mention="rIdRemoved"><w:r><w:drawing><w:opaque r:embed="rIdKept"/><w:opaque r:embed="rIdSharedKept"/></w:drawing></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        ("word/media/removed.png", b"removed-media"),
+        ("word/media/kept.png", b"kept-media"),
+        ("word/media/shared.png", b"shared-media"),
+        ("word/media/vendor.bin", b"vendor-media"),
+    ]);
+    let mut document = Document::open(&bytes).unwrap();
+
+    document.remove_body_block(0).unwrap();
+    let saved = document.save().unwrap();
+    let parts = package_parts(&saved);
+    let content_types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+
+    assert!(!content_types.contains("/word/media/removed.png"));
+    assert!(!parts.contains_key("word/media/removed.png"));
+    assert!(parts.contains_key("word/media/kept.png"));
+    assert!(parts.contains_key("word/media/shared.png"));
+    assert!(parts.contains_key("word/media/vendor.bin"));
+    assert!(!rels.contains("rIdRemoved"), "{rels}");
+    assert!(!rels.contains("rIdSharedRemoved"), "{rels}");
+    assert!(rels.contains("rIdKept"), "{rels}");
+    assert!(rels.contains("rIdSharedKept"), "{rels}");
+    assert!(rels.contains("rIdVendor"), "{rels}");
+    assert!(document
+        .edited_parts()
+        .iter()
+        .any(|part| part == "word/media/removed.png"));
+    assert!(document
+        .edited_parts()
+        .iter()
+        .any(|part| part == "[Content_Types].xml"));
+    assert_eq!(Document::open(&saved).unwrap().main_text(), "");
 }

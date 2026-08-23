@@ -53,18 +53,24 @@ mod toc;
 
 pub(crate) use self::display::computed_run_symbol_char;
 use self::display::unquote_field_text;
-pub(crate) use self::display::{computed_display_result, supports_display_field_syntax};
+pub(crate) use self::display::{
+    computed_display_result, supports_computed_symbol_field_syntax,
+    supports_context_free_display_field_syntax, supports_display_field_syntax,
+};
 #[cfg(test)]
 use self::document_info::document_info_instruction;
 pub(crate) use self::document_info::{
     computed_context_document_info_result, computed_document_info_result,
+    computed_preserved_document_info_result, computed_preserved_revision_number_result,
     computed_revision_number_result, supports_document_info_field_syntax,
-    supports_revision_number_field_syntax,
+    supports_preserved_document_info_field_syntax, supports_revision_number_field_syntax,
 };
 #[cfg(test)]
 use self::formula::computed_formula_result;
 use self::formula::computed_formula_result_with_bookmarks;
-pub(crate) use self::formula::supports_formula_field_syntax;
+pub(crate) use self::formula::{
+    supports_context_free_formula_field_syntax, supports_formula_field_syntax,
+};
 pub(crate) use self::legacy_form::{
     computed_legacy_form_result, legacy_form_context, LegacyFormContext,
 };
@@ -90,11 +96,11 @@ pub(crate) use self::page_ref::{
     page_ref_context_with_properties, supports_page_field_syntax, PageRefContext, PageRefPosition,
 };
 pub(crate) use self::reference::{
-    computed_direct_bookmark_ref_result, computed_ref_result,
-    is_direct_bookmark_ref_field_instruction, is_ref_position_field_instruction,
-    ref_number_context, ref_position_context, ref_targets, ref_targets_with_note_context,
-    ref_targets_with_properties, RefFieldPosition, RefNumberContext, RefPositionContext,
-    RefResultContext,
+    computed_direct_bookmark_ref_result, computed_preserved_note_local_ref_result,
+    computed_ref_result, is_direct_bookmark_ref_field_instruction,
+    is_ref_position_field_instruction, preserved_note_local_ref_target, ref_number_context,
+    ref_position_context, ref_targets, ref_targets_with_note_context, ref_targets_with_properties,
+    RefFieldPosition, RefNumberContext, RefPositionContext, RefResultContext,
 };
 use self::reference::{
     computed_ref_instruction_result, direct_bookmark_ref_instruction, ref_instruction,
@@ -109,13 +115,17 @@ pub(crate) use self::section::{
 use self::style_ref::style_ref_instruction;
 #[allow(unused_imports)]
 pub(crate) use self::style_ref::{
-    computed_style_ref_result, is_style_ref_field_instruction, style_ref_context_with_properties,
-    supports_style_ref_field_syntax, StyleRefContext, StyleRefFieldPosition,
-    StyleRefResolutionSources,
+    computed_preserved_note_local_style_ref_result, computed_style_ref_result,
+    is_style_ref_field_instruction, preserved_note_local_style_ref_target,
+    style_ref_context_with_properties, supports_style_ref_field_syntax, StyleRefContext,
+    StyleRefFieldPosition, StyleRefResolutionSources,
 };
 #[cfg(test)]
 use self::table_formula::table_formula_context;
-pub(crate) use self::table_formula::{table_formula_context_with_properties, TableFormulaContext};
+pub(crate) use self::table_formula::{
+    computed_span_free_table_formula_result, table_formula_context_with_properties,
+    TableFormulaContext,
+};
 #[cfg(test)]
 use self::toc::toc_entries;
 pub(crate) use self::toc::{
@@ -1951,6 +1961,10 @@ pub(crate) fn supports_prompt_field_syntax(instruction: &str) -> bool {
     fill_in_instruction(instruction).is_some() || ask_instruction(instruction).is_some()
 }
 
+pub(crate) fn supports_context_free_fill_in_field_syntax(instruction: &str) -> bool {
+    computed_fill_in_result(instruction).is_some()
+}
+
 pub(crate) fn computed_ask_result(
     instruction: &str,
     field_bookmarks: &mut HashMap<String, String>,
@@ -2003,7 +2017,6 @@ struct IfInstruction {
     text_format: Option<FieldTextFormat>,
 }
 
-#[cfg(test)]
 fn computed_if_result(instruction: &str) -> Option<String> {
     computed_if_result_with_bookmarks(instruction, &HashMap::new())
 }
@@ -2060,7 +2073,6 @@ pub(crate) fn supports_if_field_syntax(instruction: &str) -> bool {
     if_field_syntax(instruction)
 }
 
-#[cfg(test)]
 fn computed_compare_result(instruction: &str) -> Option<String> {
     computed_compare_result_with_bookmarks(instruction, &HashMap::new())
 }
@@ -2079,6 +2091,12 @@ fn computed_compare_result_with_bookmarks(
         result.to_string(),
         spec.text_format,
     ))
+}
+
+pub(crate) fn supports_context_free_if_compare_field_syntax(instruction: &str) -> bool {
+    computed_if_result(instruction)
+        .or_else(|| computed_compare_result(instruction))
+        .is_some()
 }
 
 pub(crate) fn supports_compare_field_syntax(instruction: &str) -> bool {
@@ -2562,6 +2580,17 @@ pub(crate) fn computed_sequence_result(
     computed_sequence_instruction_result(instruction, counters)
 }
 
+pub(crate) fn computed_preserved_sequence_reset_result(instruction: &str) -> Option<String> {
+    let instruction = sequence_instruction(instruction)?;
+    if instruction.heading_reset.is_some()
+        || instruction.hidden
+        || !matches!(instruction.action, SequenceAction::Reset(_))
+    {
+        return None;
+    }
+    computed_sequence_instruction_result(instruction, &mut HashMap::new())
+}
+
 pub(crate) fn computed_sequence_result_with_heading_scope(
     instruction: &str,
     counters: &mut HashMap<String, i64>,
@@ -2663,10 +2692,14 @@ pub(crate) fn supports_numbering_field_syntax(instruction: &str) -> bool {
     numbering_field_syntax(instruction)
 }
 
-pub(crate) fn computed_listnum_result(
-    instruction: &str,
-    listnum_counter: &mut i64,
-) -> Option<String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ListNumInstruction {
+    reset_start: Option<i64>,
+    number_format: Option<PageNumberFormat>,
+    text_format: Option<FieldTextFormat>,
+}
+
+fn listnum_instruction(instruction: &str) -> Option<ListNumInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
     let kind = parts.next()?;
@@ -2720,10 +2753,37 @@ pub(crate) fn computed_listnum_result(
         }
         list_name_seen = true;
     }
-    let value = reset_start.unwrap_or(*listnum_counter + 1);
-    let text = format_sequence_number(value, number_format)?;
+    Some(ListNumInstruction {
+        reset_start,
+        number_format,
+        text_format,
+    })
+}
+
+fn computed_listnum_instruction_result(
+    instruction: ListNumInstruction,
+    listnum_counter: &mut i64,
+) -> Option<String> {
+    let value = match instruction.reset_start {
+        Some(value) => value,
+        None => listnum_counter.checked_add(1)?,
+    };
+    let text = format_sequence_number(value, instruction.number_format)?;
     *listnum_counter = value;
-    Some(apply_field_text_format(text, text_format))
+    Some(apply_field_text_format(text, instruction.text_format))
+}
+
+pub(crate) fn computed_listnum_result(
+    instruction: &str,
+    listnum_counter: &mut i64,
+) -> Option<String> {
+    computed_listnum_instruction_result(listnum_instruction(instruction)?, listnum_counter)
+}
+
+pub(crate) fn computed_preserved_listnum_start_result(instruction: &str) -> Option<String> {
+    let instruction = listnum_instruction(instruction)?;
+    instruction.reset_start?;
+    computed_listnum_instruction_result(instruction, &mut 0)
 }
 
 fn accept_listnum_level_switch(part: &str, level_seen: &mut bool) -> Option<()> {
@@ -2812,19 +2872,29 @@ mod tests {
     use super::{
         cardinal_page_number_text, computed_action_result, computed_ask_result,
         computed_display_result, computed_dynamic_result, computed_listnum_result,
-        computed_numbering_result, computed_reference_index_result, computed_sequence_result,
-        computed_set_result, computed_toc_entry_result, direct_bookmark_ref_instruction,
-        document_info_instruction, format_page_number, note_ref_context, note_ref_instruction,
-        ordinal_page_number_text, page_ref_context, page_ref_instruction, ref_instruction,
-        ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
-        supports_action_field_syntax, supports_compare_field_syntax, supports_formula_field_syntax,
-        supports_if_field_syntax, supports_merge_control_field_syntax,
+        computed_numbering_result, computed_preserved_document_info_result,
+        computed_preserved_listnum_start_result, computed_preserved_note_local_ref_result,
+        computed_preserved_note_local_style_ref_result, computed_preserved_revision_number_result,
+        computed_preserved_sequence_reset_result, computed_reference_index_result,
+        computed_sequence_result, computed_set_result, computed_toc_entry_result,
+        direct_bookmark_ref_instruction, document_info_instruction, format_page_number,
+        note_ref_context, note_ref_instruction, ordinal_page_number_text, page_ref_context,
+        page_ref_instruction, preserved_note_local_ref_target,
+        preserved_note_local_style_ref_target, ref_instruction, ref_position_context, ref_targets,
+        seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
+        supports_compare_field_syntax, supports_computed_symbol_field_syntax,
+        supports_context_free_display_field_syntax, supports_context_free_fill_in_field_syntax,
+        supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
+        supports_formula_field_syntax, supports_if_field_syntax,
+        supports_merge_control_field_syntax, supports_preserved_document_info_field_syntax,
         supports_prompt_field_syntax, supports_reference_index_marker_syntax,
-        supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
-        toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
+        supports_revision_number_field_syntax, supports_sequence_field_syntax,
+        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
+        PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
+    use crate::CoreProperties;
     use std::collections::HashMap;
 
     #[test]
@@ -2908,6 +2978,31 @@ mod tests {
     }
 
     #[test]
+    fn context_free_formula_ownership_requires_context_independent_finite_results() {
+        for instruction in [
+            r#"= 10 / 4 \# "0.00""#,
+            r#"= ROUND(AVERAGE(2; 4; 7); 1) \# "0.0""#,
+            "= IF(1, 7, Missing + 1)",
+        ] {
+            assert!(supports_context_free_formula_field_syntax(instruction));
+        }
+        for instruction in [
+            "= Amount + 1",
+            "= SUM(LEFT)",
+            "= A1 + 1",
+            "= DEFINED(Known)",
+            "= defined (Known)",
+            "= IF(1, 7, DEFINED(Known))",
+            "= 1 / 0",
+            "= 1e309 + 1",
+            "= 1 +",
+            r#"QUOTE "not a formula""#,
+        ] {
+            assert!(!supports_context_free_formula_field_syntax(instruction));
+        }
+    }
+
+    #[test]
     fn ask_default_result_populates_field_bookmark() {
         let mut field_bookmarks = HashMap::new();
 
@@ -2988,6 +3083,46 @@ mod tests {
             field_bookmarks.get("ClientName").map(String::as_str),
             Some("Client 42")
         );
+    }
+
+    #[test]
+    fn context_free_fill_in_ownership_requires_an_explicit_literal_default() {
+        for instruction in [
+            r#"FILLIN "Client?" \d "Acme""#,
+            r#"FILLIN "Department?" \dops \* Upper"#,
+            r#"FILLIN Project display prompt \d Client 42 \o \* Caps"#,
+        ] {
+            assert!(supports_context_free_fill_in_field_syntax(instruction));
+        }
+        for instruction in [
+            r#"FILLIN "Client?""#,
+            r#"FILLIN "Client?" \d \o"#,
+            r#"FILLIN "broken prompt \d Acme"#,
+            r#"ASK ClientCode "Client code?" \d "ac-42""#,
+            r#"QUOTE "not a prompt""#,
+        ] {
+            assert!(!supports_context_free_fill_in_field_syntax(instruction));
+        }
+    }
+
+    #[test]
+    fn context_free_display_ownership_requires_computed_eq_or_advance_syntax() {
+        for instruction in [
+            r#"EQ \f(1,2)"#,
+            r#"EQ \d \fo10 \li()"#,
+            r#"ADVANCE \r"2" \d4 \* MERGEFORMAT"#,
+        ] {
+            assert!(supports_context_free_display_field_syntax(instruction));
+        }
+        for instruction in [
+            r#"EQ \f(1,"#,
+            "EQ plain text",
+            r#"ADVANCE \z 2"#,
+            r#"SYMBOL 183 \f Symbol"#,
+            r#"MACROBUTTON RunReport "Run""#,
+        ] {
+            assert!(!supports_context_free_display_field_syntax(instruction));
+        }
     }
 
     #[test]
@@ -3192,11 +3327,241 @@ mod tests {
     }
 
     #[test]
+    fn preserved_document_info_fields_require_fresh_writer_stable_sources() {
+        let core = CoreProperties {
+            title: Some("Quarter Plan".to_string()),
+            subject: Some("release train".to_string()),
+            created: Some("2026-08-24T13:45:00Z".to_string()),
+            revision: Some("12".to_string()),
+            ..CoreProperties::default()
+        };
+        let custom = HashMap::from([
+            ("CLIENTNAME".to_string(), "acme launch".to_string()),
+            ("EMPTYVALUE".to_string(), String::new()),
+        ]);
+
+        for (instruction, expected) in [
+            (r#"TITLE \* Upper"#, "QUARTER PLAN"),
+            (r#"DOCPROPERTY Subject \* Caps"#, "Release Train"),
+            (r#"INFO Title"#, "Quarter Plan"),
+            (r#"CREATEDATE \@ "yyyy-MM-dd""#, "2026-08-24"),
+            (r#"DOCPROPERTY RevisionNumber"#, "12"),
+            (r#"DOCPROPERTY "Client Name" \* Caps"#, "Acme Launch"),
+            (r#"DOCPROPERTY "Empty Value""#, ""),
+        ] {
+            assert!(
+                supports_preserved_document_info_field_syntax(instruction),
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_document_info_result(instruction, &core, &custom).as_deref(),
+                Some(expected),
+                "{instruction}"
+            );
+        }
+
+        for instruction in [
+            r#"NUMPAGES \* ROMAN"#,
+            "DOCPROPERTY Pages",
+            r#"DOCVARIABLE ClientCode \* Upper"#,
+            "FILESIZE",
+            r#"DATE \@ "yyyy-MM-dd""#,
+            "USERNAME",
+            "REVNUM",
+            r#"DOCPROPERTY "Broken Name"#,
+        ] {
+            assert!(
+                !supports_preserved_document_info_field_syntax(instruction),
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_document_info_result(instruction, &core, &custom),
+                None,
+                "{instruction}"
+            );
+        }
+
+        let normalized_by_writer = CoreProperties {
+            title: Some(" Quarter Plan ".to_string()),
+            ..CoreProperties::default()
+        };
+        assert!(supports_preserved_document_info_field_syntax("TITLE"));
+        assert_eq!(
+            computed_preserved_document_info_result("TITLE", &normalized_by_writer, &custom),
+            None
+        );
+        assert_eq!(
+            computed_preserved_document_info_result(
+                "DOCPROPERTY Subject",
+                &CoreProperties::default(),
+                &custom,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn preserved_revision_number_fields_require_fresh_writer_stable_sources() {
+        let core = CoreProperties {
+            revision: Some("draft revision".to_string()),
+            ..CoreProperties::default()
+        };
+
+        for (instruction, expected) in [
+            ("REVNUM", "draft revision"),
+            (r#"REVNUM \* Upper"#, "DRAFT REVISION"),
+            (r#"REVNUM \* Caps"#, "Draft Revision"),
+        ] {
+            assert!(
+                supports_revision_number_field_syntax(instruction),
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_revision_number_result(instruction, &core).as_deref(),
+                Some(expected),
+                "{instruction}"
+            );
+        }
+        assert!(!supports_revision_number_field_syntax(r#"REVNUM \x"#));
+        assert_eq!(
+            computed_preserved_revision_number_result(r#"REVNUM \x"#, &core),
+            None
+        );
+        for revision in [
+            None,
+            Some(String::new()),
+            Some(" draft revision ".to_string()),
+        ] {
+            assert_eq!(
+                computed_preserved_revision_number_result(
+                    "REVNUM",
+                    &CoreProperties {
+                        revision,
+                        ..CoreProperties::default()
+                    },
+                ),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn preserved_note_local_ref_fields_use_only_bookmark_text() {
+        let bookmarks = HashMap::from([
+            ("FootLocal".to_string(), "alpha launch".to_string()),
+            ("Count".to_string(), "12".to_string()),
+            ("Amount".to_string(), "1250.5".to_string()),
+        ]);
+        for (instruction, target, expected) in [
+            ("REF FootLocal", "FootLocal", "alpha launch"),
+            (
+                r#"REF FootLocal \h \! \* Caps"#,
+                "FootLocal",
+                "Alpha Launch",
+            ),
+            (r#"REF Count \* ROMAN"#, "Count", "XII"),
+            (r##"REF Amount \# "$#,##0.00""##, "Amount", "$1,250.50"),
+        ] {
+            assert_eq!(
+                preserved_note_local_ref_target(instruction).as_deref(),
+                Some(target),
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_note_local_ref_result(instruction, &bookmarks).as_deref(),
+                Some(expected),
+                "{instruction}"
+            );
+        }
+
+        for instruction in [
+            r#"REF FootLocal \f"#,
+            r#"REF FootLocal \p"#,
+            r#"REF FootLocal \n"#,
+            r#"REF FootLocal \w"#,
+            r#"REF FootLocal \r"#,
+            r#"REF FootLocal \d ".""#,
+            r#"REF FootLocal \x"#,
+            "FootLocal",
+        ] {
+            assert_eq!(preserved_note_local_ref_target(instruction), None);
+            assert_eq!(
+                computed_preserved_note_local_ref_result(instruction, &bookmarks),
+                None
+            );
+        }
+        assert_eq!(
+            computed_preserved_note_local_ref_result("REF Missing", &bookmarks),
+            None
+        );
+        assert_eq!(
+            computed_preserved_note_local_ref_result(r#"REF FootLocal \# "0.00""#, &bookmarks,),
+            None
+        );
+    }
+
+    #[test]
     fn style_ref_names_reject_malformed_quotes() {
         assert!(style_ref_instruction(r#"STYLEREF "Heading 1""#).is_some());
         assert!(style_ref_instruction(r#"STYLEREF "Heading 1"#).is_none());
         assert!(style_ref_instruction(r#"STYLEREF Heading"1""#).is_none());
         assert!(style_ref_instruction(r#"STYLEREF "\Heading 1""#).is_none());
+    }
+
+    #[test]
+    fn preserved_note_local_style_refs_use_plain_paragraph_text_or_position() {
+        for (instruction, target, before, expected) in [
+            ("STYLEREF Heading1", "Heading1", true, "Alpha heading"),
+            (
+                r#"STYLEREF "Heading 1" \* Upper"#,
+                "Heading 1",
+                true,
+                "ALPHA HEADING",
+            ),
+            (r#"STYLEREF \p Callout \* Caps"#, "Callout", false, "Below"),
+            (r#"STYLEREF Callout \p"#, "Callout", true, "above"),
+        ] {
+            assert_eq!(
+                preserved_note_local_style_ref_target(instruction).as_deref(),
+                Some(target),
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_note_local_style_ref_result(
+                    instruction,
+                    "  Alpha\t heading  ",
+                    before,
+                )
+                .as_deref(),
+                Some(expected),
+                "{instruction}"
+            );
+        }
+
+        for instruction in [
+            r#"STYLEREF NumberedBody \n"#,
+            r#"STYLEREF NumberedBody \r"#,
+            r#"STYLEREF NumberedBody \w"#,
+            r#"STYLEREF NumberedBody \n\t"#,
+            r#"STYLEREF "Broken Style"#,
+            r#"STYLEREF Heading1 \x"#,
+            "Heading1",
+        ] {
+            assert_eq!(
+                preserved_note_local_style_ref_target(instruction),
+                None,
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_note_local_style_ref_result(instruction, "Alpha heading", true,),
+                None,
+                "{instruction}"
+            );
+        }
+        assert_eq!(
+            computed_preserved_note_local_style_ref_result("STYLEREF Heading1", " \t\n ", true,),
+            None
+        );
     }
 
     #[test]
@@ -3272,6 +3637,13 @@ mod tests {
             None
         );
         assert_eq!(counter, 0);
+
+        let mut counter = i64::MAX;
+        assert_eq!(
+            computed_listnum_result("LISTNUM NumberDefault", &mut counter),
+            None
+        );
+        assert_eq!(counter, i64::MAX);
     }
 
     #[test]
@@ -3504,6 +3876,80 @@ mod tests {
     }
 
     #[test]
+    fn preserved_sequence_resets_are_visible_and_context_free() {
+        for (instruction, result) in [
+            (r#"SEQ Figure \r 7"#, "7"),
+            (r#"SEQ Appendix \r31 \* Hex"#, "1F"),
+            (
+                r#"SEQ Invoice \r "21" \* DollarText \* Upper"#,
+                "TWENTY-ONE AND 00/100",
+            ),
+        ] {
+            assert_eq!(
+                computed_preserved_sequence_reset_result(instruction).as_deref(),
+                Some(result),
+                "{instruction}"
+            );
+        }
+
+        for instruction in [
+            "SEQ Figure",
+            r#"SEQ Figure \n"#,
+            r#"SEQ Figure \c"#,
+            r#"SEQ Figure \s 1"#,
+            r#"SEQ Figure \r 7 \s 1"#,
+            r#"SEQ Figure \r 7 \h"#,
+            r#"SEQ Figure \r -1"#,
+            r#"SEQ Figure \r"#,
+            r#"SEQ Figure \r 7 \x"#,
+        ] {
+            assert_eq!(
+                computed_preserved_sequence_reset_result(instruction),
+                None,
+                "{instruction}"
+            );
+        }
+    }
+
+    #[test]
+    fn preserved_listnum_starts_are_explicit_and_context_free() {
+        for (instruction, result) in [
+            (r#"LISTNUM \s 7"#, "7"),
+            (r#"LISTNUM NumberDefault \s "4""#, "4"),
+            (r#"LISTNUM NumberDefault \s4 \* ROMAN"#, "IV"),
+            (
+                r#"LISTNUM NumberDefault \l "1" \s 21 \* DollarText \* Upper"#,
+                "TWENTY-ONE AND 00/100",
+            ),
+            (r#"LISTNUM LegalDefault \l1 \s31 \* Hex"#, "1F"),
+        ] {
+            assert_eq!(
+                computed_preserved_listnum_start_result(instruction).as_deref(),
+                Some(result),
+                "{instruction}"
+            );
+        }
+
+        for instruction in [
+            "LISTNUM",
+            "LISTNUM NumberDefault",
+            "AUTONUM",
+            r#"LISTNUM CustomList \s 4"#,
+            r#"LISTNUM NumberDefault \l 2 \s 4"#,
+            r#"LISTNUM NumberDefault \s 4 \s 5"#,
+            r#"LISTNUM NumberDefault \s -1"#,
+            r#"LISTNUM NumberDefault \s"#,
+            r#"LISTNUM NumberDefault \s 4 \x"#,
+        ] {
+            assert_eq!(
+                computed_preserved_listnum_start_result(instruction),
+                None,
+                "{instruction}"
+            );
+        }
+    }
+
+    #[test]
     fn reference_targets_reject_quoted_switch_names() {
         assert!(ref_instruction(r#"REF " \p""#).is_none());
         assert!(direct_bookmark_ref_instruction(r#"" \p""#).is_none());
@@ -3726,6 +4172,27 @@ mod tests {
     }
 
     #[test]
+    fn context_free_if_compare_ownership_requires_literal_operands() {
+        for instruction in [
+            r#"IF 1 = 1 "ship" "hold" \* Upper"#,
+            r#"IF "A=B"="A=B" yes no"#,
+            r#"COMPARE "A*" = "AB" \* MERGEFORMAT"#,
+            "COMPARE 5 > 3",
+        ] {
+            assert!(supports_context_free_if_compare_field_syntax(instruction));
+        }
+        for instruction in [
+            r#"IF Gate = "Ready" "ship" "hold""#,
+            r#"COMPARE CustomerTier = "Gold""#,
+            "COMPARE 1e309 > 0",
+            r#"IF 1 = 1 "broken"#,
+            r#"QUOTE "not a comparison""#,
+        ] {
+            assert!(!supports_context_free_if_compare_field_syntax(instruction));
+        }
+    }
+
+    #[test]
     fn compare_syntax_accepts_data_operands_without_computing_them() {
         assert!(supports_compare_field_syntax(
             r#"COMPARE CustomerTier = "Gold""#
@@ -3850,6 +4317,13 @@ mod tests {
 
     #[test]
     fn symbol_values_reject_malformed_quotes() {
+        assert!(supports_computed_symbol_field_syntax(
+            r#"SYMBOL 183 \f Symbol"#
+        ));
+        assert!(!supports_computed_symbol_field_syntax(
+            r#"SYMBOL 66 \f Wingdings"#
+        ));
+        assert!(!supports_computed_symbol_field_syntax(r#"EQ \f(1,2)"#));
         assert_eq!(
             computed_display_result(r#"SYMBOL "65""#).as_deref(),
             Some("A")

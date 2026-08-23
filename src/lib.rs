@@ -128,6 +128,10 @@ pub fn extract_text(bytes: &[u8]) -> Result<String> {
 /// setup) and write a styled Word document. Available with the default `docx`
 /// feature.
 ///
+/// Hyperlink targets beginning with `#` are emitted as internal bookmark anchors
+/// without relationships when the bookmark name is referenceable. Malformed
+/// internal targets remain visible plain text.
+///
 /// **Image bytes are trusted as-is:** an embedded [`Image`]'s `bytes` are written
 /// verbatim under a part typed from its `mime` — the writer does not transcode or
 /// validate the raster, so the caller must ensure `bytes` really are that format (a
@@ -567,9 +571,45 @@ struct DocState {
 fn doc_model_from_doc_state(state: &DocState) -> DocModel {
     let assemble::LegacyBuildOutput {
         model,
+        #[cfg(feature = "docx")]
+            promoted_running_block_ranges: _promoted_running_block_ranges,
         pagination_hints: _pagination_hints,
+        line_spacing_hints: _line_spacing_hints,
+        #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stops: _tab_stops,
+        #[cfg(feature = "render")]
+            render_tab_stops: _render_tab_stops,
+        #[cfg(feature = "docx")]
+            note_reference_anchors: _note_reference_anchors,
+        column_break_offsets: _column_break_offsets,
+        #[cfg(feature = "docx")]
+            table_cell_column_break_offsets: _table_cell_column_break_offsets,
+        section_column_gap_pt: _section_column_gap_pt,
+        final_section_column_gap_pt: _final_section_column_gap_pt,
+        section_column_layouts: _section_column_layouts,
+        final_section_column_layout: _final_section_column_layout,
+        section_column_separators: _section_column_separators,
+        final_section_column_separator: _final_section_column_separator,
+        section_column_rtl: _section_column_rtl,
+        final_section_column_rtl: _final_section_column_rtl,
         table_row_pagination: _table_row_pagination,
         table_cell_pagination: _table_cell_pagination,
+        table_cell_line_spacing: _table_cell_line_spacing,
+        #[cfg(any(feature = "docx", feature = "render"))]
+            table_cell_tab_stops: _table_cell_tab_stops,
+        #[cfg(feature = "render")]
+            render_table_cell_tab_stops: _render_table_cell_tab_stops,
+        #[cfg(any(feature = "docx", feature = "render"))]
+            running_line_spacing_hints: _running_line_spacing_hints,
+        #[cfg(feature = "docx")]
+            running_pagination_hints: _running_pagination_hints,
+        #[cfg(feature = "docx")]
+            running_column_break_offsets: _running_column_break_offsets,
+        #[cfg(any(feature = "docx", feature = "render"))]
+            running_tab_stops: _running_tab_stops,
+        #[cfg(any(feature = "docx", feature = "render"))]
+            running_table_cell_tab_stops: _running_table_cell_tab_stops,
+        running_surface_distances: _running_surface_distances,
     } = legacy_build_output_from_doc_state(state);
     model
 }
@@ -1001,10 +1041,273 @@ impl Document {
     /// preserves the structure (text, character runs, headings, alignment, lists,
     /// tables with colspan/rowspan, images, hyperlinks), so a legacy `.doc` can be
     /// converted to a clean, Office-openable `.docx` through the shared model.
+    /// Opened DOCX inputs also retain every supported nonempty core property in
+    /// the public model and regenerated `docProps/core.xml`: title, subject,
+    /// creator, description, keywords, category, content status,
+    /// last-modified-by, created/modified/last-printed timestamps, revision, and
+    /// version.
+    /// Opened legacy and DOCX documents also carry validated source-only section
+    /// column gaps, complete unequal geometry, separator flags, right-to-left
+    /// population, and running header/footer distances into the generated
+    /// package. Opened legacy and DOCX documents additionally carry
+    /// exact/minimum line rules and effective keep/widow pagination controls for
+    /// aligned top-level body paragraphs and direct paragraph blocks in surviving
+    /// cells of aligned top-level tables, plus effective no-split state for
+    /// aligned top-level table rows. That direct body subset also carries
+    /// reader-resolved explicit paragraph tab stops, while aligned top-level body
+    /// paragraphs and aligned direct paragraph blocks in surviving cells of top-
+    /// level body tables carry visible manual column breaks through independently
+    /// validated source character offsets. Opened DOCX inputs additionally carry
+    /// row no-split state, direct cell-paragraph keep/widow controls,
+    /// exact/minimum line rules, explicit tabs, and visible column breaks
+    /// recursively through nested descendants of those body tables; each
+    /// recursive component is validated independently. Direct top-level
+    /// paragraphs in selected default/first/even running headers and footers from
+    /// opened DOCX and legacy DOC inputs also carry reader-resolved explicit tab
+    /// stops through section-aligned private hints. Direct paragraph blocks in
+    /// top-level tables on those running surfaces use a companion block/row/
+    /// surviving-cell/paragraph-aligned bridge for explicit tabs. Opened DOCX and
+    /// legacy DOC inputs both
+    /// retain reader-resolved exact/minimum line rules on those direct table-cell
+    /// paragraphs and on direct top-level running paragraphs through section-
+    /// aligned source-only hints. Those same selected running surfaces retain
+    /// effective `keepNext`, `keepLines`, and widow-off state on direct top-level
+    /// paragraphs and direct paragraphs in surviving cells of top-level tables,
+    /// plus effective no-split state for aligned top-level table rows. Opened DOCX
+    /// and legacy DOC inputs also carry visible manual column breaks in ordinary
+    /// top-level paragraphs across those six running variants through a separately
+    /// validated section/variant/paragraph-aligned bridge. Legacy source-story
+    /// offsets follow the same six-slot section ownership used by the other
+    /// running-surface hints; opened DOCX hints follow default-surface inheritance
+    /// and keep local relationships. Opened DOCX inputs carry visible manual
+    /// column breaks in direct paragraphs of top-level running-table cells
+    /// and recursively carry row no-split state,
+    /// cell-paragraph keep/widow controls, exact/minimum line rules, explicit
+    /// tabs, and visible column breaks through nested running-table descendants
+    /// across all six variants. The private tree follows default-surface
+    /// inheritance, validates each table slot and recursive component
+    /// independently, and keeps header/footer-local relationships. Fresh
+    /// legacy conversion excludes an exact nonempty HeaderFooter source region
+    /// from the generated body only when assembly actually promoted that range
+    /// into a selected section running slot; unselected running stories and all
+    /// other unsupported subdocuments retain their flattened fallback. Opened
+    /// legacy DOC inputs with exact nonempty
+    /// `PlcffndRef`/`PlcfendRef` tables, one-to-one Main-story markers, and
+    /// ordinary top-level paragraph anchors promote normalized footnote/endnote
+    /// text into real references and note parts. Reopened DOCX inputs retain that
+    /// exact body-reference subset through a private block/id/offset bridge and
+    /// also retain mixed ordinary paragraphs and supported table trees
+    /// rooted at top-level tables. Surviving cells may recursively contain
+    /// ordinary paragraphs or further tables under the same constraint. The
+    /// private payload preserves modeled table properties and merges,
+    /// paragraph/run formatting, row no-split and cell keep/widow controls,
+    /// exact/minimum line rules, explicit tabs, and visible manual column breaks
+    /// at every table depth. Manual page breaks between top-level paragraph
+    /// fragments and inside table cells at every selected depth are also retained.
+    /// Relationship-backed external hyperlinks in those paragraphs retain
+    /// relationships owned by the corresponding footnote or endnote part,
+    /// including through nested tables. Simple HYPERLINK field syntax may
+    /// normalize to a `w:hyperlink` element. Validator-approved internal-anchor
+    /// links and run bookmarks likewise survive at every supported depth without
+    /// note relationships, using paired bookmark IDs unique across body and note
+    /// stories.
+    /// Parser-modeled run content controls with a nonempty alias or tag, or a
+    /// complete XPath/store-item data-binding pair, likewise survive at every
+    /// supported depth with trimmed metadata and no additional relationships.
+    /// A one-sided binding rejects that note atomically; property-empty source
+    /// wrappers are normalized out by the reader and are not claimed.
+    /// Parser-normalized cached result runs for nonempty compatibility/private,
+    /// inserted-content, mail-merge-helper, and barcode fields reported as
+    /// `NoComputedResult` likewise survive at every supported depth as non-dirty
+    /// `w:fldSimple` fields with normalized instructions and modeled formatting.
+    /// Complex source fields normalize to the same form; source simple/complex
+    /// grouping and source update state are not preserved. Parser-validated,
+    /// non-dirty `MERGEFIELD` cached results with valid names and bounded before/
+    /// after and text-format switches also survive as normalized simple fields;
+    /// no external merge data source is copied or evaluated. Parser-validated,
+    /// non-dirty `FILENAME` cached results with bounded path-display and text-
+    /// format switches likewise survive as normalized simple fields; no
+    /// filesystem path is read and no destination filename is inferred.
+    /// Parser-validated, non-dirty `RD`, `TA`, `XE`, and `TC` marker instructions
+    /// also survive in source order as empty simple fields with modeled formatting
+    /// while stale marker cache text stays hidden. This path transports markers
+    /// only; it does not generate or update indexes, tables of authorities, tables
+    /// of contents, or master-document references. Marker-only notes and generated
+    /// `BIBLIOGRAPHY`/`CITATION`/`INDEX`/`TOA`/`TOC` fields remain excluded. Dirty
+    /// modeled runs, malformed field syntax, and unknown or other context-
+    /// sensitive/generated fields reject that note atomically.
+    /// Parser-validated, non-dirty `SYMBOL` instructions that actually compute
+    /// one character likewise survive as normalized simple fields with modeled
+    /// formatting; stale cached characters stay replaced by the deterministic
+    /// result. Malformed or unmapped symbols remain excluded. Context-free, non-
+    /// dirty `EQ` and `ADVANCE` instructions with one modeled result run likewise
+    /// survive. Supported EQ expressions retain deterministic plain-text
+    /// approximations and modeled formatting; parser-valid ADVANCE instructions
+    /// retain an empty current result and any modeled result-run formatting.
+    /// Malformed or unsupported display syntax, split results, and action fields
+    /// remain excluded. This does not add native PDF equation layout, ADVANCE
+    /// displacement, or action execution.
+    /// Parser-validated, non-dirty literal `QUOTE` instructions with one modeled
+    /// result run likewise survive as normalized simple fields with computed
+    /// text, supported text-format switches, and modeled formatting. Malformed
+    /// or split-result `QUOTE` fields and other dynamic fields remain excluded.
+    /// Context-free, non-dirty `IF` and `COMPARE` instructions with one modeled
+    /// result run likewise survive when quoted-text or finite-number operands
+    /// compute without bookmark or `SET` state, including compact comparisons
+    /// and wildcard equality. Bookmark- or `SET`-backed, malformed or nonfinite,
+    /// and split-result comparisons remain excluded.
+    /// Context-free, non-dirty formula (`=`) instructions with one modeled result
+    /// run likewise survive when finite literal arithmetic or scalar-function
+    /// expressions compute without bookmark, `SET`, table-cell, or positional
+    /// context and do not use `DEFINED`; supported numeric pictures, computed text,
+    /// and modeled formatting are retained. Stateful or table-dependent,
+    /// `DEFINED`, malformed or nonfinite, and split-result formulas remain
+    /// excluded.
+    /// Parser-validated, non-dirty `FILLIN` instructions with an explicit literal
+    /// default and one modeled result run likewise retain quoted or bounded multi-
+    /// token defaults, neutral `\o`, supported text formatting, and deterministic
+    /// current results. This does not add interactive prompting or field updates;
+    /// default-less or malformed prompts, split results, and stateful `ASK`, `SET`,
+    /// and merge-control fields remain excluded.
+    /// Parser-validated, non-dirty core-property and custom-string `DOCPROPERTY`
+    /// fields with one modeled result run likewise survive when the referenced
+    /// property exists and each core value already matches the fresh writer's
+    /// nonempty trim normalization. Direct core-property and `INFO` aliases,
+    /// supported text/date pictures, deterministic current results, and modeled
+    /// formatting are retained. Extended application properties, document
+    /// variables, `FILESIZE`, volatile date/user fields, `REVNUM`, malformed or
+    /// dirty instructions, and split results remain excluded. This path uses the
+    /// core/custom properties already carried by the fresh model; it does not
+    /// copy app/settings parts or add field updates, user context, relationships,
+    /// or layout behavior.
+    /// Parser-validated, non-dirty `REVNUM` fields with one modeled result run
+    /// likewise survive when the core revision exists and already matches the
+    /// fresh writer's nonempty trim normalization. Normalized instructions,
+    /// deterministic current results, supported text-format switches, and modeled
+    /// formatting are retained. Missing, empty, trim-unstable, malformed, dirty,
+    /// or split-result cases remain excluded. This does not add revision tracking,
+    /// field updates, relationships, or layout behavior.
+    /// Parser-validated, non-dirty explicit bookmark-text `REF` fields with one
+    /// modeled result run likewise survive when the target is exactly one stable,
+    /// nonempty, non-field run in the same note payload and the modeled result
+    /// matches a fresh evaluation of that text. Neutral hyperlink/lock switches,
+    /// supported text and integer number formats, numeric pictures, target
+    /// bookmarks, and modeled formatting are retained. Note-mark, relative-
+    /// position, paragraph/full/relative-context numbering, sequence-separator,
+    /// cross-note, missing, empty, multi-run, field-backed, malformed, dirty,
+    /// mismatched-result, or split-result cases remain excluded. This does not add
+    /// global bookmark lookup, field updates, relationships, or layout behavior.
+    /// Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline
+    /// runs also retain globally unique media parts and relationships owned by
+    /// the corresponding note part, including through nested tables and under
+    /// an external hyperlink.
+    /// Parser-modeled native literal-cache core and ChartEx chart blocks in
+    /// chart-only sibling paragraphs retain note-local relationships, globally
+    /// unique chart/drawing IDs, and fresh chart package parts at the top level
+    /// or through nested tables. Core chart data receives a regenerated embedded
+    /// XLSX workbook; ChartEx literal data remains native.
+    /// An unsupported opened-DOCX note body falls back independently to normalized
+    /// one-paragraph text.
+    /// Legacy nested-table descendants and note paragraph layout properties
+    /// remain outside these layout-hint paths. Legacy manual breaks in running-
+    /// table cells and nested running tables remain unsupported. Settings-defined
+    /// default-tab intervals and legacy note manual breaks also remain outside the
+    /// bounded paths. Opened DOCX typed manual page breaks in direct and
+    /// recursively nested body and running-surface table cells survive fresh
+    /// conversion through the ordered public block tree across all six selected
+    /// running variants; preview table fragmentation and Word-exact pagination
+    /// are not claimed. Missing/empty, unknown-MIME, raw-RGBA, floating, block,
+    /// or image-only raster cases, chart-only notes, arbitrary Office chart
+    /// grammars, source chart styling/formulas/external data, exact floating chart
+    /// placement, vector metafiles, malformed internal-anchor or bookmark names,
+    /// other fields, annotations, nested notes, source IDs and numbering,
+    /// separators, custom marks, complex anchors, and page-bottom placement remain
+    /// outside the bounded opened-DOCX note path.
+    /// Standalone [`write_docx`] remains model-only for all of these private
+    /// hints and does not emit note parts; it does serialize modeled body/running
+    /// internal anchors and bookmarks.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
-        write::to_docx(&self.model())
+        match &self.backend {
+            Backend::Doc(state) => {
+                let mut assembled = legacy_build_output_from_doc_state(state);
+                legacy_project_promoted_running_surfaces(&mut assembled);
+                legacy_promote_exact_notes_for_fresh_conversion(state, &mut assembled);
+                write::to_docx_with_source_hints(
+                    &assembled.model,
+                    write::SourceWriteHints {
+                        gaps: &assembled.section_column_gap_pt,
+                        layouts: &assembled.section_column_layouts,
+                        separators: &assembled.section_column_separators,
+                        rtl: &assembled.section_column_rtl,
+                        final_gap: assembled.final_section_column_gap_pt,
+                        final_layout: assembled.final_section_column_layout.as_ref(),
+                        final_separator: assembled.final_section_column_separator,
+                        final_rtl: assembled.final_section_column_rtl,
+                        running_surface_distances: &assembled.running_surface_distances,
+                        running_line_spacing: &assembled.running_line_spacing_hints,
+                        running_pagination: &assembled.running_pagination_hints,
+                        running_tab_stops: &assembled.running_tab_stops,
+                        running_table_cell_tab_stops: &assembled.running_table_cell_tab_stops,
+                        running_table_layout: &[],
+                        running_column_break_offsets: &assembled.running_column_break_offsets,
+                        note_payloads: &[],
+                        paragraph_line_spacing: &assembled.line_spacing_hints,
+                        paragraph_pagination: &assembled.pagination_hints,
+                        paragraph_tab_stops: &assembled.tab_stops,
+                        column_break_offsets: &assembled.column_break_offsets,
+                        table_cell_column_break_offsets: &assembled.table_cell_column_break_offsets,
+                        table_row_pagination: &assembled.table_row_pagination,
+                        table_cell_pagination: &assembled.table_cell_pagination,
+                        table_cell_line_spacing: &assembled.table_cell_line_spacing,
+                        table_nested_pagination: &[],
+                        table_cell_tab_stops: &assembled.table_cell_tab_stops,
+                    },
+                )
+            }
+            Backend::Docx(state) => {
+                let mut model = state.model.clone();
+                let note_payloads = if let Some(notes) = &state.fresh_conversion_notes {
+                    model.blocks = notes.body_blocks.clone();
+                    notes.payloads.as_slice()
+                } else {
+                    model.blocks.extend(state.notes.iter().cloned());
+                    &[]
+                };
+                write::to_docx_with_source_hints(
+                    &model,
+                    write::SourceWriteHints {
+                        gaps: &state.section_column_gap_pt,
+                        layouts: &state.section_column_layouts,
+                        separators: &state.section_column_separators,
+                        rtl: &state.section_column_rtl,
+                        final_gap: state.final_section_column_gap_pt,
+                        final_layout: state.final_section_column_layout.as_ref(),
+                        final_separator: state.final_section_column_separator,
+                        final_rtl: state.final_section_column_rtl,
+                        running_surface_distances: &state.running_surface_distances,
+                        running_line_spacing: &state.running_line_spacing_hints,
+                        running_pagination: &state.running_pagination_hints,
+                        running_tab_stops: &state.running_tab_stops,
+                        running_table_cell_tab_stops: &state.running_table_cell_tab_stops,
+                        running_table_layout: &state.running_table_layout_hints,
+                        running_column_break_offsets: &state.running_column_break_offsets,
+                        note_payloads,
+                        paragraph_line_spacing: &state.line_spacing_hints,
+                        paragraph_pagination: &state.pagination_hints,
+                        paragraph_tab_stops: &state.tab_stops,
+                        column_break_offsets: &state.column_break_offsets,
+                        table_cell_column_break_offsets: &state.table_cell_column_break_offsets,
+                        table_row_pagination: &state.table_row_pagination,
+                        table_cell_pagination: &state.table_cell_pagination,
+                        table_cell_line_spacing: &state.table_cell_line_spacing,
+                        table_nested_pagination: &state.table_nested_pagination,
+                        table_cell_tab_stops: &state.table_cell_tab_stops,
+                    },
+                )
+            }
+        }
     }
 
     /// **Package-preserving save** — re-emit this document's `.docx` with every part
@@ -1324,7 +1627,11 @@ impl Document {
     /// The edit is intentionally conservative. It rejects opaque direct body
     /// elements, malformed or cross-block ranges/complex fields, and any block
     /// carrying section properties. The read model and text views remain stale
-    /// until explicitly refreshed or reopened. On any error the document is unchanged.
+    /// until explicitly refreshed or reopened. When the removed subtree no longer
+    /// references an internal image relationship, an unreachable `word/media/*`
+    /// target is pruned only when no other retained relationship points at it;
+    /// other relationship kinds and shared media remain preserved. On any error
+    /// the document is unchanged.
     #[cfg(feature = "docx")]
     pub fn remove_body_block(&mut self, block_index: usize) -> Result<()> {
         let d = self.docx_tree_editable()?;
@@ -2017,9 +2324,10 @@ impl Document {
     /// restart/origin cell. The target cell's visible `w:t` content is replaced by
     /// `text`; surrounding table structure and other cells are preserved.
     ///
-    /// This is intentionally a focused body-table edit surface. Parent cells
-    /// containing nested tables are rejected before mutation. Read views remain stale
-    /// until explicitly refreshed or reopened.
+    /// This is intentionally a focused body-table edit surface. When a parent cell
+    /// contains a nested table, only the parent's direct text is replaced; nested
+    /// table content and structure remain untouched. Read views remain stale until
+    /// explicitly refreshed or reopened.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn set_table_cell_text(
@@ -2039,14 +2347,6 @@ impl Document {
                     "table cell index out of range: table={table_index} row={row_index} cell={cell_index}"
                 ))
             };
-            if tree
-                .wml_table_cell_has_nested_table_under(body, table_index, row_index, cell_index)
-                .ok_or_else(&index_error)?
-            {
-                return Err(Error::Docx(format!(
-                    "set_table_cell_text: table={table_index} row={row_index} cell={cell_index} contains a nested table"
-                )));
-            }
             let runs = tree
                 .wml_table_cell_text_runs_under(body, table_index, row_index, cell_index)
                 .ok_or_else(index_error)?;
@@ -2925,8 +3225,25 @@ impl Document {
                     &assembled.model,
                     render::SourceRenderHints {
                         pagination: &assembled.pagination_hints,
+                        line_spacing: &assembled.line_spacing_hints,
+                        column_break_offsets: &assembled.column_break_offsets,
+                        section_column_gap_pt: &assembled.section_column_gap_pt,
+                        section_column_layouts: &assembled.section_column_layouts,
+                        section_column_separators: &assembled.section_column_separators,
+                        section_column_rtl: &assembled.section_column_rtl,
+                        final_section_column_gap_pt: assembled.final_section_column_gap_pt,
+                        final_section_column_layout: assembled.final_section_column_layout.as_ref(),
+                        final_section_column_separator: assembled.final_section_column_separator,
+                        final_section_column_rtl: assembled.final_section_column_rtl,
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
+                        table_cell_line_spacing: &assembled.table_cell_line_spacing,
+                        tab_stops: &assembled.render_tab_stops,
+                        table_cell_tab_stops: &assembled.render_table_cell_tab_stops,
+                        running_line_spacing: &assembled.running_line_spacing_hints,
+                        running_tab_stops: &assembled.running_tab_stops,
+                        running_table_cell_tab_stops: &assembled.running_table_cell_tab_stops,
+                        running_surface_distances: &assembled.running_surface_distances,
                         ..render::SourceRenderHints::default()
                     },
                 )
@@ -2935,14 +3252,37 @@ impl Document {
             Backend::Docx(d) => {
                 let mut model = d.model.clone();
                 model.blocks.extend(d.notes.iter().cloned());
+                let mut line_spacing = d.line_spacing_hints.clone();
+                line_spacing.extend_from_slice(&d.note_line_spacing_hints);
+                let mut tab_stops = d.tab_stops.clone();
+                tab_stops.extend_from_slice(&d.note_tab_stops);
+                let mut table_cell_tab_stops = d.table_cell_tab_stops.clone();
+                table_cell_tab_stops.extend_from_slice(&d.note_table_cell_tab_stops);
                 render_document(
                     &model,
                     render::SourceRenderHints {
                         pagination: &d.pagination_hints,
-                        tab_stops: &d.tab_stops,
+                        line_spacing: &line_spacing,
+                        tab_stops: &tab_stops,
+                        column_break_offsets: &d.column_break_offsets,
+                        section_column_gap_pt: &d.section_column_gap_pt,
+                        section_column_layouts: &d.section_column_layouts,
+                        section_column_separators: &d.section_column_separators,
+                        section_column_rtl: &d.section_column_rtl,
+                        final_section_column_gap_pt: d.final_section_column_gap_pt,
+                        final_section_column_layout: d.final_section_column_layout.as_ref(),
+                        final_section_column_separator: d.final_section_column_separator,
+                        final_section_column_rtl: d.final_section_column_rtl,
                         table_row_pagination: &d.table_row_pagination,
                         table_cell_pagination: &d.table_cell_pagination,
+                        table_cell_line_spacing: &d.table_cell_line_spacing,
                         table_nested_pagination: &d.table_nested_pagination,
+                        table_cell_tab_stops: &table_cell_tab_stops,
+                        running_line_spacing: &d.running_line_spacing_hints,
+                        running_tab_stops: &d.running_tab_stops,
+                        running_table_cell_tab_stops: &d.running_table_cell_tab_stops,
+                        running_surface_distances: &d.running_surface_distances,
+                        default_tab_stop_pt: d.default_tab_stop_pt,
                     },
                 )
             }
@@ -3130,8 +3470,13 @@ fn edit_docx_atomic_body_block(
     }
 
     let mut pkg = d.package.clone();
-    let tree = pkg.part_tree_mut("word/document.xml")?;
-    apply_atomic_body_block_edit(tree, edit)?;
+    {
+        let tree = pkg.part_tree_mut("word/document.xml")?;
+        apply_atomic_body_block_edit(tree, edit)?;
+    }
+    if matches!(edit, AtomicBodyBlockEdit::Remove { .. }) {
+        pkg.prune_unreferenced_media_relationships("word/document.xml")?;
+    }
     pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
     commit_docx_package(d, pkg)
 }
@@ -3328,6 +3673,407 @@ fn legacy_doc_notes_from_state(state: &DocState) -> Vec<Note> {
         attach_legacy_doc_endnote_marker_anchors(&mut notes, state);
     }
     notes
+}
+
+#[cfg(feature = "docx")]
+fn legacy_project_promoted_running_surfaces(assembled: &mut assemble::LegacyBuildOutput) -> bool {
+    if assembled.promoted_running_block_ranges.is_empty() {
+        return true;
+    }
+
+    let block_count = assembled.model.blocks.len();
+    let aligned = assembled.pagination_hints.len() == block_count
+        && assembled.line_spacing_hints.len() == block_count
+        && assembled.tab_stops.len() == block_count
+        && assembled.note_reference_anchors.len() == block_count
+        && assembled.column_break_offsets.len() == block_count
+        && assembled.table_cell_column_break_offsets.len() == block_count
+        && assembled.section_column_gap_pt.len() == block_count
+        && assembled.section_column_layouts.len() == block_count
+        && assembled.section_column_separators.len() == block_count
+        && assembled.section_column_rtl.len() == block_count
+        && assembled.table_row_pagination.len() == block_count
+        && assembled.table_cell_pagination.len() == block_count
+        && assembled.table_cell_line_spacing.len() == block_count
+        && assembled.table_cell_tab_stops.len() == block_count;
+    #[cfg(feature = "render")]
+    let aligned = aligned
+        && assembled.render_tab_stops.len() == block_count
+        && assembled.render_table_cell_tab_stops.len() == block_count;
+    if !aligned {
+        return false;
+    }
+
+    let mut ranges = assembled.promoted_running_block_ranges.clone();
+    ranges.sort_unstable();
+    if ranges
+        .iter()
+        .any(|&(start, end)| start >= end || end > block_count)
+        || ranges.windows(2).any(|pair| pair[0].1 > pair[1].0)
+    {
+        return false;
+    }
+    if ranges.iter().any(|&(start, end)| {
+        !assembled.model.regions.iter().any(|region| {
+            region.kind == SourceRegionKind::HeaderFooter
+                && region.block_start == start
+                && region.block_end == end
+        })
+    }) {
+        return false;
+    }
+    let regions = &assembled.model.regions;
+    if regions
+        .iter()
+        .any(|region| region.block_start > region.block_end || region.block_end > block_count)
+        || regions.windows(2).any(|pair| {
+            pair[0].block_end > pair[1].block_start
+                || pair[0].text_start.saturating_add(pair[0].text_len) > pair[1].text_start
+        })
+    {
+        return false;
+    }
+
+    let mut removed = vec![false; block_count];
+    for &(start, end) in &ranges {
+        let Some(slots) = removed.get_mut(start..end) else {
+            return false;
+        };
+        if slots.iter().any(|slot| *slot) {
+            return false;
+        }
+        slots.fill(true);
+    }
+    for region in &assembled.model.regions {
+        let intersects = removed[region.block_start..region.block_end]
+            .iter()
+            .any(|slot| *slot);
+        let selected = region.kind == SourceRegionKind::HeaderFooter
+            && ranges
+                .binary_search(&(region.block_start, region.block_end))
+                .is_ok();
+        if intersects != selected {
+            return false;
+        }
+    }
+
+    let mut removed_prefix = vec![0usize; block_count.saturating_add(1)];
+    for (index, slot) in removed.iter().enumerate() {
+        removed_prefix[index + 1] = removed_prefix[index] + usize::from(*slot);
+    }
+    let mut text_start = 0usize;
+    let mut remapped_regions = Vec::with_capacity(assembled.model.regions.len());
+    for region in &assembled.model.regions {
+        if region.kind == SourceRegionKind::HeaderFooter
+            && ranges
+                .binary_search(&(region.block_start, region.block_end))
+                .is_ok()
+        {
+            continue;
+        }
+        let mut region = region.clone();
+        region.block_start -= removed_prefix[region.block_start];
+        region.block_end -= removed_prefix[region.block_end];
+        region.text_start = text_start;
+        text_start = text_start.saturating_add(region.text_len);
+        remapped_regions.push(region);
+    }
+
+    retain_legacy_conversion_slots(&mut assembled.model.blocks, &removed);
+    retain_legacy_conversion_slots(&mut assembled.pagination_hints, &removed);
+    retain_legacy_conversion_slots(&mut assembled.line_spacing_hints, &removed);
+    retain_legacy_conversion_slots(&mut assembled.tab_stops, &removed);
+    #[cfg(feature = "render")]
+    retain_legacy_conversion_slots(&mut assembled.render_tab_stops, &removed);
+    retain_legacy_conversion_slots(&mut assembled.note_reference_anchors, &removed);
+    retain_legacy_conversion_slots(&mut assembled.column_break_offsets, &removed);
+    retain_legacy_conversion_slots(&mut assembled.table_cell_column_break_offsets, &removed);
+    retain_legacy_conversion_slots(&mut assembled.section_column_gap_pt, &removed);
+    retain_legacy_conversion_slots(&mut assembled.section_column_layouts, &removed);
+    retain_legacy_conversion_slots(&mut assembled.section_column_separators, &removed);
+    retain_legacy_conversion_slots(&mut assembled.section_column_rtl, &removed);
+    retain_legacy_conversion_slots(&mut assembled.table_row_pagination, &removed);
+    retain_legacy_conversion_slots(&mut assembled.table_cell_pagination, &removed);
+    retain_legacy_conversion_slots(&mut assembled.table_cell_line_spacing, &removed);
+    retain_legacy_conversion_slots(&mut assembled.table_cell_tab_stops, &removed);
+    #[cfg(feature = "render")]
+    retain_legacy_conversion_slots(&mut assembled.render_table_cell_tab_stops, &removed);
+    assembled.model.regions = remapped_regions;
+    assembled.model.meta.stats = assemble::compute_stats(&assembled.model.blocks);
+    assembled.promoted_running_block_ranges.clear();
+    true
+}
+
+#[cfg(feature = "docx")]
+fn retain_legacy_conversion_slots<T>(values: &mut Vec<T>, removed: &[bool]) {
+    let mut slots = removed.iter();
+    values.retain(|_| slots.next().is_some_and(|removed| !removed));
+}
+
+#[cfg(feature = "docx")]
+fn legacy_promote_exact_notes_for_fresh_conversion(
+    state: &DocState,
+    assembled: &mut assemble::LegacyBuildOutput,
+) -> bool {
+    let Some((model, body_block_end)) = legacy_model_with_exact_promoted_notes(state, assembled)
+    else {
+        return false;
+    };
+
+    assembled.model = model;
+    assembled.pagination_hints.truncate(body_block_end);
+    assembled.line_spacing_hints.truncate(body_block_end);
+    assembled.tab_stops.truncate(body_block_end);
+    #[cfg(feature = "render")]
+    assembled.render_tab_stops.truncate(body_block_end);
+    assembled.note_reference_anchors.truncate(body_block_end);
+    assembled.column_break_offsets.truncate(body_block_end);
+    assembled
+        .table_cell_column_break_offsets
+        .truncate(body_block_end);
+    assembled.section_column_gap_pt.truncate(body_block_end);
+    assembled.section_column_layouts.truncate(body_block_end);
+    assembled.section_column_separators.truncate(body_block_end);
+    assembled.section_column_rtl.truncate(body_block_end);
+    assembled.table_row_pagination.truncate(body_block_end);
+    assembled.table_cell_pagination.truncate(body_block_end);
+    assembled.table_cell_line_spacing.truncate(body_block_end);
+    assembled.table_cell_tab_stops.truncate(body_block_end);
+    #[cfg(feature = "render")]
+    assembled
+        .render_table_cell_tab_stops
+        .truncate(body_block_end);
+    true
+}
+
+#[cfg(feature = "docx")]
+fn legacy_model_with_exact_promoted_notes(
+    state: &DocState,
+    assembled: &assemble::LegacyBuildOutput,
+) -> Option<(DocModel, usize)> {
+    if [SourceRegionKind::Annotation, SourceRegionKind::TextBox]
+        .into_iter()
+        .any(|kind| legacy_region_kind_has_text(&assembled.model, kind))
+    {
+        return None;
+    }
+
+    let footnote_refs = legacy_doc_note_reference_cps_from_state(state, FIB_FCLCB_PLCFFND_REF);
+    let endnote_refs = legacy_doc_note_reference_cps_from_state(state, FIB_FCLCB_PLCFEND_REF);
+    if footnote_refs.is_empty() && endnote_refs.is_empty() {
+        return None;
+    }
+
+    let mut expected = legacy_exact_note_family(
+        &assembled.model,
+        SourceRegionKind::Footnote,
+        NoteKind::Footnote,
+        "legacy-doc-footnote",
+        &footnote_refs,
+    )?;
+    expected.extend(legacy_exact_note_family(
+        &assembled.model,
+        SourceRegionKind::Endnote,
+        NoteKind::Endnote,
+        "legacy-doc-endnote",
+        &endnote_refs,
+    )?);
+    if expected.is_empty() {
+        return None;
+    }
+    expected.sort_by_key(|(source_cp, _)| *source_cp);
+    if expected.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+        return None;
+    }
+
+    let body_block_end = assembled
+        .model
+        .source_regions(SourceRegionKind::Main)
+        .map(|region| region.block_end)
+        .max()?
+        .min(assembled.model.blocks.len());
+    if body_block_end == 0 || assembled.note_reference_anchors.len() != assembled.model.blocks.len()
+    {
+        return None;
+    }
+
+    let mut captured = assembled
+        .note_reference_anchors
+        .iter()
+        .enumerate()
+        .flat_map(|(block_index, anchors)| {
+            anchors
+                .iter()
+                .map(move |anchor| (anchor.source_cp, block_index, anchor.text_offset))
+        })
+        .collect::<Vec<_>>();
+    captured.sort_by_key(|(source_cp, _, _)| *source_cp);
+    if captured.len() != expected.len() || captured.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+        return None;
+    }
+
+    let mut notes_by_block = (0..body_block_end)
+        .map(|_| Vec::<(usize, AuthoredNote)>::new())
+        .collect::<Vec<_>>();
+    for ((expected_cp, note), (captured_cp, block_index, text_offset)) in
+        expected.into_iter().zip(captured)
+    {
+        if expected_cp != captured_cp || block_index >= body_block_end {
+            return None;
+        }
+        notes_by_block[block_index].push((text_offset, note));
+    }
+
+    let mut model = assembled.model.clone();
+    for (block_index, notes) in notes_by_block.into_iter().enumerate() {
+        if notes.is_empty() {
+            continue;
+        }
+        let Some(Block::Paragraph(paragraph)) = model.blocks.get_mut(block_index) else {
+            return None;
+        };
+        if !attach_authored_notes_to_paragraph(paragraph, notes) {
+            return None;
+        }
+    }
+
+    model.blocks.truncate(body_block_end);
+    model.regions.retain(|region| {
+        region.kind == SourceRegionKind::Main && region.block_end <= body_block_end
+    });
+    model.meta.stats = assemble::compute_stats(&model.blocks);
+    Some((model, body_block_end))
+}
+
+#[cfg(feature = "docx")]
+fn legacy_exact_note_family(
+    model: &DocModel,
+    region_kind: SourceRegionKind,
+    note_kind: NoteKind,
+    id_prefix: &str,
+    reference_cps: &[usize],
+) -> Option<Vec<(usize, AuthoredNote)>> {
+    let has_note_text = legacy_region_kind_has_text(model, region_kind);
+    if reference_cps.is_empty() {
+        return (!has_note_text).then(Vec::new);
+    }
+    if !has_note_text {
+        return None;
+    }
+    let records = legacy_doc_note_records_for_reference_count(
+        model,
+        region_kind,
+        note_kind,
+        id_prefix,
+        reference_cps.len(),
+    )?;
+    if records.len() != reference_cps.len() {
+        return None;
+    }
+    reference_cps
+        .iter()
+        .copied()
+        .zip(records)
+        .map(|(source_cp, note)| {
+            (!note.text.is_empty()).then_some((
+                source_cp,
+                AuthoredNote {
+                    kind: note.kind,
+                    text: note.text,
+                },
+            ))
+        })
+        .collect()
+}
+
+#[cfg(feature = "docx")]
+fn legacy_region_kind_has_text(model: &DocModel, kind: SourceRegionKind) -> bool {
+    model
+        .source_regions(kind)
+        .any(|region| !model.source_region_text(region).is_empty())
+}
+
+#[cfg(feature = "docx")]
+pub(crate) fn attach_authored_notes_to_paragraph(
+    paragraph: &mut Paragraph,
+    mut notes: Vec<(usize, AuthoredNote)>,
+) -> bool {
+    notes.sort_by_key(|(offset, _)| *offset);
+    if notes.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+        return false;
+    }
+    let text_chars = paragraph
+        .runs
+        .iter()
+        .map(|run| run.text.chars().count())
+        .sum::<usize>();
+    if notes.last().is_some_and(|(offset, _)| *offset > text_chars) {
+        return false;
+    }
+
+    for (offset, note) in notes.into_iter().rev() {
+        if !attach_authored_note_at_text_offset(paragraph, offset, note) {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(feature = "docx")]
+fn attach_authored_note_at_text_offset(
+    paragraph: &mut Paragraph,
+    offset: usize,
+    note: AuthoredNote,
+) -> bool {
+    let mut char_start = 0usize;
+    let mut target = None;
+    for (run_index, run) in paragraph.runs.iter().enumerate() {
+        let run_chars = run.text.chars().count();
+        let char_end = char_start.saturating_add(run_chars);
+        if run_chars > 0 && offset > char_start && offset <= char_end {
+            target = Some((run_index, offset - char_start, run_chars));
+            break;
+        }
+        if offset == 0 && run_chars > 0 {
+            target = Some((run_index, 0, run_chars));
+            break;
+        }
+        char_start = char_end;
+    }
+    let Some((run_index, local_offset, run_chars)) = target else {
+        return false;
+    };
+    let run = &paragraph.runs[run_index];
+    if run.image.is_some()
+        || !matches!(run.field, FieldRole::None)
+        || run.comment.is_some()
+        || run.revision.is_some()
+        || run.content_control.is_some()
+        || run.bookmark.is_some()
+        || (local_offset == run_chars && run.note.is_some())
+    {
+        return false;
+    }
+
+    let split_byte = if local_offset == run_chars {
+        run.text.len()
+    } else {
+        let Some((byte, _)) = run.text.char_indices().nth(local_offset) else {
+            return false;
+        };
+        byte
+    };
+    let mut before = run.clone();
+    let mut after = run.clone();
+    before.text = run.text[..split_byte].to_string();
+    before.note = Some(note);
+    after.text = run.text[split_byte..].to_string();
+    let mut replacement = vec![before];
+    if !after.text.is_empty() {
+        replacement.push(after);
+    }
+    paragraph.runs.splice(run_index..=run_index, replacement);
+    true
 }
 
 fn legacy_doc_text_boxes_from_model(model: &DocModel) -> Vec<TextBox> {
@@ -5887,6 +6633,567 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "docx")]
+    fn two_section_legacy_running_column_break_doc() -> Vec<u8> {
+        let mut text = "ABCDEabcde".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut story_ends = Vec::with_capacity(12);
+        for marker in [
+            "E0", "O0", "e0", "o0", "F0", "f0", "E1", "O1", "e1", "o1", "F1", "f1",
+        ] {
+            text.push_str(marker);
+            text.push('A');
+            text.push('\u{000e}');
+            text.push_str(marker);
+            text.push('B');
+            text.push('\r');
+            story_ends.push(text.encode_utf16().count() as u32 - main_len);
+        }
+
+        let mut plcf_hdd = vec![0u32; 7];
+        plcf_hdd.extend_from_slice(&story_ends);
+        plcf_hdd.push(*story_ends.last().unwrap());
+        synth_doc_with_ccp_plcfhdd_and_plcfsed(
+            &text,
+            [main_len, 0, *story_ends.last().unwrap(), 0, 0, 0],
+            &plcf_hdd,
+            &[0, 5, 10],
+            None,
+        )
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_running_surface_absolute_spacing_doc(
+        story_position: usize,
+        line_spacing: (u16, u16),
+    ) -> Vec<u8> {
+        assert!(story_position < 6);
+        let mut text = "PAGE1\u{c}PAGE2\u{c}PAGE3\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: main_len,
+            grpprl: Vec::new(),
+        }];
+        for (index, label) in ["EH", "OH", "EF", "OF", "FH", "FF"].into_iter().enumerate() {
+            text.push_str(label);
+            text.push('\r');
+            let mut grpprl = Vec::new();
+            if index == story_position {
+                push_paragraph_line_spacing(&mut grpprl, line_spacing.0, line_spacing.1);
+            }
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        let plcf_hdd = [0, 0, 0, 0, 0, 0, 0, 3, 6, 9, 12, 15, 18, 18];
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, 0, 18, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_hdd_cps: Some(&plcf_hdd),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
+    fn legacy_running_surface_distance_doc(
+        header_twips: Option<u16>,
+        footer_twips: Option<u16>,
+    ) -> Vec<u8> {
+        let mut text = "PAGE1\u{c}PAGE2\u{c}PAGE3\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        for label in ["EH", "OH", "EF", "OF", "FH", "FF"] {
+            text.push_str(label);
+            text.push('\r');
+        }
+        let plcf_hdd = [0, 0, 0, 0, 0, 0, 0, 3, 6, 9, 12, 15, 18, 18];
+        let plcf_sed = [0, main_len];
+        let mut grpprl = Vec::new();
+        if let Some(value) = header_twips {
+            grpprl.extend_from_slice(&0xB017u16.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        }
+        if let Some(value) = footer_twips {
+            grpprl.extend_from_slice(&0xB018u16.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        }
+        let sepx_grpprls = [&grpprl[..]];
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, 0, 18, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_hdd_cps: Some(&plcf_hdd),
+                plcf_sed_cps: Some(&plcf_sed),
+                plcf_sed_sepx_grpprls: Some(&sepx_grpprls),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_running_table_absolute_spacing_doc(
+        story_position: usize,
+        line_spacing: (u16, u16),
+    ) -> Vec<u8> {
+        assert!(story_position < 6);
+        let mut text = "PAGE1\u{c}PAGE2\u{c}PAGE3\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: main_len,
+            grpprl: Vec::new(),
+        }];
+        for (index, label) in ["EH", "OH", "EF", "OF", "FH", "FF"].into_iter().enumerate() {
+            if index == story_position {
+                text.push('T');
+                text.push('\u{7}');
+                let mut cell_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                ];
+                push_paragraph_line_spacing(&mut cell_grpprl, line_spacing.0, line_spacing.1);
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: cell_grpprl,
+                });
+
+                text.push('\u{7}');
+                let mut row_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                    0x17, 0x24, 0x01, // sprmPFTtp
+                    0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+                    0x01, // one cell
+                    0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+                ];
+                row_grpprl.extend_from_slice(&[0u8; 20]);
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: row_grpprl,
+                });
+            } else {
+                text.push_str(label);
+                text.push('\r');
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: Vec::new(),
+                });
+            }
+        }
+        let plcf_hdd = [0, 0, 0, 0, 0, 0, 0, 3, 6, 9, 12, 15, 18, 18];
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, 0, 18, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_hdd_cps: Some(&plcf_hdd),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_running_tabs_doc(
+        story_position: usize,
+        in_table: bool,
+        include_tabs: bool,
+    ) -> Vec<u8> {
+        assert!(story_position < 6);
+        let mut text = "PAGE1\u{c}PAGE2\u{c}PAGE3\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: main_len,
+            grpprl: Vec::new(),
+        }];
+        let mut story_ends = Vec::with_capacity(6);
+
+        for (index, label) in ["EH", "OH", "EF", "OF", "FH", "FF"].into_iter().enumerate() {
+            if index == story_position && in_table {
+                text.push_str("T\tX");
+                text.push('\u{7}');
+                let mut cell_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                ];
+                if include_tabs {
+                    push_legacy_tab_change(&mut cell_grpprl, 0xC60D, &[], &[(1200, 0x0A)]);
+                }
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: cell_grpprl,
+                });
+
+                text.push('\u{7}');
+                let mut row_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                    0x17, 0x24, 0x01, // sprmPFTtp
+                    0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+                    0x01, // one cell
+                    0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+                ];
+                row_grpprl.extend_from_slice(&[0u8; 20]);
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: row_grpprl,
+                });
+            } else {
+                text.push_str(label);
+                if index == story_position {
+                    text.push('\t');
+                    text.push('X');
+                }
+                text.push('\r');
+                let mut grpprl = Vec::new();
+                if index == story_position && include_tabs {
+                    push_legacy_tab_change(&mut grpprl, 0xC615, &[], &[(1080, 0x1B)]);
+                }
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl,
+                });
+            }
+            story_ends.push(text.encode_utf16().count() as u32 - main_len);
+        }
+
+        let mut plcf_hdd = vec![0u32; 7];
+        plcf_hdd.extend_from_slice(&story_ends);
+        plcf_hdd.push(*story_ends.last().unwrap());
+        let ccp_hdd = *story_ends.last().unwrap();
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, 0, ccp_hdd, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_hdd_cps: Some(&plcf_hdd),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "docx")]
+    fn legacy_running_pagination_doc(
+        story_position: usize,
+        in_table: bool,
+        include_pagination: bool,
+    ) -> Vec<u8> {
+        assert!(story_position < 6);
+        let mut text = "PAGE1\u{c}PAGE2\u{c}PAGE3\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: main_len,
+            grpprl: Vec::new(),
+        }];
+
+        for (index, label) in ["EH", "OH", "EF", "OF", "FH", "FF"].into_iter().enumerate() {
+            if index == story_position && in_table {
+                text.push('T');
+                text.push('\u{7}');
+                let mut cell_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                ];
+                if include_pagination {
+                    cell_grpprl.extend_from_slice(&[
+                        0x05, 0x24, 0x01, // sprmPFKeep
+                        0x06, 0x24, 0x01, // sprmPFKeepFollow
+                        0x31, 0x24, 0x00, // sprmPFWidowControl
+                    ]);
+                }
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: cell_grpprl,
+                });
+
+                text.push('\u{7}');
+                let mut row_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                    0x17, 0x24, 0x01, // sprmPFTtp
+                ];
+                if include_pagination {
+                    row_grpprl.extend_from_slice(&[
+                        0x66, 0x34, 0x01, // sprmTFCantSplit
+                    ]);
+                }
+                row_grpprl.extend_from_slice(&[
+                    0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+                    0x01, // one cell
+                    0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+                ]);
+                row_grpprl.extend_from_slice(&[0u8; 20]);
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: row_grpprl,
+                });
+            } else {
+                text.push_str(label);
+                text.push('\r');
+                let mut grpprl = Vec::new();
+                if index == story_position && include_pagination {
+                    grpprl.extend_from_slice(&[
+                        0x05, 0x24, 0x01, // sprmPFKeep
+                        0x06, 0x24, 0x01, // sprmPFKeepFollow
+                        0x31, 0x24, 0x00, // sprmPFWidowControl
+                    ]);
+                }
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl,
+                });
+            }
+        }
+        let plcf_hdd = [0, 0, 0, 0, 0, 0, 0, 3, 6, 9, 12, 15, 18, 18];
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, 0, 18, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_hdd_cps: Some(&plcf_hdd),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
+    fn legacy_note_tabs_doc(kind: SourceRegionKind, in_table: bool, include_tabs: bool) -> Vec<u8> {
+        assert!(matches!(
+            kind,
+            SourceRegionKind::Footnote | SourceRegionKind::Endnote
+        ));
+        let mut text = "BODY\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: main_len,
+            grpprl: Vec::new(),
+        }];
+
+        if in_table {
+            text.push_str("T\tX");
+            text.push('\u{7}');
+            let mut cell_grpprl = vec![
+                0x16, 0x24, 0x01, // sprmPFInTable
+            ];
+            if include_tabs {
+                push_legacy_tab_change(&mut cell_grpprl, 0xC60D, &[], &[(1200, 0x0A)]);
+            }
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl: cell_grpprl,
+            });
+
+            text.push('\u{7}');
+            let mut row_grpprl = vec![
+                0x16, 0x24, 0x01, // sprmPFInTable
+                0x17, 0x24, 0x01, // sprmPFTtp
+                0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+                0x01, // one cell
+                0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+            ];
+            row_grpprl.extend_from_slice(&[0u8; 20]);
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl: row_grpprl,
+            });
+        } else {
+            text.push_str("N\tX\r");
+            let mut grpprl = Vec::new();
+            if include_tabs {
+                push_legacy_tab_change(&mut grpprl, 0xC615, &[], &[(1080, 0x1B)]);
+            }
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+
+        let note_len = text.encode_utf16().count() as u32 - main_len;
+        let ccp = match kind {
+            SourceRegionKind::Footnote => [main_len, note_len, 0, 0, 0, 0],
+            SourceRegionKind::Endnote => [main_len, 0, 0, 0, note_len, 0],
+            _ => unreachable!(),
+        };
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            ccp,
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
+    fn render_opened_document_without_body_line_spacing(
+        document: &Document,
+        fonts: &[Vec<u8>],
+    ) -> Vec<u8> {
+        let features = document.report().features;
+        let shapes = document.floating_shapes();
+        document.with_render_model_and_hints(|model, mut source_hints| {
+            source_hints.line_spacing = &[];
+            render::to_pdf_with_fonts_and_features_and_shapes(
+                model,
+                fonts,
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_running_spacing_at(
+        hints: &model::RunningSurfaceLineSpacingHints,
+        story_position: usize,
+    ) -> &[Option<crate::model::LineSpacingHint>] {
+        match story_position {
+            0 => &hints.even_header,
+            1 => &hints.header,
+            2 => &hints.even_footer,
+            3 => &hints.footer,
+            4 => &hints.first_header,
+            _ => &hints.first_footer,
+        }
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_running_table_spacing_at(
+        hints: &model::RunningSurfaceLineSpacingHints,
+        story_position: usize,
+    ) -> &[crate::model::TableCellLineSpacingHints] {
+        match story_position {
+            0 => &hints.even_header_table_cells,
+            1 => &hints.header_table_cells,
+            2 => &hints.even_footer_table_cells,
+            3 => &hints.footer_table_cells,
+            4 => &hints.first_header_table_cells,
+            _ => &hints.first_footer_table_cells,
+        }
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_running_tabs_at(
+        hints: &model::RunningSurfaceTabStopHints,
+        story_position: usize,
+    ) -> &[Vec<crate::model::TabStop>] {
+        match story_position {
+            0 => &hints.even_header,
+            1 => &hints.header,
+            2 => &hints.even_footer,
+            3 => &hints.footer,
+            4 => &hints.first_header,
+            _ => &hints.first_footer,
+        }
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_running_table_tabs_at(
+        hints: &model::RunningSurfaceTableCellTabStopHints,
+        story_position: usize,
+    ) -> &[crate::model::TableCellTabStopHints] {
+        match story_position {
+            0 => &hints.even_header,
+            1 => &hints.header,
+            2 => &hints.even_footer,
+            3 => &hints.footer,
+            4 => &hints.first_header,
+            _ => &hints.first_footer,
+        }
+    }
+
+    #[cfg(feature = "render")]
+    fn assert_legacy_note_tab_overlay(document: &Document, kind: SourceRegionKind, in_table: bool) {
+        let state = match &document.backend {
+            Backend::Doc(state) => state,
+            #[cfg(feature = "docx")]
+            Backend::Docx(_) => panic!("synthetic legacy document must use the DOC backend"),
+        };
+        let assembled = legacy_build_output_from_doc_state(state);
+        assert_eq!(assembled.tab_stops.len(), assembled.model.blocks.len());
+        assert_eq!(
+            assembled.table_cell_tab_stops.len(),
+            assembled.model.blocks.len()
+        );
+        assert!(assembled.tab_stops.iter().all(Vec::is_empty));
+        assert!(assembled.table_cell_tab_stops.iter().all(Vec::is_empty));
+        assert_eq!(
+            assembled.render_tab_stops.len(),
+            assembled.model.blocks.len()
+        );
+        assert_eq!(
+            assembled.render_table_cell_tab_stops.len(),
+            assembled.model.blocks.len()
+        );
+
+        let region = assembled.model.source_regions(kind).next().unwrap();
+        assert_eq!(region.block_end, region.block_start + 1);
+        if in_table {
+            assert!(assembled.render_tab_stops.iter().all(Vec::is_empty));
+            assert_eq!(
+                assembled
+                    .render_table_cell_tab_stops
+                    .iter()
+                    .filter(|tabs| !tabs.is_empty())
+                    .count(),
+                1
+            );
+            assert_eq!(
+                assembled.render_table_cell_tab_stops[region.block_start],
+                vec![vec![vec![vec![crate::model::TabStop {
+                    position_pt: 60.0,
+                    alignment: crate::model::TabAlignment::Right,
+                    leader: crate::model::TabLeader::Dot,
+                }]]]]
+            );
+        } else {
+            assert!(assembled
+                .render_table_cell_tab_stops
+                .iter()
+                .all(Vec::is_empty));
+            assert_eq!(
+                assembled
+                    .render_tab_stops
+                    .iter()
+                    .filter(|tabs| !tabs.is_empty())
+                    .count(),
+                1
+            );
+            assert_eq!(
+                assembled.render_tab_stops[region.block_start],
+                vec![crate::model::TabStop {
+                    position_pt: 54.0,
+                    alignment: crate::model::TabAlignment::Decimal,
+                    leader: crate::model::TabLeader::Underscore,
+                }]
+            );
+        }
+    }
+
     fn section_page_grpprl(
         width_twips: u16,
         height_twips: u16,
@@ -5925,9 +7232,39 @@ mod tests {
         grpprl.extend_from_slice(&columns_minus_one.to_le_bytes());
     }
 
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn push_section_column_spacing(grpprl: &mut Vec<u8>, spacing_twips: u16) {
+        grpprl.extend_from_slice(&0x900Cu16.to_le_bytes());
+        grpprl.extend_from_slice(&spacing_twips.to_le_bytes());
+    }
+
     fn push_section_evenly_spaced(grpprl: &mut Vec<u8>, evenly_spaced: u8) {
         grpprl.extend_from_slice(&0x3005u16.to_le_bytes());
         grpprl.push(evenly_spaced);
+    }
+
+    fn push_section_column_width(grpprl: &mut Vec<u8>, index: u8, width_twips: u16) {
+        grpprl.extend_from_slice(&0xF203u16.to_le_bytes());
+        grpprl.push(index);
+        grpprl.extend_from_slice(&width_twips.to_le_bytes());
+    }
+
+    fn push_section_column_custom_spacing(grpprl: &mut Vec<u8>, index: u8, spacing_twips: u16) {
+        grpprl.extend_from_slice(&0xF204u16.to_le_bytes());
+        grpprl.push(index);
+        grpprl.extend_from_slice(&spacing_twips.to_le_bytes());
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn push_section_column_separator(grpprl: &mut Vec<u8>, separator: u8) {
+        grpprl.extend_from_slice(&0x3019u16.to_le_bytes());
+        grpprl.push(separator);
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn push_section_column_rtl(grpprl: &mut Vec<u8>, rtl: u8) {
+        grpprl.extend_from_slice(&0x3228u16.to_le_bytes());
+        grpprl.push(rtl);
     }
 
     fn push_section_title_page(grpprl: &mut Vec<u8>, title_page: u8) {
@@ -6009,6 +7346,113 @@ mod tests {
         let mut out = String::new();
         file.read_to_string(&mut out).unwrap();
         out
+    }
+
+    #[cfg(feature = "docx")]
+    fn docx_running_parts(bytes: &[u8]) -> Vec<(String, String)> {
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let mut parts = Vec::new();
+        for index in 0..zip.len() {
+            let mut file = zip.by_index(index).unwrap();
+            let name = file.name().to_string();
+            if (name.starts_with("word/header") || name.starts_with("word/footer"))
+                && name.ends_with(".xml")
+            {
+                let mut xml = String::new();
+                file.read_to_string(&mut xml).unwrap();
+                parts.push((name, xml));
+            }
+        }
+        parts
+    }
+
+    #[cfg(feature = "docx")]
+    fn assert_single_running_line_rule(bytes: &[u8], marker: &str, expected: &str) {
+        let parts = docx_running_parts(bytes);
+        let selected = parts
+            .iter()
+            .filter(|(_, xml)| xml.contains(marker))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            selected.len(),
+            1,
+            "expected one generated running part containing {marker:?}: {parts:?}"
+        );
+        assert!(
+            selected[0].1.contains(expected),
+            "missing {expected:?} in {}: {}",
+            selected[0].0,
+            selected[0].1
+        );
+        assert_eq!(
+            parts
+                .iter()
+                .map(|(_, xml)| {
+                    xml.matches(r#"w:lineRule="exact""#).count()
+                        + xml.matches(r#"w:lineRule="atLeast""#).count()
+                })
+                .sum::<usize>(),
+            1,
+            "unexpected generated running absolute line rule: {parts:?}"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    fn assert_single_running_tabs(bytes: &[u8], marker: &str, expected: &str) {
+        let parts = docx_running_parts(bytes);
+        let selected = parts
+            .iter()
+            .filter(|(_, xml)| xml.contains(marker))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            selected.len(),
+            1,
+            "expected one generated running part containing {marker:?}: {parts:?}"
+        );
+        assert!(
+            selected[0].1.contains(expected),
+            "missing {expected:?} in {}: {}",
+            selected[0].0,
+            selected[0].1
+        );
+        assert_eq!(
+            parts
+                .iter()
+                .map(|(_, xml)| xml.matches("<w:tabs>").count())
+                .sum::<usize>(),
+            1,
+            "expected exactly one running tab definition: {parts:?}"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    fn docx_page_margin_tags(document_xml: &str) -> Vec<&str> {
+        document_xml
+            .match_indices("<w:pgMar ")
+            .map(|(start, _)| {
+                let end = document_xml[start..]
+                    .find("/>")
+                    .map(|offset| start + offset + 2)
+                    .expect("closed page-margin element");
+                &document_xml[start..end]
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "docx")]
+    fn docx_paragraph_with_text<'a>(document_xml: &'a str, text: &str) -> &'a str {
+        let marker = format!(">{text}</w:t>");
+        let text_start = document_xml
+            .find(&marker)
+            .unwrap_or_else(|| panic!("missing paragraph text {text:?}: {document_xml}"));
+        let start = document_xml[..text_start]
+            .rfind("<w:p>")
+            .expect("paragraph start");
+        let end = document_xml[text_start..]
+            .find("</w:p>")
+            .map(|offset| text_start + offset + "</w:p>".len())
+            .expect("paragraph end");
+        &document_xml[start..end]
     }
 
     fn push_lpx_char_buffer9(out: &mut Vec<u8>, text: &str) {
@@ -6153,6 +7597,165 @@ mod tests {
                 .next()
                 .map(|region| model.source_region_text(region)),
             Some("HEAD".to_string())
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_fresh_conversion_projects_only_promoted_running_regions_from_body() {
+        let bytes =
+            synth_doc_with_ccp("BODYFTNHEADANNENDBOX", "", 0x00C1, 0, 0, [4, 3, 4, 3, 3, 3]);
+        let doc = Document::open(&bytes).unwrap();
+        let public_model = doc.model();
+
+        let converted = doc.to_docx();
+        assert_eq!(converted, doc.to_docx());
+        assert_eq!(public_model, doc.model());
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let mut previous = 0;
+        for marker in ["BODY", "FTN", "ANN", "END", "BOX"] {
+            let position = document_xml
+                .find(&format!(">{marker}</w:t>"))
+                .unwrap_or_else(|| panic!("missing retained fallback {marker:?}: {document_xml}"));
+            assert!(
+                position >= previous,
+                "fallback order changed: {document_xml}"
+            );
+            previous = position;
+        }
+        assert!(
+            !document_xml.contains(">HEAD</w:t>"),
+            "promoted header leaked into the generated body: {document_xml}"
+        );
+
+        let running_parts = docx_running_parts(&converted);
+        assert_eq!(
+            running_parts
+                .iter()
+                .filter(|(_, xml)| xml.contains(">HEAD</w:t>"))
+                .count(),
+            1,
+            "promoted header missing or duplicated: {running_parts:?}"
+        );
+
+        let standalone_body = docx_part(&write_docx(&public_model), "word/document.xml");
+        assert!(
+            standalone_body.contains(">HEAD</w:t>"),
+            "standalone model writing must remain model-only: {standalone_body}"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_running_projection_remaps_all_block_sidecars_and_regions() {
+        let bytes =
+            synth_doc_with_ccp("BODYFTNHEADANNENDBOX", "", 0x00C1, 0, 0, [4, 3, 4, 3, 3, 3]);
+        let doc = Document::open(&bytes).unwrap();
+        let Backend::Doc(state) = &doc.backend else {
+            panic!("synthetic fixture must use the legacy backend");
+        };
+        let mut assembled = legacy_build_output_from_doc_state(state);
+
+        assert_eq!(assembled.promoted_running_block_ranges, vec![(2, 3)]);
+        assert!(legacy_project_promoted_running_surfaces(&mut assembled));
+        assert!(assembled.promoted_running_block_ranges.is_empty());
+        assert_eq!(assembled.model.setup.header.len(), 1);
+        assert_eq!(
+            assembled
+                .model
+                .blocks
+                .iter()
+                .map(legacy_doc_block_text)
+                .collect::<Vec<_>>(),
+            ["BODY", "FTN", "ANN", "END", "BOX"]
+        );
+        let block_count = assembled.model.blocks.len();
+        assert_eq!(assembled.pagination_hints.len(), block_count);
+        assert_eq!(assembled.line_spacing_hints.len(), block_count);
+        assert_eq!(assembled.tab_stops.len(), block_count);
+        assert_eq!(assembled.note_reference_anchors.len(), block_count);
+        assert_eq!(assembled.column_break_offsets.len(), block_count);
+        assert_eq!(assembled.table_cell_column_break_offsets.len(), block_count);
+        assert_eq!(assembled.section_column_gap_pt.len(), block_count);
+        assert_eq!(assembled.section_column_layouts.len(), block_count);
+        assert_eq!(assembled.section_column_separators.len(), block_count);
+        assert_eq!(assembled.section_column_rtl.len(), block_count);
+        assert_eq!(assembled.table_row_pagination.len(), block_count);
+        assert_eq!(assembled.table_cell_pagination.len(), block_count);
+        assert_eq!(assembled.table_cell_line_spacing.len(), block_count);
+        assert_eq!(assembled.table_cell_tab_stops.len(), block_count);
+        #[cfg(feature = "render")]
+        {
+            assert_eq!(assembled.render_tab_stops.len(), block_count);
+            assert_eq!(assembled.render_table_cell_tab_stops.len(), block_count);
+        }
+
+        let expected = [
+            (SourceRegionKind::Main, 0, 4),
+            (SourceRegionKind::Footnote, 1, 3),
+            (SourceRegionKind::Annotation, 2, 3),
+            (SourceRegionKind::Endnote, 3, 3),
+            (SourceRegionKind::TextBox, 4, 3),
+        ];
+        let mut text_start = 0;
+        for (region, (kind, block_start, text_len)) in assembled.model.regions.iter().zip(expected)
+        {
+            assert_eq!(region.kind, kind);
+            assert_eq!(region.block_start, block_start);
+            assert_eq!(region.block_end, block_start + 1);
+            assert_eq!(region.text_start, text_start);
+            assert_eq!(region.text_len, text_len);
+            text_start += text_len;
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_running_projection_rejects_corrupt_ranges_and_sidecars_without_mutation() {
+        let bytes = synth_doc_with_ccp("BODYHEAD", "", 0x00C1, 0, 0, [4, 0, 4, 0, 0, 0]);
+        let doc = Document::open(&bytes).unwrap();
+        let Backend::Doc(state) = &doc.backend else {
+            panic!("synthetic fixture must use the legacy backend");
+        };
+
+        let mut corrupt_range = legacy_build_output_from_doc_state(state);
+        corrupt_range.promoted_running_block_ranges[0].1 = corrupt_range.model.blocks.len() + 1;
+        let range_model = corrupt_range.model.clone();
+        let range_sidecars = corrupt_range.pagination_hints.clone();
+        assert!(!legacy_project_promoted_running_surfaces(
+            &mut corrupt_range
+        ));
+        assert_eq!(corrupt_range.model, range_model);
+        assert_eq!(corrupt_range.pagination_hints, range_sidecars);
+
+        let mut overlapping_region = legacy_build_output_from_doc_state(state);
+        overlapping_region.model.regions[0].block_end =
+            overlapping_region.promoted_running_block_ranges[0].1;
+        let overlapping_model = overlapping_region.model.clone();
+        assert!(!legacy_project_promoted_running_surfaces(
+            &mut overlapping_region
+        ));
+        assert_eq!(overlapping_region.model, overlapping_model);
+
+        let mut misaligned = legacy_build_output_from_doc_state(state);
+        misaligned.table_cell_pagination.pop();
+        let misaligned_model = misaligned.model.clone();
+        let misaligned_ranges = misaligned.promoted_running_block_ranges.clone();
+        assert!(!legacy_project_promoted_running_surfaces(&mut misaligned));
+        assert_eq!(misaligned.model, misaligned_model);
+        assert_eq!(misaligned.promoted_running_block_ranges, misaligned_ranges);
+
+        let mut misaligned_breaks = legacy_build_output_from_doc_state(state);
+        misaligned_breaks.table_cell_column_break_offsets.pop();
+        let break_model = misaligned_breaks.model.clone();
+        let break_ranges = misaligned_breaks.promoted_running_block_ranges.clone();
+        assert!(!legacy_project_promoted_running_surfaces(
+            &mut misaligned_breaks
+        ));
+        assert_eq!(misaligned_breaks.model, break_model);
+        assert_eq!(
+            misaligned_breaks.promoted_running_block_ranges,
+            break_ranges
         );
     }
 
@@ -6366,6 +7969,12 @@ mod tests {
             notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
             Some("BODY")
         );
+        #[cfg(feature = "docx")]
+        {
+            let body = docx_part(&doc.to_docx(), "word/document.xml");
+            assert!(!body.contains("footnoteReference"));
+            assert!(body.contains("FTN"));
+        }
     }
 
     #[test]
@@ -6491,6 +8100,12 @@ mod tests {
             notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
             Some("BODY")
         );
+        #[cfg(feature = "docx")]
+        {
+            let body = docx_part(&doc.to_docx(), "word/document.xml");
+            assert!(!body.contains("footnoteReference"));
+            assert!(body.contains("FTN"));
+        }
     }
 
     #[test]
@@ -6511,6 +8126,383 @@ mod tests {
             notes[1].anchor.as_ref().map(|anchor| anchor.id.as_str()),
             Some("legacy-doc-endnote-0@cp8+3")
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_exact_notes_roundtrip_through_fresh_conversion() {
+        let main = "AA\u{0002}BB\rCC\u{0002}DD\r";
+        let bytes = synth_doc_with_note_reference_tables(
+            &format!("{main}FOOT\rEND\r"),
+            [12, 5, 0, 0, 4, 0],
+            Some(&[2]),
+            None,
+            Some(&[8]),
+            None,
+        );
+        let document = Document::open(&bytes).unwrap();
+        let public_model = document.model();
+        assert_eq!(document.main_text(), "AABBCCDD");
+        let state = match &document.backend {
+            Backend::Doc(state) => state,
+            Backend::Docx(_) => panic!("synthetic legacy document must use the DOC backend"),
+        };
+        let assembled = legacy_build_output_from_doc_state(state);
+        assert_eq!(
+            assembled.note_reference_anchors.len(),
+            assembled.model.blocks.len()
+        );
+        assert_eq!(
+            assembled
+                .note_reference_anchors
+                .iter()
+                .enumerate()
+                .flat_map(|(block_index, anchors)| anchors
+                    .iter()
+                    .map(move |anchor| { (block_index, anchor.source_cp, anchor.text_offset) }))
+                .collect::<Vec<_>>(),
+            vec![(0, 2, 2), (1, 8, 2)]
+        );
+        assert_eq!(
+            document
+                .notes()
+                .into_iter()
+                .map(|note| (note.kind, note.text))
+                .collect::<Vec<_>>(),
+            vec![
+                (NoteKind::Footnote, "FOOT".to_string()),
+                (NoteKind::Endnote, "END".to_string()),
+            ]
+        );
+
+        let converted = document.to_docx();
+        assert_eq!(converted, document.to_docx());
+        let body = docx_part(&converted, "word/document.xml");
+        assert!(
+            body.contains(r#"<w:footnoteReference w:id="1"/>"#),
+            "missing promoted footnote reference: {body}"
+        );
+        assert!(
+            body.contains(r#"<w:endnoteReference w:id="1"/>"#),
+            "missing promoted endnote reference: {body}"
+        );
+        let mut cursor = 0;
+        for needle in [
+            ">AA</w:t>",
+            "<w:footnoteReference",
+            ">BB</w:t>",
+            ">CC</w:t>",
+            "<w:endnoteReference",
+            ">DD</w:t>",
+        ] {
+            let relative = body[cursor..]
+                .find(needle)
+                .unwrap_or_else(|| panic!("missing ordered fragment {needle:?}: {body}"));
+            cursor += relative + needle.len();
+        }
+        assert!(!body.contains("FOOT"));
+        assert!(!body.contains("END"));
+        assert!(docx_part(&converted, "word/footnotes.xml").contains("FOOT"));
+        assert!(docx_part(&converted, "word/endnotes.xml").contains("END"));
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(reopened.main_text(), "AABB\nCCDD");
+        assert_eq!(
+            reopened
+                .notes()
+                .into_iter()
+                .map(|note| (note.kind, note.text))
+                .collect::<Vec<_>>(),
+            vec![
+                (NoteKind::Footnote, "FOOT".to_string()),
+                (NoteKind::Endnote, "END".to_string()),
+            ]
+        );
+        assert!(
+            !docx_part(&write_docx(&reopened.model()), "word/document.xml")
+                .contains("footnoteReference")
+        );
+        assert_eq!(converted, reopened.to_docx());
+        assert_eq!(document.model(), public_model);
+        assert!(!docx_part(&write_docx(&public_model), "word/document.xml")
+            .contains("footnoteReference"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn reopened_docx_custom_note_mark_keeps_flattened_fresh_conversion_fallback() {
+        let bytes = synth_doc_with_note_reference_tables(
+            "A\u{0002}B\rNOTE\r",
+            [4, 5, 0, 0, 0, 0],
+            Some(&[1]),
+            None,
+            None,
+            None,
+        );
+        let converted = Document::open(&bytes).unwrap().to_docx();
+        let mut package = opc::Package::from_zip(&converted).unwrap();
+        let document_xml = String::from_utf8(package.part("word/document.xml").unwrap())
+            .unwrap()
+            .replace(
+                r#"<w:footnoteReference w:id="1"/>"#,
+                r#"<w:footnoteReference w:id="1" w:customMarkFollows="1"/>"#,
+            );
+        package.set_part(
+            "word/document.xml",
+            document_xml.into_bytes(),
+            Some(CT_DOCUMENT_MAIN),
+        );
+
+        let custom_mark = Document::open(&package.to_zip().unwrap()).unwrap();
+        assert_eq!(custom_mark.notes().len(), 1);
+        let body = docx_part(&custom_mark.to_docx(), "word/document.xml");
+        assert!(!body.contains("footnoteReference"));
+        assert!(body.contains("NOTE"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_note_conversion_fails_closed_across_note_families() {
+        let main = "AA\u{0002}BB\rCC\u{0002}DD\r";
+        let bytes = synth_doc_with_note_reference_tables(
+            &format!("{main}FOOT\rEND\r"),
+            [12, 5, 0, 0, 4, 0],
+            Some(&[2]),
+            None,
+            None,
+            None,
+        );
+        let document = Document::open(&bytes).unwrap();
+        assert_eq!(document.notes().len(), 2);
+
+        let converted = document.to_docx();
+        let body = docx_part(&converted, "word/document.xml");
+        assert!(!body.contains("footnoteReference"));
+        assert!(!body.contains("endnoteReference"));
+        assert!(body.contains("FOOT"));
+        assert!(body.contains("END"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_note_conversion_rejects_marker_and_record_mismatches() {
+        let extra_marker = synth_doc_with_note_reference_tables(
+            "A\u{0002}B\u{0002}C\rNOTE\r",
+            [6, 5, 0, 0, 0, 0],
+            Some(&[1]),
+            None,
+            None,
+            None,
+        );
+        let duplicate_reference = synth_doc_with_note_reference_tables(
+            "A\u{0002}B\rONE\r",
+            [4, 4, 0, 0, 0, 0],
+            Some(&[1, 1]),
+            None,
+            None,
+            None,
+        );
+
+        for (label, bytes, note_text) in [
+            ("extra marker", extra_marker, "NOTE"),
+            (
+                "duplicate reference and record-count mismatch",
+                duplicate_reference,
+                "ONE",
+            ),
+        ] {
+            let body = docx_part(
+                &Document::open(&bytes).unwrap().to_docx(),
+                "word/document.xml",
+            );
+            assert!(
+                !body.contains("footnoteReference"),
+                "{label} must preserve the complete flattened fallback: {body}"
+            );
+            assert!(body.contains(note_text), "{label}: {body}");
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_note_conversion_rejects_unsupported_body_contexts() {
+        let note = "NOTE\r";
+
+        let manual_main = "A\u{0002}B\u{000c}C\r";
+        let manual = synth_doc_with_note_reference_tables(
+            &format!("{manual_main}{note}"),
+            [
+                manual_main.encode_utf16().count() as u32,
+                note.encode_utf16().count() as u32,
+                0,
+                0,
+                0,
+                0,
+            ],
+            Some(&[1]),
+            None,
+            None,
+            None,
+        );
+
+        let side_table_main = "A\u{0002}B\r";
+        let annotation = "ANN\r";
+        let text_box = "BOX\r";
+        let side_tables = synth_doc_with_note_reference_tables(
+            &format!("{side_table_main}{note}{annotation}{text_box}"),
+            [
+                side_table_main.encode_utf16().count() as u32,
+                note.encode_utf16().count() as u32,
+                0,
+                annotation.encode_utf16().count() as u32,
+                0,
+                text_box.encode_utf16().count() as u32,
+            ],
+            Some(&[1]),
+            None,
+            None,
+            None,
+        );
+
+        let table_main = "A\u{0002}B\u{0007}\u{0007}";
+        let table_main_len = table_main.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        let table_text = format!("{table_main}{note}");
+        let table_runs = vec![
+            SyntheticPapxRun {
+                cp_lim: 4,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: table_main_len,
+                grpprl: row_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: table_text.encode_utf16().count() as u32,
+                grpprl: Vec::new(),
+            },
+        ];
+        let table_cell = synth_doc_with_ccp_and_tables(
+            &table_text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [
+                table_main_len,
+                note.encode_utf16().count() as u32,
+                0,
+                0,
+                0,
+                0,
+            ],
+            SyntheticDocTables {
+                footnote_ref_cps: Some(&[1]),
+                papx_runs: Some(&table_runs),
+                ..SyntheticDocTables::default()
+            },
+        );
+
+        for (label, bytes, extra_text) in [
+            ("manual page break", manual, None),
+            ("annotation and text box", side_tables, Some(("ANN", "BOX"))),
+            ("table cell", table_cell, None),
+        ] {
+            let body = docx_part(
+                &Document::open(&bytes).unwrap().to_docx(),
+                "word/document.xml",
+            );
+            assert!(
+                !body.contains("footnoteReference"),
+                "{label} must preserve the complete flattened fallback: {body}"
+            );
+            assert!(body.contains("NOTE"), "{label}: {body}");
+            if let Some((first, second)) = extra_text {
+                assert!(body.contains(first), "{label}: {body}");
+                assert!(body.contains(second), "{label}: {body}");
+            }
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_note_run_splitting_preserves_order_and_rejects_ambiguity() {
+        let authored = |kind, text: &str| AuthoredNote {
+            kind,
+            text: text.to_string(),
+        };
+        let mut paragraph = Paragraph {
+            runs: vec![Run {
+                text: "AABBCC".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        assert!(attach_authored_notes_to_paragraph(
+            &mut paragraph,
+            vec![
+                (2, authored(NoteKind::Footnote, "FOOT")),
+                (4, authored(NoteKind::Endnote, "END")),
+            ]
+        ));
+        assert_eq!(
+            paragraph
+                .runs
+                .iter()
+                .map(|run| {
+                    (
+                        run.text.as_str(),
+                        run.note
+                            .as_ref()
+                            .map(|note| (note.kind, note.text.as_str())),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                ("AA", Some((NoteKind::Footnote, "FOOT"))),
+                ("BB", Some((NoteKind::Endnote, "END"))),
+                ("CC", None),
+            ]
+        );
+
+        let duplicate_original = Paragraph {
+            runs: vec![Run {
+                text: "AB".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let mut duplicate = duplicate_original.clone();
+        assert!(!attach_authored_notes_to_paragraph(
+            &mut duplicate,
+            vec![
+                (1, authored(NoteKind::Footnote, "ONE")),
+                (1, authored(NoteKind::Endnote, "TWO")),
+            ]
+        ));
+        assert_eq!(duplicate, duplicate_original);
+
+        let wrapped_original = Paragraph {
+            runs: vec![Run {
+                text: "AB".to_string(),
+                field: FieldRole::Other,
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let mut wrapped = wrapped_original.clone();
+        assert!(!attach_authored_notes_to_paragraph(
+            &mut wrapped,
+            vec![(1, authored(NoteKind::Footnote, "NOTE"))]
+        ));
+        assert_eq!(wrapped, wrapped_original);
     }
 
     #[test]
@@ -6785,6 +8777,624 @@ mod tests {
         assert_eq!(first_footer.text(), "FF");
     }
 
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_surfaces_roundtrip_absolute_line_spacing_to_docx() {
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+        let variants = ["EH", "OH", "EF", "OF", "FH", "FF"];
+
+        for (story_position, marker) in variants.into_iter().enumerate() {
+            let exact = Document::open(&legacy_running_surface_absolute_spacing_doc(
+                story_position,
+                (EXACT_FIVE_POINTS, 0),
+            ))
+            .unwrap();
+            let minimum = Document::open(&legacy_running_surface_absolute_spacing_doc(
+                story_position,
+                (800, 0),
+            ))
+            .unwrap();
+            let exact_model = exact.model();
+            let minimum_model = minimum.model();
+
+            assert_eq!(
+                exact_model, minimum_model,
+                "legacy {marker} absolute spacing must remain outside the public model"
+            );
+
+            let exact_converted = exact.to_docx();
+            let minimum_converted = minimum.to_docx();
+            assert_eq!(exact_converted, exact.to_docx());
+            assert_eq!(minimum_converted, minimum.to_docx());
+            assert_ne!(exact_converted, minimum_converted);
+            assert!(
+                !docx_part(&exact_converted, "word/document.xml").contains(r#"w:lineRule="exact""#)
+            );
+            assert!(!docx_part(&minimum_converted, "word/document.xml")
+                .contains(r#"w:lineRule="atLeast""#));
+            assert_single_running_line_rule(
+                &exact_converted,
+                &format!(">{marker}</w:t>"),
+                r#"w:line="100" w:lineRule="exact""#,
+            );
+            assert_single_running_line_rule(
+                &minimum_converted,
+                &format!(">{marker}</w:t>"),
+                r#"w:line="800" w:lineRule="atLeast""#,
+            );
+
+            let exact_reopened = Document::open(&exact_converted).unwrap();
+            let minimum_reopened = Document::open(&minimum_converted).unwrap();
+            let Backend::Docx(exact_state) = &exact_reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            let Backend::Docx(minimum_state) = &minimum_reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(exact_state.running_line_spacing_hints.len(), 1);
+            assert_eq!(minimum_state.running_line_spacing_hints.len(), 1);
+            assert_eq!(
+                legacy_running_spacing_at(
+                    &exact_state.running_line_spacing_hints[0],
+                    story_position,
+                ),
+                &[Some(crate::model::LineSpacingHint::Exact(5.0))]
+            );
+            assert_eq!(
+                legacy_running_spacing_at(
+                    &minimum_state.running_line_spacing_hints[0],
+                    story_position,
+                ),
+                &[Some(crate::model::LineSpacingHint::AtLeast(40.0))]
+            );
+
+            assert!(docx_running_parts(&write_docx(&exact_model))
+                .iter()
+                .all(|(_, xml)| !xml.contains(r#"w:lineRule="exact""#)
+                    && !xml.contains(r#"w:lineRule="atLeast""#)));
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_surfaces_roundtrip_pagination_to_docx() {
+        let variants = ["EH", "OH", "EF", "OF", "FH", "FF"];
+
+        for in_table in [false, true] {
+            for (story_position, marker) in variants.into_iter().enumerate() {
+                let paginated = Document::open(&legacy_running_pagination_doc(
+                    story_position,
+                    in_table,
+                    true,
+                ))
+                .unwrap();
+                let control = Document::open(&legacy_running_pagination_doc(
+                    story_position,
+                    in_table,
+                    false,
+                ))
+                .unwrap();
+                let model = paginated.model();
+                assert_eq!(model, control.model());
+
+                let converted = paginated.to_docx();
+                let control_converted = control.to_docx();
+                assert_eq!(converted, paginated.to_docx());
+                assert_ne!(converted, control_converted);
+                let document_xml = docx_part(&converted, "word/document.xml");
+                assert!(!document_xml.contains("<w:keep"), "{document_xml}");
+
+                let text = if in_table { "T" } else { marker };
+                let parts = docx_running_parts(&converted);
+                let selected = parts
+                    .iter()
+                    .filter(|(_, xml)| xml.contains(&format!(">{text}</w:t>")))
+                    .collect::<Vec<_>>();
+                assert_eq!(selected.len(), 1, "{story_position} {in_table}: {parts:?}");
+                let paragraph = docx_paragraph_with_text(&selected[0].1, text);
+                assert!(paragraph.contains("<w:keepNext/>"), "{paragraph}");
+                assert!(paragraph.contains("<w:keepLines/>"), "{paragraph}");
+                assert!(
+                    paragraph.contains(r#"<w:widowControl w:val="0"/>"#),
+                    "{paragraph}"
+                );
+                assert_eq!(
+                    parts
+                        .iter()
+                        .map(|(_, xml)| xml.matches("<w:keepNext/>").count())
+                        .sum::<usize>(),
+                    1
+                );
+                assert_eq!(
+                    parts
+                        .iter()
+                        .map(|(_, xml)| xml.matches("<w:keepLines/>").count())
+                        .sum::<usize>(),
+                    1
+                );
+                assert_eq!(
+                    parts
+                        .iter()
+                        .map(|(_, xml)| xml.matches("<w:widowControl").count())
+                        .sum::<usize>(),
+                    1
+                );
+                assert_eq!(
+                    parts
+                        .iter()
+                        .map(|(_, xml)| xml.matches("<w:cantSplit/>").count())
+                        .sum::<usize>(),
+                    usize::from(in_table)
+                );
+
+                assert_eq!(
+                    Document::open(&converted).unwrap().model(),
+                    Document::open(&control_converted).unwrap().model()
+                );
+                assert!(docx_running_parts(&write_docx(&model))
+                    .iter()
+                    .all(|(_, xml)| !xml.contains("<w:keepNext")
+                        && !xml.contains("<w:keepLines")
+                        && !xml.contains("<w:widowControl")
+                        && !xml.contains("<w:cantSplit")));
+            }
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_running_surfaces_consume_absolute_line_spacing() {
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let variants = [
+            "even header",
+            "default header",
+            "even footer",
+            "default footer",
+            "first header",
+            "first footer",
+        ];
+
+        for (story_position, variant) in variants.into_iter().enumerate() {
+            let exact = Document::open(&legacy_running_surface_absolute_spacing_doc(
+                story_position,
+                (EXACT_FIVE_POINTS, 0),
+            ))
+            .unwrap();
+            let minimum = Document::open(&legacy_running_surface_absolute_spacing_doc(
+                story_position,
+                (800, 0),
+            ))
+            .unwrap();
+
+            assert_eq!(
+                exact.model(),
+                minimum.model(),
+                "legacy {variant} absolute spacing must remain outside the public model"
+            );
+            let Backend::Doc(exact_state) = &exact.backend else {
+                panic!("synthetic legacy document must use the DOC backend");
+            };
+            let Backend::Doc(minimum_state) = &minimum.backend else {
+                panic!("synthetic legacy document must use the DOC backend");
+            };
+            let exact_running =
+                legacy_build_output_from_doc_state(exact_state).running_line_spacing_hints;
+            let minimum_running =
+                legacy_build_output_from_doc_state(minimum_state).running_line_spacing_hints;
+            assert_eq!(exact_running.len(), 1);
+            assert_eq!(minimum_running.len(), 1);
+            assert_eq!(
+                legacy_running_spacing_at(&exact_running[0], story_position),
+                &[Some(crate::model::LineSpacingHint::Exact(5.0))]
+            );
+            assert_eq!(
+                legacy_running_spacing_at(&minimum_running[0], story_position),
+                &[Some(crate::model::LineSpacingHint::AtLeast(40.0))]
+            );
+            assert_eq!(exact.layout_pages_with_fonts(&fonts).unwrap().pages, 3);
+            assert_eq!(minimum.layout_pages_with_fonts(&fonts).unwrap().pages, 3);
+            let exact_pdf = render_opened_document_without_body_line_spacing(&exact, &fonts);
+            let minimum_pdf = render_opened_document_without_body_line_spacing(&minimum, &fonts);
+            assert_ne!(exact_pdf, minimum_pdf, "legacy {variant} hint was ignored");
+            assert_eq!(
+                exact_pdf,
+                render_opened_document_without_body_line_spacing(&exact, &fonts)
+            );
+            assert_eq!(
+                minimum_pdf,
+                render_opened_document_without_body_line_spacing(&minimum, &fonts)
+            );
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_table_cells_roundtrip_absolute_line_spacing_to_docx() {
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+
+        for story_position in 0..6 {
+            let exact = Document::open(&legacy_running_table_absolute_spacing_doc(
+                story_position,
+                (EXACT_FIVE_POINTS, 0),
+            ))
+            .unwrap();
+            let minimum = Document::open(&legacy_running_table_absolute_spacing_doc(
+                story_position,
+                (800, 0),
+            ))
+            .unwrap();
+            let exact_model = exact.model();
+            let minimum_model = minimum.model();
+
+            assert_eq!(
+                exact_model, minimum_model,
+                "legacy running table {story_position} absolute spacing must remain outside the public model"
+            );
+
+            let exact_converted = exact.to_docx();
+            let minimum_converted = minimum.to_docx();
+            assert_eq!(exact_converted, exact.to_docx());
+            assert_eq!(minimum_converted, minimum.to_docx());
+            assert_ne!(exact_converted, minimum_converted);
+            assert!(
+                !docx_part(&exact_converted, "word/document.xml").contains(r#"w:lineRule="exact""#)
+            );
+            assert!(!docx_part(&minimum_converted, "word/document.xml")
+                .contains(r#"w:lineRule="atLeast""#));
+            assert_single_running_line_rule(
+                &exact_converted,
+                ">T</w:t>",
+                r#"w:line="100" w:lineRule="exact""#,
+            );
+            assert_single_running_line_rule(
+                &minimum_converted,
+                ">T</w:t>",
+                r#"w:line="800" w:lineRule="atLeast""#,
+            );
+
+            let exact_reopened = Document::open(&exact_converted).unwrap();
+            let minimum_reopened = Document::open(&minimum_converted).unwrap();
+            let Backend::Docx(exact_state) = &exact_reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            let Backend::Docx(minimum_state) = &minimum_reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(exact_state.running_line_spacing_hints.len(), 1);
+            assert_eq!(minimum_state.running_line_spacing_hints.len(), 1);
+            assert_eq!(
+                legacy_running_table_spacing_at(
+                    &exact_state.running_line_spacing_hints[0],
+                    story_position,
+                ),
+                &[vec![vec![vec![Some(
+                    crate::model::LineSpacingHint::Exact(5.0)
+                )]]]]
+            );
+            assert_eq!(
+                legacy_running_table_spacing_at(
+                    &minimum_state.running_line_spacing_hints[0],
+                    story_position,
+                ),
+                &[vec![vec![vec![Some(
+                    crate::model::LineSpacingHint::AtLeast(40.0)
+                )]]]]
+            );
+
+            assert!(docx_running_parts(&write_docx(&exact_model))
+                .iter()
+                .all(|(_, xml)| !xml.contains(r#"w:lineRule="exact""#)
+                    && !xml.contains(r#"w:lineRule="atLeast""#)));
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_running_table_cells_consume_absolute_line_spacing() {
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let variants = [
+            "even header table",
+            "default header table",
+            "even footer table",
+            "default footer table",
+            "first header table",
+            "first footer table",
+        ];
+
+        for (story_position, variant) in variants.into_iter().enumerate() {
+            let exact = Document::open(&legacy_running_table_absolute_spacing_doc(
+                story_position,
+                (EXACT_FIVE_POINTS, 0),
+            ))
+            .unwrap();
+            let minimum = Document::open(&legacy_running_table_absolute_spacing_doc(
+                story_position,
+                (800, 0),
+            ))
+            .unwrap();
+
+            assert_eq!(
+                exact.model(),
+                minimum.model(),
+                "legacy {variant} absolute spacing must remain outside the public model"
+            );
+            let Backend::Doc(exact_state) = &exact.backend else {
+                panic!("synthetic legacy document must use the DOC backend");
+            };
+            let Backend::Doc(minimum_state) = &minimum.backend else {
+                panic!("synthetic legacy document must use the DOC backend");
+            };
+            let exact_running =
+                legacy_build_output_from_doc_state(exact_state).running_line_spacing_hints;
+            let minimum_running =
+                legacy_build_output_from_doc_state(minimum_state).running_line_spacing_hints;
+            assert_eq!(exact_running.len(), 1);
+            assert_eq!(minimum_running.len(), 1);
+            assert_eq!(
+                legacy_running_table_spacing_at(&exact_running[0], story_position),
+                &[vec![vec![vec![Some(
+                    crate::model::LineSpacingHint::Exact(5.0)
+                )]]]]
+            );
+            assert_eq!(
+                legacy_running_table_spacing_at(&minimum_running[0], story_position),
+                &[vec![vec![vec![Some(
+                    crate::model::LineSpacingHint::AtLeast(40.0)
+                )]]]]
+            );
+            assert_eq!(exact.layout_pages_with_fonts(&fonts).unwrap().pages, 3);
+            assert_eq!(minimum.layout_pages_with_fonts(&fonts).unwrap().pages, 3);
+            let exact_pdf = render_opened_document_without_body_line_spacing(&exact, &fonts);
+            let minimum_pdf = render_opened_document_without_body_line_spacing(&minimum, &fonts);
+            assert_ne!(exact_pdf, minimum_pdf, "legacy {variant} hint was ignored");
+            assert_eq!(
+                exact_pdf,
+                render_opened_document_without_body_line_spacing(&exact, &fonts)
+            );
+            assert_eq!(
+                minimum_pdf,
+                render_opened_document_without_body_line_spacing(&minimum, &fonts)
+            );
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_surfaces_roundtrip_custom_tabs_to_docx() {
+        let variants = ["EH", "OH", "EF", "OF", "FH", "FF"];
+        let expected_xml = concat!(
+            r#"<w:tabs><w:tab w:val="decimal" w:pos="1080" "#,
+            r#"w:leader="underscore"/></w:tabs>"#,
+        );
+        let expected_stop = crate::model::TabStop {
+            position_pt: 54.0,
+            alignment: crate::model::TabAlignment::Decimal,
+            leader: crate::model::TabLeader::Underscore,
+        };
+
+        for (story_position, marker) in variants.into_iter().enumerate() {
+            let tabbed =
+                Document::open(&legacy_running_tabs_doc(story_position, false, true)).unwrap();
+            let control =
+                Document::open(&legacy_running_tabs_doc(story_position, false, false)).unwrap();
+            let model = tabbed.model();
+            assert_eq!(model, control.model());
+
+            let converted = tabbed.to_docx();
+            assert_eq!(converted, tabbed.to_docx());
+            assert_ne!(converted, control.to_docx());
+            assert!(!docx_part(&converted, "word/document.xml").contains("<w:tabs>"));
+            assert_single_running_tabs(&converted, &format!(">{marker}</w:t>"), expected_xml);
+
+            let reopened = Document::open(&converted).unwrap();
+            let Backend::Docx(state) = &reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(state.running_tab_stops.len(), 1);
+            assert_eq!(
+                legacy_running_tabs_at(&state.running_tab_stops[0], story_position),
+                &[vec![expected_stop]]
+            );
+            assert!(docx_running_parts(&write_docx(&model))
+                .iter()
+                .all(|(_, xml)| !xml.contains("<w:tabs>")));
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_table_cells_roundtrip_custom_tabs_to_docx() {
+        let expected_xml = r#"<w:tabs><w:tab w:val="right" w:pos="1200" w:leader="dot"/></w:tabs>"#;
+        let expected_stop = crate::model::TabStop {
+            position_pt: 60.0,
+            alignment: crate::model::TabAlignment::Right,
+            leader: crate::model::TabLeader::Dot,
+        };
+
+        for story_position in 0..6 {
+            let tabbed =
+                Document::open(&legacy_running_tabs_doc(story_position, true, true)).unwrap();
+            let control =
+                Document::open(&legacy_running_tabs_doc(story_position, true, false)).unwrap();
+            let model = tabbed.model();
+            assert_eq!(model, control.model());
+
+            let converted = tabbed.to_docx();
+            assert_eq!(converted, tabbed.to_docx());
+            assert_ne!(converted, control.to_docx());
+            assert!(!docx_part(&converted, "word/document.xml").contains("<w:tabs>"));
+            assert_single_running_tabs(&converted, ">T</w:t>", expected_xml);
+
+            let reopened = Document::open(&converted).unwrap();
+            let Backend::Docx(state) = &reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(state.running_table_cell_tab_stops.len(), 1);
+            assert_eq!(
+                legacy_running_table_tabs_at(
+                    &state.running_table_cell_tab_stops[0],
+                    story_position,
+                ),
+                &[vec![vec![vec![vec![expected_stop]]]]]
+            );
+            assert!(docx_running_parts(&write_docx(&model))
+                .iter()
+                .all(|(_, xml)| !xml.contains("<w:tabs>")));
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_running_tabs_change_preview_deterministically() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        for in_table in [false, true] {
+            for story_position in 0..6 {
+                let tabbed =
+                    Document::open(&legacy_running_tabs_doc(story_position, in_table, true))
+                        .unwrap();
+                let control =
+                    Document::open(&legacy_running_tabs_doc(story_position, in_table, false))
+                        .unwrap();
+                assert_eq!(tabbed.model(), control.model());
+                let Backend::Doc(state) = &tabbed.backend else {
+                    panic!("synthetic legacy document must use the DOC backend");
+                };
+                let assembled = legacy_build_output_from_doc_state(state);
+                assert!(assembled.tab_stops.iter().all(Vec::is_empty));
+                assert!(assembled.table_cell_tab_stops.iter().all(Vec::is_empty));
+                if in_table {
+                    assert_eq!(
+                        legacy_running_table_tabs_at(
+                            &assembled.running_table_cell_tab_stops[0],
+                            story_position,
+                        ),
+                        &[vec![vec![vec![vec![crate::model::TabStop {
+                            position_pt: 60.0,
+                            alignment: crate::model::TabAlignment::Right,
+                            leader: crate::model::TabLeader::Dot,
+                        }]]]]]
+                    );
+                } else {
+                    assert_eq!(
+                        legacy_running_tabs_at(&assembled.running_tab_stops[0], story_position),
+                        &[vec![crate::model::TabStop {
+                            position_pt: 54.0,
+                            alignment: crate::model::TabAlignment::Decimal,
+                            leader: crate::model::TabLeader::Underscore,
+                        }]]
+                    );
+                }
+
+                let rendered = tabbed.to_pdf_with_fonts(&fonts);
+                let control_rendered = control.to_pdf_with_fonts(&fonts);
+                assert!(rendered.starts_with(b"%PDF-"));
+                assert_ne!(
+                    rendered, control_rendered,
+                    "legacy running tabs were ignored for story {story_position}, table={in_table}"
+                );
+                assert_eq!(rendered, tabbed.to_pdf_with_fonts(&fonts));
+            }
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_note_paragraph_tabs_change_preview_without_conversion() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        for kind in [SourceRegionKind::Footnote, SourceRegionKind::Endnote] {
+            let tabbed = Document::open(&legacy_note_tabs_doc(kind, false, true)).unwrap();
+            let control = Document::open(&legacy_note_tabs_doc(kind, false, false)).unwrap();
+            assert_eq!(tabbed.model(), control.model());
+            assert_legacy_note_tab_overlay(&tabbed, kind, false);
+            #[cfg(feature = "docx")]
+            assert_eq!(tabbed.to_docx(), control.to_docx());
+
+            let rendered = tabbed.to_pdf_with_fonts(&fonts);
+            let control_rendered = control.to_pdf_with_fonts(&fonts);
+            assert!(rendered.starts_with(b"%PDF-"));
+            assert_ne!(
+                rendered, control_rendered,
+                "legacy {kind:?} paragraph tabs were ignored"
+            );
+            assert_eq!(rendered, tabbed.to_pdf_with_fonts(&fonts));
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_note_table_tabs_change_preview_without_conversion() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        for kind in [SourceRegionKind::Footnote, SourceRegionKind::Endnote] {
+            let tabbed = Document::open(&legacy_note_tabs_doc(kind, true, true)).unwrap();
+            let control = Document::open(&legacy_note_tabs_doc(kind, true, false)).unwrap();
+            assert_eq!(tabbed.model(), control.model());
+            assert_legacy_note_tab_overlay(&tabbed, kind, true);
+            #[cfg(feature = "docx")]
+            assert_eq!(tabbed.to_docx(), control.to_docx());
+
+            let rendered = tabbed.to_pdf_with_fonts(&fonts);
+            let control_rendered = control.to_pdf_with_fonts(&fonts);
+            assert!(rendered.starts_with(b"%PDF-"));
+            assert_ne!(
+                rendered, control_rendered,
+                "legacy {kind:?} table-cell tabs were ignored"
+            );
+            assert_eq!(rendered, tabbed.to_pdf_with_fonts(&fonts));
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_running_surface_distances_change_preview_only() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let baseline = Document::open(&legacy_running_surface_distance_doc(None, None)).unwrap();
+        let header =
+            Document::open(&legacy_running_surface_distance_doc(Some(1_000), None)).unwrap();
+        let footer =
+            Document::open(&legacy_running_surface_distance_doc(None, Some(1_000))).unwrap();
+        let both = Document::open(&legacy_running_surface_distance_doc(
+            Some(1_000),
+            Some(1_000),
+        ))
+        .unwrap();
+        let invalid =
+            Document::open(&legacy_running_surface_distance_doc(Some(u16::MAX), None)).unwrap();
+
+        for document in [&header, &footer, &both, &invalid] {
+            assert_eq!(
+                baseline.model(),
+                document.model(),
+                "legacy running distances must remain outside the public model"
+            );
+            assert_eq!(
+                baseline.layout_pages_with_fonts(&fonts).unwrap().pages,
+                document.layout_pages_with_fonts(&fonts).unwrap().pages,
+                "legacy running distances must not repaginate the body"
+            );
+        }
+
+        let baseline_pdf = baseline.to_pdf_with_fonts(&fonts);
+        let header_pdf = header.to_pdf_with_fonts(&fonts);
+        let footer_pdf = footer.to_pdf_with_fonts(&fonts);
+        let both_pdf = both.to_pdf_with_fonts(&fonts);
+        assert_ne!(
+            header_pdf, baseline_pdf,
+            "legacy header distance was ignored"
+        );
+        assert_ne!(
+            footer_pdf, baseline_pdf,
+            "legacy footer distance was ignored"
+        );
+        assert_ne!(both_pdf, header_pdf);
+        assert_ne!(both_pdf, footer_pdf);
+        assert_eq!(invalid.to_pdf_with_fonts(&fonts), baseline_pdf);
+        assert_eq!(header_pdf, header.to_pdf_with_fonts(&fonts));
+        assert_eq!(footer_pdf, footer.to_pdf_with_fonts(&fonts));
+        assert_eq!(both_pdf, both.to_pdf_with_fonts(&fonts));
+    }
+
     #[test]
     fn legacy_doc_plcfhdd_disambiguates_header_footer_sections() {
         let plcf_hdd = [
@@ -6903,6 +9513,51 @@ mod tests {
         assert_eq!(final_page.margin_top_pt, Some(72.0));
         assert_eq!(final_page.margin_bottom_pt, Some(36.0));
         assert!(final_page.landscape);
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn legacy_doc_sepx_aligns_running_surface_distances_and_isolates_malformed_sections() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = Vec::new();
+        first.extend_from_slice(&0xB017u16.to_le_bytes());
+        first.extend_from_slice(&0u16.to_le_bytes());
+        first.extend_from_slice(&0xB018u16.to_le_bytes());
+        first.extend_from_slice(&31_680u16.to_le_bytes());
+        let malformed = [0x17];
+        let mut final_section = Vec::new();
+        final_section.extend_from_slice(&0xB017u16.to_le_bytes());
+        final_section.extend_from_slice(&2_000u16.to_le_bytes());
+        final_section.extend_from_slice(&0xB018u16.to_le_bytes());
+        final_section.extend_from_slice(&3_000u16.to_le_bytes());
+        let sepx_grpprls = [
+            first.as_slice(),
+            malformed.as_slice(),
+            final_section.as_slice(),
+        ];
+        let bytes =
+            legacy_doc_with_section_page_grpprls("AAAAABBBBBCCCCC", &section_cps, &sepx_grpprls);
+
+        let document = Document::open(&bytes).unwrap();
+        let Backend::Doc(state) = &document.backend else {
+            panic!("synthetic legacy document must use the DOC backend");
+        };
+        let hints = legacy_build_output_from_doc_state(state).running_surface_distances;
+
+        assert_eq!(
+            hints,
+            vec![
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(0.0),
+                    footer_pt: Some(1_584.0),
+                },
+                crate::model::RunningSurfaceDistanceHints::default(),
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(100.0),
+                    footer_pt: Some(150.0),
+                },
+            ]
+        );
     }
 
     #[test]
@@ -7396,6 +10051,376 @@ mod tests {
     }
 
     #[test]
+    fn legacy_doc_sepx_preserves_complete_unequal_section_column_counts() {
+        let section_cps = [0, 5, 10];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_width(&mut first, 0, 2_000);
+        push_section_column_custom_spacing(&mut first, 0, 400);
+        push_section_column_width(&mut first, 1, 4_000);
+        push_section_evenly_spaced(&mut first, 0);
+
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut final_section, 2);
+        for (index, width) in [(0, 1_500), (1, 2_500), (2, 3_500)] {
+            push_section_column_width(&mut final_section, index, width);
+        }
+        push_section_evenly_spaced(&mut final_section, 0);
+
+        let bytes = legacy_doc_with_section_page_grpprls(
+            "FIRSTFINAL",
+            &section_cps,
+            &[first.as_slice(), final_section.as_slice()],
+        );
+        let model = Document::open(&bytes).unwrap().model();
+        let first_columns = model
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup.columns),
+                _ => None,
+            })
+            .expect("section boundary");
+
+        assert_eq!(first_columns, Some(2));
+        assert_eq!(model.setup.columns, Some(3));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_to_docx_preserves_private_unequal_column_semantics() {
+        let text = "CUSTOM";
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let mut section = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut section, 1);
+        push_section_column_width(&mut section, 0, 2_000);
+        push_section_column_custom_spacing(&mut section, 0, 400);
+        push_section_column_width(&mut section, 1, 4_000);
+        push_section_evenly_spaced(&mut section, 0);
+        push_section_column_separator(&mut section, 1);
+        push_section_column_rtl(&mut section, 1);
+        let document = Document::open(&legacy_doc_with_section_page_grpprls(
+            text,
+            &section_cps,
+            &[section.as_slice()],
+        ))
+        .unwrap();
+
+        let converted = document.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        assert!(
+            document_xml.contains(
+                r#"<w:cols w:num="2" w:equalWidth="0" w:sep="1"><w:col w:w="2000" w:space="400"/><w:col w:w="4000"/></w:cols>"#
+            ),
+            "custom legacy column geometry was not preserved: {document_xml}"
+        );
+        assert!(
+            document_xml.contains("<w:bidi/>"),
+            "legacy section bidi was not preserved: {document_xml}"
+        );
+        assert_eq!(converted, document.to_docx());
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(reopened.model().setup.columns, Some(2));
+        #[cfg(feature = "render")]
+        reopened.with_render_model_and_hints(|_, hints| {
+            let layout = hints
+                .final_section_column_layout
+                .expect("converted custom column geometry");
+            assert_eq!(layout.columns[0].width_pt, 100.0);
+            assert_eq!(layout.columns[0].space_after_pt, 20.0);
+            assert_eq!(layout.columns[1].width_pt, 200.0);
+            assert!(hints.final_section_column_separator);
+            assert!(hints.final_section_column_rtl);
+        });
+
+        let model_only = write_docx(&document.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert!(model_only_xml.contains(r#"<w:cols w:num="2"/>"#));
+        assert!(!model_only_xml.contains("w:equalWidth"));
+        assert!(!model_only_xml.contains("<w:bidi/>"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_to_docx_preserves_equal_column_hints_by_section() {
+        let section_cps = [0, 5, 10];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_spacing(&mut first, 720);
+        push_section_column_separator(&mut first, 1);
+        push_section_column_rtl(&mut first, 1);
+
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut final_section, 2);
+        push_section_column_spacing(&mut final_section, 0);
+
+        let document = Document::open(&legacy_doc_with_section_page_grpprls(
+            "FIRSTFINAL",
+            &section_cps,
+            &[first.as_slice(), final_section.as_slice()],
+        ))
+        .unwrap();
+        let converted = document.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        let first_columns = document_xml
+            .find(r#"<w:cols w:num="2" w:space="720" w:sep="1"/>"#)
+            .expect("ending-section equal columns");
+        let final_columns = document_xml
+            .find(r#"<w:cols w:num="3" w:space="0"/>"#)
+            .expect("final-section equal columns");
+        assert!(first_columns < final_columns, "{document_xml}");
+        assert_eq!(document_xml.matches("<w:bidi/>").count(), 1);
+
+        #[cfg(feature = "render")]
+        Document::open(&converted)
+            .unwrap()
+            .with_render_model_and_hints(|model, hints| {
+                let boundary = model
+                    .blocks
+                    .iter()
+                    .position(|block| matches!(block, Block::SectionBreak(_)))
+                    .expect("converted section boundary");
+                assert_eq!(hints.section_column_gap_pt[boundary], Some(36.0));
+                assert!(hints.section_column_separators[boundary]);
+                assert!(hints.section_column_rtl[boundary]);
+                assert_eq!(hints.final_section_column_gap_pt, Some(0.0));
+                assert!(!hints.final_section_column_separator);
+                assert!(!hints.final_section_column_rtl);
+            });
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_aligns_unequal_column_geometry_and_isolates_malformed_sepx() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_width(&mut first, 0, 2_000);
+        push_section_column_custom_spacing(&mut first, 0, 400);
+        push_section_column_width(&mut first, 1, 4_000);
+        push_section_evenly_spaced(&mut first, 0);
+        let malformed = [0x03];
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut final_section, 1);
+        push_section_column_width(&mut final_section, 0, 3_000);
+        push_section_column_custom_spacing(&mut final_section, 0, 200);
+        push_section_column_width(&mut final_section, 1, 5_000);
+        push_section_evenly_spaced(&mut final_section, 0);
+
+        let bytes = legacy_doc_with_section_page_grpprls(
+            "AAAAABBBBBCCCCC",
+            &section_cps,
+            &[
+                first.as_slice(),
+                malformed.as_slice(),
+                final_section.as_slice(),
+            ],
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 5);
+            assert!(hints.section_column_layouts[0].is_none());
+            let first_layout = hints.section_column_layouts[1]
+                .as_ref()
+                .expect("first ending-section geometry");
+            assert_eq!(first_layout.columns[0].width_pt, 100.0);
+            assert_eq!(first_layout.columns[0].space_after_pt, 20.0);
+            assert_eq!(first_layout.columns[1].width_pt, 200.0);
+            assert!(hints.section_column_layouts[2].is_none());
+            assert!(hints.section_column_layouts[3].is_none());
+            assert!(hints.section_column_layouts[4].is_none());
+
+            let final_layout = hints
+                .final_section_column_layout
+                .expect("final-section geometry");
+            assert_eq!(final_layout.columns[0].width_pt, 150.0);
+            assert_eq!(final_layout.columns[0].space_after_pt, 10.0);
+            assert_eq!(final_layout.columns[1].width_pt, 250.0);
+        });
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_unequal_columns_change_preview_pdf_deterministically() {
+        let text = "left column\u{000e}right column\r";
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let custom_document = |first_width, second_width| {
+            let mut section = section_page_grpprl(4_400, 3_000, 400, 400, 400, 400, false);
+            push_section_column_count(&mut section, 1);
+            push_section_column_width(&mut section, 0, first_width);
+            push_section_column_custom_spacing(&mut section, 0, 400);
+            push_section_column_width(&mut section, 1, second_width);
+            push_section_evenly_spaced(&mut section, 0);
+            Document::open(&legacy_doc_with_section_page_grpprls(
+                text,
+                &section_cps,
+                &[section.as_slice()],
+            ))
+            .unwrap()
+        };
+        let first_wide = custom_document(2_000, 1_200);
+        let second_wide = custom_document(1_200, 2_000);
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(first_wide.model(), second_wide.model());
+        let first_pdf = first_wide.try_to_pdf_with_fonts(&fonts).unwrap();
+        let second_pdf = second_wide.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert!(first_pdf.starts_with(b"%PDF-"));
+        assert_ne!(first_pdf, second_pdf);
+        assert_eq!(first_pdf, first_wide.try_to_pdf_with_fonts(&fonts).unwrap());
+        assert_eq!(
+            first_wide.layout_pages_with_fonts(&fonts).unwrap(),
+            first_wide.layout_pages_with_fonts(&fonts).unwrap()
+        );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_aligns_column_separators_and_isolates_malformed_sepx() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_separator(&mut first, 1);
+        let malformed = [0x03];
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut final_section, 1);
+        push_section_column_separator(&mut final_section, 1);
+        let document = Document::open(&legacy_doc_with_section_page_grpprls(
+            "AAAAABBBBBCCCCC",
+            &section_cps,
+            &[
+                first.as_slice(),
+                malformed.as_slice(),
+                final_section.as_slice(),
+            ],
+        ))
+        .unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 5);
+            assert_eq!(
+                hints.section_column_separators,
+                &[false, true, false, false, false]
+            );
+            assert!(hints.final_section_column_separator);
+        });
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_column_separator_changes_pdf_without_layout_change() {
+        let text = "legacy separator";
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let document = |separator| {
+            let mut section = section_page_grpprl(4_400, 3_000, 400, 400, 400, 400, false);
+            push_section_column_count(&mut section, 1);
+            if separator {
+                push_section_column_separator(&mut section, 1);
+            }
+            Document::open(&legacy_doc_with_section_page_grpprls(
+                text,
+                &section_cps,
+                &[section.as_slice()],
+            ))
+            .unwrap()
+        };
+        let baseline = document(false);
+        let separated = document(true);
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(baseline.model(), separated.model());
+        assert_eq!(
+            baseline.layout_pages_with_fonts(&fonts).unwrap(),
+            separated.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        separated.with_render_model_and_hints(|_, hints| {
+            assert!(hints.final_section_column_separator);
+        });
+        let baseline_pdf = baseline.try_to_pdf_with_fonts(&fonts).unwrap();
+        let separated_pdf = separated.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert_ne!(baseline_pdf, separated_pdf);
+        assert_eq!(
+            separated_pdf,
+            separated.try_to_pdf_with_fonts(&fonts).unwrap()
+        );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_aligns_rtl_columns_and_isolates_malformed_sepx() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_rtl(&mut first, 1);
+        let malformed = [0x03];
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut final_section, 1);
+        push_section_column_rtl(&mut final_section, 1);
+        let document = Document::open(&legacy_doc_with_section_page_grpprls(
+            "AAAAABBBBBCCCCC",
+            &section_cps,
+            &[
+                first.as_slice(),
+                malformed.as_slice(),
+                final_section.as_slice(),
+            ],
+        ))
+        .unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 5);
+            assert_eq!(
+                hints.section_column_rtl,
+                &[false, true, false, false, false]
+            );
+            assert!(hints.final_section_column_rtl);
+        });
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_rtl_section_populates_columns_from_right_without_layout_change() {
+        let text = "legacy right-to-left columns";
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let document = |rtl| {
+            let mut section = section_page_grpprl(4_400, 3_000, 400, 400, 400, 400, false);
+            push_section_column_count(&mut section, 1);
+            if rtl {
+                push_section_column_rtl(&mut section, 1);
+            }
+            Document::open(&legacy_doc_with_section_page_grpprls(
+                text,
+                &section_cps,
+                &[section.as_slice()],
+            ))
+            .unwrap()
+        };
+        let ltr = document(false);
+        let rtl = document(true);
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(ltr.model(), rtl.model());
+        assert_eq!(
+            ltr.layout_pages_with_fonts(&fonts).unwrap(),
+            rtl.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        rtl.with_render_model_and_hints(|_, hints| assert!(hints.final_section_column_rtl));
+        let ltr_pdf = ltr.try_to_pdf_with_fonts(&fonts).unwrap();
+        let rtl_pdf = rtl.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert_ne!(ltr_pdf, rtl_pdf);
+        assert_eq!(rtl_pdf, rtl.try_to_pdf_with_fonts(&fonts).unwrap());
+    }
+
+    #[test]
     fn legacy_doc_sepx_preserves_single_section_columns() {
         let section_cps = [0, 4];
         let mut only = section_page_grpprl(11_520, 16_560, 1_200, 1_600, 800, 1_000, false);
@@ -7445,6 +10470,44 @@ mod tests {
         );
         assert_eq!(single_layout.block_pages.last(), Some(&Some(2)));
         assert_eq!(double_layout.block_pages.last(), Some(&Some(1)));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_section_column_spacing_reaches_preview_hints_and_flow() {
+        let section_cps = [0, 5, 10];
+        let mut first = section_page_grpprl(4_400, 2_000, 400, 400, 400, 400, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_spacing(&mut first, 800);
+        let mut final_section = first.clone();
+        push_section_column_spacing(&mut final_section, 200);
+        let sepx_grpprls = [first.as_slice(), final_section.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("FIRSTFINAL", &section_cps, &sepx_grpprls);
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.section_column_gap_pt, &[None, Some(40.0), None]);
+            assert_eq!(hints.final_section_column_gap_pt, Some(10.0));
+        });
+
+        let text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi \
+            omicron pi rho sigma tau upsilon phi chi psi omega";
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let mut section = section_page_grpprl(4_400, 2_000, 400, 400, 400, 400, false);
+        push_section_column_count(&mut section, 1);
+        push_section_column_spacing(&mut section, 2_000);
+        let section_grpprls = [section.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls(text, &section_cps, &section_grpprls);
+        let document = Document::open(&bytes).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        let model_only = layout_pages_with_fonts(&document.model(), &fonts).unwrap();
+        let opened = document.layout_pages_with_fonts(&fonts).unwrap();
+        assert!(
+            opened.pages > model_only.pages,
+            "explicit legacy spacing must narrow equal columns: model={model_only:?}, opened={opened:?}"
+        );
     }
 
     #[cfg(feature = "render")]
@@ -7842,6 +10905,14 @@ mod tests {
             document_xml.contains(r#"<w:type w:val="nextPage"/>"#),
             "legacy section break should serialize as nextPage: {document_xml}"
         );
+        for marker in [
+            "E0", "O0", "e0", "o0", "F0", "f0", "E1", "O1", "e1", "o1", "F1", "f1",
+        ] {
+            assert!(
+                !document_xml.contains(&format!(">{marker}</w:t>")),
+                "promoted running story {marker:?} leaked into the body: {document_xml}"
+            );
+        }
 
         let mut zip = zip::ZipArchive::new(Cursor::new(docx)).unwrap();
         let mut header_xml = Vec::new();
@@ -7862,6 +10933,47 @@ mod tests {
             header_xml.iter().any(|xml| xml.contains(">O1<")),
             "final section odd header part missing: {header_xml:?}"
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_paragraph_column_breaks_roundtrip_to_docx() {
+        let document = Document::open(&two_section_legacy_running_column_break_doc()).unwrap();
+        let source_model = document.model();
+        let converted = document.to_docx();
+        assert_eq!(converted, document.to_docx());
+        assert_eq!(document.model(), source_model);
+
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let parts = docx_running_parts(&converted);
+        assert_eq!(parts.len(), 12, "{parts:?}");
+        for marker in [
+            "E0", "O0", "e0", "o0", "F0", "f0", "E1", "O1", "e1", "o1", "F1", "f1",
+        ] {
+            assert!(!document_xml.contains(&format!(">{marker}A</w:t>")));
+            let selected = parts
+                .iter()
+                .filter(|(_, xml)| xml.contains(&format!(">{marker}A</w:t>")))
+                .collect::<Vec<_>>();
+            assert_eq!(selected.len(), 1, "{marker}: {parts:?}");
+            assert_eq!(
+                selected[0].1.matches(r#"<w:br w:type="column"/>"#).count(),
+                1,
+                "{marker}: {}",
+                selected[0].1
+            );
+            assert!(!selected[0].1.contains("<w:br/>"), "{}", selected[0].1);
+        }
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(reopened.to_docx(), converted);
+
+        let model_only = write_docx(&source_model);
+        let model_only_parts = docx_running_parts(&model_only);
+        assert_eq!(model_only_parts.len(), 12, "{model_only_parts:?}");
+        assert!(model_only_parts.iter().all(|(_, xml)| {
+            !xml.contains(r#"<w:br w:type="column"/>"#) && xml.matches("<w:br/>").count() == 1
+        }));
     }
 
     #[test]
@@ -7886,6 +10998,42 @@ mod tests {
                 .filter(|record| record.section == Some(1))
                 .count(),
             6
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_fresh_conversion_keeps_unselected_running_fallback_stories() {
+        let bytes = two_section_legacy_header_footer_doc(Some(8));
+        let doc = Document::open(&bytes).unwrap();
+        let converted = doc.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        for marker in ["E0", "O0", "e0", "o0", "F0", "f0"] {
+            assert!(
+                !document_xml.contains(&format!(">{marker}</w:t>")),
+                "promoted first-owner story {marker:?} leaked into the body: {document_xml}"
+            );
+        }
+        for marker in ["E1", "O1", "e1", "o1", "F1", "f1"] {
+            assert!(
+                document_xml.contains(&format!(">{marker}</w:t>")),
+                "unselected fallback story {marker:?} was dropped: {document_xml}"
+            );
+        }
+
+        let running_parts = docx_running_parts(&converted);
+        assert!(
+            running_parts
+                .iter()
+                .any(|(_, xml)| xml.contains(">O0</w:t>")),
+            "selected first-owner header missing: {running_parts:?}"
+        );
+        assert!(
+            running_parts
+                .iter()
+                .all(|(_, xml)| !xml.contains(">O1</w:t>")),
+            "unselected story was incorrectly promoted: {running_parts:?}"
         );
     }
 
@@ -8323,6 +11471,34 @@ mod tests {
         ] {
             zw.start_file(n, opt).unwrap();
             zw.write_all(b.as_bytes()).unwrap();
+        }
+        zw.finish().unwrap().into_inner()
+    }
+
+    #[cfg(feature = "docx")]
+    fn minimal_docx_with_styles(document_xml: &str, styles_xml: &str) -> Vec<u8> {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+        let mut zw = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let opt = SimpleFileOptions::default();
+        for (name, body) in [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#,
+            ),
+            ("word/document.xml", document_xml),
+            ("word/styles.xml", styles_xml),
+        ] {
+            zw.start_file(name, opt).unwrap();
+            zw.write_all(body.as_bytes()).unwrap();
         }
         zw.finish().unwrap().into_inner()
     }
@@ -9462,6 +12638,108 @@ mod tests {
         grpprl.extend_from_slice(&multiple.to_le_bytes());
     }
 
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn push_legacy_tab_change(
+        grpprl: &mut Vec<u8>,
+        sprm: u16,
+        deletions: &[(i16, Option<u16>)],
+        additions: &[(i16, u8)],
+    ) {
+        let mut operand = Vec::new();
+        operand.push(deletions.len() as u8);
+        for &(position, _) in deletions {
+            operand.extend_from_slice(&position.to_le_bytes());
+        }
+        if sprm == 0xC615 {
+            for &(_, close) in deletions {
+                operand.extend_from_slice(&close.unwrap_or(26).to_le_bytes());
+            }
+        }
+        operand.push(additions.len() as u8);
+        for &(position, _) in additions {
+            operand.extend_from_slice(&position.to_le_bytes());
+        }
+        for &(_, descriptor) in additions {
+            operand.push(descriptor);
+        }
+        grpprl.extend_from_slice(&sprm.to_le_bytes());
+        grpprl.push(operand.len() as u8);
+        grpprl.extend_from_slice(&operand);
+    }
+
+    #[cfg(feature = "docx")]
+    fn legacy_body_and_table_cell_tabs_doc() -> Vec<u8> {
+        legacy_body_and_table_cell_tabs_doc_with_tabs(true)
+    }
+
+    #[cfg(feature = "docx")]
+    fn legacy_body_and_table_cell_tabs_doc_with_tabs(include_tabs: bool) -> Vec<u8> {
+        let mut style_tabs = Vec::new();
+        if include_tabs {
+            push_legacy_tab_change(&mut style_tabs, 0xC60D, &[], &[(720, 0x09), (1440, 0x12)]);
+        }
+        let stylesheet = synthetic_paragraph_stylesheet_grpprl(&style_tabs);
+
+        let mut body_grpprl = vec![0x00, 0x46, 0x01, 0x00];
+        if include_tabs {
+            push_legacy_tab_change(
+                &mut body_grpprl,
+                0xC615,
+                &[(720, Some(26))],
+                &[(1080, 0x1B)],
+            );
+        }
+
+        let mut cell_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x00, 0x46, 0x01, 0x00, // sprmPIstd = tabbed style
+        ];
+        if include_tabs {
+            push_legacy_tab_change(&mut cell_grpprl, 0xC60D, &[(1440, None)], &[(1800, 0x24)]);
+        }
+
+        let text = "Body\tTail\rCell\tTail\u{7}\u{7}";
+        let body_end = "Body\tTail\r".encode_utf16().count() as u32;
+        let cell_end = "Body\tTail\rCell\tTail\u{7}".encode_utf16().count() as u32;
+        let row_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        let runs = [
+            SyntheticPapxRun {
+                cp_lim: body_end,
+                grpprl: body_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: cell_end,
+                grpprl: cell_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: row_end,
+                grpprl: row_grpprl,
+            },
+        ];
+
+        synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [row_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
     fn legacy_paragraph_spacing_doc() -> Vec<u8> {
         const SPRM_P_DYA_BEFORE: u16 = 0xA413;
         const SPRM_P_DYA_AFTER: u16 = 0xA414;
@@ -9555,6 +12833,74 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "docx")]
+    fn legacy_paragraph_pagination_conversion_doc() -> Vec<u8> {
+        const KEEP_LINES: u16 = 0x2405;
+        const KEEP_NEXT: u16 = 0x2406;
+        const PAGE_BREAK_BEFORE: u16 = 0x2407;
+        const WIDOW_CONTROL: u16 = 0x2431;
+
+        let mut style_grpprl = Vec::new();
+        for (sprm, value) in [
+            (KEEP_LINES, 1),
+            (KEEP_NEXT, 1),
+            (PAGE_BREAK_BEFORE, 1),
+            (WIDOW_CONTROL, 0),
+        ] {
+            style_grpprl.extend_from_slice(&sprm.to_le_bytes());
+            style_grpprl.push(value);
+        }
+        let stylesheet = synthetic_paragraph_stylesheet_grpprl(&style_grpprl);
+
+        let direct = |properties: &[(u16, u8)]| {
+            let mut grpprl = Vec::with_capacity(properties.len() * 3);
+            for &(sprm, value) in properties {
+                grpprl.extend_from_slice(&sprm.to_le_bytes());
+                grpprl.push(value);
+            }
+            grpprl
+        };
+        let mut style_cleared = vec![0x00, 0x46, 0x01, 0x00];
+        style_cleared.extend(direct(&[
+            (KEEP_LINES, 0),
+            (KEEP_NEXT, 0),
+            (PAGE_BREAK_BEFORE, 0),
+            (WIDOW_CONTROL, 1),
+        ]));
+        let paragraphs = [
+            ("Default", Vec::new()),
+            ("KeepNext", direct(&[(KEEP_NEXT, 1)])),
+            ("KeepLines", direct(&[(KEEP_LINES, 1)])),
+            ("WidowOff", direct(&[(WIDOW_CONTROL, 0)])),
+            ("StyleAll", vec![0x00, 0x46, 0x01, 0x00]),
+            ("StyleCleared", style_cleared),
+        ];
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        for (label, grpprl) in paragraphs {
+            text.push_str(label);
+            text.push('\r');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        let text_end = text.encode_utf16().count() as u32;
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
     type ParagraphSpacingSignature = (String, Option<f32>, Option<f32>, Option<f32>);
 
     fn paragraph_spacing_signature(model: &DocModel) -> Vec<ParagraphSpacingSignature> {
@@ -9607,6 +12953,23 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_retains_absolute_line_spacing_render_hints() {
+        let document = Document::open(&legacy_paragraph_spacing_doc()).unwrap();
+        let Backend::Doc(state) = &document.backend else {
+            panic!("synthetic legacy document must use the DOC backend");
+        };
+        let hints = legacy_build_output_from_doc_state(state).line_spacing_hints;
+
+        assert_eq!(hints.len(), document.model().blocks.len());
+        assert_eq!(hints[3], Some(crate::model::LineSpacingHint::AtLeast(12.0)));
+        assert_eq!(hints[6], Some(crate::model::LineSpacingHint::AtLeast(12.0)));
+        assert_eq!(hints[7], Some(crate::model::LineSpacingHint::Exact(12.0)));
+        assert_eq!(hints[8], None, "zero multiplier only clears inheritance");
+        assert_eq!(hints[9], None, "invalid direct LSPD keeps style multiplier");
+    }
+
     #[cfg(feature = "docx")]
     #[test]
     fn legacy_doc_bounded_paragraph_spacing_roundtrips_to_docx() {
@@ -9619,10 +12982,248 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_absolute_line_spacing_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_paragraph_spacing_doc()).unwrap();
+        let converted = legacy.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        let default = docx_paragraph_with_text(&document_xml, "Default");
+        assert!(default.contains(r#"w:line="240" w:lineRule="auto""#));
+        let at_least = docx_paragraph_with_text(&document_xml, "AtLeast");
+        assert!(at_least.contains(
+            r#"<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="atLeast"/>"#
+        ));
+        let style_at_least = docx_paragraph_with_text(&document_xml, "StyleAtLeast");
+        assert!(style_at_least.contains(
+            r#"<w:spacing w:before="360" w:after="180" w:line="240" w:lineRule="atLeast"/>"#
+        ));
+        let style_exact = docx_paragraph_with_text(&document_xml, "StyleExact");
+        assert!(style_exact.contains(r#"w:line="240" w:lineRule="exact""#));
+        let zero = docx_paragraph_with_text(&document_xml, "StyleZeroLine");
+        assert!(!zero.contains("w:line="), "{zero}");
+        let invalid = docx_paragraph_with_text(&document_xml, "StyleInvalidLine");
+        assert!(invalid.contains(r#"w:line="360" w:lineRule="auto""#));
+        assert_eq!(converted, legacy.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&legacy.model()), "word/document.xml");
+        assert!(!model_only_xml.contains(r#"w:lineRule="atLeast""#));
+        assert!(!model_only_xml.contains(r#"w:lineRule="exact""#));
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(
+            paragraph_spacing_signature(&reopened.model()),
+            expected_legacy_paragraph_spacing_signature()
+        );
+        #[cfg(feature = "render")]
+        {
+            let Backend::Docx(state) = &reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(
+                state.line_spacing_hints[3],
+                Some(crate::model::LineSpacingHint::AtLeast(12.0))
+            );
+            assert_eq!(
+                state.line_spacing_hints[6],
+                Some(crate::model::LineSpacingHint::AtLeast(12.0))
+            );
+            assert_eq!(
+                state.line_spacing_hints[7],
+                Some(crate::model::LineSpacingHint::Exact(12.0))
+            );
+            assert_eq!(state.line_spacing_hints[8], None);
+            assert_eq!(state.line_spacing_hints[9], None);
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_body_and_table_cell_tabs_roundtrip_to_docx() {
+        let legacy = Document::open(&legacy_body_and_table_cell_tabs_doc()).unwrap();
+        let control =
+            Document::open(&legacy_body_and_table_cell_tabs_doc_with_tabs(false)).unwrap();
+        assert_eq!(
+            legacy.model(),
+            control.model(),
+            "legacy custom tabs must remain outside the public model"
+        );
+        let converted = legacy.to_docx();
+        assert_eq!(converted, legacy.to_docx());
+        assert_ne!(converted, control.to_docx());
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        let body = docx_paragraph_with_text(&document_xml, "Body");
+        assert!(
+            body.contains(concat!(
+                r#"<w:tabs><w:tab w:val="decimal" w:pos="1080" w:leader="underscore"/>"#,
+                r#"<w:tab w:val="right" w:pos="1440" w:leader="hyphen"/></w:tabs>"#,
+            )),
+            "{body}"
+        );
+        let cell = docx_paragraph_with_text(&document_xml, "Cell");
+        assert!(
+            cell.contains(concat!(
+                r#"<w:tabs><w:tab w:val="center" w:pos="720" w:leader="dot"/>"#,
+                r#"<w:tab w:val="bar" w:pos="1800"/></w:tabs>"#,
+            )),
+            "{cell}"
+        );
+
+        let model_only_xml = docx_part(&write_docx(&legacy.model()), "word/document.xml");
+        assert!(!model_only_xml.contains("<w:tabs>"));
+
+        let reopened = Document::open(&converted).unwrap();
+        let reopened_xml = docx_part(&reopened.to_docx(), "word/document.xml");
+        assert_eq!(reopened_xml.matches("<w:tabs>").count(), 2);
+        assert!(reopened_xml.contains(r#"w:val="decimal" w:pos="1080""#));
+        assert!(reopened_xml.contains(r#"w:val="bar" w:pos="1800""#));
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_legacy_doc_body_and_table_cell_tabs_change_preview_deterministically() {
+        let legacy = Document::open(&legacy_body_and_table_cell_tabs_doc()).unwrap();
+        let control =
+            Document::open(&legacy_body_and_table_cell_tabs_doc_with_tabs(false)).unwrap();
+        assert_eq!(legacy.model(), control.model());
+
+        let Backend::Doc(state) = &legacy.backend else {
+            panic!("synthetic legacy document must use the DOC backend");
+        };
+        let assembled = legacy_build_output_from_doc_state(state);
+        assert_eq!(
+            assembled.tab_stops[0],
+            vec![
+                crate::model::TabStop {
+                    position_pt: 54.0,
+                    alignment: crate::model::TabAlignment::Decimal,
+                    leader: crate::model::TabLeader::Underscore,
+                },
+                crate::model::TabStop {
+                    position_pt: 72.0,
+                    alignment: crate::model::TabAlignment::Right,
+                    leader: crate::model::TabLeader::Hyphen,
+                },
+            ]
+        );
+        assert_eq!(
+            assembled.table_cell_tab_stops[1][0][0][0],
+            vec![
+                crate::model::TabStop {
+                    position_pt: 36.0,
+                    alignment: crate::model::TabAlignment::Center,
+                    leader: crate::model::TabLeader::Dot,
+                },
+                crate::model::TabStop {
+                    position_pt: 90.0,
+                    alignment: crate::model::TabAlignment::Bar,
+                    leader: crate::model::TabLeader::None,
+                },
+            ]
+        );
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let rendered = legacy.to_pdf_with_fonts(&fonts);
+        let control_rendered = control.to_pdf_with_fonts(&fonts);
+        assert!(rendered.starts_with(b"%PDF-"));
+        assert_ne!(rendered, control_rendered);
+        assert_eq!(rendered, legacy.to_pdf_with_fonts(&fonts));
+        assert_eq!(
+            control_rendered,
+            render_pdf_with_fonts(&legacy.model(), &fonts)
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_top_level_pagination_controls_roundtrip_to_docx() {
+        let legacy = Document::open(&legacy_paragraph_pagination_conversion_doc()).unwrap();
+        let converted = legacy.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        let default = docx_paragraph_with_text(&document_xml, "Default");
+        assert!(!default.contains("<w:keepNext"), "{default}");
+        assert!(!default.contains("<w:keepLines"), "{default}");
+        assert!(!default.contains("<w:widowControl"), "{default}");
+        let keep_next = docx_paragraph_with_text(&document_xml, "KeepNext");
+        assert!(keep_next.contains("<w:keepNext/>"), "{keep_next}");
+        let keep_lines = docx_paragraph_with_text(&document_xml, "KeepLines");
+        assert!(keep_lines.contains("<w:keepLines/>"), "{keep_lines}");
+        let widow_off = docx_paragraph_with_text(&document_xml, "WidowOff");
+        assert!(
+            widow_off.contains(r#"<w:widowControl w:val="0"/>"#),
+            "{widow_off}"
+        );
+        let style_all = docx_paragraph_with_text(&document_xml, "StyleAll");
+        assert!(
+            style_all.contains(concat!(
+                r#"<w:pPr><w:pStyle w:val="Heading1"/><w:keepNext/><w:keepLines/>"#,
+                r#"<w:pageBreakBefore/><w:widowControl w:val="0"/>"#,
+            )),
+            "{style_all}"
+        );
+        let style_cleared = docx_paragraph_with_text(&document_xml, "StyleCleared");
+        assert!(!style_cleared.contains("<w:keepNext"), "{style_cleared}");
+        assert!(!style_cleared.contains("<w:keepLines"), "{style_cleared}");
+        assert!(
+            !style_cleared.contains("<w:pageBreakBefore"),
+            "{style_cleared}"
+        );
+        assert!(
+            !style_cleared.contains("<w:widowControl"),
+            "{style_cleared}"
+        );
+        assert_eq!(converted, legacy.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&legacy.model()), "word/document.xml");
+        assert!(!model_only_xml.contains("<w:keepNext"));
+        assert!(!model_only_xml.contains("<w:keepLines"));
+        assert!(!model_only_xml.contains("<w:widowControl"));
+
+        #[cfg(feature = "render")]
+        {
+            let reopened = Document::open(&converted).unwrap();
+            let Backend::Docx(state) = &reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(
+                state.pagination_hints,
+                vec![
+                    crate::model::PaginationHint {
+                        widow_control: true,
+                        ..crate::model::PaginationHint::default()
+                    },
+                    crate::model::PaginationHint {
+                        keep_next: true,
+                        widow_control: true,
+                        ..crate::model::PaginationHint::default()
+                    },
+                    crate::model::PaginationHint {
+                        keep_lines: true,
+                        widow_control: true,
+                        ..crate::model::PaginationHint::default()
+                    },
+                    crate::model::PaginationHint::default(),
+                    crate::model::PaginationHint {
+                        keep_next: true,
+                        keep_lines: true,
+                        widow_control: false,
+                    },
+                    crate::model::PaginationHint {
+                        widow_control: true,
+                        ..crate::model::PaginationHint::default()
+                    },
+                ]
+            );
+        }
+    }
+
     #[cfg(feature = "render")]
     fn legacy_paragraph_spacing_layout_doc(
         paragraph_count: usize,
-        line_twips: Option<u16>,
+        line_spacing: Option<(u16, u16)>,
     ) -> Vec<u8> {
         let mut text = String::new();
         for index in 0..paragraph_count {
@@ -9630,8 +13231,8 @@ mod tests {
         }
         let text_end = text.encode_utf16().count() as u32;
         let mut grpprl = Vec::new();
-        if let Some(line_twips) = line_twips {
-            push_paragraph_line_spacing(&mut grpprl, line_twips, 1);
+        if let Some((line_twips, multiple)) = line_spacing {
+            push_paragraph_line_spacing(&mut grpprl, line_twips, multiple);
         }
         let runs = [SyntheticPapxRun {
             cp_lim: text_end,
@@ -9661,7 +13262,7 @@ mod tests {
             .model();
         let double = Document::open(&legacy_paragraph_spacing_layout_doc(
             PARAGRAPH_COUNT,
-            Some(480),
+            Some((480, 1)),
         ))
         .unwrap()
         .model();
@@ -9689,6 +13290,41 @@ mod tests {
             ),
             (1, Some(1), 2, Some(2), 2, Some(2))
         );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_absolute_line_spacing_changes_preview_layout() {
+        const PARAGRAPH_COUNT: usize = 40;
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let exact = Document::open(&legacy_paragraph_spacing_layout_doc(
+            PARAGRAPH_COUNT,
+            Some((EXACT_FIVE_POINTS, 0)),
+        ))
+        .unwrap();
+        let minimum = Document::open(&legacy_paragraph_spacing_layout_doc(
+            PARAGRAPH_COUNT,
+            Some((800, 0)),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            exact.model(),
+            minimum.model(),
+            "legacy absolute line spacing must remain outside the public model"
+        );
+        let exact_layout = exact.layout_pages_with_fonts(&fonts).unwrap();
+        let minimum_layout = minimum.layout_pages_with_fonts(&fonts).unwrap();
+        assert!(minimum_layout.pages > exact_layout.pages);
+
+        let exact_pdf = exact.to_pdf_with_fonts(&fonts);
+        let minimum_pdf = minimum.to_pdf_with_fonts(&fonts);
+        assert!(exact_pdf.starts_with(b"%PDF-"));
+        assert!(minimum_pdf.starts_with(b"%PDF-"));
+        assert_ne!(exact_pdf, minimum_pdf);
+        assert_eq!(exact_pdf, exact.to_pdf_with_fonts(&fonts));
+        assert_eq!(minimum_pdf, minimum.to_pdf_with_fonts(&fonts));
     }
 
     fn push_legacy_paragraph_shd80(
@@ -10302,6 +13938,58 @@ mod tests {
         )
     }
 
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_absolute_table_cell_spacing_doc(
+        paragraph_count: usize,
+        line_spacing: (u16, u16),
+    ) -> Vec<u8> {
+        let mut text = String::new();
+        for index in 0..paragraph_count {
+            text.push_str(&format!("cell paragraph {index}"));
+            text.push(if index + 1 == paragraph_count {
+                '\u{7}'
+            } else {
+                '\r'
+            });
+        }
+        let cell_end = text.encode_utf16().count() as u32;
+        let mut cell_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+        ];
+        push_paragraph_line_spacing(&mut cell_grpprl, line_spacing.0, line_spacing.1);
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: cell_end,
+            grpprl: cell_grpprl,
+        }];
+        text.push('\u{7}');
+        let row_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        runs.push(SyntheticPapxRun {
+            cp_lim: row_end,
+            grpprl: row_grpprl,
+        });
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [row_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
     #[cfg(feature = "render")]
     #[test]
     fn opened_legacy_doc_inherited_cell_spacing_changes_preview_deterministically() {
@@ -10353,6 +14041,136 @@ mod tests {
         let recovered_pdf = render_pdf_with_fonts(&recovered, &fonts);
         assert_ne!(recovered_pdf, compact_pdf);
         assert_eq!(recovered_pdf, render_pdf_with_fonts(&recovered, &fonts));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_absolute_table_cell_spacing_changes_preview_layout() {
+        const PARAGRAPH_COUNT: usize = 40;
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let exact = Document::open(&legacy_absolute_table_cell_spacing_doc(
+            PARAGRAPH_COUNT,
+            (EXACT_FIVE_POINTS, 0),
+        ))
+        .unwrap();
+        let minimum = Document::open(&legacy_absolute_table_cell_spacing_doc(
+            PARAGRAPH_COUNT,
+            (800, 0),
+        ))
+        .unwrap();
+
+        assert_eq!(
+            exact.model(),
+            minimum.model(),
+            "legacy table-cell absolute spacing must remain outside the public model"
+        );
+        let Backend::Doc(exact_state) = &exact.backend else {
+            panic!("synthetic legacy document must use the DOC backend");
+        };
+        let Backend::Doc(minimum_state) = &minimum.backend else {
+            panic!("synthetic legacy document must use the DOC backend");
+        };
+        let exact_hints = legacy_build_output_from_doc_state(exact_state).table_cell_line_spacing;
+        let minimum_hints =
+            legacy_build_output_from_doc_state(minimum_state).table_cell_line_spacing;
+        assert_eq!(exact_hints.len(), 1);
+        assert_eq!(exact_hints[0].len(), 1);
+        assert_eq!(exact_hints[0][0].len(), 1);
+        assert_eq!(exact_hints[0][0][0].len(), PARAGRAPH_COUNT);
+        assert_eq!(minimum_hints.len(), 1);
+        assert_eq!(minimum_hints[0].len(), 1);
+        assert_eq!(minimum_hints[0][0].len(), 1);
+        assert_eq!(minimum_hints[0][0][0].len(), PARAGRAPH_COUNT);
+        assert!(exact_hints[0][0][0]
+            .iter()
+            .all(|hint| *hint == Some(crate::model::LineSpacingHint::Exact(5.0))));
+        assert!(minimum_hints[0][0][0]
+            .iter()
+            .all(|hint| *hint == Some(crate::model::LineSpacingHint::AtLeast(40.0))));
+        let exact_layout = exact.layout_pages_with_fonts(&fonts).unwrap();
+        let minimum_layout = minimum.layout_pages_with_fonts(&fonts).unwrap();
+        assert!(minimum_layout.pages > exact_layout.pages);
+
+        let exact_pdf = exact.to_pdf_with_fonts(&fonts);
+        let minimum_pdf = minimum.to_pdf_with_fonts(&fonts);
+        assert!(exact_pdf.starts_with(b"%PDF-"));
+        assert!(minimum_pdf.starts_with(b"%PDF-"));
+        assert_ne!(exact_pdf, minimum_pdf);
+        assert_eq!(exact_pdf, exact.to_pdf_with_fonts(&fonts));
+        assert_eq!(minimum_pdf, minimum.to_pdf_with_fonts(&fonts));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_table_cell_absolute_line_spacing_roundtrips_to_docx() {
+        let convert = |line_spacing| {
+            let legacy =
+                Document::open(&legacy_absolute_table_cell_spacing_doc(2, line_spacing)).unwrap();
+            let converted = legacy.to_docx();
+            let document_xml = docx_part(&converted, "word/document.xml");
+            (legacy, converted, document_xml)
+        };
+
+        let (exact, exact_docx, exact_xml) = convert((0xFF9C, 0));
+        assert_eq!(
+            exact_xml
+                .matches(r#"w:line="100" w:lineRule="exact""#)
+                .count(),
+            2,
+            "{exact_xml}"
+        );
+        assert_eq!(exact_docx, exact.to_docx());
+
+        let (minimum, minimum_docx, minimum_xml) = convert((800, 0));
+        assert_eq!(
+            minimum_xml
+                .matches(r#"w:line="800" w:lineRule="atLeast""#)
+                .count(),
+            2,
+            "{minimum_xml}"
+        );
+        assert_eq!(minimum_docx, minimum.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&exact.model()), "word/document.xml");
+        assert!(!model_only_xml.contains(r#"w:lineRule="exact""#));
+        assert!(!model_only_xml.contains(r#"w:lineRule="atLeast""#));
+
+        let docx_backed = Document::open(&exact_docx).unwrap();
+        let docx_backed_xml = docx_part(&docx_backed.to_docx(), "word/document.xml");
+        assert_eq!(docx_backed_xml.matches(r#"w:lineRule="exact""#).count(), 2);
+        assert!(!docx_backed_xml.contains(r#"w:lineRule="atLeast""#));
+
+        #[cfg(feature = "render")]
+        {
+            let reopened_hints = |bytes: &[u8]| {
+                let reopened = Document::open(bytes).unwrap();
+                let Backend::Docx(state) = reopened.backend else {
+                    panic!("converted document must use the DOCX backend");
+                };
+                state
+                    .table_cell_line_spacing
+                    .into_iter()
+                    .find(|table| !table.is_empty())
+                    .and_then(|table| table.first().cloned())
+                    .and_then(|row| row.first().cloned())
+                    .expect("converted table-cell line-spacing hints")
+            };
+            assert_eq!(
+                reopened_hints(&exact_docx),
+                vec![
+                    Some(crate::model::LineSpacingHint::Exact(5.0)),
+                    Some(crate::model::LineSpacingHint::Exact(5.0)),
+                ]
+            );
+            assert_eq!(
+                reopened_hints(&minimum_docx),
+                vec![
+                    Some(crate::model::LineSpacingHint::AtLeast(40.0)),
+                    Some(crate::model::LineSpacingHint::AtLeast(40.0)),
+                ]
+            );
+        }
     }
 
     fn legacy_table_bidi_doc() -> Vec<u8> {
@@ -10966,6 +14784,825 @@ mod tests {
         assert_eq!(opened_document_layout.pages, 2);
     }
 
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_to_docx_preserves_private_running_surface_distances() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+                <w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:p><w:pPr><w:sectPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:pgMar w:header="0" w:footer="400"/></mc:Choice>
+                    <mc:Fallback><w:pgMar w:header="100" w:footer="200"/></mc:Fallback>
+                </mc:AlternateContent></w:sectPr></w:pPr>
+                    <w:r><w:t>ending section</w:t></w:r>
+                </w:p>
+                <w:p><w:pPr><w:sectPr><w:pgMar w:header="1000" w:footer="4294967295"/></w:sectPr></w:pPr>
+                    <w:r><w:t>bounded section</w:t></w:r>
+                </w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:pgMar w:header="bad" w:footer="0"/></mc:Choice>
+                    <mc:Fallback><w:pgMar w:header="300" w:footer="500"/></mc:Fallback>
+                </mc:AlternateContent></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        let converted = document.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let page_margins = docx_page_margin_tags(&document_xml);
+
+        assert_eq!(page_margins.len(), 3, "{document_xml}");
+        assert!(page_margins[0].contains(r#"w:header="0""#));
+        assert!(page_margins[0].contains(r#"w:footer="400""#));
+        assert!(page_margins[1].contains(r#"w:header="1000""#));
+        assert!(page_margins[1].contains(r#"w:footer="708""#));
+        assert!(page_margins[2].contains(r#"w:header="708""#));
+        assert!(page_margins[2].contains(r#"w:footer="0""#));
+        assert!(!document_xml.contains(r#"w:header="100""#));
+        assert!(!document_xml.contains(r#"w:footer="200""#));
+        assert!(!document_xml.contains(r#"w:header="300""#));
+        assert!(!document_xml.contains(r#"w:footer="500""#));
+        assert_eq!(converted, document.to_docx());
+
+        let reopened = Document::open(&converted).unwrap();
+        let Backend::Docx(state) = &reopened.backend else {
+            panic!("converted document must use the DOCX backend");
+        };
+        assert_eq!(
+            state.running_surface_distances,
+            [
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(0.0),
+                    footer_pt: Some(20.0),
+                },
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(50.0),
+                    footer_pt: Some(35.4),
+                },
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(35.4),
+                    footer_pt: Some(0.0),
+                },
+            ]
+        );
+
+        let model_only_xml = docx_part(&write_docx(&document.model()), "word/document.xml");
+        assert_eq!(
+            docx_page_margin_tags(&model_only_xml)
+                .iter()
+                .filter(|tag| tag.contains(r#"w:header="708" w:footer="708""#))
+                .count(),
+            3
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_to_docx_preserves_private_running_surface_distances() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = Vec::new();
+        first.extend_from_slice(&0xB017u16.to_le_bytes());
+        first.extend_from_slice(&0u16.to_le_bytes());
+        first.extend_from_slice(&0xB018u16.to_le_bytes());
+        first.extend_from_slice(&400u16.to_le_bytes());
+        let malformed = [0x17];
+        let mut final_section = Vec::new();
+        final_section.extend_from_slice(&0xB017u16.to_le_bytes());
+        final_section.extend_from_slice(&900u16.to_le_bytes());
+        final_section.extend_from_slice(&0xB018u16.to_le_bytes());
+        final_section.extend_from_slice(&0u16.to_le_bytes());
+        let sepx_grpprls = [
+            first.as_slice(),
+            malformed.as_slice(),
+            final_section.as_slice(),
+        ];
+        let bytes =
+            legacy_doc_with_section_page_grpprls("AAAAABBBBBCCCCC", &section_cps, &sepx_grpprls);
+        let document = Document::open(&bytes).unwrap();
+
+        let converted = document.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let page_margins = docx_page_margin_tags(&document_xml);
+        assert_eq!(page_margins.len(), 3, "{document_xml}");
+        assert!(page_margins[0].contains(r#"w:header="0""#));
+        assert!(page_margins[0].contains(r#"w:footer="400""#));
+        assert!(page_margins[1].contains(r#"w:header="708""#));
+        assert!(page_margins[1].contains(r#"w:footer="708""#));
+        assert!(page_margins[2].contains(r#"w:header="900""#));
+        assert!(page_margins[2].contains(r#"w:footer="0""#));
+        assert_eq!(converted, document.to_docx());
+
+        let reopened = Document::open(&converted).unwrap();
+        let Backend::Docx(state) = &reopened.backend else {
+            panic!("converted document must use the DOCX backend");
+        };
+        assert_eq!(
+            state.running_surface_distances,
+            [
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(0.0),
+                    footer_pt: Some(20.0),
+                },
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(35.4),
+                    footer_pt: Some(35.4),
+                },
+                crate::model::RunningSurfaceDistanceHints {
+                    header_pt: Some(45.0),
+                    footer_pt: Some(0.0),
+                },
+            ]
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_to_docx_preserves_private_section_column_semantics() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:sectPr><w:cols w:num="2" w:space="800" w:sep="1"/></w:sectPr></w:pPr>
+                    <w:r><w:t>ending section</w:t></w:r>
+                </w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:equalWidth="0">
+                    <w:col w:w="3000" w:space="200"/><w:col w:w="5000"/>
+                </w:cols><w:bidi/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        let converted = document.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let ending_columns = document_xml
+            .find(r#"<w:cols w:num="2" w:space="800" w:sep="1"/>"#)
+            .unwrap_or_else(|| panic!("ending-section column hints were lost: {document_xml}"));
+        let final_columns = document_xml
+            .find(
+                r#"<w:cols w:num="2" w:equalWidth="0"><w:col w:w="3000" w:space="200"/><w:col w:w="5000"/></w:cols>"#,
+            )
+            .unwrap_or_else(|| panic!("final-section column hints were lost: {document_xml}"));
+        assert!(ending_columns < final_columns, "{document_xml}");
+        assert!(document_xml.contains("<w:bidi/>"), "{document_xml}");
+        assert_eq!(converted, document.to_docx());
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(reopened.model().setup.columns, Some(2));
+        #[cfg(feature = "render")]
+        reopened.with_render_model_and_hints(|model, hints| {
+            let boundary = model
+                .blocks
+                .iter()
+                .position(|block| matches!(block, Block::SectionBreak(_)))
+                .expect("converted section boundary");
+            assert_eq!(hints.section_column_gap_pt[boundary], Some(40.0));
+            assert!(hints.section_column_separators[boundary]);
+            let layout = hints
+                .final_section_column_layout
+                .expect("converted final custom columns");
+            assert_eq!(layout.columns[0].width_pt, 150.0);
+            assert_eq!(layout.columns[0].space_after_pt, 10.0);
+            assert_eq!(layout.columns[1].width_pt, 250.0);
+            assert!(hints.final_section_column_rtl);
+        });
+
+        let model_only = write_docx(&document.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert_eq!(model_only_xml.matches(r#"<w:cols w:num="2"/>"#).count(), 2);
+        assert!(!model_only_xml.contains("w:equalWidth"));
+        assert!(!model_only_xml.contains("<w:bidi/>"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_to_docx_selects_column_branch_and_isolates_bad_geometry() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+                <w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:p><w:pPr><w:sectPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:cols w:num="2" w:space="600" w:sep="1"/></mc:Choice>
+                    <mc:Fallback><w:cols w:num="3" w:space="1200"/></mc:Fallback>
+                </mc:AlternateContent></w:sectPr></w:pPr><w:r><w:t>choice</w:t></w:r></w:p>
+                <w:p><w:pPr><w:sectPr><w:cols w:equalWidth="0" w:sep="1">
+                    <w:col w:w="0" w:space="400"/><w:col w:w="4000"/>
+                </w:cols><w:bidi/></w:sectPr></w:pPr><w:r><w:t>malformed</w:t></w:r></w:p>
+                <w:p><w:r><w:t>final</w:t></w:r></w:p>
+                <w:sectPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:cols w:num="2" w:space="200"/></mc:Choice>
+                    <mc:Fallback><w:cols w:num="4" w:space="1400"/></mc:Fallback>
+                </mc:AlternateContent></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        let document_xml = docx_part(&document.to_docx(), "word/document.xml");
+        let selected = document_xml
+            .find(r#"<w:cols w:num="2" w:space="600" w:sep="1"/>"#)
+            .expect("selected column branch");
+        let malformed = document_xml[selected + 1..]
+            .find(r#"<w:cols w:sep="1"/>"#)
+            .map(|index| selected + 1 + index)
+            .expect("malformed section fallback");
+        let final_section = document_xml[malformed + 1..]
+            .find(r#"<w:cols w:num="2" w:space="200"/>"#)
+            .map(|index| malformed + 1 + index)
+            .expect("final section columns");
+
+        assert!(selected < malformed && malformed < final_section);
+        assert!(!document_xml.contains(r#"w:num="3""#));
+        assert!(!document_xml.contains(r#"w:num="4""#));
+        assert!(!document_xml.contains(r#"w:space="1200""#));
+        assert!(!document_xml.contains(r#"w:space="1400""#));
+        assert!(!document_xml.contains("w:equalWidth"));
+        assert_eq!(document_xml.matches("<w:bidi/>").count(), 1);
+
+        let reopened = Document::open(&document.to_docx()).unwrap();
+        let section_columns = reopened
+            .model()
+            .blocks
+            .into_iter()
+            .filter_map(|block| match block {
+                Block::SectionBreak(section) => Some(section.columns),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(section_columns, [Some(2), None]);
+        assert_eq!(reopened.model().setup.columns, Some(2));
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_carries_section_local_equal_column_spacing_hints() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:sectPr><w:cols w:num="2" w:space="800"/></w:sectPr></w:pPr>
+                    <w:r><w:t>ending section</w:t></w:r>
+                </w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:num="2" w:space="200"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.section_column_gap_pt, &[None, Some(40.0), None]);
+            assert_eq!(hints.final_section_column_gap_pt, Some(10.0));
+        });
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_carries_section_local_unequal_column_geometry_hints() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:sectPr><w:cols w:equalWidth="0">
+                    <w:col w:w="2000" w:space="400"/><w:col w:w="4000"/>
+                </w:cols></w:sectPr></w:pPr><w:r><w:t>ending section</w:t></w:r></w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:equalWidth="false">
+                    <w:col w:w="3000" w:space="200"/><w:col w:w="5000"/>
+                </w:cols></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(model.setup.columns, Some(2));
+            let ending = hints.section_column_layouts[1]
+                .as_ref()
+                .expect("ending-section geometry");
+            assert_eq!(ending.columns[0].width_pt, 100.0);
+            assert_eq!(ending.columns[0].space_after_pt, 20.0);
+            assert_eq!(ending.columns[1].width_pt, 200.0);
+            assert!(hints.section_column_layouts[0].is_none());
+            assert!(hints.section_column_layouts[2].is_none());
+
+            let final_layout = hints
+                .final_section_column_layout
+                .expect("final-section geometry");
+            assert_eq!(final_layout.columns[0].width_pt, 150.0);
+            assert_eq!(final_layout.columns[0].space_after_pt, 10.0);
+            assert_eq!(final_layout.columns[1].width_pt, 250.0);
+        });
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_carries_section_local_column_separator_hints() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:sectPr><w:cols w:num="2" w:sep="on"/></w:sectPr></w:pPr>
+                    <w:r><w:t>ending section</w:t></w:r>
+                </w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:num="2" w:sep="true"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.section_column_separators, &[false, true, false]);
+            assert!(hints.final_section_column_separator);
+        });
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_carries_section_local_rtl_column_hints() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:sectPr><w:cols w:num="2"/><w:bidi w:val="off"/><w:bidi/></w:sectPr></w:pPr>
+                    <w:r><w:t>ending section</w:t></w:r>
+                </w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:num="2"/><w:bidi w:val="true"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.section_column_rtl, &[false, true, false]);
+            assert!(hints.final_section_column_rtl);
+        });
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_unequal_columns_change_preview_pdf_deterministically() {
+        let text = (0..24)
+            .map(|index| format!("word{index}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let xml = format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:r><w:t>{text}</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/>
+                    <w:cols w:equalWidth="0"><w:col w:w="1200" w:space="400"/><w:col w:w="2000"/></w:cols>
+                </w:sectPr>
+            </w:body></w:document>"#
+        );
+        let document = Document::open(&minimal_docx(&xml)).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        let opened_pdf = document.try_to_pdf_with_fonts(&fonts).unwrap();
+        let model_only_pdf = render_pdf_with_fonts(&document.model(), &fonts);
+
+        assert!(opened_pdf.starts_with(b"%PDF-"));
+        assert_eq!(opened_pdf, document.try_to_pdf_with_fonts(&fonts).unwrap());
+        assert_ne!(
+            opened_pdf, model_only_pdf,
+            "the public model intentionally omits unequal-column geometry"
+        );
+        assert_eq!(
+            document.layout_pages_with_fonts(&fonts).unwrap(),
+            document.layout_pages_with_fonts(&fonts).unwrap()
+        );
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_column_separator_changes_preview_pdf_without_layout_change() {
+        let document_xml = |separator: &str| {
+            format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                    <w:p><w:r><w:t>first column content</w:t></w:r></w:p>
+                    <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/>
+                        <w:cols w:num="2" w:space="400"{separator}/>
+                    </w:sectPr>
+                </w:body></w:document>"#
+            )
+        };
+        let without_separator =
+            Document::open(&minimal_docx(&document_xml(""))).expect("baseline DOCX");
+        let with_separator =
+            Document::open(&minimal_docx(&document_xml(r#" w:sep="1""#))).expect("separated DOCX");
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(without_separator.model(), with_separator.model());
+        assert_eq!(
+            without_separator.layout_pages_with_fonts(&fonts).unwrap(),
+            with_separator.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        let baseline_pdf = without_separator.try_to_pdf_with_fonts(&fonts).unwrap();
+        let separated_pdf = with_separator.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert_eq!(
+            separated_pdf,
+            with_separator.try_to_pdf_with_fonts(&fonts).unwrap()
+        );
+        assert_ne!(baseline_pdf, separated_pdf);
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_rtl_section_populates_columns_from_right_without_layout_change() {
+        let document_xml = |section_bidi: &str| {
+            format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                    <w:p><w:r><w:t>first logical column</w:t></w:r></w:p>
+                    <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/>
+                        <w:cols w:num="2" w:space="400"/>{section_bidi}
+                    </w:sectPr>
+                </w:body></w:document>"#
+            )
+        };
+        let ltr = Document::open(&minimal_docx(&document_xml(""))).expect("LTR DOCX");
+        let rtl = Document::open(&minimal_docx(&document_xml("<w:bidi/>"))).expect("RTL DOCX");
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(ltr.model(), rtl.model());
+        assert_eq!(
+            ltr.layout_pages_with_fonts(&fonts).unwrap(),
+            rtl.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        let ltr_pdf = ltr.try_to_pdf_with_fonts(&fonts).unwrap();
+        let rtl_pdf = rtl.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert_eq!(rtl_pdf, rtl.try_to_pdf_with_fonts(&fonts).unwrap());
+        assert_ne!(ltr_pdf, rtl_pdf);
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_one_column_separator_is_paint_inert() {
+        let document_xml = |separator: &str| {
+            format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                    <w:p><w:r><w:t>single column</w:t></w:r></w:p>
+                    <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/>
+                        <w:cols w:num="1"{separator}/>
+                    </w:sectPr>
+                </w:body></w:document>"#
+            )
+        };
+        let baseline = Document::open(&minimal_docx(&document_xml(""))).unwrap();
+        let separated = Document::open(&minimal_docx(&document_xml(r#" w:sep="1""#))).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(baseline.model(), separated.model());
+        assert_eq!(
+            baseline.layout_pages_with_fonts(&fonts).unwrap(),
+            separated.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        assert_eq!(
+            baseline.try_to_pdf_with_fonts(&fonts).unwrap(),
+            separated.try_to_pdf_with_fonts(&fonts).unwrap()
+        );
+    }
+
+    #[test]
+    fn legacy_doc_promotes_internal_page_breaks_without_duplicating_section_breaks() {
+        let single_text = "before\u{000c}after\r";
+        let single_end = single_text.encode_utf16().count() as u32;
+        let single = Document::open(&legacy_doc_with_section_page_grpprls(
+            single_text,
+            &[0, single_end],
+            &[&[]],
+        ))
+        .unwrap()
+        .model();
+        let [Block::Paragraph(before), Block::PageBreak, Block::Paragraph(after)] =
+            single.blocks.as_slice()
+        else {
+            panic!(
+                "manual page break must split the legacy paragraph: {:?}",
+                single.blocks
+            );
+        };
+        assert_eq!(before.text(), "before");
+        assert_eq!(after.text(), "after");
+
+        let first_section = "first\u{000c}";
+        let final_section = "second\u{000c}third\r";
+        let combined = format!("{first_section}{final_section}");
+        let first_end = first_section.encode_utf16().count() as u32;
+        let combined_end = combined.encode_utf16().count() as u32;
+        let sectioned = Document::open(&legacy_doc_with_section_page_grpprls(
+            &combined,
+            &[0, first_end, combined_end],
+            &[&[], &[]],
+        ))
+        .unwrap()
+        .model();
+        let [Block::Paragraph(first), Block::SectionBreak(_), Block::Paragraph(second), Block::PageBreak, Block::Paragraph(third)] =
+            sectioned.blocks.as_slice()
+        else {
+            panic!(
+                "section terminator and manual page break must stay distinct: {:?}",
+                sectioned.blocks
+            );
+        };
+        assert_eq!(first.text(), "first");
+        assert_eq!(second.text(), "second");
+        assert_eq!(third.text(), "third");
+
+        let main = "main\u{000c}body\r";
+        let footnote = "note\u{000c}body\r";
+        let stories_text = format!("{main}{footnote}");
+        let main_len = main.encode_utf16().count() as u32;
+        let footnote_len = footnote.encode_utf16().count() as u32;
+        let stories = Document::open(&synth_doc_with_ccp_and_tables(
+            &stories_text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, footnote_len, 0, 0, 0, 0],
+            SyntheticDocTables::default(),
+        ))
+        .unwrap()
+        .model();
+        let [Block::Paragraph(main_before), Block::PageBreak, Block::Paragraph(main_after), Block::Paragraph(note)] =
+            stories.blocks.as_slice()
+        else {
+            panic!(
+                "only the main story page break may be promoted: {:?}",
+                stories.blocks
+            );
+        };
+        assert_eq!(main_before.text(), "main");
+        assert_eq!(main_after.text(), "body");
+        assert_eq!(note.text(), "note\nbody");
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_manual_page_breaks_survive_fresh_docx_conversion() {
+        let text = "before\u{000c}after\r";
+        let text_end = text.encode_utf16().count() as u32;
+        let legacy = Document::open(&legacy_doc_with_section_page_grpprls(
+            text,
+            &[0, text_end],
+            &[&[]],
+        ))
+        .unwrap();
+
+        let reopened = Document::open(&legacy.to_docx()).unwrap().model();
+        let [Block::Paragraph(before), Block::PageBreak, Block::Paragraph(after)] =
+            reopened.blocks.as_slice()
+        else {
+            panic!("fresh DOCX conversion must retain the promoted page break");
+        };
+        assert_eq!(before.text(), "before");
+        assert_eq!(after.text(), "after");
+    }
+
+    #[cfg(feature = "render")]
+    fn legacy_manual_column_break_layout_doc() -> Vec<u8> {
+        let text = "left\u{000e}right\u{000e}page two\r\u{000e}\rafter orphan\r";
+        let text_end = text.encode_utf16().count() as u32;
+        let mut section = section_page_grpprl(4400, 3000, 400, 400, 400, 400, false);
+        push_section_column_count(&mut section, 1);
+        legacy_doc_with_section_page_grpprls(text, &[0, text_end], &[&section])
+    }
+
+    #[cfg(feature = "docx")]
+    fn legacy_table_cell_column_break_conversion_doc() -> Vec<u8> {
+        let text = "A\u{000e}B\rC\u{000e}D\u{0007}\u{0007}TAIL\r";
+        let first_paragraph_end = "A\u{000e}B\r".encode_utf16().count() as u32;
+        let cell_end = "A\u{000e}B\rC\u{000e}D\u{0007}".encode_utf16().count() as u32;
+        let row_end = cell_end + 1;
+        let text_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        let runs = [
+            SyntheticPapxRun {
+                cp_lim: first_paragraph_end,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: cell_end,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: row_end,
+                grpprl: row_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: text_end,
+                grpprl: Vec::new(),
+            },
+        ];
+        synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_manual_column_breaks_reach_preview_flow() {
+        let document = Document::open(&legacy_manual_column_break_layout_doc()).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(document.model().blocks.len(), 3);
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.column_break_offsets, &[vec![4, 10], vec![0], vec![]]);
+        });
+
+        let model_only = layout_pages_with_fonts(&document.model(), &fonts).unwrap();
+        let opened = document.layout_pages_with_fonts(&fonts).unwrap();
+        assert_eq!(model_only.pages, 1);
+        assert_eq!(model_only.block_pages, vec![Some(1), Some(1), Some(1)]);
+        assert_eq!(opened.pages, 2);
+        assert_eq!(opened.block_pages, vec![Some(1), Some(2), Some(2)]);
+        assert_eq!(opened, document.layout_pages_with_fonts(&fonts).unwrap());
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_column_break_capture_is_visible_main_story_only() {
+        let hidden_text = "A\u{000e}B\u{000e}C\r";
+        let hidden_text_end = hidden_text.encode_utf16().count() as u32;
+        let mut section = section_page_grpprl(4400, 3000, 400, 400, 400, 400, false);
+        push_section_column_count(&mut section, 1);
+        let section_cps = [0, hidden_text_end];
+        let section_grpprls = [section.as_slice()];
+        let chpx_runs = [
+            SyntheticChpxRun {
+                cp_lim: 3,
+                grpprl: Vec::new(),
+            },
+            SyntheticChpxRun {
+                cp_lim: 4,
+                grpprl: vec![0x3C, 0x08, 0x01],
+            },
+            SyntheticChpxRun {
+                cp_lim: hidden_text_end,
+                grpprl: Vec::new(),
+            },
+        ];
+        let hidden = Document::open(&synth_doc_with_ccp_and_tables(
+            hidden_text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [hidden_text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_sed_cps: Some(&section_cps),
+                plcf_sed_sepx_grpprls: Some(&section_grpprls),
+                chpx_runs: Some(&chpx_runs),
+                ..SyntheticDocTables::default()
+            },
+        ))
+        .unwrap();
+        hidden.with_render_model_and_hints(|model, hints| {
+            assert_eq!(single_paragraph_text(&model.blocks), "A\nB\nC");
+            assert_eq!(hints.column_break_offsets, &[vec![1]]);
+        });
+
+        let main = "M\u{000e}N\r";
+        let footnote = "F\u{000e}G\r";
+        let combined = format!("{main}{footnote}");
+        let main_len = main.encode_utf16().count() as u32;
+        let footnote_len = footnote.encode_utf16().count() as u32;
+        let stories = Document::open(&synth_doc_with_ccp_and_tables(
+            &combined,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, footnote_len, 0, 0, 0, 0],
+            SyntheticDocTables::default(),
+        ))
+        .unwrap();
+        stories.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 2);
+            assert_eq!(hints.column_break_offsets, &[vec![1], vec![]]);
+        });
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_manual_column_breaks_reach_preview_flow() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:r><w:t>left</w:t><w:br w:type=" column "/><w:t>right</w:t><w:br w:type="column"/><w:t>page two</w:t></w:r></w:p>
+                <w:p><w:r><w:br w:type="column"/></w:r></w:p>
+                <w:p><w:r><w:t>after orphan</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(document.model().blocks.len(), 3);
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.column_break_offsets, &[vec![4, 10], vec![0], vec![]]);
+        });
+
+        let model_only = layout_pages_with_fonts(&document.model(), &fonts).unwrap();
+        let opened = document.layout_pages_with_fonts(&fonts).unwrap();
+        assert_eq!(model_only.pages, 1);
+        assert_eq!(model_only.block_pages, vec![Some(1), Some(1), Some(1)]);
+        assert_eq!(opened.pages, 2);
+        assert_eq!(opened.block_pages, vec![Some(1), Some(2), Some(2)]);
+        assert_eq!(opened, document.layout_pages_with_fonts(&fonts).unwrap());
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_column_break_capture_is_visible_top_level_body_only() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:r><w:t>A</w:t><w:br w:type="column"/><w:t>B</w:t></w:r></w:p>
+                <w:p><w:r><w:t>C</w:t><w:br/><w:t>D</w:t></w:r><w:r><w:rPr><w:vanish/></w:rPr><w:br w:type="column"/></w:r></w:p>
+                <w:tbl><w:tr><w:tc><w:p><w:r><w:t>E</w:t><w:br w:type="column"/><w:t>F</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:p><w:r><w:t>G</w:t><w:br w:type="column"/><w:t>H</w:t><w:br w:type="page"/><w:t>I</w:t><w:br w:type="column"/><w:t>J</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 6);
+            assert_eq!(
+                hints.column_break_offsets,
+                &[vec![1], vec![], vec![], vec![1], vec![], vec![1]]
+            );
+        });
+        let model = document.model();
+        let Block::Paragraph(first) = &model.blocks[0] else {
+            panic!("first body block must be a paragraph");
+        };
+        let Block::Paragraph(second) = &model.blocks[1] else {
+            panic!("second body block must be a paragraph");
+        };
+        assert_eq!(first.text(), "A\nB");
+        assert_eq!(second.text(), "C\nD\n");
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_absolute_line_spacing_reaches_preview_flow() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr><w:r><w:t>exact</w:t></w:r></w:p>
+                <w:p><w:pPr><w:spacing w:line="600" w:lineRule="atLeast"/></w:pPr><w:r><w:t>minimum</w:t></w:r></w:p>
+                <w:tbl><w:tr><w:tc><w:p><w:pPr><w:spacing w:line="1000" w:lineRule="exact"/></w:pPr><w:r><w:t>cell ceiling</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>before</w:t><w:br w:type="page"/><w:t>after</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 6);
+            assert_eq!(
+                hints.line_spacing,
+                &[
+                    Some(crate::model::LineSpacingHint::Exact(40.0)),
+                    Some(crate::model::LineSpacingHint::AtLeast(30.0)),
+                    None,
+                    Some(crate::model::LineSpacingHint::Exact(20.0)),
+                    None,
+                    Some(crate::model::LineSpacingHint::Exact(20.0)),
+                ]
+            );
+            for paragraph in model.blocks.iter().filter_map(|block| match block {
+                Block::Paragraph(paragraph) => Some(paragraph),
+                _ => None,
+            }) {
+                assert_eq!(paragraph.props.spacing.line_pct, None);
+            }
+        });
+
+        let opened_pdf = document.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert!(opened_pdf.starts_with(b"%PDF-"));
+        assert_eq!(opened_pdf, document.try_to_pdf_with_fonts(&fonts).unwrap());
+        assert_ne!(
+            opened_pdf,
+            render_pdf_with_fonts(&document.model(), &fonts),
+            "the public model intentionally has no absolute line-spacing representation"
+        );
+        assert_eq!(
+            document.layout_pages_with_fonts(&fonts).unwrap(),
+            document.layout_pages_with_fonts(&fonts).unwrap()
+        );
+    }
+
     #[cfg(all(feature = "docx", feature = "render"))]
     #[test]
     fn opened_docx_tabs_keep_page_margin_coordinates_under_paragraph_indents() {
@@ -11113,7 +15750,7 @@ mod tests {
         stylesheet
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn push_legacy_pagination_fixture_spacing(grpprl: &mut Vec<u8>) {
         push_paragraph_spacing_twips(grpprl, 0xA414, 120);
         push_paragraph_line_spacing(grpprl, 324, 1);
@@ -11184,7 +15821,7 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn legacy_row_pagination_doc(row_properties: &[(u16, u8)]) -> Vec<u8> {
         let mut text = String::new();
         for index in 0..32 {
@@ -11387,6 +16024,101 @@ mod tests {
             0,
             [text_end, 0, 0, 0, 0, 0],
             SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "docx")]
+    fn legacy_table_cell_pagination_conversion_doc() -> Vec<u8> {
+        const KEEP_LINES: u16 = 0x2405;
+        const KEEP_NEXT: u16 = 0x2406;
+        const PAGE_BREAK_BEFORE: u16 = 0x2407;
+        const WIDOW_CONTROL: u16 = 0x2431;
+
+        let properties = |values: &[(u16, u8)]| {
+            let mut grpprl = Vec::with_capacity(values.len() * 3);
+            for &(sprm, value) in values {
+                grpprl.extend_from_slice(&sprm.to_le_bytes());
+                grpprl.push(value);
+            }
+            grpprl
+        };
+        let style_properties = properties(&[
+            (KEEP_LINES, 1),
+            (KEEP_NEXT, 1),
+            (PAGE_BREAK_BEFORE, 1),
+            (WIDOW_CONTROL, 0),
+        ]);
+        let stylesheet = synthetic_paragraph_stylesheet_grpprl(&style_properties);
+
+        let mut combined = properties(&[
+            (KEEP_LINES, 1),
+            (KEEP_NEXT, 1),
+            (PAGE_BREAK_BEFORE, 1),
+            (WIDOW_CONTROL, 0),
+        ]);
+        push_paragraph_line_spacing(&mut combined, 0xFF9C, 0);
+        let mut style_cleared = vec![0x00, 0x46, 0x01, 0x00];
+        style_cleared.extend(properties(&[
+            (KEEP_LINES, 0),
+            (KEEP_NEXT, 0),
+            (PAGE_BREAK_BEFORE, 0),
+            (WIDOW_CONTROL, 1),
+        ]));
+        let paragraphs = [
+            ("Default", Vec::new()),
+            ("KeepNext", properties(&[(KEEP_NEXT, 1)])),
+            ("KeepLines", properties(&[(KEEP_LINES, 1)])),
+            ("WidowOff", properties(&[(WIDOW_CONTROL, 0)])),
+            ("Combined", combined),
+            ("StyleAll", vec![0x00, 0x46, 0x01, 0x00]),
+            ("StyleCleared", style_cleared),
+        ];
+
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        let paragraph_count = paragraphs.len();
+        for (index, (label, properties)) in paragraphs.into_iter().enumerate() {
+            text.push_str(label);
+            text.push(if index + 1 == paragraph_count {
+                '\u{7}'
+            } else {
+                '\r'
+            });
+            let mut grpprl = vec![0x16, 0x24, 0x01];
+            grpprl.extend(properties);
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        text.push('\u{7}');
+        let text_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        row_grpprl.extend_from_slice(&[0x66, 0x34, 0x01]); // sprmTFCantSplit
+        runs.push(SyntheticPapxRun {
+            cp_lim: text_end,
+            grpprl: row_grpprl,
+        });
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
                 papx_runs: Some(&runs),
                 ..SyntheticDocTables::default()
             },
@@ -11646,6 +16378,717 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_table_cell_pagination_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_table_cell_pagination_conversion_doc()).unwrap();
+        let converted = legacy.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        let default = docx_paragraph_with_text(&document_xml, "Default");
+        assert!(!default.contains("<w:keepNext"), "{default}");
+        assert!(!default.contains("<w:keepLines"), "{default}");
+        assert!(!default.contains("<w:widowControl"), "{default}");
+        let keep_next = docx_paragraph_with_text(&document_xml, "KeepNext");
+        assert!(keep_next.contains("<w:keepNext/>"), "{keep_next}");
+        let keep_lines = docx_paragraph_with_text(&document_xml, "KeepLines");
+        assert!(keep_lines.contains("<w:keepLines/>"), "{keep_lines}");
+        let widow_off = docx_paragraph_with_text(&document_xml, "WidowOff");
+        assert!(
+            widow_off.contains(r#"<w:widowControl w:val="0"/>"#),
+            "{widow_off}"
+        );
+        let combined = docx_paragraph_with_text(&document_xml, "Combined");
+        assert!(
+            combined.contains(concat!(
+                "<w:pPr><w:keepNext/><w:keepLines/><w:pageBreakBefore/>",
+                r#"<w:widowControl w:val="0"/>"#,
+                r#"<w:spacing w:before="0" w:after="0" w:line="100" w:lineRule="exact"/>"#,
+            )),
+            "{combined}"
+        );
+        let style_all = docx_paragraph_with_text(&document_xml, "StyleAll");
+        assert!(
+            style_all.contains(concat!(
+                r#"<w:pPr><w:pStyle w:val="Heading1"/><w:keepNext/><w:keepLines/>"#,
+                r#"<w:pageBreakBefore/><w:widowControl w:val="0"/>"#,
+            )),
+            "{style_all}"
+        );
+        let style_cleared = docx_paragraph_with_text(&document_xml, "StyleCleared");
+        assert!(!style_cleared.contains("<w:keepNext"), "{style_cleared}");
+        assert!(!style_cleared.contains("<w:keepLines"), "{style_cleared}");
+        assert!(
+            !style_cleared.contains("<w:pageBreakBefore"),
+            "{style_cleared}"
+        );
+        assert!(
+            !style_cleared.contains("<w:widowControl"),
+            "{style_cleared}"
+        );
+        assert!(
+            document_xml.contains("<w:tr><w:trPr><w:cantSplit/></w:trPr>"),
+            "{document_xml}"
+        );
+        assert_eq!(converted, legacy.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&legacy.model()), "word/document.xml");
+        assert!(!model_only_xml.contains("<w:keepNext"));
+        assert!(!model_only_xml.contains("<w:keepLines"));
+        assert!(!model_only_xml.contains("<w:widowControl"));
+        assert!(!model_only_xml.contains("<w:cantSplit"));
+        assert!(!model_only_xml.contains(r#"w:lineRule="exact""#));
+
+        let docx_backed = Document::open(&converted).unwrap();
+        let docx_backed_xml = docx_part(&docx_backed.to_docx(), "word/document.xml");
+        assert_eq!(docx_backed_xml.matches("<w:keepNext").count(), 3);
+        assert_eq!(docx_backed_xml.matches("<w:keepLines").count(), 3);
+        assert_eq!(docx_backed_xml.matches("<w:widowControl").count(), 3);
+        assert_eq!(docx_backed_xml.matches("<w:cantSplit").count(), 1);
+        assert_eq!(docx_backed_xml.matches(r#"w:lineRule="exact""#).count(), 1);
+
+        #[cfg(feature = "render")]
+        {
+            let Backend::Docx(state) = docx_backed.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            let hints = state
+                .table_cell_pagination
+                .into_iter()
+                .find(|table| !table.is_empty())
+                .and_then(|table| table.first().cloned())
+                .and_then(|row| row.first().cloned())
+                .expect("converted table-cell pagination hints");
+            let widow_on = crate::model::PaginationHint {
+                widow_control: true,
+                ..crate::model::PaginationHint::default()
+            };
+            assert_eq!(
+                hints,
+                vec![
+                    Some(widow_on),
+                    Some(crate::model::PaginationHint {
+                        keep_next: true,
+                        ..widow_on
+                    }),
+                    Some(crate::model::PaginationHint {
+                        keep_lines: true,
+                        ..widow_on
+                    }),
+                    Some(crate::model::PaginationHint::default()),
+                    Some(crate::model::PaginationHint {
+                        keep_next: true,
+                        keep_lines: true,
+                        widow_control: false,
+                    }),
+                    Some(crate::model::PaginationHint {
+                        keep_next: true,
+                        keep_lines: true,
+                        widow_control: false,
+                    }),
+                    Some(widow_on),
+                ]
+            );
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_body_layout_hints_roundtrip_through_fresh_conversion() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:spacing w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>top</w:t></w:r></w:p>
+                <w:tbl><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>
+                    <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:spacing w:line="400" w:lineRule="atLeast"/></w:pPr><w:r><w:t>cell</w:t><w:br w:type="page"/><w:t>cell after</w:t></w:r></w:p>
+                    <w:tbl><w:tr><w:tc><w:p><w:pPr><w:keepNext/><w:spacing w:line="600" w:lineRule="exact"/></w:pPr><w:r><w:t>nested</w:t><w:br w:type="page"/><w:t>nested after</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                </w:tc></w:tr></w:tbl>
+                <w:sectPr/>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let source_model = opened.model();
+        let model_only = write_docx(&source_model);
+        let normalized_blocks = Document::open(&model_only).unwrap().model().blocks;
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let top = docx_paragraph_with_text(&document_xml, "top");
+
+        assert!(top.contains("<w:keepNext/>"), "{top}");
+        assert!(top.contains("<w:keepLines/>"), "{top}");
+        assert!(top.contains(r#"<w:widowControl w:val="0"/>"#), "{top}");
+        assert!(top.contains(r#"w:line="200" w:lineRule="exact""#), "{top}");
+        assert!(document_xml.contains("<w:cantSplit/>"), "{document_xml}");
+        let cell = docx_paragraph_with_text(&document_xml, "cell");
+        assert!(cell.contains("<w:keepNext/>"), "{cell}");
+        assert!(cell.contains("<w:keepLines/>"), "{cell}");
+        assert!(cell.contains(r#"<w:widowControl w:val="0"/>"#), "{cell}");
+        assert!(
+            cell.contains(r#"w:line="400" w:lineRule="atLeast""#),
+            "{cell}"
+        );
+        let nested = docx_paragraph_with_text(&document_xml, "nested");
+        assert!(nested.contains("<w:keepNext/>"), "{nested}");
+        assert!(
+            nested.contains(r#"w:line="600" w:lineRule="exact""#),
+            "{nested}"
+        );
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="page"/>"#).count(),
+            2,
+            "{document_xml}"
+        );
+        assert!(!document_xml.contains("<w:tabs>"), "{document_xml}");
+        assert_eq!(converted, opened.to_docx());
+        assert_eq!(opened.model(), source_model);
+
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert_eq!(
+            model_only_xml.matches(r#"<w:br w:type="page"/>"#).count(),
+            2,
+            "{model_only_xml}"
+        );
+        assert!(!model_only_xml.contains("<w:keepNext"));
+        assert!(!model_only_xml.contains("<w:keepLines"));
+        assert!(!model_only_xml.contains("<w:widowControl"));
+        assert!(!model_only_xml.contains("<w:cantSplit"));
+        assert!(!model_only_xml.contains(r#"w:lineRule="exact""#));
+        assert!(!model_only_xml.contains(r#"w:lineRule="atLeast""#));
+        assert!(!model_only_xml.contains("<w:tabs>"));
+
+        let reopened = Document::open(&converted).unwrap();
+        let Backend::Docx(state) = reopened.backend else {
+            panic!("converted document must use the DOCX backend");
+        };
+        assert_eq!(state.model.blocks, normalized_blocks);
+        assert_eq!(
+            state.pagination_hints[0],
+            crate::model::PaginationHint {
+                keep_next: true,
+                keep_lines: true,
+                widow_control: false,
+            }
+        );
+        assert_eq!(
+            state.line_spacing_hints[0],
+            Some(crate::model::LineSpacingHint::Exact(10.0))
+        );
+        let table_index = state
+            .model
+            .blocks
+            .iter()
+            .position(|block| matches!(block, Block::Table(_)))
+            .expect("converted top-level table");
+        assert!(state.table_row_pagination[table_index][0].cant_split);
+        assert_eq!(
+            state.table_cell_pagination[table_index][0][0][0],
+            Some(crate::model::PaginationHint {
+                keep_next: true,
+                keep_lines: true,
+                widow_control: false,
+            })
+        );
+        assert_eq!(
+            state.table_cell_line_spacing[table_index][0][0][0],
+            Some(crate::model::LineSpacingHint::AtLeast(20.0))
+        );
+        let nested_hints = state.table_nested_pagination[table_index][0][0][3]
+            .as_ref()
+            .expect("converted nested table hints");
+        assert!(nested_hints.cells[0][0][0]
+            .as_ref()
+            .is_some_and(|hint| hint.keep_next));
+        assert_eq!(
+            nested_hints.cell_line_spacing[0][0][0],
+            Some(crate::model::LineSpacingHint::Exact(30.0))
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_direct_body_tab_stops_roundtrip_through_fresh_conversion() {
+        let source = minimal_docx_with_styles(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:pStyle w:val="Normal"/><w:keepNext/><w:shd w:val="clear" w:fill="DDEEFF"/><w:tabs>
+                    <w:tab w:val="clear" w:pos="720"/>
+                    <w:tab w:val="right" w:pos="2160" w:leader="underscore"/>
+                    <w:tab w:val="decimal" w:pos="2880" w:leader="heavy"/>
+                    <w:tab w:val="bar" w:pos="3600" w:leader="middleDot"/>
+                    <w:tab w:val="left" w:pos="4320" w:leader="dot"/>
+                </w:tabs><w:bidi/><w:spacing w:line="240" w:lineRule="auto"/><w:ind w:left="360"/><w:jc w:val="right"/></w:pPr><w:r><w:t>top-tabs</w:t><w:tab/><w:t>tail</w:t></w:r></w:p>
+                <w:tbl><w:tr><w:tc>
+                    <w:p><w:pPr><w:tabs><w:tab w:val="clear" w:pos="720"/><w:tab w:val="center" w:pos="900"/><w:tab w:val="clear" w:pos="1440"/></w:tabs></w:pPr><w:r><w:t>cell-tabs</w:t><w:tab/><w:t>tail</w:t></w:r></w:p>
+                    <w:tbl><w:tr><w:tc><w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="1800" w:leader="dot"/></w:tabs></w:pPr><w:r><w:t>nested-tabs</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                </w:tc></w:tr></w:tbl>
+                <w:sectPr/>
+            </w:body></w:document>"#,
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:tabs>
+                    <w:tab w:val="left" w:pos="720" w:leader="dot"/>
+                    <w:tab w:val="center" w:pos="1440" w:leader="hyphen"/>
+                </w:tabs></w:pPr></w:style>
+            </w:styles>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let top = docx_paragraph_with_text(&document_xml, "top-tabs");
+
+        let top_tabs = concat!(
+            r#"<w:tabs><w:tab w:val="center" w:pos="1440" w:leader="hyphen"/>"#,
+            r#"<w:tab w:val="right" w:pos="2160" w:leader="underscore"/>"#,
+            r#"<w:tab w:val="decimal" w:pos="2880" w:leader="heavy"/>"#,
+            r#"<w:tab w:val="bar" w:pos="3600" w:leader="middleDot"/>"#,
+            r#"<w:tab w:val="left" w:pos="4320" w:leader="dot"/></w:tabs>"#,
+        );
+        assert!(top.contains(top_tabs), "{top}");
+        let positions = [
+            "<w:pStyle",
+            "<w:keepNext",
+            "<w:shd",
+            "<w:tabs>",
+            "<w:bidi",
+            "<w:spacing",
+            "<w:ind",
+            "<w:jc",
+        ]
+        .map(|marker| {
+            top.find(marker)
+                .unwrap_or_else(|| panic!("missing {marker}: {top}"))
+        });
+        assert!(positions.windows(2).all(|pair| pair[0] < pair[1]), "{top}");
+
+        let cell = docx_paragraph_with_text(&document_xml, "cell-tabs");
+        assert!(
+            cell.contains(r#"<w:tabs><w:tab w:val="center" w:pos="900"/></w:tabs>"#),
+            "{cell}"
+        );
+        let nested = docx_paragraph_with_text(&document_xml, "nested-tabs");
+        assert!(
+            nested.contains(r#"<w:tab w:val="right" w:pos="1800" w:leader="dot"/>"#),
+            "{nested}"
+        );
+        assert_eq!(converted, opened.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&opened.model()), "word/document.xml");
+        assert!(!model_only_xml.contains("<w:tabs>"), "{model_only_xml}");
+
+        let reopened = Document::open(&converted).unwrap();
+        let Backend::Docx(state) = reopened.backend else {
+            panic!("converted document must use the DOCX backend");
+        };
+        assert_eq!(
+            state.tab_stops[0],
+            vec![
+                crate::model::TabStop {
+                    position_pt: 72.0,
+                    alignment: crate::model::TabAlignment::Center,
+                    leader: crate::model::TabLeader::Hyphen,
+                },
+                crate::model::TabStop {
+                    position_pt: 108.0,
+                    alignment: crate::model::TabAlignment::Right,
+                    leader: crate::model::TabLeader::Underscore,
+                },
+                crate::model::TabStop {
+                    position_pt: 144.0,
+                    alignment: crate::model::TabAlignment::Decimal,
+                    leader: crate::model::TabLeader::Heavy,
+                },
+                crate::model::TabStop {
+                    position_pt: 180.0,
+                    alignment: crate::model::TabAlignment::Bar,
+                    leader: crate::model::TabLeader::MiddleDot,
+                },
+                crate::model::TabStop {
+                    position_pt: 216.0,
+                    alignment: crate::model::TabAlignment::Left,
+                    leader: crate::model::TabLeader::Dot,
+                },
+            ]
+        );
+        let table_index = state
+            .model
+            .blocks
+            .iter()
+            .position(|block| matches!(block, Block::Table(_)))
+            .expect("converted top-level table");
+        assert_eq!(
+            state.table_cell_tab_stops[table_index][0][0][0],
+            vec![crate::model::TabStop {
+                position_pt: 45.0,
+                alignment: crate::model::TabAlignment::Center,
+                leader: crate::model::TabLeader::None,
+            }]
+        );
+        let nested_hints = state.table_nested_pagination[table_index][0][0][1]
+            .as_ref()
+            .expect("converted nested table hints");
+        assert_eq!(
+            nested_hints.cell_tabs[0][0][0],
+            vec![
+                crate::model::TabStop {
+                    position_pt: 36.0,
+                    alignment: crate::model::TabAlignment::Left,
+                    leader: crate::model::TabLeader::Dot,
+                },
+                crate::model::TabStop {
+                    position_pt: 72.0,
+                    alignment: crate::model::TabAlignment::Center,
+                    leader: crate::model::TabLeader::Hyphen,
+                },
+                crate::model::TabStop {
+                    position_pt: 90.0,
+                    alignment: crate::model::TabAlignment::Right,
+                    leader: crate::model::TabLeader::Dot,
+                },
+            ]
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_table_cell_column_break_roundtrips_through_fresh_conversion() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="auto"/><w:left w:val="single" w:sz="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:color="auto"/><w:right w:val="single" w:sz="4" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:color="auto"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>A</w:t><w:br w:type="column"/><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let source_blocks = opened.model().blocks;
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            1,
+            "{document_xml}"
+        );
+        assert!(!document_xml.contains("<w:br/>"), "{document_xml}");
+        assert_eq!(converted, opened.to_docx());
+        assert_eq!(
+            Document::open(&converted).unwrap().model().blocks,
+            source_blocks
+        );
+
+        let model_only_xml = docx_part(&write_docx(&opened.model()), "word/document.xml");
+        assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_table_cell_column_breaks_follow_wrappers_and_merge_survivors() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="auto"/><w:left w:val="single" w:sz="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:color="auto"/><w:right w:val="single" w:sz="4" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:color="auto"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="4500"/><w:gridCol w:w="4500"/></w:tblGrid>
+                    <w:tr>
+                        <w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>A</w:t><w:br w:type="column"/><w:t>B</w:t></w:r><w:r><w:rPr><w:vanish/></w:rPr><w:br w:type="column"/><w:t>HIDDEN</w:t></w:r></w:p><w:p><w:sdt><w:sdtPr><w:tag w:val="cell-break"/></w:sdtPr><w:sdtContent><w:r><w:t>C</w:t><w:br w:type=" column "/><w:t>D</w:t></w:r></w:sdtContent></w:sdt></w:p></w:tc>
+                        <w:tc><w:p><w:r><w:t>E</w:t><w:br/><w:t>F</w:t><w:br w:type="column"/><w:t>G</w:t></w:r></w:p></w:tc>
+                    </w:tr>
+                    <w:tr>
+                        <w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:r><w:t>DROP</w:t><w:br w:type="column"/><w:t>LEAK</w:t></w:r></w:p></w:tc>
+                        <w:tc><w:p><w:r><w:t>TAIL</w:t></w:r></w:p></w:tc>
+                    </w:tr>
+                </w:tbl>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let Backend::Docx(state) = &opened.backend else {
+            panic!("fixture must open through the DOCX backend");
+        };
+        assert_eq!(
+            state.table_cell_column_break_offsets,
+            vec![vec![
+                vec![vec![vec![1], vec![1]], vec![vec![3]]],
+                vec![vec![vec![]]],
+            ]]
+        );
+        let source_blocks = opened.model().blocks;
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            3,
+            "{document_xml}"
+        );
+        assert_eq!(document_xml.matches("<w:br/>").count(), 2, "{document_xml}");
+        assert!(document_xml.contains("<w:sdt>"), "{document_xml}");
+        assert!(!document_xml.contains("DROP"), "{document_xml}");
+        assert!(!document_xml.contains("LEAK"), "{document_xml}");
+        assert_eq!(converted, opened.to_docx());
+        assert_eq!(
+            Document::open(&converted).unwrap().model().blocks,
+            source_blocks
+        );
+
+        let model_only_xml = docx_part(&write_docx(&opened.model()), "word/document.xml");
+        assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_nested_table_layout_hints_roundtrip_through_fresh_conversion() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tr><w:tc>
+                    <w:tbl><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>
+                        <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="240" w:lineRule="exact"/><w:tabs><w:tab w:val="right" w:pos="1440" w:leader="dot"/></w:tabs></w:pPr>
+                            <w:r><w:t>A</w:t><w:tab/><w:t>B</w:t><w:br w:type="column"/><w:t>C</w:t></w:r>
+                        </w:p>
+                    </w:tc></w:tr></w:tbl>
+                    <w:p><w:r><w:t>outer tail</w:t></w:r></w:p>
+                </w:tc></w:tr></w:tbl>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        assert!(document_xml.contains("<w:cantSplit/>"), "{document_xml}");
+        assert!(document_xml.contains("<w:keepNext/>"), "{document_xml}");
+        assert!(document_xml.contains("<w:keepLines/>"), "{document_xml}");
+        assert!(
+            document_xml.contains(r#"<w:widowControl w:val="0"/>"#),
+            "{document_xml}"
+        );
+        assert!(
+            document_xml.contains(r#"w:line="240" w:lineRule="exact""#),
+            "{document_xml}"
+        );
+        assert!(
+            document_xml.contains(r#"<w:tab w:val="right" w:pos="1440" w:leader="dot"/>"#),
+            "{document_xml}"
+        );
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            1,
+            "{document_xml}"
+        );
+        assert_eq!(converted, opened.to_docx());
+
+        let model_only = write_docx(&opened.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        for marker in [
+            "<w:cantSplit/>",
+            "<w:keepNext/>",
+            "<w:keepLines/>",
+            r#"w:lineRule="exact""#,
+            r#"w:leader="dot""#,
+            r#"<w:br w:type="column"/>"#,
+        ] {
+            assert!(!model_only_xml.contains(marker), "{model_only_xml}");
+        }
+        assert_eq!(model_only_xml.matches("<w:br/>").count(), 1);
+        assert_eq!(
+            Document::open(&converted).unwrap().model().blocks,
+            Document::open(&model_only).unwrap().model().blocks
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_deep_nested_table_hints_follow_wrappers_and_merge_survivors() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tr><w:tc>
+                    <w:tbl>
+                        <w:tr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr>
+                            <w:sdt><w:sdtContent><w:tbl><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>
+                                <w:p><w:pPr><w:keepNext/><w:spacing w:line="280" w:lineRule="atLeast"/><w:tabs><w:tab w:val="center" w:pos="1080" w:leader="hyphen"/></w:tabs></w:pPr>
+                                    <w:r><w:t>D</w:t><w:tab/><w:t>E</w:t><w:br w:type="column"/><w:t>F</w:t></w:r>
+                                </w:p>
+                            </w:tc></w:tr></w:tbl></w:sdtContent></w:sdt>
+                            <w:p><w:r><w:t>survivor tail</w:t></w:r></w:p>
+                        </w:tc></w:tr>
+                        <w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr>
+                            <w:tbl><w:tr><w:tc><w:p><w:pPr><w:keepLines/><w:spacing w:line="999" w:lineRule="exact"/></w:pPr><w:r><w:t>LEAK</w:t><w:br w:type="column"/><w:t>DROP</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                        </w:tc></w:tr>
+                    </w:tbl>
+                    <w:p><w:r><w:t>outer tail</w:t></w:r></w:p>
+                </w:tc></w:tr></w:tbl>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        assert_eq!(document_xml.matches("<w:cantSplit/>").count(), 1);
+        assert_eq!(document_xml.matches("<w:keepNext/>").count(), 1);
+        assert!(
+            document_xml.contains(r#"w:line="280" w:lineRule="atLeast""#),
+            "{document_xml}"
+        );
+        assert!(
+            document_xml.contains(r#"<w:tab w:val="center" w:pos="1080" w:leader="hyphen"/>"#),
+            "{document_xml}"
+        );
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            1,
+            "{document_xml}"
+        );
+        assert!(!document_xml.contains("LEAK"), "{document_xml}");
+        assert!(!document_xml.contains("DROP"), "{document_xml}");
+        assert!(!document_xml.contains(r#"w:line="999""#), "{document_xml}");
+        assert_eq!(converted, opened.to_docx());
+
+        let model_only = write_docx(&opened.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert!(!model_only_xml.contains("<w:cantSplit/>"));
+        assert!(!model_only_xml.contains("<w:keepNext/>"));
+        assert!(!model_only_xml.contains(r#"w:lineRule="atLeast""#));
+        assert!(!model_only_xml.contains(r#"w:leader="hyphen""#));
+        assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+        assert_eq!(
+            Document::open(&converted).unwrap().model().blocks,
+            Document::open(&model_only).unwrap().model().blocks
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_table_cell_column_breaks_roundtrip_through_fresh_conversion() {
+        let legacy = Document::open(&legacy_table_cell_column_break_conversion_doc()).unwrap();
+        let assembled = legacy_build_output_from_doc_state(match &legacy.backend {
+            Backend::Doc(state) => state,
+            Backend::Docx(_) => panic!("fixture must open through the legacy backend"),
+        });
+        assert_eq!(
+            assembled.table_cell_column_break_offsets,
+            vec![vec![vec![vec![vec![1], vec![1]]]], Vec::new()]
+        );
+
+        let converted = legacy.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            2,
+            "{document_xml}"
+        );
+        assert!(!document_xml.contains("<w:br/>"), "{document_xml}");
+        assert_eq!(converted, legacy.to_docx());
+
+        let model_only = write_docx(&legacy.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+        assert_eq!(model_only_xml.matches("<w:br/>").count(), 2);
+        assert_eq!(
+            Document::open(&converted).unwrap().model().blocks,
+            Document::open(&model_only).unwrap().model().blocks
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_document_manual_column_breaks_roundtrip_through_fresh_conversion() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:r><w:t>A</w:t><w:br w:type="column"/><w:t>B</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:br w:type=" column "/><w:t>C</w:t><w:br/><w:t>D</w:t></w:r><w:r><w:rPr><w:vanish/></w:rPr><w:br w:type="column"/><w:t>hidden</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let source_blocks = opened.model().blocks;
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            2,
+            "{document_xml}"
+        );
+        assert_eq!(document_xml.matches("<w:br/>").count(), 2, "{document_xml}");
+        assert_eq!(converted, opened.to_docx());
+
+        let model_only = write_docx(&opened.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(reopened.model().blocks, source_blocks);
+        #[cfg(feature = "render")]
+        {
+            let Backend::Docx(state) = reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(state.column_break_offsets[0], vec![1, 3]);
+        }
+
+        let legacy_text = "L\u{000e}M\u{000e}N\r";
+        let legacy_end = legacy_text.encode_utf16().count() as u32;
+        let mut legacy_section = Vec::new();
+        push_section_column_count(&mut legacy_section, 1);
+        let legacy_bytes = legacy_doc_with_section_page_grpprls(
+            legacy_text,
+            &[0, legacy_end],
+            &[legacy_section.as_slice()],
+        );
+        let legacy = Document::open(&legacy_bytes).unwrap();
+        let legacy_blocks = legacy.model().blocks;
+        let legacy_converted = legacy.to_docx();
+        let legacy_xml = docx_part(&legacy_converted, "word/document.xml");
+        assert_eq!(
+            legacy_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            2,
+            "{legacy_xml}"
+        );
+        assert_eq!(legacy_converted, legacy.to_docx());
+        assert_eq!(
+            Document::open(&legacy_converted).unwrap().model().blocks,
+            legacy_blocks
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_row_no_split_roundtrips_to_docx() {
+        let convert = |properties: &[(u16, u8)]| {
+            let legacy = Document::open(&legacy_row_pagination_doc(properties)).unwrap();
+            let converted = legacy.to_docx();
+            let document_xml = docx_part(&converted, "word/document.xml");
+            (legacy, converted, document_xml)
+        };
+        let (modern, modern_docx, modern_xml) = convert(&[(0x3466, 1)]);
+        assert!(
+            modern_xml.contains("<w:tr><w:trPr><w:cantSplit/></w:trPr>"),
+            "{modern_xml}"
+        );
+        assert_eq!(modern_docx, modern.to_docx());
+
+        let (_, _, compatibility_xml) = convert(&[(0x3403, 1)]);
+        assert!(
+            compatibility_xml.contains("<w:tr><w:trPr><w:cantSplit/></w:trPr>"),
+            "{compatibility_xml}"
+        );
+        let (modern_off, modern_off_docx, modern_off_xml) = convert(&[(0x3403, 1), (0x3466, 0)]);
+        assert!(!modern_off_xml.contains("<w:cantSplit"), "{modern_off_xml}");
+        assert_eq!(modern_off_docx, modern_off.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&modern.model()), "word/document.xml");
+        assert!(!model_only_xml.contains("<w:cantSplit"));
+
+        #[cfg(feature = "render")]
+        {
+            let reopened_hint = |bytes: &[u8]| {
+                let reopened = Document::open(bytes).unwrap();
+                let Backend::Docx(state) = reopened.backend else {
+                    panic!("converted document must use the DOCX backend");
+                };
+                state
+                    .table_row_pagination
+                    .into_iter()
+                    .find(|rows| !rows.is_empty())
+                    .and_then(|rows| rows.first().copied())
+                    .expect("converted table row hint")
+            };
+            assert!(reopened_hint(&modern_docx).cant_split);
+            assert!(!reopened_hint(&modern_off_docx).cant_split);
+        }
+    }
+
     #[cfg(feature = "render")]
     #[test]
     fn opened_legacy_doc_layout_uses_direct_row_pagination_hints() {
@@ -11701,7 +17144,7 @@ mod tests {
         let make_document = |row_properties: &str| {
             let xml = format!(
                 r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
-                    <w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr><w:r><w:t>seed</w:t></w:r></w:p>
+                    <w:p><w:r><w:t>seed</w:t></w:r></w:p>
                     <w:tbl><w:tr>{row_properties}<w:tc>
                         <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p>
                         <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>
@@ -11709,7 +17152,7 @@ mod tests {
                         <w:p><w:r><w:t>four</w:t></w:r></w:p>
                         <w:p><w:r><w:t>five</w:t></w:r></w:p>
                     </w:tc></w:tr></w:tbl>
-                    <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>after</w:t></w:r></w:p>
+                    <w:p><w:r><w:t>after</w:t></w:r></w:p>
                     <w:sectPr><w:pgSz w:w="4400" w:h="2400"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
                 </w:body></w:document>"#
             );

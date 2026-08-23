@@ -1417,6 +1417,36 @@ pub(super) fn ref_numeric_paragraph_number(label: &str) -> Option<String> {
     (!numeric.is_empty()).then(|| numeric.to_string())
 }
 
+fn preserved_note_local_ref_instruction(instruction: &str) -> Option<RefInstruction> {
+    let spec = ref_instruction(instruction)?;
+    (!spec.note_reference
+        && !spec.sequence_separator
+        && !spec.relative
+        && !spec.paragraph_number
+        && !spec.full_context_number
+        && !spec.relative_context_number
+        && !spec.suppress_non_numeric)
+        .then_some(spec)
+}
+
+pub(crate) fn preserved_note_local_ref_target(instruction: &str) -> Option<String> {
+    Some(preserved_note_local_ref_instruction(instruction)?.target)
+}
+
+pub(crate) fn computed_preserved_note_local_ref_result(
+    instruction: &str,
+    bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    let spec = preserved_note_local_ref_instruction(instruction)?;
+    let text = bookmarks.get(&spec.target)?;
+    let result = computed_ref_bookmark_text_result(
+        text,
+        spec.number_format,
+        spec.number_picture.as_deref(),
+    )?;
+    Some(apply_field_text_format(result, spec.text_format))
+}
+
 pub(crate) struct RefResultContext<'a> {
     pub(crate) bookmarks: &'a HashMap<String, String>,
     pub(crate) ref_positions: &'a RefPositionContext,

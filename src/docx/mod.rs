@@ -26,7 +26,7 @@ use crate::annotation::{
 };
 use crate::assemble;
 use crate::error::{Error, Result};
-use crate::model::{Block, Color, CustomXmlItem, DocMeta, DocModel, Image};
+use crate::model::{AuthoredNote, Block, Chart, Color, CustomXmlItem, DocMeta, DocModel, Image};
 use crate::text;
 use crate::CoreProperties;
 
@@ -34,6 +34,7 @@ pub(crate) use self::xml_text::skip_subtree as skip_xml_subtree;
 use self::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree};
 
 mod body;
+pub(crate) mod chart;
 mod comments;
 pub(crate) mod fields;
 mod numbering;
@@ -83,6 +84,10 @@ pub(crate) fn supports_display_field_syntax(instruction: &str) -> bool {
     fields::supports_display_field_syntax(instruction)
 }
 
+pub(crate) fn supports_computed_symbol_field_syntax(instruction: &str) -> bool {
+    fields::supports_computed_symbol_field_syntax(instruction)
+}
+
 pub(crate) fn supports_action_field_syntax(instruction: &str) -> bool {
     fields::supports_action_field_syntax(instruction)
 }
@@ -128,6 +133,22 @@ pub(crate) fn supports_if_field_syntax(instruction: &str) -> bool {
     fields::supports_if_field_syntax(instruction)
 }
 
+pub(crate) fn supports_context_free_if_compare_field_syntax(instruction: &str) -> bool {
+    fields::supports_context_free_if_compare_field_syntax(instruction)
+}
+
+pub(crate) fn supports_context_free_formula_field_syntax(instruction: &str) -> bool {
+    fields::supports_context_free_formula_field_syntax(instruction)
+}
+
+pub(crate) fn supports_context_free_fill_in_field_syntax(instruction: &str) -> bool {
+    fields::supports_context_free_fill_in_field_syntax(instruction)
+}
+
+pub(crate) fn supports_context_free_display_field_syntax(instruction: &str) -> bool {
+    fields::supports_context_free_display_field_syntax(instruction)
+}
+
 pub(crate) fn supports_quote_field_syntax(instruction: &str) -> bool {
     fields::supports_quote_field_syntax(instruction)
 }
@@ -157,16 +178,64 @@ pub(crate) fn supports_document_info_field_syntax(instruction: &str) -> bool {
     fields::supports_document_info_field_syntax(instruction)
 }
 
+pub(crate) fn supports_preserved_document_info_field_syntax(instruction: &str) -> bool {
+    fields::supports_preserved_document_info_field_syntax(instruction)
+}
+
 pub(crate) fn supports_revision_number_field_syntax(instruction: &str) -> bool {
     fields::supports_revision_number_field_syntax(instruction)
+}
+
+pub(crate) fn preserved_note_local_ref_target(instruction: &str) -> Option<String> {
+    fields::preserved_note_local_ref_target(instruction)
+}
+
+pub(crate) fn computed_preserved_note_local_ref_result(
+    instruction: &str,
+    bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    fields::computed_preserved_note_local_ref_result(instruction, bookmarks)
 }
 
 pub(crate) fn supports_formula_field_syntax(instruction: &str) -> bool {
     fields::supports_formula_field_syntax(instruction)
 }
 
+pub(crate) fn computed_span_free_table_formula_result(
+    instruction: &str,
+    rows: &[Vec<String>],
+    row: usize,
+    col: usize,
+) -> Option<String> {
+    fields::computed_span_free_table_formula_result(instruction, rows, row, col)
+}
+
 pub(crate) fn supports_sequence_field_syntax(instruction: &str) -> bool {
     fields::supports_sequence_field_syntax(instruction)
+}
+
+pub(crate) fn computed_preserved_sequence_reset_result(instruction: &str) -> Option<String> {
+    fields::computed_preserved_sequence_reset_result(instruction)
+}
+
+pub(crate) fn computed_preserved_listnum_start_result(instruction: &str) -> Option<String> {
+    fields::computed_preserved_listnum_start_result(instruction)
+}
+
+pub(crate) fn preserved_note_local_style_ref_target(instruction: &str) -> Option<String> {
+    fields::preserved_note_local_style_ref_target(instruction)
+}
+
+pub(crate) fn computed_preserved_note_local_style_ref_result(
+    instruction: &str,
+    source_text: &str,
+    source_before_field: bool,
+) -> Option<String> {
+    fields::computed_preserved_note_local_style_ref_result(
+        instruction,
+        source_text,
+        source_before_field,
+    )
 }
 
 pub(crate) fn supports_style_ref_field_syntax(instruction: &str) -> bool {
@@ -187,6 +256,11 @@ pub(crate) fn is_zip(bytes: &[u8]) -> bool {
 
 /// A parsed `.docx`: the rich model (built eagerly — XML parsing is cheap, so
 /// there is no lazy split like the `.doc` path) plus the derived flat text.
+pub(crate) struct FreshConversionNotes {
+    pub(crate) body_blocks: Vec<Block>,
+    pub(crate) payloads: Vec<Vec<Option<crate::model::NoteWritePayload>>>,
+}
+
 pub(crate) struct DocxState {
     /// The **body-only** model (no footnote/endnote blocks). `Document::model()`
     /// re-appends `notes` for the read view; the lossy model is read/render only.
@@ -194,6 +268,9 @@ pub(crate) struct DocxState {
     /// Footnote/endnote blocks, kept separate from `model.blocks` (their `.docx`
     /// parts are preserved on save, never inlined into the body).
     pub notes: Vec<Block>,
+    /// Conversion-only body blocks and exact note-paragraph payloads.
+    /// `None` keeps the historical flattened-note fallback.
+    pub fresh_conversion_notes: Option<FreshConversionNotes>,
     /// Footnote/endnote side-table records parsed from `word/footnotes.xml` and
     /// `word/endnotes.xml`.
     pub note_records: Vec<Note>,
@@ -202,21 +279,68 @@ pub(crate) struct DocxState {
     pub text_boxes: Vec<TextBox>,
     /// Floating shape geometry parsed from body/note/header/footer `wp:anchor` drawing markup.
     pub floating_shapes: Vec<FloatingShape>,
-    /// Renderer-only paragraph pagination controls aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only paragraph pagination controls aligned to body model blocks.
     pub pagination_hints: Vec<crate::model::PaginationHint>,
-    /// Renderer-only resolved explicit tab stops aligned to body model blocks.
+    /// Source-only exact/minimum line spacing aligned to body model blocks.
+    pub line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
+    /// Renderer-only exact/minimum line spacing aligned to `notes` blocks.
     #[cfg(feature = "render")]
+    pub note_line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
+    /// Renderer-only explicit paragraph tab stops aligned to `notes` blocks.
+    #[cfg(feature = "render")]
+    pub note_tab_stops: Vec<Vec<crate::model::TabStop>>,
+    /// Renderer-only table-cell tab stops aligned to `notes` blocks.
+    #[cfg(feature = "render")]
+    pub note_table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
+    /// Source-only exact/minimum line spacing for section running surfaces.
+    pub running_line_spacing_hints: Vec<crate::model::RunningSurfaceLineSpacingHints>,
+    /// Source-only pagination controls for section running surfaces.
+    pub running_pagination_hints: Vec<crate::model::RunningSurfacePaginationHints>,
+    /// Source-only explicit paragraph tab stops for section running surfaces.
+    pub running_tab_stops: Vec<crate::model::RunningSurfaceTabStopHints>,
+    /// Source-only table-cell tab stops for section running surfaces.
+    pub running_table_cell_tab_stops: Vec<crate::model::RunningSurfaceTableCellTabStopHints>,
+    /// Source-only table-cell breaks and recursive table layout for section running surfaces.
+    pub running_table_layout_hints: Vec<crate::model::RunningSurfaceTableLayoutHints>,
+    /// Source-only manual column breaks in ordinary section running-surface paragraphs.
+    pub running_column_break_offsets: Vec<crate::model::RunningSurfaceColumnBreakHints>,
+    /// Source-only header/footer edge distances by section.
+    pub running_surface_distances: Vec<crate::model::RunningSurfaceDistanceHints>,
+    /// Source-only resolved explicit tab stops aligned to body model blocks.
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
-    /// Renderer-only effective table-row pagination controls aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only manual column-break character offsets within body paragraphs.
+    pub column_break_offsets: Vec<Vec<usize>>,
+    /// Source-only manual column-break offsets in direct paragraphs of top-level body tables.
+    pub table_cell_column_break_offsets: Vec<crate::model::TableCellColumnBreakHints>,
+    /// Source-only explicit equal-column gaps aligned to body model blocks.
+    pub section_column_gap_pt: Vec<Option<f32>>,
+    /// Source-only explicit unequal-column geometry aligned to body model blocks.
+    pub section_column_layouts: Vec<Option<crate::model::SectionColumnLayoutHints>>,
+    /// Source-only column-separator flags aligned to body model blocks.
+    pub section_column_separators: Vec<bool>,
+    /// Source-only right-to-left column population aligned to body model blocks.
+    pub section_column_rtl: Vec<bool>,
+    /// Source-only explicit equal-column gap for the final body section.
+    pub final_section_column_gap_pt: Option<f32>,
+    /// Source-only explicit unequal-column geometry for the final body section.
+    pub final_section_column_layout: Option<crate::model::SectionColumnLayoutHints>,
+    /// Source-only column-separator flag for the final body section.
+    pub final_section_column_separator: bool,
+    /// Source-only right-to-left population for the final body section.
+    pub final_section_column_rtl: bool,
+    /// Source-only effective table-row pagination controls aligned to body model blocks.
     pub table_row_pagination: Vec<Vec<crate::model::TableRowPaginationHint>>,
-    /// Renderer-only direct table-cell paragraph controls aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only direct table-cell paragraph controls aligned to body model blocks.
     pub table_cell_pagination: Vec<crate::model::TableCellPaginationHints>,
-    /// Renderer-only recursive nested-table controls aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only table-cell exact/minimum line spacing aligned to body model blocks.
+    pub table_cell_line_spacing: Vec<crate::model::TableCellLineSpacingHints>,
+    /// Source-only recursive nested-table controls aligned to body model blocks.
     pub table_nested_pagination: Vec<crate::model::TableCellNestedPaginationHints>,
+    /// Source-only resolved table-cell paragraph tab stops aligned to body model blocks.
+    pub table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
+    /// Renderer-only document default tab interval from `word/settings.xml`.
+    #[cfg(feature = "render")]
+    pub default_tab_stop_pt: Option<f32>,
     /// Exact running header/footer records parsed from referenced `.docx` parts.
     pub header_footers: Vec<HeaderFooter>,
     /// Core metadata parsed from `docProps/core.xml`.
@@ -267,6 +391,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         .map(|s| numbering::parse(&s))
         .unwrap_or_default();
     let media = read_media(&mut zip, &rels);
+    let charts = read_charts(&mut zip, &rels);
 
     // The body is the one required part.
     let doc_xml = part(&mut zip, "word/document.xml")
@@ -301,6 +426,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         .as_deref()
         .map(fields::note_numbering_from_settings)
         .unwrap_or_default();
+    #[cfg(feature = "render")]
+    let default_tab_stop_pt = settings_xml.as_deref().and_then(parse_default_tab_stop_pt);
     let document_properties = DocumentPropertyRefs {
         core: &core_properties,
         custom: &custom_property_fields,
@@ -382,6 +509,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         numbering: &numbering,
         rels: &rels,
         media: &media,
+        charts: &charts,
         ref_targets: &ref_targets,
         ref_position_context: &ref_position_context,
         ref_number_context: &ref_number_context,
@@ -398,6 +526,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         document_variables: &document_variables,
         extended_properties: &extended_properties,
         file_size_bytes: Some(bytes.len()),
+        preserve_note_local_fields: false,
         ref_field_cursor: Default::default(),
         page_field_cursor: Default::default(),
         last_page_field_unsupported_display_format: Default::default(),
@@ -407,6 +536,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         style_ref_field_cursor: Default::default(),
         form_field_cursor: Default::default(),
         formula_field_cursor: Default::default(),
+        last_formula_field_used_table_context: Default::default(),
         sequence_counters: Default::default(),
         sequence_heading_counts: Default::default(),
         sequence_heading_scopes: Default::default(),
@@ -414,19 +544,30 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         listnum_counter: Default::default(),
         field_bookmarks: Default::default(),
         counters: Default::default(),
+        paragraph_charts: Default::default(),
+        section_column_capture: Default::default(),
         pagination_capture: Default::default(),
     };
-    #[cfg(feature = "render")]
+    ctx.begin_section_column_capture();
     ctx.begin_pagination_capture();
     let mut blocks = body::parse_document(&doc_xml, &ctx); // body only
-    #[cfg(feature = "render")]
-    let body::BodyRenderHints {
-        pagination: pagination_hints,
-        tab_stops,
-        table_rows: table_row_pagination,
-        table_cells: table_cell_pagination,
-        table_nested: table_nested_pagination,
-    } = ctx.take_render_hints();
+    let body::BodySectionColumnHints {
+        gaps: section_column_gap_pt,
+        layouts: section_column_layouts,
+        separators: section_column_separators,
+        rtl: section_column_rtl,
+    } = ctx.take_section_column_hints();
+    let body_hints = ctx.take_layout_hints();
+    let pagination_hints = body_hints.pagination;
+    let line_spacing_hints = body_hints.line_spacing;
+    let tab_stops = body_hints.tab_stops;
+    let table_row_pagination = body_hints.table_rows;
+    let table_cell_pagination = body_hints.table_cells;
+    let table_cell_line_spacing = body_hints.table_cell_line_spacing;
+    let table_cell_column_break_offsets = body_hints.table_cell_column_breaks;
+    let table_cell_tab_stops = body_hints.table_cell_tabs;
+    let column_break_offsets = body_hints.column_break_offsets;
+    let table_nested_pagination = body_hints.table_nested;
     // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
     // (not appended into `model.blocks`); their parts are preserved verbatim on save.
     // They are re-joined for the read/text views below and in `Document::model()`.
@@ -451,6 +592,17 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         part_env,
     );
     note_part.blocks.extend(endnote_part.blocks);
+    note_part
+        .source_entries
+        .append(&mut endnote_part.source_entries);
+    #[cfg(feature = "render")]
+    note_part.line_spacing.extend(endnote_part.line_spacing);
+    #[cfg(feature = "render")]
+    note_part.tab_stops.extend(endnote_part.tab_stops);
+    #[cfg(feature = "render")]
+    note_part
+        .table_cell_tab_stops
+        .extend(endnote_part.table_cell_tab_stops);
     note_part.records.append(&mut endnote_part.records);
     note_part.revisions.extend(endnote_part.revisions);
     note_part
@@ -516,6 +668,19 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     );
     floating_shapes.extend(header_footer_floating_shapes);
     text_boxes.extend(header_footer_text_boxes);
+    let running_line_spacing_hints =
+        running_line_spacing_by_model_section(&blocks, &section_header_footers);
+    let running_pagination_hints =
+        running_pagination_by_model_section(&blocks, &section_header_footers);
+    let running_tab_stops = running_tab_stops_by_model_section(&blocks, &section_header_footers);
+    let running_table_cell_tab_stops =
+        running_table_cell_tab_stops_by_model_section(&blocks, &section_header_footers);
+    let running_table_layout_hints =
+        running_table_layout_by_model_section(&blocks, &section_header_footers);
+    let running_column_break_offsets =
+        running_column_breaks_by_model_section(&blocks, &section_header_footers);
+    let running_surface_distances =
+        running_surface_distances_by_model_section(&blocks, &section_header_footers);
     apply_section_header_footers(&mut blocks, &section_header_footers);
     let comments_xml = part(&mut zip, "word/comments.xml");
     let comments_ext_xml = part(&mut zip, "word/commentsExtended.xml");
@@ -571,6 +736,13 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         toc_entries: &toc_entries,
         bookmark_names: &bookmark_names,
     };
+    let fresh_conversion_notes = exact_fresh_conversion_notes(
+        &blocks,
+        &note_part.records,
+        &note_part.source_entries,
+        &doc_xml,
+        &field_resolution_context,
+    );
     let mut comment_anchors = comments::parse_anchors(&doc_xml, &field_resolution_context);
     extend_missing_comment_anchors(&mut comment_anchors, note_part.comment_anchors);
     extend_missing_comment_anchors(&mut comment_anchors, header_footer_comment_anchors);
@@ -629,7 +801,18 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             document_id,
             title_page: body::scan_section_title_page(&doc_xml),
             title: core_properties.title.clone(),
+            subject: core_properties.subject.clone(),
             creator: core_properties.creator.clone(),
+            description: core_properties.description.clone(),
+            keywords: core_properties.keywords.clone(),
+            category: core_properties.category.clone(),
+            content_status: core_properties.content_status.clone(),
+            last_modified_by: core_properties.last_modified_by.clone(),
+            created: core_properties.created.clone(),
+            modified: core_properties.modified.clone(),
+            last_printed: core_properties.last_printed.clone(),
+            revision: core_properties.revision.clone(),
+            version: core_properties.version.clone(),
             ..crate::model::DocSetup::default()
         },
     };
@@ -647,9 +830,11 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     // Retain the whole package verbatim for package-preserving editing/save. The
     // reader above is unchanged; this is an independent second pass over `bytes`.
     let package = crate::opc::Package::from_zip(bytes)?;
+    let final_section_columns = body::scan_final_section_column_hints(&doc_xml);
     Ok(DocxState {
         model,
         notes: note_part.blocks,
+        fresh_conversion_notes,
         text,
         main_text,
         package,
@@ -658,16 +843,39 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         note_records: note_part.records,
         text_boxes,
         floating_shapes,
-        #[cfg(feature = "render")]
         pagination_hints,
+        line_spacing_hints,
         #[cfg(feature = "render")]
+        note_line_spacing_hints: note_part.line_spacing,
+        #[cfg(feature = "render")]
+        note_tab_stops: note_part.tab_stops,
+        #[cfg(feature = "render")]
+        note_table_cell_tab_stops: note_part.table_cell_tab_stops,
+        running_line_spacing_hints,
+        running_pagination_hints,
+        running_tab_stops,
+        running_table_cell_tab_stops,
+        running_table_layout_hints,
+        running_column_break_offsets,
+        running_surface_distances,
         tab_stops,
-        #[cfg(feature = "render")]
+        column_break_offsets,
+        table_cell_column_break_offsets,
+        section_column_gap_pt,
+        section_column_layouts,
+        section_column_separators,
+        section_column_rtl,
+        final_section_column_gap_pt: final_section_columns.gap_pt,
+        final_section_column_layout: final_section_columns.layout,
+        final_section_column_separator: final_section_columns.separator,
+        final_section_column_rtl: final_section_columns.rtl,
         table_row_pagination,
-        #[cfg(feature = "render")]
         table_cell_pagination,
-        #[cfg(feature = "render")]
+        table_cell_line_spacing,
         table_nested_pagination,
+        table_cell_tab_stops,
+        #[cfg(feature = "render")]
+        default_tab_stop_pt,
         header_footers,
         core_properties,
         fields,
@@ -699,6 +907,13 @@ struct SectionHeaderFooter {
     footer: Vec<Block>,
     first_footer: Vec<Block>,
     even_footer: Vec<Block>,
+    line_spacing: crate::model::RunningSurfaceLineSpacingHints,
+    pagination: crate::model::RunningSurfacePaginationHints,
+    tab_stops: crate::model::RunningSurfaceTabStopHints,
+    table_cell_tab_stops: crate::model::RunningSurfaceTableCellTabStopHints,
+    table_layout: crate::model::RunningSurfaceTableLayoutHints,
+    column_breaks: crate::model::RunningSurfaceColumnBreakHints,
+    distances: crate::model::RunningSurfaceDistanceHints,
 }
 
 #[derive(Default)]
@@ -706,6 +921,51 @@ struct HeaderFooterBlocks {
     default: Vec<Block>,
     first: Vec<Block>,
     even: Vec<Block>,
+}
+
+#[derive(Default)]
+struct HeaderFooterLineSpacing {
+    default: Vec<Option<crate::model::LineSpacingHint>>,
+    default_table_cells: Vec<crate::model::TableCellLineSpacingHints>,
+    first: Vec<Option<crate::model::LineSpacingHint>>,
+    first_table_cells: Vec<crate::model::TableCellLineSpacingHints>,
+    even: Vec<Option<crate::model::LineSpacingHint>>,
+    even_table_cells: Vec<crate::model::TableCellLineSpacingHints>,
+}
+
+#[derive(Default)]
+struct HeaderFooterPagination {
+    default: crate::model::RunningBlockPaginationHints,
+    first: crate::model::RunningBlockPaginationHints,
+    even: crate::model::RunningBlockPaginationHints,
+}
+
+#[derive(Default)]
+struct HeaderFooterTableCellTabStops {
+    default: Vec<crate::model::TableCellTabStopHints>,
+    first: Vec<crate::model::TableCellTabStopHints>,
+    even: Vec<crate::model::TableCellTabStopHints>,
+}
+
+#[derive(Default)]
+struct HeaderFooterTableLayout {
+    default: crate::model::RunningTableLayoutHints,
+    first: crate::model::RunningTableLayoutHints,
+    even: crate::model::RunningTableLayoutHints,
+}
+
+#[derive(Default)]
+struct HeaderFooterColumnBreaks {
+    default: Vec<Vec<usize>>,
+    first: Vec<Vec<usize>>,
+    even: Vec<Vec<usize>>,
+}
+
+#[derive(Default)]
+struct HeaderFooterTabStops {
+    default: Vec<Vec<crate::model::TabStop>>,
+    first: Vec<Vec<crate::model::TabStop>>,
+    even: Vec<Vec<crate::model::TabStop>>,
 }
 
 struct HeaderFooterRead {
@@ -721,6 +981,12 @@ struct HeaderFooterRead {
 
 struct HeaderFooterPartRead {
     blocks: HeaderFooterBlocks,
+    line_spacing: HeaderFooterLineSpacing,
+    pagination: HeaderFooterPagination,
+    tab_stops: HeaderFooterTabStops,
+    table_cell_tab_stops: HeaderFooterTableCellTabStops,
+    table_layout: HeaderFooterTableLayout,
+    column_breaks: HeaderFooterColumnBreaks,
     records: Vec<HeaderFooter>,
     comment_anchors: HashMap<String, TextAnchor>,
     text_boxes: Vec<TextBox>,
@@ -777,12 +1043,40 @@ fn read_headers_footers(
     let mut seen_text_boxes = std::collections::HashSet::new();
     let mut inherited_header = Vec::new();
     let mut inherited_footer = Vec::new();
+    let mut inherited_header_line_spacing = Vec::new();
+    let mut inherited_header_pagination = crate::model::RunningBlockPaginationHints::default();
+    let mut inherited_header_tab_stops = Vec::new();
+    let mut inherited_header_table_cell_line_spacing = Vec::new();
+    let mut inherited_header_table_cell_tab_stops = Vec::new();
+    let mut inherited_header_table_layout = crate::model::RunningTableLayoutHints::default();
+    let mut inherited_header_column_breaks = Vec::new();
+    let mut inherited_footer_line_spacing = Vec::new();
+    let mut inherited_footer_pagination = crate::model::RunningBlockPaginationHints::default();
+    let mut inherited_footer_tab_stops = Vec::new();
+    let mut inherited_footer_table_cell_line_spacing = Vec::new();
+    let mut inherited_footer_table_cell_tab_stops = Vec::new();
+    let mut inherited_footer_table_layout = crate::model::RunningTableLayoutHints::default();
+    let mut inherited_footer_column_breaks = Vec::new();
 
     for refs in section_refs {
+        let distances = crate::model::RunningSurfaceDistanceHints {
+            header_pt: refs
+                .header_distance_twips
+                .map(|distance| distance as f32 / 20.0),
+            footer_pt: refs
+                .footer_distance_twips
+                .map(|distance| distance as f32 / 20.0),
+        };
         let header_has_default = has_default_header_footer_ref(&refs.headers);
         let footer_has_default = has_default_header_footer_ref(&refs.footers);
         let HeaderFooterPartRead {
             blocks: header_blocks,
+            line_spacing: header_line_spacing,
+            pagination: header_pagination_parts,
+            tab_stops: header_tab_stops,
+            table_cell_tab_stops: header_table_cell_tab_stops,
+            table_layout: header_table_layout_parts,
+            column_breaks: header_column_break_parts,
             records: header_records,
             comment_anchors: header_comment_anchors,
             text_boxes: header_text_boxes,
@@ -803,17 +1097,44 @@ fn read_headers_footers(
         extend_unique_floating_shape_records(&mut floating_shapes, header_floating_shapes);
         field_entries.extend(header_fields);
         let mut header = header_blocks.default;
+        let mut header_spacing = header_line_spacing.default;
+        let mut header_pagination = header_pagination_parts.default;
+        let mut header_tabs = header_tab_stops.default;
+        let mut header_table_cell_spacing = header_line_spacing.default_table_cells;
+        let mut header_table_cell_tabs = header_table_cell_tab_stops.default;
+        let mut header_table_layout = header_table_layout_parts.default;
+        let mut header_column_breaks = header_column_break_parts.default;
         // Omitted odd/default refs inherit the previous section; an explicit
         // default ref, even when blank/unresolved, resets the inherited surface.
         if !header_has_default && !inherited_header.is_empty() {
             header = inherited_header.clone();
+            header_spacing = inherited_header_line_spacing.clone();
+            header_pagination = inherited_header_pagination.clone();
+            header_tabs = inherited_header_tab_stops.clone();
+            header_table_cell_spacing = inherited_header_table_cell_line_spacing.clone();
+            header_table_cell_tabs = inherited_header_table_cell_tab_stops.clone();
+            header_table_layout = inherited_header_table_layout.clone();
+            header_column_breaks = inherited_header_column_breaks.clone();
         }
         if header_has_default || !header.is_empty() {
             inherited_header = header.clone();
+            inherited_header_line_spacing = header_spacing.clone();
+            inherited_header_pagination = header_pagination.clone();
+            inherited_header_tab_stops = header_tabs.clone();
+            inherited_header_table_cell_line_spacing = header_table_cell_spacing.clone();
+            inherited_header_table_cell_tab_stops = header_table_cell_tabs.clone();
+            inherited_header_table_layout = header_table_layout.clone();
+            inherited_header_column_breaks = header_column_breaks.clone();
         }
 
         let HeaderFooterPartRead {
             blocks: footer_blocks,
+            line_spacing: footer_line_spacing,
+            pagination: footer_pagination_parts,
+            tab_stops: footer_tab_stops,
+            table_cell_tab_stops: footer_table_cell_tab_stops,
+            table_layout: footer_table_layout_parts,
+            column_breaks: footer_column_break_parts,
             records: footer_records,
             comment_anchors: footer_comment_anchors,
             text_boxes: footer_text_boxes,
@@ -834,12 +1155,33 @@ fn read_headers_footers(
         extend_unique_floating_shape_records(&mut floating_shapes, footer_floating_shapes);
         field_entries.extend(footer_fields);
         let mut footer = footer_blocks.default;
+        let mut footer_spacing = footer_line_spacing.default;
+        let mut footer_pagination = footer_pagination_parts.default;
+        let mut footer_tabs = footer_tab_stops.default;
+        let mut footer_table_cell_spacing = footer_line_spacing.default_table_cells;
+        let mut footer_table_cell_tabs = footer_table_cell_tab_stops.default;
+        let mut footer_table_layout = footer_table_layout_parts.default;
+        let mut footer_column_breaks = footer_column_break_parts.default;
         // Same inheritance rule as headers.
         if !footer_has_default && !inherited_footer.is_empty() {
             footer = inherited_footer.clone();
+            footer_spacing = inherited_footer_line_spacing.clone();
+            footer_pagination = inherited_footer_pagination.clone();
+            footer_tabs = inherited_footer_tab_stops.clone();
+            footer_table_cell_spacing = inherited_footer_table_cell_line_spacing.clone();
+            footer_table_cell_tabs = inherited_footer_table_cell_tab_stops.clone();
+            footer_table_layout = inherited_footer_table_layout.clone();
+            footer_column_breaks = inherited_footer_column_breaks.clone();
         }
         if footer_has_default || !footer.is_empty() {
             inherited_footer = footer.clone();
+            inherited_footer_line_spacing = footer_spacing.clone();
+            inherited_footer_pagination = footer_pagination.clone();
+            inherited_footer_tab_stops = footer_tabs.clone();
+            inherited_footer_table_cell_line_spacing = footer_table_cell_spacing.clone();
+            inherited_footer_table_cell_tab_stops = footer_table_cell_tabs.clone();
+            inherited_footer_table_layout = footer_table_layout.clone();
+            inherited_footer_column_breaks = footer_column_breaks.clone();
         }
         sections.push(SectionHeaderFooter {
             header,
@@ -848,6 +1190,61 @@ fn read_headers_footers(
             footer,
             first_footer: footer_blocks.first,
             even_footer: footer_blocks.even,
+            line_spacing: crate::model::RunningSurfaceLineSpacingHints {
+                header: header_spacing,
+                header_table_cells: header_table_cell_spacing,
+                first_header: header_line_spacing.first,
+                first_header_table_cells: header_line_spacing.first_table_cells,
+                even_header: header_line_spacing.even,
+                even_header_table_cells: header_line_spacing.even_table_cells,
+                footer: footer_spacing,
+                footer_table_cells: footer_table_cell_spacing,
+                first_footer: footer_line_spacing.first,
+                first_footer_table_cells: footer_line_spacing.first_table_cells,
+                even_footer: footer_line_spacing.even,
+                even_footer_table_cells: footer_line_spacing.even_table_cells,
+            },
+            pagination: crate::model::RunningSurfacePaginationHints {
+                header: header_pagination,
+                first_header: header_pagination_parts.first,
+                even_header: header_pagination_parts.even,
+                footer: footer_pagination,
+                first_footer: footer_pagination_parts.first,
+                even_footer: footer_pagination_parts.even,
+            },
+            tab_stops: crate::model::RunningSurfaceTabStopHints {
+                header: header_tabs,
+                first_header: header_tab_stops.first,
+                even_header: header_tab_stops.even,
+                footer: footer_tabs,
+                first_footer: footer_tab_stops.first,
+                even_footer: footer_tab_stops.even,
+            },
+            table_cell_tab_stops: crate::model::RunningSurfaceTableCellTabStopHints {
+                header: header_table_cell_tabs,
+                first_header: header_table_cell_tab_stops.first,
+                even_header: header_table_cell_tab_stops.even,
+                footer: footer_table_cell_tabs,
+                first_footer: footer_table_cell_tab_stops.first,
+                even_footer: footer_table_cell_tab_stops.even,
+            },
+            table_layout: crate::model::RunningSurfaceTableLayoutHints {
+                header: header_table_layout,
+                first_header: header_table_layout_parts.first,
+                even_header: header_table_layout_parts.even,
+                footer: footer_table_layout,
+                first_footer: footer_table_layout_parts.first,
+                even_footer: footer_table_layout_parts.even,
+            },
+            column_breaks: crate::model::RunningSurfaceColumnBreakHints {
+                header: header_column_breaks,
+                first_header: header_column_break_parts.first,
+                even_header: header_column_break_parts.even,
+                footer: footer_column_breaks,
+                first_footer: footer_column_break_parts.first,
+                even_footer: footer_column_break_parts.even,
+            },
+            distances,
         });
     }
 
@@ -936,6 +1333,167 @@ fn apply_section_header_footers(blocks: &mut [Block], sections: &[SectionHeaderF
     }
 }
 
+fn running_line_spacing_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::model::RunningSurfaceLineSpacingHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::model::RunningSurfaceLineSpacingHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.line_spacing.clone();
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.line_spacing.clone();
+    }
+    aligned
+}
+
+fn running_pagination_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::model::RunningSurfacePaginationHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::model::RunningSurfacePaginationHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.pagination.clone();
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.pagination.clone();
+    }
+    aligned
+}
+
+fn running_tab_stops_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::model::RunningSurfaceTabStopHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::model::RunningSurfaceTabStopHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.tab_stops.clone();
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.tab_stops.clone();
+    }
+    aligned
+}
+
+fn running_table_cell_tab_stops_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::model::RunningSurfaceTableCellTabStopHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::model::RunningSurfaceTableCellTabStopHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.table_cell_tab_stops.clone();
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.table_cell_tab_stops.clone();
+    }
+    aligned
+}
+
+fn running_table_layout_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::model::RunningSurfaceTableLayoutHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::model::RunningSurfaceTableLayoutHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.table_layout.clone();
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.table_layout.clone();
+    }
+    aligned
+}
+
+fn running_column_breaks_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::model::RunningSurfaceColumnBreakHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::model::RunningSurfaceColumnBreakHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.column_breaks.clone();
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.column_breaks.clone();
+    }
+    aligned
+}
+
+fn running_surface_distances_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::model::RunningSurfaceDistanceHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::model::RunningSurfaceDistanceHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.distances;
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.distances;
+    }
+    aligned
+}
+
 fn has_default_header_footer_ref(refs: &[body::HeaderFooterRef]) -> bool {
     refs.iter()
         .any(|reference| normalized_header_footer_type(&reference.type_name) == "default")
@@ -968,6 +1526,12 @@ fn read_hf_parts(
     let mut seen_revisions = std::collections::HashSet::new();
     let mut seen_floating_shapes = std::collections::HashSet::new();
     let mut blocks = HeaderFooterBlocks::default();
+    let mut line_spacing = HeaderFooterLineSpacing::default();
+    let mut pagination = HeaderFooterPagination::default();
+    let mut tab_stops = HeaderFooterTabStops::default();
+    let mut table_cell_tab_stops = HeaderFooterTableCellTabStops::default();
+    let mut table_layout = HeaderFooterTableLayout::default();
+    let mut column_breaks = HeaderFooterColumnBreaks::default();
     let mut records = Vec::new();
     let mut comment_anchors = HashMap::new();
     let mut text_boxes = Vec::new();
@@ -990,6 +1554,7 @@ fn read_hf_parts(
             .map(|s| parse_rels(&s))
             .unwrap_or_default();
         let part_media = read_media(zip, &part_rels);
+        let part_charts = read_charts(zip, &part_rels);
         let field_properties = fields::FieldDocumentProperties {
             core: properties.core,
             custom: properties.custom,
@@ -1067,6 +1632,7 @@ fn read_hf_parts(
             numbering,
             rels: &part_rels,
             media: &part_media,
+            charts: &part_charts,
             ref_targets: &ref_targets,
             ref_position_context: &ref_position_context,
             ref_number_context: &ref_number_context,
@@ -1083,6 +1649,7 @@ fn read_hf_parts(
             document_variables: properties.variables,
             extended_properties: properties.extended,
             file_size_bytes: properties.file_size_bytes,
+            preserve_note_local_fields: false,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
             last_page_field_unsupported_display_format: Default::default(),
@@ -1092,6 +1659,7 @@ fn read_hf_parts(
             style_ref_field_cursor: Default::default(),
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
+            last_formula_field_used_table_context: Default::default(),
             sequence_counters: Default::default(),
             sequence_heading_counts: Default::default(),
             sequence_heading_scopes: Default::default(),
@@ -1099,6 +1667,8 @@ fn read_hf_parts(
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            paragraph_charts: Default::default(),
+            section_column_capture: Default::default(),
             pagination_capture: Default::default(),
         };
         let type_name = normalized_header_footer_type(&reference.type_name);
@@ -1159,12 +1729,113 @@ fn read_hf_parts(
                 preserve_legacy_form_cache,
             ));
         }
+        hf_ctx.begin_pagination_capture();
         let part_blocks = body::parse_hdrftr(&xml, &hf_ctx);
+        let part_layout_hints = hf_ctx.take_layout_hints();
         if seen_blocks.insert((path.clone(), type_name.to_string())) {
             match type_name {
-                "first" => blocks.first.extend(part_blocks.clone()),
-                "even" => blocks.even.extend(part_blocks.clone()),
-                _ => blocks.default.extend(part_blocks.clone()),
+                "first" => {
+                    blocks.first.extend(part_blocks.clone());
+                    pagination
+                        .first
+                        .paragraphs
+                        .extend(part_layout_hints.pagination);
+                    pagination
+                        .first
+                        .table_rows
+                        .extend(part_layout_hints.table_rows);
+                    pagination
+                        .first
+                        .table_cells
+                        .extend(part_layout_hints.table_cells);
+                    line_spacing.first.extend(part_layout_hints.line_spacing);
+                    line_spacing
+                        .first_table_cells
+                        .extend(part_layout_hints.table_cell_line_spacing);
+                    tab_stops.first.extend(part_layout_hints.tab_stops);
+                    table_cell_tab_stops
+                        .first
+                        .extend(part_layout_hints.table_cell_tabs);
+                    table_layout
+                        .first
+                        .cell_column_breaks
+                        .extend(part_layout_hints.table_cell_column_breaks);
+                    table_layout
+                        .first
+                        .nested_tables
+                        .extend(part_layout_hints.table_nested);
+                    column_breaks
+                        .first
+                        .extend(part_layout_hints.column_break_offsets);
+                }
+                "even" => {
+                    blocks.even.extend(part_blocks.clone());
+                    pagination
+                        .even
+                        .paragraphs
+                        .extend(part_layout_hints.pagination);
+                    pagination
+                        .even
+                        .table_rows
+                        .extend(part_layout_hints.table_rows);
+                    pagination
+                        .even
+                        .table_cells
+                        .extend(part_layout_hints.table_cells);
+                    line_spacing.even.extend(part_layout_hints.line_spacing);
+                    line_spacing
+                        .even_table_cells
+                        .extend(part_layout_hints.table_cell_line_spacing);
+                    tab_stops.even.extend(part_layout_hints.tab_stops);
+                    table_cell_tab_stops
+                        .even
+                        .extend(part_layout_hints.table_cell_tabs);
+                    table_layout
+                        .even
+                        .cell_column_breaks
+                        .extend(part_layout_hints.table_cell_column_breaks);
+                    table_layout
+                        .even
+                        .nested_tables
+                        .extend(part_layout_hints.table_nested);
+                    column_breaks
+                        .even
+                        .extend(part_layout_hints.column_break_offsets);
+                }
+                _ => {
+                    blocks.default.extend(part_blocks.clone());
+                    pagination
+                        .default
+                        .paragraphs
+                        .extend(part_layout_hints.pagination);
+                    pagination
+                        .default
+                        .table_rows
+                        .extend(part_layout_hints.table_rows);
+                    pagination
+                        .default
+                        .table_cells
+                        .extend(part_layout_hints.table_cells);
+                    line_spacing.default.extend(part_layout_hints.line_spacing);
+                    line_spacing
+                        .default_table_cells
+                        .extend(part_layout_hints.table_cell_line_spacing);
+                    tab_stops.default.extend(part_layout_hints.tab_stops);
+                    table_cell_tab_stops
+                        .default
+                        .extend(part_layout_hints.table_cell_tabs);
+                    table_layout
+                        .default
+                        .cell_column_breaks
+                        .extend(part_layout_hints.table_cell_column_breaks);
+                    table_layout
+                        .default
+                        .nested_tables
+                        .extend(part_layout_hints.table_nested);
+                    column_breaks
+                        .default
+                        .extend(part_layout_hints.column_break_offsets);
+                }
             }
         }
         if seen_records.insert((path.clone(), type_name.to_string())) {
@@ -1181,6 +1852,12 @@ fn read_hf_parts(
     }
     HeaderFooterPartRead {
         blocks,
+        line_spacing,
+        pagination,
+        tab_stops,
+        table_cell_tab_stops,
+        table_layout,
+        column_breaks,
         records,
         comment_anchors,
         text_boxes,
@@ -1222,12 +1899,25 @@ fn header_footer_kind(part_kind: HeaderFooterPartKind, type_name: &str) -> Heade
 #[derive(Default)]
 struct NotePartRead {
     blocks: Vec<Block>,
+    source_entries: Vec<NoteSourceEntry>,
+    #[cfg(feature = "render")]
+    line_spacing: Vec<Option<crate::model::LineSpacingHint>>,
+    #[cfg(feature = "render")]
+    tab_stops: Vec<Vec<crate::model::TabStop>>,
+    #[cfg(feature = "render")]
+    table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
     records: Vec<Note>,
     comment_anchors: HashMap<String, TextAnchor>,
     revisions: Vec<Revision>,
     floating_shapes: Vec<FloatingShape>,
     text_boxes: Vec<TextBox>,
     fields: Vec<Field>,
+}
+
+struct NoteSourceEntry {
+    id: String,
+    kind: NoteKind,
+    payload: Option<crate::model::NoteWritePayload>,
 }
 
 /// Read a footnotes/endnotes part (if present) into its real notes' blocks, with
@@ -1252,6 +1942,7 @@ fn read_notes(
         .map(|s| parse_rels(&s))
         .unwrap_or_default();
     let part_media = read_media(zip, &part_rels);
+    let part_charts = read_charts(zip, &part_rels);
     let field_properties = fields::FieldDocumentProperties {
         core: properties.core,
         custom: properties.custom,
@@ -1329,6 +2020,7 @@ fn read_notes(
         numbering,
         rels: &part_rels,
         media: &part_media,
+        charts: &part_charts,
         ref_targets: &ref_targets,
         ref_position_context: &ref_position_context,
         ref_number_context: &ref_number_context,
@@ -1345,6 +2037,7 @@ fn read_notes(
         document_variables: properties.variables,
         extended_properties: properties.extended,
         file_size_bytes: properties.file_size_bytes,
+        preserve_note_local_fields: true,
         ref_field_cursor: Default::default(),
         page_field_cursor: Default::default(),
         last_page_field_unsupported_display_format: Default::default(),
@@ -1354,6 +2047,7 @@ fn read_notes(
         style_ref_field_cursor: Default::default(),
         form_field_cursor: Default::default(),
         formula_field_cursor: Default::default(),
+        last_formula_field_used_table_context: Default::default(),
         sequence_counters: Default::default(),
         sequence_heading_counts: Default::default(),
         sequence_heading_scopes: Default::default(),
@@ -1361,6 +2055,8 @@ fn read_notes(
         listnum_counter: Default::default(),
         field_bookmarks: Default::default(),
         counters: Default::default(),
+        paragraph_charts: Default::default(),
+        section_column_capture: Default::default(),
         pagination_capture: Default::default(),
     };
     let mut blocks = Vec::new();
@@ -1407,8 +2103,20 @@ fn read_notes(
         },
         preserve_legacy_form_cache,
     );
-    for (id, note_blocks) in body::parse_note_entries(&xml, &ctx, tag) {
+    ctx.begin_pagination_capture();
+    let note_entries = body::parse_note_entries(&xml, &ctx, tag);
+    let layout_hints = ctx.take_layout_hints();
+    let mut source_entries = Vec::with_capacity(note_entries.len());
+    let mut block_offset = 0usize;
+    for (id, note_blocks) in note_entries {
         let text = blocks_text(&note_blocks);
+        let payload = note_write_payload(kind, &text, &note_blocks, &layout_hints, block_offset);
+        block_offset = block_offset.saturating_add(note_blocks.len());
+        source_entries.push(NoteSourceEntry {
+            id: id.clone(),
+            kind,
+            payload,
+        });
         records.push(Note {
             id,
             kind,
@@ -1419,6 +2127,13 @@ fn read_notes(
     }
     NotePartRead {
         blocks,
+        source_entries,
+        #[cfg(feature = "render")]
+        line_spacing: layout_hints.line_spacing,
+        #[cfg(feature = "render")]
+        tab_stops: layout_hints.tab_stops,
+        #[cfg(feature = "render")]
+        table_cell_tab_stops: layout_hints.table_cell_tabs,
         records,
         comment_anchors,
         revisions,
@@ -1426,6 +2141,85 @@ fn read_notes(
         text_boxes,
         fields,
     }
+}
+
+fn note_write_payload(
+    kind: NoteKind,
+    text: &str,
+    blocks: &[Block],
+    hints: &body::BodyLayoutHints,
+    block_offset: usize,
+) -> Option<crate::model::NoteWritePayload> {
+    if blocks.is_empty() {
+        return None;
+    }
+    let block_end = block_offset.checked_add(blocks.len())?;
+    let mut table_pagination = Vec::with_capacity(blocks.len());
+    for (local_index, block) in blocks.iter().enumerate() {
+        match block {
+            Block::Paragraph(_) | Block::PageBreak => table_pagination.push(None),
+            Block::Chart(chart) if note_write_chart_supported(chart) => table_pagination.push(None),
+            Block::Table(table) if note_write_table_shape_supported(table) => {
+                let index = block_offset.checked_add(local_index)?;
+                table_pagination.push(Some(crate::model::TablePaginationHints {
+                    rows: hints.table_rows.get(index)?.clone(),
+                    cells: hints.table_cells.get(index)?.clone(),
+                    cell_line_spacing: hints.table_cell_line_spacing.get(index)?.clone(),
+                    cell_column_breaks: hints.table_cell_column_breaks.get(index)?.clone(),
+                    nested: hints.table_nested.get(index)?.clone(),
+                    cell_tabs: hints.table_cell_tabs.get(index)?.clone(),
+                }));
+            }
+            _ => return None,
+        }
+    }
+    Some(crate::model::NoteWritePayload {
+        kind,
+        text: text.to_string(),
+        blocks: blocks.to_vec(),
+        pagination: hints.pagination.get(block_offset..block_end)?.to_vec(),
+        line_spacing: hints.line_spacing.get(block_offset..block_end)?.to_vec(),
+        tab_stops: hints.tab_stops.get(block_offset..block_end)?.to_vec(),
+        column_break_offsets: hints
+            .column_break_offsets
+            .get(block_offset..block_end)?
+            .to_vec(),
+        table_pagination,
+    })
+}
+
+fn note_write_table_shape_supported(table: &crate::model::Table) -> bool {
+    let mut pending = vec![table];
+    while let Some(table) = pending.pop() {
+        let mut has_cell = false;
+        for cell in table.rows.iter().flat_map(|row| &row.cells) {
+            has_cell = true;
+            if cell.blocks.is_empty() {
+                return false;
+            }
+            for block in &cell.blocks {
+                match block {
+                    Block::Paragraph(_) | Block::PageBreak => {}
+                    Block::Chart(chart) if note_write_chart_supported(chart) => {}
+                    Block::Table(table) => pending.push(table),
+                    _ => return false,
+                }
+            }
+        }
+        if !has_cell {
+            return false;
+        }
+    }
+    true
+}
+
+pub(crate) fn note_write_chart_supported(chart: &crate::model::Chart) -> bool {
+    !chart.series.is_empty()
+        && chart.series.iter().all(|series| {
+            !series.values.is_empty()
+                && series.values.iter().all(|value| value.is_finite())
+                && series.bubble_sizes.iter().all(|value| value.is_finite())
+        })
 }
 
 fn read_text_boxes(
@@ -3773,6 +4567,27 @@ fn parse_document_id(xml: &str) -> Option<String> {
     None
 }
 
+#[cfg(any(feature = "render", test))]
+fn parse_default_tab_stop_pt(xml: &str) -> Option<f32> {
+    let mut r = Reader::from_str(xml);
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"defaultTabStop" =>
+            {
+                return attr_local(&e, b"val")
+                    .and_then(|value| value.trim().parse::<f32>().ok())
+                    .filter(|twips| twips.is_finite() && *twips > 0.0)
+                    .map(|twips| twips / 20.0)
+                    .filter(|points| points.is_finite() && *points > 0.0);
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    None
+}
+
 fn read_custom_property_value(r: &mut Reader<&[u8]>) -> Option<String> {
     let mut value = None;
     loop {
@@ -3865,6 +4680,55 @@ fn parse_rels(xml: &str) -> Rels {
         }
     }
     map
+}
+
+const MAX_MODELED_CHARTS_PER_STORY: usize = 256;
+
+fn read_charts(
+    zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>,
+    rels: &Rels,
+) -> HashMap<String, Chart> {
+    let mut chart_rels = rels
+        .iter()
+        .filter(|(_, (_, external))| !external)
+        .filter_map(|(id, (target, _))| {
+            let path = normalize_part(target);
+            is_authored_chart_part(&path).then_some((id.clone(), path))
+        })
+        .collect::<Vec<_>>();
+    chart_rels.sort_unstable();
+    chart_rels.truncate(MAX_MODELED_CHARTS_PER_STORY);
+    let mut parsed_by_path: HashMap<String, Chart> = HashMap::new();
+    let mut charts = HashMap::new();
+    for (id, path) in chart_rels {
+        let parsed = if let Some(chart) = parsed_by_path.get(&path) {
+            Some(chart.clone())
+        } else {
+            let chart = part(zip, &path).and_then(|xml| chart::parse(&xml));
+            if let Some(chart) = chart.as_ref() {
+                parsed_by_path.insert(path, chart.clone());
+            }
+            chart
+        };
+        if let Some(chart) = parsed {
+            charts.insert(id, chart);
+        }
+    }
+    charts
+}
+
+fn is_authored_chart_part(path: &str) -> bool {
+    let Some(file) = path.strip_prefix("word/charts/") else {
+        return false;
+    };
+    let Some(stem) = file.strip_suffix(".xml") else {
+        return false;
+    };
+    ["chart", "chartEx"].iter().any(|prefix| {
+        stem.strip_prefix(prefix).is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    })
 }
 
 /// Pre-read every embedded raster image referenced by an internal relationship
@@ -3989,10 +4853,143 @@ fn body_text(model: &DocModel) -> String {
     blocks_text(&model.blocks)
 }
 
-fn blocks_text(blocks: &[Block]) -> String {
+pub(crate) fn blocks_text(blocks: &[Block]) -> String {
     let mut raw = String::new();
     flatten(blocks, &mut raw);
     text::finalize(&raw)
+}
+
+fn exact_fresh_conversion_notes(
+    blocks: &[Block],
+    notes: &[Note],
+    source_entries: &[NoteSourceEntry],
+    doc_xml: &str,
+    ctx: &fields::FieldResolutionContext<'_>,
+) -> Option<FreshConversionNotes> {
+    if notes.is_empty() {
+        return None;
+    }
+    let footnotes = body::scan_note_ref_positions(doc_xml, b"footnoteReference", ctx);
+    let endnotes = body::scan_note_ref_positions(doc_xml, b"endnoteReference", ctx);
+    if footnotes.block_count != blocks.len() || endnotes.block_count != blocks.len() {
+        return None;
+    }
+
+    let mut note_by_key = HashMap::new();
+    for note in notes {
+        if note.text.is_empty()
+            || note_by_key
+                .insert((note_kind_key(note.kind), note.id.as_str()), note)
+                .is_some()
+        {
+            return None;
+        }
+    }
+    let mut source_by_key = HashMap::new();
+    for entry in source_entries {
+        if source_by_key
+            .insert((note_kind_key(entry.kind), entry.id.as_str()), entry)
+            .is_some()
+        {
+            return None;
+        }
+    }
+
+    let mut references = footnotes
+        .references
+        .into_iter()
+        .map(|reference| (NoteKind::Footnote, reference))
+        .chain(
+            endnotes
+                .references
+                .into_iter()
+                .map(|reference| (NoteKind::Endnote, reference)),
+        )
+        .collect::<Vec<_>>();
+    if references.len() != notes.len() {
+        return None;
+    }
+    references.sort_by_key(|(_, reference)| (reference.block_index, reference.text_offset));
+
+    let mut seen = HashSet::new();
+    let mut notes_by_block = (0..blocks.len())
+        .map(|_| Vec::<(usize, AuthoredNote, Option<crate::model::NoteWritePayload>)>::new())
+        .collect::<Vec<_>>();
+    for (kind, reference) in references {
+        if reference.custom_mark
+            || !reference.paragraph
+            || !seen.insert((note_kind_key(kind), reference.id.clone()))
+        {
+            return None;
+        }
+        let note = note_by_key.get(&(note_kind_key(kind), reference.id.as_str()))?;
+        let source = source_by_key.get(&(note_kind_key(kind), reference.id.as_str()))?;
+        let Some(Block::Paragraph(paragraph)) = blocks.get(reference.block_index) else {
+            return None;
+        };
+        if paragraph.text() != reference.block_text {
+            return None;
+        }
+        notes_by_block[reference.block_index].push((
+            reference.text_offset,
+            AuthoredNote {
+                kind,
+                text: note.text.clone(),
+            },
+            source.payload.clone(),
+        ));
+    }
+
+    let mut promoted = blocks.to_vec();
+    let mut payloads = Vec::with_capacity(promoted.len());
+    for (block_index, mut notes) in notes_by_block.into_iter().enumerate() {
+        if notes.is_empty() {
+            payloads.push(match &promoted[block_index] {
+                Block::Paragraph(paragraph) => vec![None; paragraph.runs.len()],
+                _ => Vec::new(),
+            });
+            continue;
+        }
+        notes.sort_by_key(|(offset, _, _)| *offset);
+        let Block::Paragraph(paragraph) = &mut promoted[block_index] else {
+            return None;
+        };
+        let authored = notes
+            .iter()
+            .map(|(offset, note, _)| (*offset, note.clone()))
+            .collect::<Vec<_>>();
+        if !crate::attach_authored_notes_to_paragraph(paragraph, authored) {
+            return None;
+        }
+        let mut expected = notes.into_iter();
+        let mut run_payloads = Vec::with_capacity(paragraph.runs.len());
+        for run in &paragraph.runs {
+            let Some(attached) = &run.note else {
+                run_payloads.push(None);
+                continue;
+            };
+            let (_, expected_note, payload) = expected.next()?;
+            if attached != &expected_note {
+                return None;
+            }
+            run_payloads.push(payload);
+        }
+        if expected.next().is_some() {
+            return None;
+        }
+        payloads.push(run_payloads);
+    }
+    Some(FreshConversionNotes {
+        body_blocks: promoted,
+        payloads,
+    })
+}
+
+fn note_kind_key(kind: NoteKind) -> u8 {
+    match kind {
+        NoteKind::Footnote => 0,
+        NoteKind::Endnote => 1,
+    }
 }
 
 fn attach_note_reference_anchors(
@@ -4239,6 +5236,10 @@ pub(crate) fn is_page_break_type(e: &BytesStart<'_>) -> bool {
     attr_local_trimmed(e, b"type").is_some_and(|value| value == "page")
 }
 
+pub(crate) fn is_column_break_type(e: &BytesStart<'_>) -> bool {
+    attr_local_trimmed(e, b"type").is_some_and(|value| value == "column")
+}
+
 pub(crate) fn field_char_type(e: &BytesStart<'_>) -> Option<String> {
     attr_local_trimmed(e, b"fldCharType")
 }
@@ -4255,9 +5256,11 @@ pub(crate) fn toggle_on(val: Option<String>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        custom_xml_item_id, normalize_part, parse_document_id, parse_rels, toggle_on,
-        MAX_REL_RECORDS,
+        custom_xml_item_id, normalize_part, parse_default_tab_stop_pt, parse_document_id,
+        parse_rels, toggle_on, MAX_REL_RECORDS,
     };
+    use super::{running_surface_distances_by_model_section, SectionHeaderFooter};
+    use crate::model::{Block, RunningSurfaceDistanceHints, SectionSetup};
 
     #[test]
     fn toggle_on_accepts_case_insensitive_off_values() {
@@ -4311,6 +5314,56 @@ mod tests {
         assert_eq!(
             parse_document_id(alternate_prefix).as_deref(),
             Some("6ECD4467")
+        );
+    }
+
+    #[test]
+    fn parse_default_tab_stop_pt_reads_positive_twips() {
+        let xml = r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val=" 1440 "/></w:settings>"#;
+        assert_eq!(parse_default_tab_stop_pt(xml), Some(72.0));
+        assert_eq!(
+            parse_default_tab_stop_pt(
+                r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="0"/></w:settings>"#
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn running_surface_distances_align_break_sections_and_final_section() {
+        let blocks = vec![
+            Block::SectionBreak(SectionSetup::default()),
+            Block::SectionBreak(SectionSetup::default()),
+        ];
+        let distances = |header_pt, footer_pt| SectionHeaderFooter {
+            distances: RunningSurfaceDistanceHints {
+                header_pt: Some(header_pt),
+                footer_pt: Some(footer_pt),
+            },
+            ..SectionHeaderFooter::default()
+        };
+        let sections = vec![
+            distances(10.0, 11.0),
+            distances(20.0, 21.0),
+            distances(30.0, 31.0),
+        ];
+
+        assert_eq!(
+            running_surface_distances_by_model_section(&blocks, &sections),
+            vec![
+                RunningSurfaceDistanceHints {
+                    header_pt: Some(10.0),
+                    footer_pt: Some(11.0),
+                },
+                RunningSurfaceDistanceHints {
+                    header_pt: Some(20.0),
+                    footer_pt: Some(21.0),
+                },
+                RunningSurfaceDistanceHints {
+                    header_pt: Some(30.0),
+                    footer_pt: Some(31.0),
+                },
+            ]
         );
     }
 

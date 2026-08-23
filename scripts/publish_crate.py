@@ -37,7 +37,8 @@ def registry_checksum(name: str, version: str) -> Optional[str]:
         with request.urlopen(registry_request, timeout=15) as response:
             payload = json.loads(response.read())
     except error.HTTPError as exc:
-        exc.close()
+        if exc.fp is not None:
+            exc.close()
         if exc.code == 404:
             return None
         raise PublishError(f"crates.io returned HTTP {exc.code} for {name} {version}") from exc
