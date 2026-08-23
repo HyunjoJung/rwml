@@ -1121,6 +1121,10 @@ document references. Marker-only notes and generated `BIBLIOGRAPHY`/`CITATION`/
 `INDEX`/`TOA`/`TOC` fields remain excluded. Dirty modeled runs, malformed field
 syntax, and unknown or other context-sensitive/generated fields reject that note
 atomically.
+Parser-validated, non-dirty `SYMBOL` instructions that actually compute one
+character likewise survive as normalized simple fields with modeled formatting;
+stale cached characters stay replaced by the deterministic result. Malformed or
+unmapped symbols and other display/action fields remain excluded.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names

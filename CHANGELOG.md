@@ -9,6 +9,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty `SYMBOL` fields whose instructions deterministically
+  compute one character in exact real footnote and endnote payloads with nonempty
+  visible text. Normalized instructions, computed characters, source order, and
+  modeled formatting survive at the top level and through recursively nested
+  table cells; one-result-run complex source fields normalize to non-dirty
+  `w:fldSimple`, and stale cached characters stay replaced. Malformed or unmapped
+  symbols and other display fields still trigger note-local plain-text fallback;
+  this does not broaden `EQ`, `ADVANCE`, action, relationship, or field-update
+  behavior.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-validated, non-dirty `TC` hidden table-of-contents entry markers in
   exact real footnote and endnote payloads with nonempty visible text. Normalized
   instructions, empty computed results, source order, and modeled formatting

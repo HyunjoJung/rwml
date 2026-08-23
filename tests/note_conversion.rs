@@ -465,6 +465,35 @@ fn toc_entry_marker_note_docx() -> Vec<u8> {
     ])
 }
 
+fn symbol_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="191"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="201"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="192"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="202"/></w:r><w:r><w:t> BODY E</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="191"><w:p><w:r><w:t xml:space="preserve">FOOT SYMBOL BEFORE </w:t></w:r><w:fldSimple w:instr=" SYMBOL 183 \f Symbol \s 12 "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT SYMBOL</w:t></w:r></w:fldSimple><w:r><w:t> FOOT SYMBOL AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="192"><w:p><w:fldSimple w:instr=" SYMBOL 65 \f &quot;Wingdings "><w:r><w:t>REJECTED MALFORMED SYMBOL</w:t></w:r></w:fldSimple><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="201"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END SYMBOL BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> SYMBOL 0x03BB \u \f &quot;Times New Roman&quot; \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END SYMBOL</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END SYMBOL AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="202"><w:p><w:r><w:t xml:space="preserve">COMPUTED EQ BEFORE </w:t></w:r><w:fldSimple w:instr=" EQ \f(1,2) "><w:r><w:t>STALE COMPUTED EQ</w:t></w:r></w:fldSimple><w:r><w:t> COMPUTED EQ AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -1645,6 +1674,121 @@ fn opened_docx_note_toc_entry_markers_keep_hidden_instructions() {
             && rejected_generated_text.ends_with(" GENERATED TOC AFTER")
             && rejected_generated_text.contains("Manual end entry"),
         "generated TOC fallback text changed: {rejected_generated_text:?}"
+    );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_symbol_fields_keep_computed_characters_and_instructions() {
+    let document = Document::open(&symbol_field_note_docx()).expect("SYMBOL field notes open");
+    assert_eq!(document.notes().len(), 4, "source note records missing");
+    assert_eq!(document.report().features.fields, 4);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone SYMBOL normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT SYMBOL BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END SYMBOL BEFORE");
+    let rejected_malformed = note_with_marker(footnotes, "footnote", "REJECTED MALFORMED SYMBOL");
+    let rejected_eq = note_with_marker(endnotes, "endnote", "COMPUTED EQ BEFORE");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(r#"<w:fldSimple w:instr=" SYMBOL 183 \f Symbol \s 12 ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains('\u{2022}')
+            && footnote.contains("FOOT SYMBOL BEFORE ")
+            && footnote.contains(" FOOT SYMBOL AFTER"),
+        "top-level SYMBOL field missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT SYMBOL"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(
+            r#"<w:fldSimple w:instr=" SYMBOL 0x03BB \u \f &quot;Times New Roman&quot; \* Upper ">"#
+        ) && endnote.contains("<w:i/>")
+            && endnote.contains('\u{039b}')
+            && endnote.contains("END SYMBOL BEFORE ")
+            && endnote.contains(" END SYMBOL AFTER"),
+        "nested SYMBOL field missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END SYMBOL"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [rejected_malformed, rejected_eq] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains(r#"SYMBOL 65 \f"#));
+    assert!(!endnotes.contains(r#"EQ \f(1,2)"#));
+    assert!(!endnotes.contains("STALE COMPUTED EQ"));
+
+    let reopened = Document::open(&converted).expect("converted SYMBOL field notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Display("SYMBOL".to_string()));
+    assert_eq!(fields[0].instruction, r#"SYMBOL 183 \f Symbol \s 12"#);
+    assert_eq!(fields[0].result, "\u{2022}");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("\u{2022}"));
+    assert_eq!(fields[1].kind, FieldKind::Display("SYMBOL".to_string()));
+    assert_eq!(
+        fields[1].instruction,
+        r#"SYMBOL 0x03BB \u \f "Times New Roman" \* Upper"#
+    );
+    assert_eq!(fields[1].result, "\u{039b}");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("\u{039b}"));
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 3] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_malformed) = &reopened_model.blocks[2] else {
+        panic!("rejected malformed-SYMBOL fallback paragraph")
+    };
+    assert_eq!(
+        rejected_malformed.text(),
+        "REJECTED MALFORMED SYMBOL FALLBACK"
+    );
+    let Block::Paragraph(rejected_eq) = &reopened_model.blocks[4] else {
+        panic!("rejected computed-EQ fallback paragraph")
+    };
+    let rejected_eq_text = rejected_eq.text();
+    assert!(
+        rejected_eq_text.starts_with("COMPUTED EQ BEFORE ")
+            && rejected_eq_text.ends_with(" COMPUTED EQ AFTER")
+            && rejected_eq_text.contains("1/2"),
+        "computed EQ fallback text changed: {rejected_eq_text:?}"
     );
     assert_eq!(reopened.to_docx(), converted);
 

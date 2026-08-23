@@ -17,7 +17,10 @@
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::annotation::{filename_field_syntax, merge_field_syntax};
-use crate::docx::{supports_reference_index_marker_syntax, supports_toc_entry_field_syntax};
+use crate::docx::{
+    supports_computed_symbol_field_syntax, supports_reference_index_marker_syntax,
+    supports_toc_entry_field_syntax,
+};
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
@@ -3124,6 +3127,10 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                     run.field_unsupported_reason.is_none()
                         && supports_toc_entry_field_syntax(instruction)
                 }
+                FieldKind::Display(kind) if kind == "SYMBOL" => {
+                    run.field_unsupported_reason.is_none()
+                        && supports_computed_symbol_field_syntax(instruction)
+                }
                 FieldKind::Compatibility(_)
                 | FieldKind::InsertedContent(_)
                 | FieldKind::MailMerge(_)
@@ -5284,11 +5291,14 @@ mod tests {
             r#"TA \l "Case v. Example" \c 1 \* CHARFORMAT"#,
             r#"rd "appendix.docx" \* MERGEFORMAT"#,
             r#"TC "Manual entry" \f m \l 2 \* Caps"#,
+            r#"SYMBOL 183 \f Symbol \s 12"#,
         ] {
             assert!(source_note_field_is_supported(&marker(instruction)));
         }
         let mut dirty_marker = marker(r#"XE "Dirty""#);
         dirty_marker.field_dirty = true;
+        let mut dirty_symbol = marker(r#"SYMBOL 0x03BB \u"#);
+        dirty_symbol.field_dirty = true;
 
         let mut dirty = cached("PRIVATE legacy-data");
         dirty.field_dirty = true;
@@ -5310,17 +5320,22 @@ mod tests {
             dirty,
             dirty_filename,
             dirty_marker,
+            dirty_symbol,
             malformed,
             malformed_merge,
             malformed_filename,
             marker(r#"TA \l "Broken Case" \c"#),
             marker(r#"TC \f m \l 2"#),
+            marker(r#"SYMBOL 65 \f "Wingdings"#),
+            marker(r#"SYMBOL 66 \f Wingdings"#),
+            marker(r#"EQ \f(1,2)"#),
             marker(r#"INDEX \e " - ""#),
             marker(r#"TOC \f m"#),
             cached("MERGEFIELD Client"),
             cached("FILENAME \\p"),
             cached(r#"XE "Wrong reason""#),
             cached(r#"TC "Wrong reason""#),
+            cached(r#"SYMBOL 0x03BB \u"#),
             Run {
                 field: FieldRole::Simple {
                     instruction: "CUSTOM literal payload".to_string(),

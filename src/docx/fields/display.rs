@@ -28,6 +28,13 @@ pub(crate) fn supports_display_field_syntax(instruction: &str) -> bool {
     supports_eq_displace_syntax(&spec.expression) || supports_eq_script_syntax(&spec.expression)
 }
 
+pub(crate) fn supports_computed_symbol_field_syntax(instruction: &str) -> bool {
+    matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::Display(ref kind) if kind == "SYMBOL"
+    ) && computed_symbol_result(instruction).is_some()
+}
+
 fn computed_advance_result(instruction: &str) -> Option<String> {
     advance_field_syntax(instruction).then_some(())?;
     Some(String::new())

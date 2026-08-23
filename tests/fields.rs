@@ -16942,10 +16942,15 @@ fn docx_symbol_field_diagnostics_split_mapped_wingdings_from_malformed_symbol() 
     );
     assert_eq!(
         model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("SYMBOL")),
-        vec![(
-            r#"SYMBOL 65 \f "Wingdings "#.to_string(),
-            Some(FieldUnsupportedReason::UnsupportedSwitch),
-        )]
+        vec![
+            (r#"SYMBOL 65 \f Wingdings"#.to_string(), None),
+            (r#"SYMBOL 74 \f Wingdings"#.to_string(), None),
+            (r#"SYMBOL 0xF0FC \f Wingdings"#.to_string(), None),
+            (
+                r#"SYMBOL 65 \f "Wingdings "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
     );
 
     let main_text = doc.main_text();

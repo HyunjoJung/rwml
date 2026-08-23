@@ -84,6 +84,10 @@ pub(crate) fn supports_display_field_syntax(instruction: &str) -> bool {
     fields::supports_display_field_syntax(instruction)
 }
 
+pub(crate) fn supports_computed_symbol_field_syntax(instruction: &str) -> bool {
+    fields::supports_computed_symbol_field_syntax(instruction)
+}
+
 pub(crate) fn supports_action_field_syntax(instruction: &str) -> bool {
     fields::supports_action_field_syntax(instruction)
 }

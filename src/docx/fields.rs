@@ -53,7 +53,9 @@ mod toc;
 
 pub(crate) use self::display::computed_run_symbol_char;
 use self::display::unquote_field_text;
-pub(crate) use self::display::{computed_display_result, supports_display_field_syntax};
+pub(crate) use self::display::{
+    computed_display_result, supports_computed_symbol_field_syntax, supports_display_field_syntax,
+};
 #[cfg(test)]
 use self::document_info::document_info_instruction;
 pub(crate) use self::document_info::{
@@ -2817,7 +2819,8 @@ mod tests {
         document_info_instruction, format_page_number, note_ref_context, note_ref_instruction,
         ordinal_page_number_text, page_ref_context, page_ref_instruction, ref_instruction,
         ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
-        supports_action_field_syntax, supports_compare_field_syntax, supports_formula_field_syntax,
+        supports_action_field_syntax, supports_compare_field_syntax,
+        supports_computed_symbol_field_syntax, supports_formula_field_syntax,
         supports_if_field_syntax, supports_merge_control_field_syntax,
         supports_prompt_field_syntax, supports_reference_index_marker_syntax,
         supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
@@ -3850,6 +3853,13 @@ mod tests {
 
     #[test]
     fn symbol_values_reject_malformed_quotes() {
+        assert!(supports_computed_symbol_field_syntax(
+            r#"SYMBOL 183 \f Symbol"#
+        ));
+        assert!(!supports_computed_symbol_field_syntax(
+            r#"SYMBOL 66 \f Wingdings"#
+        ));
+        assert!(!supports_computed_symbol_field_syntax(r#"EQ \f(1,2)"#));
         assert_eq!(
             computed_display_result(r#"SYMBOL "65""#).as_deref(),
             Some("A")

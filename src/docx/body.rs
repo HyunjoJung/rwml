@@ -3072,14 +3072,12 @@ impl ComplexFieldTracker {
             let Some(run) = runs.get_mut(result_run.index) else {
                 continue;
             };
-            if let Some(text) = computed.text.as_deref() {
+            if computed.text.is_some() {
                 run.field = if result_run.preserve_hyperlink
                     && matches!(run.field, FieldRole::Hyperlink { .. })
                 {
                     run.field.clone()
-                } else if text.is_empty()
-                    && offset == 0
-                    && preserves_computed_empty_field_instruction(&computed.instruction)
+                } else if offset == 0 && preserves_computed_field_instruction(&computed.instruction)
                 {
                     FieldRole::Simple {
                         instruction: computed.instruction.clone(),
@@ -3122,11 +3120,20 @@ fn computed_field_run(text: String) -> Run {
 }
 
 fn computed_simple_field_run(instruction: String, text: String) -> Run {
-    if text.is_empty() && preserves_computed_empty_field_instruction(&instruction) {
-        empty_simple_field_run(instruction, None)
+    if preserves_computed_field_instruction(&instruction) {
+        Run {
+            text,
+            field: FieldRole::Simple { instruction },
+            ..Default::default()
+        }
     } else {
         computed_field_run(text)
     }
+}
+
+fn preserves_computed_field_instruction(instruction: &str) -> bool {
+    preserves_computed_empty_field_instruction(instruction)
+        || super::fields::supports_computed_symbol_field_syntax(instruction)
 }
 
 fn preserves_computed_empty_field_instruction(instruction: &str) -> bool {
@@ -5098,9 +5105,7 @@ fn read_fldsimple(
             }
             for (index, run) in runs.iter_mut().enumerate() {
                 if let Some(text) = computed.as_deref() {
-                    run.field = if text.is_empty()
-                        && index == 0
-                        && preserves_computed_empty_field_instruction(&instruction)
+                    run.field = if index == 0 && preserves_computed_field_instruction(&instruction)
                     {
                         FieldRole::Simple {
                             instruction: instruction.clone(),
