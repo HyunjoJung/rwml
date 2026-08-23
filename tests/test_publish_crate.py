@@ -5,6 +5,7 @@ import json
 import pathlib
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 import urllib.error
@@ -21,7 +22,9 @@ SPEC.loader.exec_module(publish_crate)
 
 class FakeResponse:
     def __init__(self, payload):
-        self.payload = json.dumps(payload).encode("utf-8")
+        self.payload = (
+            payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
+        )
 
     def __enter__(self):
         return self
@@ -51,6 +54,27 @@ class PublishCrateTests(unittest.TestCase):
     def response(self, checksum):
         return FakeResponse({"version": {"checksum": checksum}})
 
+    def packaged_artifact(self, root, filename, git_sha, source=b"pub fn value() {}\n"):
+        path = pathlib.Path(root) / filename
+        package_root = "rwml-0.1.1"
+        files = {
+            ".cargo_vcs_info.json": json.dumps(
+                {"git": {"sha1": git_sha}, "path_in_vcs": ""},
+                indent=2,
+            ).encode("utf-8"),
+            "Cargo.toml": b'[package]\nname = "rwml"\nversion = "0.1.1"\n',
+            "src/lib.rs": source,
+        }
+        with tarfile.open(path, "w:gz") as archive:
+            for relative, data in sorted(files.items()):
+                info = tarfile.TarInfo(f"{package_root}/{relative}")
+                info.mode = 0o644
+                info.mtime = 0
+                info.size = len(data)
+                archive.addfile(info, io.BytesIO(data))
+        checksum = hashlib.sha256(path.read_bytes()).hexdigest()
+        return path, checksum
+
     def test_matching_published_version_skips_upload(self):
         with tempfile.TemporaryDirectory() as root:
             artifact, checksum = self.artifact(root)
@@ -64,37 +88,77 @@ class PublishCrateTests(unittest.TestCase):
         self.assertEqual(status, "already-published")
         run.assert_not_called()
 
-    def test_preexisting_publication_is_idempotent_despite_repackaging(self):
-        # `cargo package` is not byte-reproducible, so a re-run rebuilds an
-        # artifact whose checksum differs from the immutable published one.
-        # That must not fail the release: the version is already there.
+    def test_preexisting_publication_reuses_equivalent_registry_artifact(self):
         with tempfile.TemporaryDirectory() as root:
-            artifact, _ = self.artifact(root)
-            with mock.patch.object(
-                publish_crate.request, "urlopen", return_value=self.response("0" * 64)
-            ), mock.patch.object(publish_crate.subprocess, "run") as run:
-                status = self.ensure_published(
-                    "rwml", "0.1.1", artifact, None, poll_attempts=2, poll_interval=0
-                )
-
-        self.assertEqual(status, "already-published")
-        run.assert_not_called()
-
-    def test_preexisting_publication_reports_a_repackaged_checksum(self):
-        with tempfile.TemporaryDirectory() as root:
-            artifact, checksum = self.artifact(root)
+            artifact, local_checksum = self.packaged_artifact(
+                root, "local.crate", "1" * 40
+            )
+            remote, remote_checksum = self.packaged_artifact(
+                root, "remote.crate", "2" * 40
+            )
+            remote_bytes = remote.read_bytes()
+            self.assertNotEqual(local_checksum, remote_checksum)
             output = io.StringIO()
             with mock.patch.object(
-                publish_crate.request, "urlopen", return_value=self.response("0" * 64)
-            ), mock.patch.object(publish_crate.subprocess, "run"):
+                publish_crate.request,
+                "urlopen",
+                side_effect=[self.response(remote_checksum), FakeResponse(remote_bytes)],
+            ), mock.patch.object(publish_crate.subprocess, "run") as run:
                 with redirect_stdout(output):
-                    publish_crate.ensure_published(
+                    status = publish_crate.ensure_published(
+                        "rwml",
+                        "0.1.1",
+                        artifact,
+                        None,
+                        poll_attempts=2,
+                        poll_interval=0,
+                    )
+            synchronized_bytes = artifact.read_bytes()
+
+        self.assertEqual(status, "already-published")
+        self.assertEqual(synchronized_bytes, remote_bytes)
+        self.assertIn("synchronized", output.getvalue())
+        run.assert_not_called()
+
+    def test_preexisting_publication_rejects_different_package_payload(self):
+        with tempfile.TemporaryDirectory() as root:
+            artifact, _ = self.packaged_artifact(
+                root, "local.crate", "1" * 40, source=b"pub fn value() { new() }\n"
+            )
+            remote, remote_checksum = self.packaged_artifact(
+                root, "remote.crate", "2" * 40, source=b"pub fn value() { old() }\n"
+            )
+            with mock.patch.object(
+                publish_crate.request,
+                "urlopen",
+                side_effect=[
+                    self.response(remote_checksum),
+                    FakeResponse(remote.read_bytes()),
+                ],
+            ), mock.patch.object(publish_crate.subprocess, "run"):
+                with self.assertRaisesRegex(publish_crate.PublishError, "payload"):
+                    self.ensure_published(
                         "rwml", "0.1.1", artifact, None, poll_attempts=2, poll_interval=0
                     )
 
-        printed = output.getvalue()
-        self.assertIn("0" * 64, printed)
-        self.assertIn(checksum, printed)
+    def test_preexisting_publication_rejects_tampered_registry_download(self):
+        with tempfile.TemporaryDirectory() as root:
+            artifact, _ = self.packaged_artifact(
+                root, "local.crate", "1" * 40
+            )
+            remote, remote_checksum = self.packaged_artifact(
+                root, "remote.crate", "2" * 40
+            )
+            tampered = remote.read_bytes() + b"tampered"
+            with mock.patch.object(
+                publish_crate.request,
+                "urlopen",
+                side_effect=[self.response(remote_checksum), FakeResponse(tampered)],
+            ), mock.patch.object(publish_crate.subprocess, "run"):
+                with self.assertRaisesRegex(publish_crate.PublishError, "checksum"):
+                    self.ensure_published(
+                        "rwml", "0.1.1", artifact, None, poll_attempts=2, poll_interval=0
+                    )
 
     def test_failed_publish_recovers_when_matching_version_appears(self):
         with tempfile.TemporaryDirectory() as root:
