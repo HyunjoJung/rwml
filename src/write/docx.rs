@@ -10,8 +10,9 @@
 //!   <w:u w:val="single"/>`.
 //! * table merges → `<w:gridSpan>` + `<w:vMerge>` with reconstructed continuation
 //!   cells (the reader dropped them on read; we re-insert them).
-//! * image → a `media/` part + `<a:blip r:embed>`; hyperlink → an external
-//!   relationship + `<w:hyperlink r:id>`.
+//! * image → a `media/` part + `<a:blip r:embed>`; external hyperlink → a
+//!   relationship + `<w:hyperlink r:id>`; internal hyperlink →
+//!   `<w:hyperlink w:anchor>`.
 
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
@@ -30,6 +31,28 @@ use crate::model::{
     WebExtensionTaskPane, MAX_TAB_STOPS,
 };
 use crate::{NoteKind, RevisionKind};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HyperlinkWriteTarget<'a> {
+    External(&'a str),
+    Anchor(&'a str),
+    Invalid,
+}
+
+fn hyperlink_write_target(url: &str) -> HyperlinkWriteTarget<'_> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return HyperlinkWriteTarget::Invalid;
+    }
+    let Some(anchor) = trimmed.strip_prefix('#') else {
+        return HyperlinkWriteTarget::External(url);
+    };
+    if anchor.starts_with('#') || !referenceable_bookmark_name(anchor) {
+        HyperlinkWriteTarget::Invalid
+    } else {
+        HyperlinkWriteTarget::Anchor(anchor)
+    }
+}
 
 /// `Color` → 6-hex `RRGGBB` for OOXML `w:val`.
 fn hex(c: Color) -> String {
@@ -753,8 +776,14 @@ fn write_hf_run(
         r.revision.as_ref().map(|revision| revision.kind),
         Some(RevisionKind::Deletion)
     );
-    let hyperlink_rid = match &r.field {
-        FieldRole::Hyperlink { url } => Some(add_part_rel(rels, REL_HYPERLINK, url, true)),
+    let hyperlink_target = match &r.field {
+        FieldRole::Hyperlink { url } => Some(hyperlink_write_target(url)),
+        _ => None,
+    };
+    let hyperlink_rid = match hyperlink_target {
+        Some(HyperlinkWriteTarget::External(url)) => {
+            Some(add_part_rel(rels, REL_HYPERLINK, url, true))
+        }
         _ => None,
     };
     let mut run_xml = String::new();
@@ -781,11 +810,20 @@ fn write_hf_run(
     }
 
     match &r.field {
-        FieldRole::Hyperlink { .. } => {
-            if let Some(rid) = hyperlink_rid {
-                run_xml = format!(r#"<w:hyperlink r:id="{rid}">{run_xml}</w:hyperlink>"#);
+        FieldRole::Hyperlink { .. } => match hyperlink_target {
+            Some(HyperlinkWriteTarget::External(_)) => {
+                if let Some(rid) = hyperlink_rid {
+                    run_xml = format!(r#"<w:hyperlink r:id="{rid}">{run_xml}</w:hyperlink>"#);
+                }
             }
-        }
+            Some(HyperlinkWriteTarget::Anchor(anchor)) => {
+                run_xml = format!(
+                    r#"<w:hyperlink w:anchor="{}">{run_xml}</w:hyperlink>"#,
+                    esc_attr(anchor)
+                );
+            }
+            Some(HyperlinkWriteTarget::Invalid) | None => {}
+        },
         FieldRole::Simple { instruction } => {
             let instruction = normalize_field_instruction(instruction);
             if !instruction.is_empty() {
@@ -1749,12 +1787,22 @@ impl Ctx {
         );
         let mut run_xml = String::new();
         match &r.field {
-            FieldRole::Hyperlink { url } => {
-                let rid = self.add_rel(REL_HYPERLINK, url, true);
-                run_xml.push_str(&format!(r#"<w:hyperlink r:id="{rid}">"#));
-                self.write_run_inner(&mut run_xml, r, deleted, column_breaks);
-                run_xml.push_str("</w:hyperlink>");
-            }
+            FieldRole::Hyperlink { url } => match hyperlink_write_target(url) {
+                HyperlinkWriteTarget::External(url) => {
+                    let rid = self.add_rel(REL_HYPERLINK, url, true);
+                    run_xml.push_str(&format!(r#"<w:hyperlink r:id="{rid}">"#));
+                    self.write_run_inner(&mut run_xml, r, deleted, column_breaks);
+                    run_xml.push_str("</w:hyperlink>");
+                }
+                HyperlinkWriteTarget::Anchor(anchor) => {
+                    run_xml.push_str(&format!(r#"<w:hyperlink w:anchor="{}">"#, esc_attr(anchor)));
+                    self.write_run_inner(&mut run_xml, r, deleted, column_breaks);
+                    run_xml.push_str("</w:hyperlink>");
+                }
+                HyperlinkWriteTarget::Invalid => {
+                    self.write_run_inner(&mut run_xml, r, deleted, column_breaks);
+                }
+            },
             FieldRole::Simple { instruction } => {
                 let instruction = normalize_field_instruction(instruction);
                 if instruction.is_empty() {
@@ -3025,7 +3073,11 @@ fn source_note_paragraph_is_supported(paragraph: &Paragraph) -> bool {
             && run.comment.is_none()
             && run.revision.is_none()
             && run.content_control.is_none()
-            && run.bookmark.is_none()
+            && run
+                .bookmark
+                .as_deref()
+                .map(referenceable_bookmark_name)
+                .unwrap_or(true)
             && run.note.is_none()
     })
 }
@@ -3050,8 +3102,7 @@ fn source_note_field_is_supported(field: &FieldRole) -> bool {
     match field {
         FieldRole::None => true,
         FieldRole::Hyperlink { url } => {
-            let url = url.trim();
-            !url.is_empty() && !url.starts_with('#')
+            !matches!(hyperlink_write_target(url), HyperlinkWriteTarget::Invalid)
         }
         _ => false,
     }
@@ -6618,7 +6669,42 @@ mod tests {
             url: "#note-anchor".to_string(),
         };
         let (footnotes, _, footnote_rels, _, _) = render(&internal_anchor);
+        assert_eq!(counts(&footnotes, "footnote", "FOOT"), (2, 1, 0, 1, 2, 1));
+        assert!(footnotes.contains(r#"<w:hyperlink w:anchor="note-anchor">"#));
+        assert!(footnote_rels.is_empty());
+
+        let mut malformed_anchor = relationship_bearing.clone();
+        let Block::Paragraph(paragraph) = &mut malformed_anchor[0][0].as_mut().unwrap().blocks[0]
+        else {
+            panic!("paragraph payload")
+        };
+        paragraph.runs[0].field = FieldRole::Hyperlink {
+            url: "#bad anchor".to_string(),
+        };
+        let (footnotes, _, footnote_rels, _, _) = render(&malformed_anchor);
         assert_eq!(counts(&footnotes, "footnote", "FOOT"), (1, 0, 2, 0, 0, 0));
+        assert!(!footnotes.contains("<w:hyperlink"));
+        assert!(footnote_rels.is_empty());
+
+        let mut bookmark = valid.clone();
+        let Block::Paragraph(paragraph) = &mut bookmark[0][0].as_mut().unwrap().blocks[0] else {
+            panic!("paragraph payload")
+        };
+        paragraph.runs[0].bookmark = Some("NoteTarget".to_string());
+        let (footnotes, _, footnote_rels, _, _) = render(&bookmark);
+        assert!(footnotes.contains(r#"<w:bookmarkStart w:id="0" w:name="NoteTarget"/>"#));
+        assert!(footnotes.contains(r#"<w:bookmarkEnd w:id="0"/>"#));
+        assert!(footnote_rels.is_empty());
+
+        let mut malformed_bookmark = bookmark.clone();
+        let Block::Paragraph(paragraph) = &mut malformed_bookmark[0][0].as_mut().unwrap().blocks[0]
+        else {
+            panic!("paragraph payload")
+        };
+        paragraph.runs[0].bookmark = Some("Bad Target".to_string());
+        let (footnotes, _, footnote_rels, _, _) = render(&malformed_bookmark);
+        assert_eq!(counts(&footnotes, "footnote", "FOOT"), (1, 0, 2, 0, 0, 0));
+        assert!(!footnotes.contains("<w:bookmark"));
         assert!(footnote_rels.is_empty());
 
         let mut mixed_semantics = relationship_bearing.clone();

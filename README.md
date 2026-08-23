@@ -67,7 +67,8 @@ cached results, `PAGEREF` helper runs, dirty TOC
 heading-range fields, run-anchored comments with reply parent ids and
 commentsExtended metadata, tracked
 insertion/deletion runs, run-level content controls, bookmarked runs, authored
-footnotes/endnotes, string custom document properties, raw custom XML data-store
+external hyperlinks and `#bookmark` internal hyperlinks, authored footnotes/
+endnotes, string custom document properties, raw custom XML data-store
 items, generated core metadata (title, subject, creator, description, keywords,
 category, content status, last modified by, created, modified, last printed,
 revision, and version), explicit Word document ids, web-extension task pane package shells, page setup with section columns, document grids, text direction, title pages, and page-number restarts/formats, explicit page breaks and next/even/odd section breaks,
@@ -1093,8 +1094,11 @@ manual page breaks between top-level paragraph fragments and inside table cells
 at every selected depth. Relationship-backed external hyperlinks survive in
 top-level and recursively nested note paragraphs through relationship files owned
 by the corresponding footnote or endnote part; simple HYPERLINK field syntax may
-normalize to a `w:hyperlink` element. Complete nonempty extracted PNG, JPEG, GIF,
-BMP, TIFF, and WebP inline runs likewise survive at every supported paragraph
+normalize to a `w:hyperlink` element. Validator-approved internal-anchor links
+and run bookmarks likewise survive at every supported depth without note
+relationships, using paired bookmark IDs unique across body and note stories.
+Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
+likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names
 and relationships owned by the corresponding note part. Parser-modeled native
 literal-cache core and ChartEx chart blocks in chart-only sibling paragraphs also
@@ -1104,12 +1108,13 @@ fresh embedded XLSX workbook, and ChartEx literal data remains native. Missing o
 empty image bytes, unknown or raw-RGBA MIME data, floating and block images,
 image-only or chart-only notes, arbitrary Office chart grammars, source chart
 styling/formulas/external data, exact floating chart placement, vector metafiles,
-internal-anchor links, other fields, annotations, bookmarks, or nested notes
-degrade only that note to the normalized one-paragraph text fallback without
+malformed internal-anchor or bookmark names, other fields, annotations, or nested
+notes degrade only that note to the normalized one-paragraph text fallback without
 leaving orphan media, charts, workbooks, or relationships; supported sibling
 notes remain rich. Source IDs, numbering and separators, custom marks, page-
 bottom placement, and Word-exact pagination are not preserved. Standalone
-`write_docx` and the public model remain unchanged.
+`write_docx` remains model-only and does not emit note parts; it does serialize
+modeled body/running internal anchors and bookmarks. The public model is unchanged.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the

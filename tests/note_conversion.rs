@@ -259,6 +259,35 @@ fn relationship_note_docx() -> Vec<u8> {
     ])
 }
 
+fn internal_anchor_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="5" w:name="BodyTarget"/><w:r><w:t>BODY TARGET</w:t></w:r><w:bookmarkEnd w:id="5"/><w:r><w:t> BODY A</w:t></w:r><w:r><w:footnoteReference w:id="51"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="61"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="52"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="62"/></w:r><w:r><w:t> BODY E</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="51"><w:p><w:hyperlink w:anchor=" BodyTarget "><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>FOOT BODY LINK</w:t></w:r></w:hyperlink><w:r><w:t> | </w:t></w:r><w:bookmarkStart w:id="21" w:name="FootTarget"/><w:r><w:rPr><w:b/></w:rPr><w:t>FOOT TARGET</w:t></w:r><w:bookmarkEnd w:id="21"/><w:r><w:t> | </w:t></w:r><w:hyperlink w:anchor="FootTarget"><w:r><w:t>FOOT LOCAL LINK</w:t></w:r></w:hyperlink></w:p></w:footnote><w:footnote w:id="52"><w:p><w:hyperlink w:anchor=" Bad Target "><w:r><w:t>REJECTED ANCHOR</w:t></w:r></w:hyperlink><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="61"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:bookmarkStart w:id="31" w:name="EndTarget"/><w:r><w:rPr><w:i/></w:rPr><w:t>END TARGET</w:t></w:r><w:bookmarkEnd w:id="31"/><w:r><w:t> | </w:t></w:r><w:hyperlink w:anchor="BodyTarget"><w:r><w:t>END BODY LINK</w:t></w:r></w:hyperlink><w:r><w:t> | </w:t></w:r><w:hyperlink w:anchor="EndTarget"><w:r><w:t>END LOCAL LINK</w:t></w:r></w:hyperlink></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="62"><w:p><w:bookmarkStart w:id="41" w:name="Bad Target"/><w:r><w:t>REJECTED BOOKMARK</w:t></w:r><w:bookmarkEnd w:id="41"/><w:hyperlink w:anchor="BodyTarget"><w:r><w:t> VALID LINK</w:t></w:r></w:hyperlink></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -662,6 +691,105 @@ fn opened_docx_note_external_hyperlinks_keep_part_local_relationships() {
         &reopened_model.blocks[..reopened_model.blocks.len() - 1],
         &normalized_model.blocks[..normalized_model.blocks.len() - 1]
     );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_internal_anchors_keep_bookmarks_without_relationships() {
+    let document = Document::open(&internal_anchor_note_docx()).expect("anchor notes open");
+    assert_eq!(document.notes().len(), 4, "source note records missing");
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone anchor normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let document_xml = std::str::from_utf8(&parts["word/document.xml"]).unwrap();
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    let document_rels = std::str::from_utf8(&parts["word/_rels/document.xml.rels"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!document_rels.contains("relationships/hyperlink"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT BODY LINK");
+    let endnote = note_with_marker(endnotes, "endnote", "END TARGET");
+    let rejected_anchor = note_with_marker(footnotes, "footnote", "REJECTED ANCHOR");
+    let rejected_bookmark = note_with_marker(endnotes, "endnote", "REJECTED BOOKMARK");
+    assert!(footnote.contains(r#"<w:hyperlink w:anchor="BodyTarget">"#));
+    assert!(footnote.contains(r#"<w:hyperlink w:anchor="FootTarget">"#));
+    assert!(footnote.contains(r#"<w:bookmarkStart w:id="1" w:name="FootTarget"/>"#));
+    assert!(footnote.contains(r#"<w:bookmarkEnd w:id="1"/>"#));
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert!(endnote.contains(r#"<w:hyperlink w:anchor="BodyTarget">"#));
+    assert!(endnote.contains(r#"<w:hyperlink w:anchor="EndTarget">"#));
+    assert!(endnote.contains(r#"<w:bookmarkStart w:id="2" w:name="EndTarget"/>"#));
+    assert!(endnote.contains(r#"<w:bookmarkEnd w:id="2"/>"#));
+
+    let all_stories = format!("{document_xml}{footnotes}{endnotes}");
+    for (id, name) in [("0", "BodyTarget"), ("1", "FootTarget"), ("2", "EndTarget")] {
+        assert_eq!(
+            all_stories
+                .matches(&format!(
+                    r#"<w:bookmarkStart w:id="{id}" w:name="{name}"/>"#
+                ))
+                .count(),
+            1,
+            "{all_stories}"
+        );
+        assert_eq!(
+            all_stories
+                .matches(&format!(r#"<w:bookmarkEnd w:id="{id}"/>"#))
+                .count(),
+            1,
+            "{all_stories}"
+        );
+    }
+    assert!(
+        !rejected_anchor.contains("<w:hyperlink"),
+        "{rejected_anchor}"
+    );
+    assert!(
+        !rejected_anchor.contains("<w:bookmark"),
+        "{rejected_anchor}"
+    );
+    assert_eq!(rejected_anchor.matches("<w:p>").count(), 1);
+    assert!(
+        !rejected_bookmark.contains("<w:hyperlink"),
+        "{rejected_bookmark}"
+    );
+    assert!(
+        !rejected_bookmark.contains("<w:bookmark"),
+        "{rejected_bookmark}"
+    );
+    assert_eq!(rejected_bookmark.matches("<w:p>").count(), 1);
+
+    let reopened = Document::open(&converted).expect("converted anchor notes reopen");
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 3] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_anchor) = &reopened_model.blocks[2] else {
+        panic!("rejected anchor fallback paragraph")
+    };
+    assert_eq!(rejected_anchor.text(), "REJECTED ANCHOR FALLBACK");
+    let Block::Paragraph(rejected_bookmark) = &reopened_model.blocks[4] else {
+        panic!("rejected bookmark fallback paragraph")
+    };
+    assert_eq!(rejected_bookmark.text(), "REJECTED BOOKMARK VALID LINK");
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);

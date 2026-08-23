@@ -1521,6 +1521,55 @@ fn run_builder_adds_inline_hyperlink_runs() {
 }
 
 #[test]
+fn run_builder_adds_internal_anchor_hyperlinks_without_relationships() {
+    let model = DocBuilder::new()
+        .rich_paragraph(
+            ParagraphBuilder::new().runs([
+                RunBuilder::new("Target").bookmark("SectionOne").build(),
+                RunBuilder::new(" jump")
+                    .hyperlink(" #SectionOne ")
+                    .bold()
+                    .build(),
+                RunBuilder::new(" invalid").hyperlink("#Bad Target").build(),
+            ]),
+        )
+        .build();
+
+    let bytes = rwml::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = parts
+        .get("word/_rels/document.xml.rels")
+        .map(|bytes| std::str::from_utf8(bytes).unwrap())
+        .unwrap_or_default();
+    assert!(
+        document_xml.contains(r#"<w:bookmarkStart w:id="0" w:name="SectionOne"/>"#)
+            && document_xml.contains(r#"<w:hyperlink w:anchor="SectionOne"><w:r>"#)
+            && document_xml.contains("<w:b/>")
+            && document_xml.contains("> jump</w:t></w:r></w:hyperlink>")
+            && document_xml.contains("> invalid</w:t>")
+            && !document_xml.contains(r#"w:anchor="Bad Target""#),
+        "internal hyperlink XML missing or malformed target retained: {document_xml}"
+    );
+    assert_eq!(document_xml.matches("<w:hyperlink").count(), 1);
+    assert!(
+        !rels.contains("relationships/hyperlink") && !rels.contains("#SectionOne"),
+        "internal hyperlinks must not create external relationships: {rels}"
+    );
+
+    let reopened = Document::open(&bytes).expect("internal-anchor .docx reopens");
+    let Block::Paragraph(paragraph) = &reopened.model().blocks[0] else {
+        panic!("expected reopened paragraph");
+    };
+    assert_eq!(paragraph.runs[0].bookmark.as_deref(), Some("SectionOne"));
+    assert!(matches!(
+        &paragraph.runs[1].field,
+        FieldRole::Hyperlink { url } if url == "#SectionOne"
+    ));
+    assert!(matches!(paragraph.runs[2].field, FieldRole::None));
+}
+
+#[test]
 fn builders_ignore_blank_hyperlink_targets() {
     let model = DocBuilder::new()
         .hyperlink("doc link", " ")
@@ -3644,20 +3693,30 @@ fn write_docx_keeps_header_footer_content_control_runs() {
 }
 
 #[test]
-fn write_docx_keeps_header_footer_bookmark_runs() {
+fn write_docx_keeps_header_footer_bookmark_and_internal_anchor_runs() {
     let model = DocModel {
         blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
         setup: DocSetup {
             header: vec![Block::Paragraph(Paragraph {
-                runs: vec![RunBuilder::new("Header anchor")
-                    .bookmark("HeaderMark")
-                    .build()],
+                runs: vec![
+                    RunBuilder::new("Header anchor")
+                        .bookmark("HeaderMark")
+                        .build(),
+                    RunBuilder::new(" header jump")
+                        .hyperlink("#HeaderMark")
+                        .build(),
+                ],
                 ..Paragraph::default()
             })],
             footer: vec![Block::Paragraph(Paragraph {
-                runs: vec![RunBuilder::new("Footer anchor")
-                    .bookmark("FooterMark")
-                    .build()],
+                runs: vec![
+                    RunBuilder::new("Footer anchor")
+                        .bookmark("FooterMark")
+                        .build(),
+                    RunBuilder::new(" footer jump")
+                        .hyperlink("#FooterMark")
+                        .build(),
+                ],
                 ..Paragraph::default()
             })],
             ..DocSetup::default()
@@ -3683,6 +3742,10 @@ fn write_docx_keeps_header_footer_bookmark_runs() {
         header_start < header_text && header_text < header_end,
         "header bookmark XML missing or out of order: {header_xml}"
     );
+    assert!(
+        header_xml.contains(r#"<w:hyperlink w:anchor="HeaderMark">"#),
+        "header internal anchor missing: {header_xml}"
+    );
 
     let footer_start = footer_xml
         .find(r#"<w:bookmarkStart w:id="1" w:name="FooterMark"/>"#)
@@ -3697,11 +3760,33 @@ fn write_docx_keeps_header_footer_bookmark_runs() {
         footer_start < footer_text && footer_text < footer_end,
         "footer bookmark XML missing or out of order: {footer_xml}"
     );
+    assert!(
+        footer_xml.contains(r#"<w:hyperlink w:anchor="FooterMark">"#),
+        "footer internal anchor missing: {footer_xml}"
+    );
+    assert!(!parts.contains_key("word/_rels/header1.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/footer1.xml.rels"));
 
     let reopened = Document::open(&bytes).expect("header/footer bookmark .docx reopens");
+    let reopened_model = reopened.model();
+    let Block::Paragraph(header) = &reopened_model.setup.header[0] else {
+        panic!("expected reopened header paragraph")
+    };
+    assert!(matches!(
+        &header.runs[1].field,
+        FieldRole::Hyperlink { url } if url == "#HeaderMark"
+    ));
+    let Block::Paragraph(footer) = &reopened_model.setup.footer[0] else {
+        panic!("expected reopened footer paragraph")
+    };
+    assert!(matches!(
+        &footer.runs[1].field,
+        FieldRole::Hyperlink { url } if url == "#FooterMark"
+    ));
     let header_text = reopened.header_text();
     assert!(
-        header_text.contains("Header anchor") && header_text.contains("Footer anchor"),
+        header_text.contains("Header anchor header jump")
+            && header_text.contains("Footer anchor footer jump"),
         "header/footer bookmark text not readable after reopen: {header_text:?}"
     );
 }

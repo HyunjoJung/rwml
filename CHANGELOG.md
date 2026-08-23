@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Fresh DOCX writers now serialize validator-approved `#bookmark` hyperlink
+  targets as `w:hyperlink w:anchor` without external relationships, while
+  preserving the existing relationship-backed path for external targets.
+  Model-authored body links and native reopen are covered. Exact real footnote
+  and endnote payloads from opened DOCX inputs now also retain internal anchors
+  and paired run bookmarks in top-level paragraphs and recursively nested table
+  cells, with globally unique bookmark IDs and no note relationship parts.
+  Both note families, body- and note-local targets, deterministic reconversion,
+  source-model immutability, standalone note exclusion, malformed-name rejection,
+  and per-note atomic fallback without orphan anchor/bookmark XML are covered.
+  Malformed model-authored internal targets serialize as visible plain text;
+  arbitrary fields/annotations, nested notes, floating placement, page-bottom
+  composition, and Word-exact pagination remain outside this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-modeled native literal-cache core and ChartEx chart blocks in exact real
   footnote and endnote payloads that also contain visible text. Note-part-local
@@ -43,9 +56,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deterministic bytes, native reopen/reconversion, source-model immutability,
   standalone-writer exclusion, and all-or-nothing fallback without orphan
   relationships are covered. Simple HYPERLINK field syntax may normalize to a
-  `w:hyperlink` element. Internal-anchor links, unsupported raster classes,
-  other fields, annotations, bookmarks, nested notes, page-bottom
-  placement, and Word-exact pagination remain outside this bounded path.
+  `w:hyperlink` element. Unsupported raster classes, other fields, annotations,
+  nested notes, page-bottom placement, and Word-exact pagination remain outside
+  this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs retains typed
   manual page breaks in direct and recursively nested body and running-surface
   table cells through the existing ordered public block tree. Evidence covers
@@ -91,9 +104,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   literal-cache core and ChartEx blocks retain note-local chart relationships and
   fresh chart package parts. Missing/empty, unknown-MIME, raw-RGBA, floating,
   block, or image-only raster cases, chart-only notes, arbitrary Office chart
-  grammars, internal-anchor links, other fields, annotations, bookmarks, nested
-  notes, custom marks, source IDs/numbering and separators, page-bottom placement,
-  and Word-exact pagination remain unsupported by this bounded path.
+  grammars, malformed internal-anchor or bookmark names, other fields,
+  annotations, nested notes, custom marks, source IDs/numbering and separators,
+  page-bottom placement, and Word-exact pagination remain unsupported by this
+  bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   visible manual column breaks in ordinary top-level paragraphs across all
   default/first/even headers and footers. The private section-aligned six-variant
