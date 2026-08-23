@@ -1044,6 +1044,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   roadmap and explicit renderer, RTL, metafile, and editing ceilings. The
   detailed release roadmap remains outside the public crate.
 
+### Fixed
+
+- Keeps local release validation and registry-response tests compatible with
+  Python 3.9 by avoiding newer integer bit-counting APIs and by closing HTTP
+  error bodies only when a response body exists. Validation metrics, thresholds,
+  publication behavior, and release policy are unchanged.
+
 ## [0.1.2] - 2026-08-02
 
 ### Added

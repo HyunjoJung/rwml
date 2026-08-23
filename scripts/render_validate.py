@@ -1272,7 +1272,7 @@ def image_ahash(image, size: int = DEFAULT_AHASH_SIZE) -> int:
 def image_hash_similarity(reference, candidate, size: int = DEFAULT_AHASH_SIZE) -> float:
     reference, candidate = normalize_page_pair(reference, candidate)
     difference = image_ahash(reference, size=size) ^ image_ahash(candidate, size=size)
-    return 1.0 - difference.bit_count() / (size * size)
+    return 1.0 - bin(difference).count("1") / (size * size)
 
 
 def foreground_ink_iou_images(reference, candidate, threshold: int) -> float:
