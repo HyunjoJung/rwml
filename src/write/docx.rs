@@ -21,8 +21,9 @@ use super::{esc_attr, esc_text};
 use crate::annotation::{filename_field_syntax, merge_field_syntax};
 use crate::docx::{
     computed_preserved_listnum_start_result, computed_preserved_note_local_ref_result,
-    computed_preserved_sequence_reset_result, computed_span_free_table_formula_result,
-    preserved_note_local_ref_target, supports_computed_symbol_field_syntax,
+    computed_preserved_note_local_style_ref_result, computed_preserved_sequence_reset_result,
+    computed_span_free_table_formula_result, preserved_note_local_ref_target,
+    preserved_note_local_style_ref_target, supports_computed_symbol_field_syntax,
     supports_context_free_display_field_syntax, supports_context_free_fill_in_field_syntax,
     supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
     supports_formula_field_syntax, supports_preserved_document_info_field_syntax,
@@ -950,9 +951,13 @@ fn settings_xml(even_and_odd_headers: bool, document_id: Option<&str>) -> String
     format!(r#"{XML_DECL}<w:settings xmlns:w="{W_NS}"{w14}>{even_odd}{doc_id}</w:settings>"#)
 }
 
-/// A `word/styles.xml` defining `Normal`, optional `Heading1..6`, and caller
-/// supplied paragraph styles.
-fn styles_xml(styles: &[ParagraphStyle], include_headings: bool) -> String {
+/// A `word/styles.xml` defining `Normal`, optional `Heading1..6`, caller-supplied
+/// paragraph styles, and otherwise undefined source style id/name pairs.
+fn styles_xml(
+    styles: &[ParagraphStyle],
+    include_headings: bool,
+    source_styles: &[SourceParagraphStyle],
+) -> String {
     let mut s = String::new();
     s.push_str(XML_DECL);
     s.push_str(&format!(r#"<w:styles xmlns:w="{W_NS}">"#));
@@ -961,15 +966,23 @@ fn styles_xml(styles: &[ParagraphStyle], include_headings: bool) -> String {
     );
     if include_headings {
         for (lvl, sz) in [(1u8, 32), (2, 28), (3, 26), (4, 24), (5, 22), (6, 22)] {
+            let style_id = format!("Heading{lvl}");
+            let default_name = format!("heading {lvl}");
+            let name = source_styles
+                .iter()
+                .find(|style| style.id == style_id)
+                .map(|style| style.name.as_str())
+                .unwrap_or(default_name.as_str());
             s.push_str(&format!(
                 concat!(
-                    r#"<w:style w:type="paragraph" w:styleId="Heading{lvl}">"#,
-                    r#"<w:name w:val="heading {lvl}"/><w:basedOn w:val="Normal"/>"#,
+                    r#"<w:style w:type="paragraph" w:styleId="{style_id}">"#,
+                    r#"<w:name w:val="{name}"/><w:basedOn w:val="Normal"/>"#,
                     r#"<w:next w:val="Normal"/><w:qFormat/>"#,
                     r#"<w:pPr><w:outlineLvl w:val="{ol}"/></w:pPr>"#,
                     r#"<w:rPr><w:b/><w:sz w:val="{sz}"/><w:szCs w:val="{sz}"/></w:rPr></w:style>"#,
                 ),
-                lvl = lvl,
+                style_id = style_id,
+                name = esc_attr(name),
                 ol = lvl - 1,
                 sz = sz
             ));
@@ -978,8 +991,35 @@ fn styles_xml(styles: &[ParagraphStyle], include_headings: bool) -> String {
     for style in styles {
         write_paragraph_style(&mut s, style);
     }
+    for style in source_styles {
+        if source_style_is_defined(style, styles, include_headings) {
+            continue;
+        }
+        s.push_str(&format!(
+            r#"<w:style w:type="paragraph" w:styleId="{}"><w:name w:val="{}"/></w:style>"#,
+            esc_attr(&style.id),
+            esc_attr(&style.name)
+        ));
+    }
     s.push_str("</w:styles>");
     s
+}
+
+fn source_style_is_defined(
+    source: &SourceParagraphStyle,
+    styles: &[ParagraphStyle],
+    include_headings: bool,
+) -> bool {
+    source.id == "Normal"
+        || styles.iter().any(|style| {
+            non_empty_trimmed(Some(&style.id)) == Some(source.id.as_str())
+                && non_empty_trimmed(Some(&style.name)).is_some()
+        })
+        || (include_headings
+            && matches!(
+                source.id.as_str(),
+                "Heading1" | "Heading2" | "Heading3" | "Heading4" | "Heading5" | "Heading6"
+            ))
 }
 
 fn write_paragraph_style(out: &mut String, style: &ParagraphStyle) {
@@ -1209,6 +1249,8 @@ struct Ctx {
     has_heading: bool,
     /// Whether any paragraph style reference was emitted (⇒ write `styles.xml`).
     has_styles: bool,
+    /// Resolved source style names absent from explicit authored definitions.
+    source_styles: Vec<SourceParagraphStyle>,
     /// Whether authored even-page header/footer variants require settings.xml.
     has_even_header_footer: bool,
     /// Image counter for unique `media/imageN` names + drawing ids.
@@ -1270,6 +1312,7 @@ impl Ctx {
             has_list: false,
             has_heading: false,
             has_styles: false,
+            source_styles: Vec::new(),
             has_even_header_footer: false,
             img_id: 0,
             chart_id: 0,
@@ -1738,6 +1781,9 @@ impl Ctx {
         // widowControl, numPr, shd, tabs, bidi, spacing, ind, jc, outlineLvl.
         if let Some(s) = &style_id {
             self.has_styles = true;
+            if let Some(name) = non_empty_trimmed(pr.style_name.as_deref()) {
+                self.register_source_style(s, name);
+            }
             if generated_heading_style {
                 self.has_heading = true;
             }
@@ -1784,6 +1830,16 @@ impl Ctx {
             out.push_str(&format!(r#"<w:outlineLvl w:val="{o}"/>"#));
         }
         out.push_str("</w:pPr>");
+    }
+
+    fn register_source_style(&mut self, id: &str, name: &str) {
+        if self.source_styles.iter().any(|style| style.id == id) {
+            return;
+        }
+        self.source_styles.push(SourceParagraphStyle {
+            id: id.to_string(),
+            name: name.to_string(),
+        });
     }
 
     fn write_run_with_column_breaks(
@@ -3074,6 +3130,7 @@ fn source_note_payload_is_supported(note: &AuthoredNote, payload: &NoteWritePayl
         Block::PageBreak => true,
         _ => false,
     }) && source_note_local_ref_fields_are_supported(&payload.blocks)
+        && source_note_style_ref_fields_are_supported(&payload.blocks)
         && source_note_table_formula_fields_are_supported(&payload.blocks)
 }
 
@@ -3123,6 +3180,160 @@ fn visit_source_note_runs(blocks: &[Block], visit: &mut impl FnMut(&crate::model
             _ => {}
         }
     }
+}
+
+#[derive(Debug)]
+struct SourceNoteStyleRefEntry {
+    style_id: String,
+    style_name: Option<String>,
+    stable_text: Option<String>,
+    order: usize,
+}
+
+#[derive(Debug)]
+struct SourceNoteStyleRefField {
+    instruction: String,
+    result: String,
+    order: usize,
+    stable: bool,
+}
+
+fn source_note_style_ref_fields_are_supported(blocks: &[Block]) -> bool {
+    let mut entries = Vec::new();
+    let mut fields = Vec::new();
+    let mut next_order = 0usize;
+    collect_source_note_style_refs(blocks, &mut entries, &mut fields, &mut next_order);
+
+    fields.into_iter().all(|field| {
+        if !field.stable {
+            return false;
+        }
+        let Some(target) = preserved_note_local_style_ref_target(&field.instruction) else {
+            return false;
+        };
+        let Some(entry) = entries
+            .iter()
+            .rev()
+            .find(|entry| {
+                entry.order < field.order && source_note_style_ref_entry_matches(entry, &target)
+            })
+            .or_else(|| {
+                entries.iter().find(|entry| {
+                    entry.order > field.order && source_note_style_ref_entry_matches(entry, &target)
+                })
+            })
+        else {
+            return false;
+        };
+        let Some(source_text) = entry.stable_text.as_deref() else {
+            return false;
+        };
+        computed_preserved_note_local_style_ref_result(
+            &field.instruction,
+            source_text,
+            entry.order < field.order,
+        )
+        .as_deref()
+            == Some(field.result.as_str())
+    })
+}
+
+fn collect_source_note_style_refs(
+    blocks: &[Block],
+    entries: &mut Vec<SourceNoteStyleRefEntry>,
+    fields: &mut Vec<SourceNoteStyleRefField>,
+    next_order: &mut usize,
+) {
+    for block in blocks {
+        match block {
+            Block::Paragraph(paragraph) => {
+                for run in &paragraph.runs {
+                    let FieldRole::Simple { instruction } = &run.field else {
+                        continue;
+                    };
+                    if !matches!(
+                        FieldKind::from_instruction(instruction),
+                        FieldKind::DocumentStructure(kind) if kind == "STYLEREF"
+                    ) {
+                        continue;
+                    }
+                    fields.push(SourceNoteStyleRefField {
+                        instruction: instruction.clone(),
+                        result: run.text.clone(),
+                        order: *next_order,
+                        stable: !run.field_dirty && run.field_unsupported_reason.is_none(),
+                    });
+                    *next_order = next_order.saturating_add(1);
+                }
+
+                let Some(style_id) = non_empty_trimmed(paragraph.props.style_id.as_deref()) else {
+                    continue;
+                };
+                let has_source_text = paragraph.runs.iter().any(|run| {
+                    !source_note_run_is_style_ref(run)
+                        && run.text.split_whitespace().next().is_some()
+                });
+                if !has_source_text {
+                    continue;
+                }
+                entries.push(SourceNoteStyleRefEntry {
+                    style_id: style_id.to_string(),
+                    style_name: non_empty_trimmed(paragraph.props.style_name.as_deref())
+                        .map(str::to_string),
+                    stable_text: source_note_stable_style_ref_text(paragraph),
+                    order: *next_order,
+                });
+                *next_order = next_order.saturating_add(1);
+            }
+            Block::Table(table) => {
+                for cell in table.rows.iter().flat_map(|row| &row.cells) {
+                    collect_source_note_style_refs(&cell.blocks, entries, fields, next_order);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn source_note_run_is_style_ref(run: &crate::model::Run) -> bool {
+    let FieldRole::Simple { instruction } = &run.field else {
+        return false;
+    };
+    matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::DocumentStructure(kind) if kind == "STYLEREF"
+    )
+}
+
+fn source_note_stable_style_ref_text(paragraph: &Paragraph) -> Option<String> {
+    let [run] = paragraph.runs.as_slice() else {
+        return None;
+    };
+    if !matches!(run.field, FieldRole::None)
+        || run.field_dirty
+        || run.field_unsupported_reason.is_some()
+        || run.image.is_some()
+        || run.comment.is_some()
+        || run.revision.is_some()
+        || run.content_control.is_some()
+        || run.bookmark.is_some()
+        || run.note.is_some()
+        || run.text.split_whitespace().next().is_none()
+    {
+        return None;
+    }
+    Some(run.text.clone())
+}
+
+fn source_note_style_ref_entry_matches(
+    entry: &SourceNoteStyleRefEntry,
+    style_identifier: &str,
+) -> bool {
+    entry.style_id.eq_ignore_ascii_case(style_identifier)
+        || entry
+            .style_name
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(style_identifier))
 }
 
 fn source_note_paragraph_is_supported(paragraph: &Paragraph) -> bool {
@@ -3215,6 +3426,10 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                 FieldKind::DocumentStructure(kind) if kind == "REVNUM" => {
                     run.field_unsupported_reason.is_none()
                         && supports_revision_number_field_syntax(instruction)
+                }
+                FieldKind::DocumentStructure(kind) if kind == "STYLEREF" => {
+                    run.field_unsupported_reason.is_none()
+                        && preserved_note_local_style_ref_target(instruction).is_some()
                 }
                 FieldKind::Ref => {
                     run.field_unsupported_reason.is_none()
@@ -5010,7 +5225,7 @@ fn try_to_docx_with_source_hints(
         pkg.add_part(
             "word/styles.xml",
             Some(CT_STYLES),
-            styles_xml(&model.setup.styles, br.has_heading).into_bytes(),
+            styles_xml(&model.setup.styles, br.has_heading, &br.source_styles).into_bytes(),
         );
     }
     if let Some(settings_xml) = br.settings_xml {
@@ -5106,6 +5321,13 @@ pub(crate) struct BodyRender {
     pub has_list: bool,
     pub has_styles: bool,
     pub has_heading: bool,
+    source_styles: Vec<SourceParagraphStyle>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SourceParagraphStyle {
+    id: String,
+    name: String,
 }
 
 /// Render the body parts from the model. List items reference the synthetic
@@ -5346,6 +5568,7 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         has_list: ctx.has_list,
         has_styles,
         has_heading: ctx.has_heading,
+        source_styles: ctx.source_styles,
     }
 }
 
@@ -5355,8 +5578,9 @@ mod tests {
         render_body, section_columns_xml, source_column_break_offsets, source_line_spacing,
         source_note_content_control_is_supported, source_note_field_is_supported,
         source_note_paragraph_is_supported, source_note_payload_is_supported,
-        source_note_table_formula_fields_are_supported, source_tab_stops_xml,
-        SectionColumnWriteHint, SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
+        source_note_style_ref_fields_are_supported, source_note_table_formula_fields_are_supported,
+        source_tab_stops_xml, styles_xml, SectionColumnWriteHint, SourceParagraphStyle,
+        SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
     };
     use crate::model::{
         Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
@@ -5388,6 +5612,61 @@ mod tests {
             blocks: vec![Block::Paragraph(para(text))],
             ..Cell::default()
         }
+    }
+
+    #[test]
+    fn source_style_names_fill_only_undefined_paragraph_styles() {
+        let explicit = [
+            crate::model::ParagraphStyle {
+                id: "Custom".to_string(),
+                name: "Authored Custom".to_string(),
+                ..crate::model::ParagraphStyle::default()
+            },
+            crate::model::ParagraphStyle {
+                id: "Recovered".to_string(),
+                name: "   ".to_string(),
+                ..crate::model::ParagraphStyle::default()
+            },
+        ];
+        let xml = styles_xml(
+            &explicit,
+            true,
+            &[
+                SourceParagraphStyle {
+                    id: "Normal".to_string(),
+                    name: "Source Normal".to_string(),
+                },
+                SourceParagraphStyle {
+                    id: "Custom".to_string(),
+                    name: "Source Custom".to_string(),
+                },
+                SourceParagraphStyle {
+                    id: "Heading1".to_string(),
+                    name: "Source Heading".to_string(),
+                },
+                SourceParagraphStyle {
+                    id: "Recovered".to_string(),
+                    name: "Recovered Name".to_string(),
+                },
+                SourceParagraphStyle {
+                    id: "Callout&One".to_string(),
+                    name: "Callout <One>".to_string(),
+                },
+            ],
+        );
+
+        assert_eq!(xml.matches(r#"w:styleId="Normal""#).count(), 1);
+        assert_eq!(xml.matches(r#"w:styleId="Custom""#).count(), 1);
+        assert_eq!(xml.matches(r#"w:styleId="Heading1""#).count(), 1);
+        assert!(!xml.contains("Source Normal"));
+        assert!(!xml.contains("Source Custom"));
+        assert!(xml.contains(
+            r#"w:styleId="Heading1"><w:name w:val="Source Heading"/><w:basedOn w:val="Normal"/>"#
+        ));
+        assert!(xml.contains(r#"w:styleId="Recovered"><w:name w:val="Recovered Name"/>"#));
+        assert!(
+            xml.contains(r#"w:styleId="Callout&amp;One"><w:name w:val="Callout &lt;One&gt;"/>"#)
+        );
     }
 
     fn tab(position_pt: f32, alignment: TabAlignment, leader: TabLeader) -> TabStop {
@@ -5513,6 +5792,7 @@ mod tests {
             r#"TITLE \* Upper"#,
             r#"REVNUM \* Caps"#,
             r#"REF LocalTarget \h \! \* Caps"#,
+            r#"STYLEREF Heading1 \* Upper"#,
         ] {
             assert!(source_note_field_is_supported(&marker(instruction)));
         }
@@ -5536,6 +5816,8 @@ mod tests {
         dirty_revision_number.field_dirty = true;
         let mut dirty_local_ref = marker("REF LocalTarget");
         dirty_local_ref.field_dirty = true;
+        let mut dirty_style_ref = marker("STYLEREF Heading1");
+        dirty_style_ref.field_dirty = true;
         let sequence_reset = Run {
             text: "1F".to_string(),
             field: FieldRole::Simple {
@@ -5596,6 +5878,7 @@ mod tests {
             dirty_document_info,
             dirty_revision_number,
             dirty_local_ref,
+            dirty_style_ref,
             dirty_sequence_reset,
             reasoned_sequence_reset,
             mismatched_sequence_reset,
@@ -5632,6 +5915,8 @@ mod tests {
             marker(r#"REF LocalTarget \f"#),
             marker(r#"REF LocalTarget \d ".""#),
             marker(r#"REF LocalTarget \x"#),
+            marker(r#"STYLEREF Heading1 \n"#),
+            marker(r#"STYLEREF "Broken Heading"#),
             marker("SEQ Figure"),
             marker(r#"SEQ Figure \c"#),
             marker(r#"SEQ Figure \s 1"#),
@@ -5692,6 +5977,157 @@ mod tests {
             ..Paragraph::default()
         };
         assert!(!source_note_paragraph_is_supported(&split_result));
+    }
+
+    #[test]
+    fn source_note_style_refs_require_the_selected_same_note_plain_paragraph() {
+        fn styled_paragraph(style_id: &str, style_name: &str, runs: Vec<Run>) -> Paragraph {
+            Paragraph {
+                props: ParaProps {
+                    style_id: Some(style_id.to_string()),
+                    style_name: Some(style_name.to_string()),
+                    ..ParaProps::default()
+                },
+                runs,
+            }
+        }
+
+        fn style_ref(instruction: &str, result: &str) -> Paragraph {
+            Paragraph {
+                runs: vec![Run {
+                    text: result.to_string(),
+                    field: FieldRole::Simple {
+                        instruction: instruction.to_string(),
+                    },
+                    ..Run::default()
+                }],
+                ..Paragraph::default()
+            }
+        }
+
+        let prior = vec![
+            Block::Paragraph(styled_paragraph(
+                "Heading1",
+                "Heading 1",
+                vec![Run {
+                    text: "  Alpha\t heading  ".to_string(),
+                    ..Run::default()
+                }],
+            )),
+            Block::Paragraph(style_ref(
+                r#"STYLEREF "Heading 1" \* Upper"#,
+                "ALPHA HEADING",
+            )),
+        ];
+        assert!(source_note_style_ref_fields_are_supported(&prior));
+
+        let nested_later = vec![Block::Table(Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        Block::Paragraph(style_ref(
+                            r#"STYLEREF \p "Callout Style" \* Caps"#,
+                            "Below",
+                        )),
+                        Block::Paragraph(styled_paragraph(
+                            "Callout",
+                            "Callout Style",
+                            vec![Run {
+                                text: "Later target".to_string(),
+                                ..Run::default()
+                            }],
+                        )),
+                    ],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        })];
+        assert!(source_note_style_ref_fields_are_supported(&nested_later));
+
+        let missing = vec![Block::Paragraph(style_ref("STYLEREF Heading1", "Missing"))];
+        assert!(!source_note_style_ref_fields_are_supported(&missing));
+
+        let multi_run = vec![
+            Block::Paragraph(styled_paragraph(
+                "Heading1",
+                "Heading 1",
+                vec![
+                    Run {
+                        text: "Multi ".to_string(),
+                        ..Run::default()
+                    },
+                    Run {
+                        text: "source".to_string(),
+                        ..Run::default()
+                    },
+                ],
+            )),
+            Block::Paragraph(style_ref("STYLEREF Heading1", "Multi source")),
+        ];
+        assert!(!source_note_style_ref_fields_are_supported(&multi_run));
+
+        let field_backed = vec![
+            Block::Paragraph(styled_paragraph(
+                "Heading1",
+                "Heading 1",
+                vec![Run {
+                    text: "Computed source".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"QUOTE "Computed source""#.to_string(),
+                    },
+                    ..Run::default()
+                }],
+            )),
+            Block::Paragraph(style_ref("STYLEREF Heading1", "Computed source")),
+        ];
+        assert!(!source_note_style_ref_fields_are_supported(&field_backed));
+
+        let shadowed = vec![
+            prior[0].clone(),
+            Block::Paragraph(styled_paragraph(
+                "Heading1",
+                "Heading 1",
+                vec![
+                    Run {
+                        text: "Shadowed ".to_string(),
+                        ..Run::default()
+                    },
+                    Run {
+                        text: "target".to_string(),
+                        ..Run::default()
+                    },
+                ],
+            )),
+            Block::Paragraph(style_ref("STYLEREF Heading1", "Shadowed target")),
+        ];
+        assert!(!source_note_style_ref_fields_are_supported(&shadowed));
+
+        let numbered = vec![
+            prior[0].clone(),
+            Block::Paragraph(style_ref(r#"STYLEREF Heading1 \n"#, "1")),
+        ];
+        assert!(!source_note_style_ref_fields_are_supported(&numbered));
+
+        let mismatch = vec![
+            prior[0].clone(),
+            Block::Paragraph(style_ref("STYLEREF Heading1", "Stale heading")),
+        ];
+        assert!(!source_note_style_ref_fields_are_supported(&mismatch));
+
+        let mut dirty = prior.clone();
+        let Block::Paragraph(field) = &mut dirty[1] else {
+            unreachable!()
+        };
+        field.runs[0].field_dirty = true;
+        assert!(!source_note_style_ref_fields_are_supported(&dirty));
+
+        let mut reasoned = prior;
+        let Block::Paragraph(field) = &mut reasoned[1] else {
+            unreachable!()
+        };
+        field.runs[0].field_unsupported_reason = Some(FieldUnsupportedReason::NoComputedResult);
+        assert!(!source_note_style_ref_fields_are_supported(&reasoned));
     }
 
     #[test]

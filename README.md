@@ -977,11 +977,13 @@ Markdown/HTML remain outside this path.
 
 The `.docx` **writer** is the inverse of the reader, part by part: `document.xml`
 (`w:rPr`/`w:pPr` with the full property set), a synthesized `styles.xml`
-(Normal + Heading1–6 with `outlineLvl`), `numbering.xml`, header/footer parts wired
-through `sectPr`, media parts + relationships for images, and external relationships
-for hyperlinks. The **renderer** flows the model through its authored page geometry
-and section columns, then draws each page's glyph runs, table grids, shading, and
-images with krilla.
+(Normal, generated Heading1–6 with `outlineLvl`, authored styles, and minimal
+recovered paragraph style id/name definitions when otherwise undefined),
+`numbering.xml`, header/footer parts wired through `sectPr`, media parts +
+relationships for images, and external relationships for hyperlinks. The
+**renderer** flows the model through its authored page geometry and section
+columns, then draws each page's glyph runs, table grids, shading, and images with
+krilla.
 
 Encrypted / XOR-obfuscated documents and pre-Word-97 (Word 6/95) files are detected
 and reported as distinct [`Error`]s rather than silently emitting garbage. Every
@@ -1203,6 +1205,17 @@ are retained. Ordinary LISTNUM increments, levels above one, custom list names,
 AUTONUM-family fields, cross-note numbering state, malformed, dirty, mismatched-
 result, or split-result cases remain excluded. This does not add field updates,
 relationships, or layout behavior.
+Parser-validated, non-dirty text and `\p` relative-position `STYLEREF` fields with
+one modeled result run likewise survive when their nearest prior, otherwise first
+later, paragraph-style target is in the same note and contains exactly one stable,
+nonempty plain run. Style ids and resolved style names, supported text formatting,
+normalized instructions, source order, modeled field formatting, and recursive
+table placement are retained; the fresh writer emits a minimal recovered style
+id/name definition when no authored or generated definition exists. Numbered
+`STYLEREF` results, character-style targets, cross-note matches, multi-run or
+field-backed targets, missing or empty targets, malformed, dirty, mismatched-
+result, or split-result cases remain excluded. This does not add field updates,
+relationships, or page/layout-aware lookup.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names

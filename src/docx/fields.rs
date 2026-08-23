@@ -115,9 +115,10 @@ pub(crate) use self::section::{
 use self::style_ref::style_ref_instruction;
 #[allow(unused_imports)]
 pub(crate) use self::style_ref::{
-    computed_style_ref_result, is_style_ref_field_instruction, style_ref_context_with_properties,
-    supports_style_ref_field_syntax, StyleRefContext, StyleRefFieldPosition,
-    StyleRefResolutionSources,
+    computed_preserved_note_local_style_ref_result, computed_style_ref_result,
+    is_style_ref_field_instruction, preserved_note_local_style_ref_target,
+    style_ref_context_with_properties, supports_style_ref_field_syntax, StyleRefContext,
+    StyleRefFieldPosition, StyleRefResolutionSources,
 };
 #[cfg(test)]
 use self::table_formula::table_formula_context;
@@ -2873,21 +2874,23 @@ mod tests {
         computed_display_result, computed_dynamic_result, computed_listnum_result,
         computed_numbering_result, computed_preserved_document_info_result,
         computed_preserved_listnum_start_result, computed_preserved_note_local_ref_result,
-        computed_preserved_revision_number_result, computed_preserved_sequence_reset_result,
-        computed_reference_index_result, computed_sequence_result, computed_set_result,
-        computed_toc_entry_result, direct_bookmark_ref_instruction, document_info_instruction,
-        format_page_number, note_ref_context, note_ref_instruction, ordinal_page_number_text,
-        page_ref_context, page_ref_instruction, preserved_note_local_ref_target, ref_instruction,
-        ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
-        supports_action_field_syntax, supports_compare_field_syntax,
-        supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
-        supports_context_free_fill_in_field_syntax, supports_context_free_formula_field_syntax,
-        supports_context_free_if_compare_field_syntax, supports_formula_field_syntax,
-        supports_if_field_syntax, supports_merge_control_field_syntax,
-        supports_preserved_document_info_field_syntax, supports_prompt_field_syntax,
-        supports_reference_index_marker_syntax, supports_revision_number_field_syntax,
-        supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
-        toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
+        computed_preserved_note_local_style_ref_result, computed_preserved_revision_number_result,
+        computed_preserved_sequence_reset_result, computed_reference_index_result,
+        computed_sequence_result, computed_set_result, computed_toc_entry_result,
+        direct_bookmark_ref_instruction, document_info_instruction, format_page_number,
+        note_ref_context, note_ref_instruction, ordinal_page_number_text, page_ref_context,
+        page_ref_instruction, preserved_note_local_ref_target,
+        preserved_note_local_style_ref_target, ref_instruction, ref_position_context, ref_targets,
+        seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
+        supports_compare_field_syntax, supports_computed_symbol_field_syntax,
+        supports_context_free_display_field_syntax, supports_context_free_fill_in_field_syntax,
+        supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
+        supports_formula_field_syntax, supports_if_field_syntax,
+        supports_merge_control_field_syntax, supports_preserved_document_info_field_syntax,
+        supports_prompt_field_syntax, supports_reference_index_marker_syntax,
+        supports_revision_number_field_syntax, supports_sequence_field_syntax,
+        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
+        PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
@@ -3503,6 +3506,62 @@ mod tests {
         assert!(style_ref_instruction(r#"STYLEREF "Heading 1"#).is_none());
         assert!(style_ref_instruction(r#"STYLEREF Heading"1""#).is_none());
         assert!(style_ref_instruction(r#"STYLEREF "\Heading 1""#).is_none());
+    }
+
+    #[test]
+    fn preserved_note_local_style_refs_use_plain_paragraph_text_or_position() {
+        for (instruction, target, before, expected) in [
+            ("STYLEREF Heading1", "Heading1", true, "Alpha heading"),
+            (
+                r#"STYLEREF "Heading 1" \* Upper"#,
+                "Heading 1",
+                true,
+                "ALPHA HEADING",
+            ),
+            (r#"STYLEREF \p Callout \* Caps"#, "Callout", false, "Below"),
+            (r#"STYLEREF Callout \p"#, "Callout", true, "above"),
+        ] {
+            assert_eq!(
+                preserved_note_local_style_ref_target(instruction).as_deref(),
+                Some(target),
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_note_local_style_ref_result(
+                    instruction,
+                    "  Alpha\t heading  ",
+                    before,
+                )
+                .as_deref(),
+                Some(expected),
+                "{instruction}"
+            );
+        }
+
+        for instruction in [
+            r#"STYLEREF NumberedBody \n"#,
+            r#"STYLEREF NumberedBody \r"#,
+            r#"STYLEREF NumberedBody \w"#,
+            r#"STYLEREF NumberedBody \n\t"#,
+            r#"STYLEREF "Broken Style"#,
+            r#"STYLEREF Heading1 \x"#,
+            "Heading1",
+        ] {
+            assert_eq!(
+                preserved_note_local_style_ref_target(instruction),
+                None,
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_note_local_style_ref_result(instruction, "Alpha heading", true,),
+                None,
+                "{instruction}"
+            );
+        }
+        assert_eq!(
+            computed_preserved_note_local_style_ref_result("STYLEREF Heading1", " \t\n ", true,),
+            None
+        );
     }
 
     #[test]

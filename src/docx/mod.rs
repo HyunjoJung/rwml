@@ -222,6 +222,22 @@ pub(crate) fn computed_preserved_listnum_start_result(instruction: &str) -> Opti
     fields::computed_preserved_listnum_start_result(instruction)
 }
 
+pub(crate) fn preserved_note_local_style_ref_target(instruction: &str) -> Option<String> {
+    fields::preserved_note_local_style_ref_target(instruction)
+}
+
+pub(crate) fn computed_preserved_note_local_style_ref_result(
+    instruction: &str,
+    source_text: &str,
+    source_before_field: bool,
+) -> Option<String> {
+    fields::computed_preserved_note_local_style_ref_result(
+        instruction,
+        source_text,
+        source_before_field,
+    )
+}
+
 pub(crate) fn supports_style_ref_field_syntax(instruction: &str) -> bool {
     fields::supports_style_ref_field_syntax(instruction)
 }

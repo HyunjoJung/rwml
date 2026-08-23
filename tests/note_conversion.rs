@@ -657,6 +657,52 @@ fn explicit_start_listnum_field_note_docx() -> Vec<u8> {
     )
 }
 
+fn same_note_style_ref_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rIdNumbering" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="Heading 1"/></w:style><w:style w:type="paragraph" w:styleId="Callout"><w:name w:val="Callout"/></w:style><w:style w:type="paragraph" w:styleId="NumberedBody"><w:name w:val="Numbered Body"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/numbering.xml",
+            r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="42"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="42"><w:abstractNumId w:val="42"/></w:num></w:numbering>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="411"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="421"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="412"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="422"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:footnoteReference w:id="413"/></w:r><w:r><w:t> BODY F</w:t></w:r><w:r><w:endnoteReference w:id="423"/></w:r><w:r><w:t> BODY G</w:t></w:r><w:r><w:footnoteReference w:id="414"/></w:r><w:r><w:t> BODY H</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:footnote w:id="411"><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Foot Heading</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">FOOT STYLE BEFORE </w:t></w:r><w:fldSimple w:instr=" STYLEREF &quot;Heading 1&quot; \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT STYLE</w:t></w:r></w:fldSimple><w:r><w:t> FOOT STYLE AFTER</w:t></w:r></w:p></w:footnote>
+                <w:footnote w:id="412"><w:p><w:r><w:t xml:space="preserve">CROSS STYLE BEFORE </w:t></w:r><w:fldSimple w:instr=" STYLEREF Heading1 "><w:r><w:t>STALE CROSS STYLE</w:t></w:r></w:fldSimple><w:r><w:t> CROSS STYLE AFTER</w:t></w:r></w:p></w:footnote>
+                <w:footnote w:id="413"><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t xml:space="preserve">Multi </w:t></w:r><w:r><w:t>Source</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">MULTI SOURCE BEFORE </w:t></w:r><w:fldSimple w:instr=" STYLEREF Heading1 "><w:r><w:t>STALE MULTI SOURCE</w:t></w:r></w:fldSimple><w:r><w:t> MULTI SOURCE AFTER</w:t></w:r></w:p></w:footnote>
+                <w:footnote w:id="414"><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Split Source</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">SPLIT STYLE BEFORE </w:t></w:r><w:fldSimple w:instr=" STYLEREF Heading1 "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE SPLIT STYLE A</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE SPLIT STYLE B</w:t></w:r></w:fldSimple><w:r><w:t> SPLIT STYLE AFTER</w:t></w:r></w:p></w:footnote>
+            </w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:endnote w:id="421"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END STYLE BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> STYLEREF \p Callout \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END STYLE</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END STYLE AFTER</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Callout"/></w:pPr><w:r><w:t>End Target</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote>
+                <w:endnote w:id="422"><w:p><w:pPr><w:pStyle w:val="NumberedBody"/><w:numPr><w:ilvl w:val="0"/><w:numId w:val="42"/></w:numPr></w:pPr><w:r><w:t>Numbered Source</w:t></w:r></w:p><w:p><w:r><w:t xml:space="preserve">NUMBERED STYLE BEFORE </w:t></w:r><w:fldSimple w:instr=" STYLEREF NumberedBody \n "><w:r><w:t>STALE NUMBERED STYLE</w:t></w:r></w:fldSimple><w:r><w:t> NUMBERED STYLE AFTER</w:t></w:r></w:p></w:endnote>
+                <w:endnote w:id="423"><w:p><w:r><w:t xml:space="preserve">MALFORMED STYLE BEFORE </w:t></w:r><w:fldSimple w:instr=" STYLEREF &quot;Broken Style "><w:r><w:t>CACHED MALFORMED STYLE</w:t></w:r></w:fldSimple><w:r><w:t> MALFORMED STYLE AFTER</w:t></w:r></w:p></w:endnote>
+            </w:endnotes>"#,
+        ),
+    ])
+}
+
 fn fill_in_field_note_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3063,6 +3109,184 @@ fn opened_docx_note_explicit_start_listnum_fields_keep_results_and_instructions(
     ] {
         let Block::Paragraph(rejected) = &reopened_model.blocks[index] else {
             panic!("LISTNUM fallback block {index} was not a paragraph")
+        };
+        assert_eq!(rejected.text(), expected, "fallback block {index}");
+    }
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_same_note_style_ref_fields_keep_results_and_instructions() {
+    let document =
+        Document::open(&same_note_style_ref_field_docx()).expect("same-note STYLEREF notes open");
+    assert_eq!(document.notes().len(), 7, "source note records missing");
+    assert_eq!(document.report().features.fields, 7);
+    assert_eq!(
+        document.report().features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
+    let source_fields = document.fields();
+    for (instruction, result) in [
+        (r#"STYLEREF "Heading 1" \* Upper"#, Some("FOOT HEADING")),
+        ("STYLEREF Heading1", Some("Foot Heading")),
+        ("STYLEREF Heading1", Some("Multi Source")),
+        ("STYLEREF Heading1", Some("Split Source")),
+        (r#"STYLEREF \p Callout \* Upper"#, Some("BELOW")),
+        (r#"STYLEREF NumberedBody \n"#, Some("1")),
+        (r#"STYLEREF "Broken Style "#, None),
+    ] {
+        let field = source_fields
+            .iter()
+            .find(|field| {
+                field.instruction == instruction && field.computed_result.as_deref() == result
+            })
+            .unwrap_or_else(|| panic!("missing source field {instruction:?} with {result:?}"));
+        assert_eq!(
+            field.kind,
+            FieldKind::DocumentStructure("STYLEREF".to_string())
+        );
+    }
+
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone same-note STYLEREF normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT STYLE BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END STYLE BEFORE");
+    let rejected_cross = note_with_marker(footnotes, "footnote", "CROSS STYLE BEFORE");
+    let rejected_multi = note_with_marker(footnotes, "footnote", "MULTI SOURCE BEFORE");
+    let rejected_split = note_with_marker(footnotes, "footnote", "SPLIT STYLE BEFORE");
+    let rejected_number = note_with_marker(endnotes, "endnote", "NUMBERED STYLE BEFORE");
+    let rejected_malformed = note_with_marker(endnotes, "endnote", "MALFORMED STYLE BEFORE");
+
+    assert_eq!(footnote.matches("<w:p>").count(), 2, "{footnote}");
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(r#"<w:pStyle w:val="Heading1"/>"#)
+            && footnote
+                .contains(r#"<w:fldSimple w:instr=" STYLEREF &quot;Heading 1&quot; \* Upper ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains(">FOOT HEADING</w:t>")
+            && footnote.contains("FOOT STYLE BEFORE ")
+            && footnote.contains(" FOOT STYLE AFTER"),
+        "same-note top-level style ref missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT STYLE"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:fldSimple w:instr=" STYLEREF \p Callout \* Upper ">"#)
+            && endnote.contains(r#"<w:pStyle w:val="Callout"/>"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains(">BELOW</w:t>")
+            && endnote.contains("END STYLE BEFORE ")
+            && endnote.contains(" END STYLE AFTER")
+            && endnote.contains(">End Target</w:t>"),
+        "same-note nested relative style ref missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END STYLE"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [
+        rejected_cross,
+        rejected_multi,
+        rejected_split,
+        rejected_number,
+        rejected_malformed,
+    ] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains("STALE CROSS STYLE"), "{footnotes}");
+    assert!(!footnotes.contains("STALE MULTI SOURCE"), "{footnotes}");
+    assert!(!footnotes.contains("STALE SPLIT STYLE"), "{footnotes}");
+    assert!(!endnotes.contains("STALE NUMBERED STYLE"), "{endnotes}");
+    assert!(endnotes.contains("CACHED MALFORMED STYLE"), "{endnotes}");
+
+    let reopened = Document::open(&converted).expect("converted same-note STYLEREF notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    for (field, instruction, result) in [
+        (
+            &fields[0],
+            r#"STYLEREF "Heading 1" \* Upper"#,
+            "FOOT HEADING",
+        ),
+        (&fields[1], r#"STYLEREF \p Callout \* Upper"#, "BELOW"),
+    ] {
+        assert_eq!(
+            field.kind,
+            FieldKind::DocumentStructure("STYLEREF".to_string())
+        );
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, result);
+        assert_eq!(field.computed_result.as_deref(), Some(result));
+    }
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), 9);
+    assert_eq!(normalized_model.blocks.len(), 12);
+    assert_eq!(reopened_model.blocks[0], normalized_model.blocks[0]);
+    assert_eq!(reopened_model.blocks[1], normalized_model.blocks[1]);
+    let mut normalized_foot_field = reopened_model.blocks[2].clone();
+    clear_simple_field_ownership(&mut normalized_foot_field);
+    assert_eq!(normalized_foot_field, normalized_model.blocks[2]);
+    let mut normalized_end_field = reopened_model.blocks[6].clone();
+    clear_simple_field_ownership(&mut normalized_end_field);
+    assert_eq!(normalized_end_field, normalized_model.blocks[8]);
+    for (index, expected) in [
+        (3, "CROSS STYLE BEFORE Foot Heading CROSS STYLE AFTER"),
+        (
+            4,
+            "Multi Source\nMULTI SOURCE BEFORE Multi Source MULTI SOURCE AFTER",
+        ),
+        (
+            5,
+            "Split Source\nSPLIT STYLE BEFORE Split Source SPLIT STYLE AFTER",
+        ),
+        (
+            7,
+            "Numbered Source\nNUMBERED STYLE BEFORE 1 NUMBERED STYLE AFTER",
+        ),
+        (
+            8,
+            "MALFORMED STYLE BEFORE CACHED MALFORMED STYLE MALFORMED STYLE AFTER",
+        ),
+    ] {
+        let Block::Paragraph(rejected) = &reopened_model.blocks[index] else {
+            panic!("STYLEREF fallback block {index} was not a paragraph")
         };
         assert_eq!(rejected.text(), expected, "fallback block {index}");
     }

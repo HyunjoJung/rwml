@@ -9,6 +9,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty text and `\p` relative-position `STYLEREF` fields
+  with one modeled result run in exact real footnote and endnote payloads when
+  the nearest prior, otherwise first later, paragraph-style target is in the same
+  note and contains exactly one stable, nonempty plain run. Style ids and resolved
+  names, supported text formats, normalized instructions, source order, modeled
+  field formatting, and recursive table placement survive native reopen and
+  deterministic reconversion; fresh output emits a deduplicated minimal source
+  style id/name definition when no valid authored or generated definition exists.
+  Numbered results, character-style targets, cross-note matches, multi-run or
+  field-backed targets, missing or empty targets, malformed, dirty, mismatched-
+  result, or split-result cases still trigger note-local plain-text fallback. This
+  does not add field updates, relationships, or page/layout-aware lookup.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-validated, non-dirty `LISTNUM` fields with an explicit nonnegative `\s`
   start and one modeled result run in exact real footnote and endnote payloads.
   Optional `NumberDefault`/`LegalDefault` names, level one, supported number/text

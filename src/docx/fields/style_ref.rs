@@ -1455,6 +1455,39 @@ pub(crate) fn computed_style_ref_result(
     Some(apply_field_text_format(text, spec.text_format))
 }
 
+pub(crate) fn preserved_note_local_style_ref_target(instruction: &str) -> Option<String> {
+    let spec = style_ref_instruction(instruction)?;
+    matches!(
+        spec.result,
+        StyleRefResult::Text | StyleRefResult::RelativePosition
+    )
+    .then_some(spec.style_identifier)
+}
+
+pub(crate) fn computed_preserved_note_local_style_ref_result(
+    instruction: &str,
+    source_text: &str,
+    source_before_field: bool,
+) -> Option<String> {
+    let spec = style_ref_instruction(instruction)?;
+    let source_text = normalize_toc_text(source_text);
+    if source_text.is_empty() {
+        return None;
+    }
+    let text = match spec.result {
+        StyleRefResult::Text => source_text,
+        StyleRefResult::RelativePosition => {
+            if source_before_field {
+                "above".to_string()
+            } else {
+                "below".to_string()
+            }
+        }
+        _ => return None,
+    };
+    Some(apply_field_text_format(text, spec.text_format))
+}
+
 pub(crate) fn supports_style_ref_field_syntax(instruction: &str) -> bool {
     style_ref_instruction(instruction).is_some()
 }

@@ -3164,6 +3164,8 @@ fn preserves_computed_field_instruction(instruction: &str, ctx: &Ctx<'_>) -> boo
         || (ctx.preserve_note_local_fields
             && super::fields::computed_preserved_listnum_start_result(instruction).is_some())
         || (ctx.preserve_note_local_fields
+            && super::fields::preserved_note_local_style_ref_target(instruction).is_some())
+        || (ctx.preserve_note_local_fields
             && ctx.last_formula_field_used_table_context.get()
             && matches!(
                 FieldKind::from_instruction(instruction),
