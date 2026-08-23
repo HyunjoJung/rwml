@@ -16,6 +16,7 @@
 
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
+use crate::annotation::merge_field_syntax;
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
@@ -3105,18 +3106,20 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
             !matches!(hyperlink_write_target(url), HyperlinkWriteTarget::Invalid)
         }
         FieldRole::Simple { instruction }
-            if !run.field_dirty
-                && run.field_unsupported_reason
-                    == Some(FieldUnsupportedReason::NoComputedResult)
-                && !normalize_field_instruction(instruction).is_empty() =>
+            if !run.field_dirty && !normalize_field_instruction(instruction).is_empty() =>
         {
-            matches!(
-                FieldKind::from_instruction(instruction),
+            match FieldKind::from_instruction(instruction) {
+                FieldKind::MergeField => {
+                    run.field_unsupported_reason.is_none() && merge_field_syntax(instruction)
+                }
                 FieldKind::Compatibility(_)
-                    | FieldKind::InsertedContent(_)
-                    | FieldKind::MailMerge(_)
-                    | FieldKind::Barcode(_)
-            )
+                | FieldKind::InsertedContent(_)
+                | FieldKind::MailMerge(_)
+                | FieldKind::Barcode(_) => {
+                    run.field_unsupported_reason == Some(FieldUnsupportedReason::NoComputedResult)
+                }
+                _ => false,
+            }
         }
         _ => false,
     }
@@ -5222,7 +5225,7 @@ mod tests {
     }
 
     #[test]
-    fn source_note_field_guard_accepts_only_cache_only_named_results() {
+    fn source_note_field_guard_accepts_only_owned_normalized_results() {
         let cached = |instruction: &str| Run {
             text: "cached".to_string(),
             field: FieldRole::Simple {
@@ -5240,15 +5243,36 @@ mod tests {
             assert!(source_note_field_is_supported(&cached(instruction)));
         }
 
+        let merge = Run {
+            text: "cached".to_string(),
+            field: FieldRole::Simple {
+                instruction: r#"MERGEFIELD "Client Name" \* Upper"#.to_string(),
+            },
+            ..Run::default()
+        };
+        assert!(source_note_field_is_supported(&merge));
+
         let mut dirty = cached("PRIVATE legacy-data");
         dirty.field_dirty = true;
         let mut malformed = cached(r#"ADDIN "bad"#);
         malformed.field_unsupported_reason = Some(FieldUnsupportedReason::UnsupportedSwitch);
+        let malformed_merge = Run {
+            field: FieldRole::Simple {
+                instruction: "MERGEFIELD \\* MERGEFORMAT".to_string(),
+            },
+            ..Run::default()
+        };
         for rejected in [
             dirty,
             malformed,
+            malformed_merge,
             cached("MERGEFIELD Client"),
-            cached("CUSTOM literal payload"),
+            Run {
+                field: FieldRole::Simple {
+                    instruction: "CUSTOM literal payload".to_string(),
+                },
+                ..Run::default()
+            },
             Run {
                 field: FieldRole::Simple {
                     instruction: String::new(),
@@ -6837,7 +6861,7 @@ mod tests {
             panic!("paragraph payload")
         };
         paragraph.runs[0].field = FieldRole::Simple {
-            instruction: "MERGEFIELD Client".to_string(),
+            instruction: "CUSTOM unsupported-note".to_string(),
         };
         let (footnotes, _, footnote_rels, _, _) = render(&mixed_semantics);
         assert_eq!(counts(&footnotes, "footnote", "FOOT"), (1, 0, 2, 0, 0, 0));

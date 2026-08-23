@@ -9,6 +9,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty `MERGEFIELD` cached result runs in exact real
+  footnote and endnote payloads. Valid names and bounded before/after and text-
+  format switches survive with normalized instructions and modeled formatting at
+  the top level and through recursively nested table cells; one-result-run complex
+  source fields normalize to non-dirty `w:fldSimple`. Both note families,
+  deterministic bytes, source-model immutability, native reopen/reconversion,
+  standalone note exclusion, and malformed/unknown sibling fallback are covered.
+  No external merge data source is copied or evaluated, and source field grouping
+  and update state are not preserved. Dirty modeled runs, malformed merge syntax,
+  unknown and context-sensitive/computed fields, comments, tracked revisions,
+  nested notes, floating placement, page-bottom composition, and Word-exact
+  pagination remain outside this bounded path.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-normalized cached result runs for nonempty compatibility/private,
   inserted-content, mail-merge-helper, and barcode fields in exact real footnote
   and endnote payloads when the reader reports `NoComputedResult`. They serialize
@@ -18,7 +31,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   grouping and source update state are not preserved. Both note families,
   deterministic bytes, source-model immutability, native reopen/reconversion,
   standalone note exclusion, and per-note atomic fallback are covered. Dirty or
-  malformed fields, `MERGEFIELD`, unknown and context-sensitive/computed fields,
+  malformed fields, unknown and context-sensitive/computed fields,
   comments, tracked revisions, nested notes, floating placement, page-bottom
   composition, and Word-exact pagination remain outside this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains

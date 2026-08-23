@@ -221,7 +221,7 @@ fn nested_and_relationship_table_note_docx() -> Vec<u8> {
     note_table_docx(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="21"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="22"/></w:r></w:p><w:sectPr/></w:body></w:document>"#,
         r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="21"><w:tbl><w:tblPr><w:tblW w:w="4000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepNext/><w:spacing w:line="220" w:lineRule="exact"/></w:pPr><w:r><w:t>OUTER TABLE A</w:t><w:br w:type="page"/><w:t>OUTER TABLE B</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="3000" w:type="pct"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="300" w:lineRule="atLeast"/><w:tabs><w:tab w:val="center" w:pos="900" w:leader="dot"/></w:tabs></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>NESTED TABLE A</w:t><w:br w:type="column"/><w:t>NESTED TABLE B</w:t><w:tab/><w:t>NESTED TAB</w:t><w:br w:type="page"/><w:t>NESTED PAGE</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:footnote></w:footnotes>"#,
-        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="22"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:fldSimple w:instr=" MERGEFIELD Client "><w:r><w:t>UNSUPPORTED FIELD TABLE</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:endnote></w:endnotes>"#,
+        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="22"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:fldSimple w:instr=" CUSTOM unsupported-table "><w:r><w:t>UNSUPPORTED FIELD TABLE</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:endnote></w:endnotes>"#,
     )
 }
 
@@ -253,7 +253,7 @@ fn relationship_note_docx() -> Vec<u8> {
         ),
         (
             "word/endnotes.xml",
-            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:endnote w:id="41"><w:p><w:hyperlink r:id="rEndOne"><w:r><w:rPr><w:i/></w:rPr><w:t>END LINK ONE</w:t></w:r></w:hyperlink></w:p></w:endnote><w:endnote w:id="42"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:hyperlink r:id="rEndTwo"><w:r><w:rPr><w:smallCaps/></w:rPr><w:t>END NESTED LINK</w:t></w:r></w:hyperlink></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="43"><w:p><w:hyperlink r:id="rRejected"><w:r><w:t>REJECTED LINK</w:t></w:r></w:hyperlink><w:fldSimple w:instr=" MERGEFIELD Client "><w:r><w:t> UNSUPPORTED FIELD</w:t></w:r></w:fldSimple></w:p></w:endnote></w:endnotes>"#,
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:endnote w:id="41"><w:p><w:hyperlink r:id="rEndOne"><w:r><w:rPr><w:i/></w:rPr><w:t>END LINK ONE</w:t></w:r></w:hyperlink></w:p></w:endnote><w:endnote w:id="42"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:hyperlink r:id="rEndTwo"><w:r><w:rPr><w:smallCaps/></w:rPr><w:t>END NESTED LINK</w:t></w:r></w:hyperlink></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="43"><w:p><w:hyperlink r:id="rRejected"><w:r><w:t>REJECTED LINK</w:t></w:r></w:hyperlink><w:fldSimple w:instr=" CUSTOM rejected-link "><w:r><w:t> UNSUPPORTED FIELD</w:t></w:r></w:fldSimple></w:p></w:endnote></w:endnotes>"#,
         ),
         (
             "word/_rels/endnotes.xml.rels",
@@ -349,6 +349,35 @@ fn cached_field_note_docx() -> Vec<u8> {
     ])
 }
 
+fn merge_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="111"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="121"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="112"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="122"/></w:r><w:r><w:t> BODY E</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="111"><w:p><w:fldSimple w:instr=" MERGEFIELD &quot;Client Name&quot; \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>CLIENT CACHE</w:t></w:r></w:fldSimple><w:r><w:t> FOOT TAIL</w:t></w:r></w:p></w:footnote><w:footnote w:id="112"><w:p><w:fldSimple w:instr=" MERGEFIELD \* MERGEFORMAT "><w:r><w:t>REJECTED MALFORMED MERGE</w:t></w:r></w:fldSimple><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="121"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> MERGEFIELD ProjectName \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>PROJECT CACHE</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END TAIL</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="122"><w:p><w:fldSimple w:instr=" CUSTOM payload "><w:r><w:t>REJECTED UNKNOWN FIELD</w:t></w:r></w:fldSimple><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -364,7 +393,7 @@ fn raster_note_docx() -> Vec<u8> {
         r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:footnote w:id="51"><w:p><w:r><w:t>FOOT IMAGE ONE</w:t></w:r><w:hyperlink r:id="rFootLink">{foot_one_image}</w:hyperlink></w:p></w:footnote><w:footnote w:id="52"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>FOOT NESTED IMAGE</w:t></w:r>{foot_two_image}</w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:footnote></w:footnotes>"#
     );
     let endnotes_xml = format!(
-        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:endnote w:id="61"><w:p><w:r><w:t>END IMAGE ONE</w:t></w:r>{end_one_image}</w:p></w:endnote><w:endnote w:id="62"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>END NESTED IMAGE</w:t></w:r><w:hyperlink r:id="rEndLink">{end_two_image}</w:hyperlink></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="63"><w:p><w:r><w:t>REJECTED IMAGE</w:t></w:r>{rejected_image}<w:fldSimple w:instr=" MERGEFIELD Client "><w:r><w:t> UNSUPPORTED FIELD</w:t></w:r></w:fldSimple></w:p></w:endnote></w:endnotes>"#
+        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:endnote w:id="61"><w:p><w:r><w:t>END IMAGE ONE</w:t></w:r>{end_one_image}</w:p></w:endnote><w:endnote w:id="62"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>END NESTED IMAGE</w:t></w:r><w:hyperlink r:id="rEndLink">{end_two_image}</w:hyperlink></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="63"><w:p><w:r><w:t>REJECTED IMAGE</w:t></w:r>{rejected_image}<w:fldSimple w:instr=" CUSTOM rejected-image "><w:r><w:t> UNSUPPORTED FIELD</w:t></w:r></w:fldSimple></w:p></w:endnote></w:endnotes>"#
     );
 
     docx_fixture_with_media(
@@ -430,7 +459,7 @@ fn chart_note_docx() -> Vec<u8> {
         r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><w:footnote w:id="71"><w:p><w:r><w:t>FOOT CHART ONE</w:t></w:r></w:p><w:p>{foot_one_chart}</w:p></w:footnote><w:footnote w:id="72"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>FOOT NESTED CHART</w:t></w:r></w:p><w:p>{foot_two_chart}</w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:footnote></w:footnotes>"#
     );
     let endnotes_xml = format!(
-        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex"><w:endnote w:id="81"><w:p><w:r><w:t>END CHART ONE</w:t></w:r></w:p><w:p>{end_one_chart}</w:p></w:endnote><w:endnote w:id="82"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>END NESTED CHART</w:t></w:r></w:p><w:p>{end_two_chart}</w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="83"><w:p><w:r><w:t>REJECTED CHART</w:t></w:r><w:fldSimple w:instr=" MERGEFIELD Client "><w:r><w:t> UNSUPPORTED FIELD</w:t></w:r></w:fldSimple></w:p><w:p>{rejected_chart}</w:p></w:endnote></w:endnotes>"#
+        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex"><w:endnote w:id="81"><w:p><w:r><w:t>END CHART ONE</w:t></w:r></w:p><w:p>{end_one_chart}</w:p></w:endnote><w:endnote w:id="82"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>END NESTED CHART</w:t></w:r></w:p><w:p>{end_two_chart}</w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="83"><w:p><w:r><w:t>REJECTED CHART</w:t></w:r><w:fldSimple w:instr=" CUSTOM rejected-chart "><w:r><w:t> UNSUPPORTED FIELD</w:t></w:r></w:fldSimple></w:p><w:p>{rejected_chart}</w:p></w:endnote></w:endnotes>"#
     );
 
     docx_fixture(&[
@@ -1084,6 +1113,116 @@ fn opened_docx_note_cache_only_fields_keep_normalized_results() {
         panic!("rejected context-field fallback paragraph")
     };
     assert_eq!(rejected_context.text(), "REJECTED CONTEXT FIELD FALLBACK");
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_merge_fields_keep_validated_cached_results() {
+    let document = Document::open(&merge_field_note_docx()).expect("merge-field notes open");
+    assert_eq!(document.notes().len(), 4, "source note records missing");
+    assert_eq!(document.report().features.fields, 4);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone merge-field normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "CLIENT CACHE");
+    let endnote = note_with_marker(endnotes, "endnote", "PROJECT CACHE");
+    let rejected_malformed = note_with_marker(footnotes, "footnote", "REJECTED MALFORMED MERGE");
+    let rejected_unknown = note_with_marker(endnotes, "endnote", "REJECTED UNKNOWN FIELD");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote
+            .contains(r#"<w:fldSimple w:instr=" MERGEFIELD &quot;Client Name&quot; \* Upper ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains("CLIENT CACHE")
+            && footnote.contains("FOOT TAIL"),
+        "top-level merge field missing: {footnote}"
+    );
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:fldSimple w:instr=" MERGEFIELD ProjectName \* MERGEFORMAT ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains("PROJECT CACHE")
+            && endnote.contains("END TAIL"),
+        "nested merge field missing: {endnote}"
+    );
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [rejected_malformed, rejected_unknown] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(
+        !footnotes.contains("MERGEFIELD \\* MERGEFORMAT"),
+        "{footnotes}"
+    );
+    assert!(!endnotes.contains("CUSTOM payload"), "{endnotes}");
+
+    let reopened = Document::open(&converted).expect("converted merge-field notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert!(fields
+        .iter()
+        .all(|field| field.kind == FieldKind::MergeField));
+    assert_eq!(
+        fields[0].instruction,
+        r#"MERGEFIELD "Client Name" \* Upper"#
+    );
+    assert_eq!(fields[0].result, "CLIENT CACHE");
+    assert_eq!(
+        fields[1].instruction,
+        r#"MERGEFIELD ProjectName \* MERGEFORMAT"#
+    );
+    assert_eq!(fields[1].result, "PROJECT CACHE");
+    assert!(fields.iter().all(|field| field.computed_result.is_none()));
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 3] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_malformed) = &reopened_model.blocks[2] else {
+        panic!("rejected malformed-merge fallback paragraph")
+    };
+    assert_eq!(
+        rejected_malformed.text(),
+        "REJECTED MALFORMED MERGE FALLBACK"
+    );
+    let Block::Paragraph(rejected_unknown) = &reopened_model.blocks[4] else {
+        panic!("rejected unknown-field fallback paragraph")
+    };
+    assert_eq!(rejected_unknown.text(), "REJECTED UNKNOWN FIELD FALLBACK");
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);

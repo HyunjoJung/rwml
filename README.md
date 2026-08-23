@@ -1107,8 +1107,11 @@ inserted-content, mail-merge-helper, and barcode fields reported as
 `NoComputedResult` likewise survive at every supported depth as non-dirty
 `w:fldSimple` fields with normalized instructions and modeled formatting. Complex
 source fields normalize to the same form; source simple/complex grouping and
-source update state are not preserved. Dirty or malformed fields, `MERGEFIELD`,
-and unknown or context-sensitive/computed fields reject that note atomically.
+source update state are not preserved. Parser-validated, non-dirty `MERGEFIELD`
+cached results with valid names and bounded before/after and text-format switches
+also survive as normalized simple fields; no external merge data source is copied
+or evaluated. Dirty modeled runs, malformed merge syntax, and unknown or context-
+sensitive/computed fields reject that note atomically.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names
