@@ -378,6 +378,35 @@ fn merge_field_note_docx() -> Vec<u8> {
     ])
 }
 
+fn filename_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="131"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="141"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="132"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="142"/></w:r><w:r><w:t> BODY E</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="131"><w:p><w:fldSimple w:instr=" FILENAME \p \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>/work/REPORT.DOCX</w:t></w:r></w:fldSimple><w:r><w:t> FOOT TAIL</w:t></w:r></w:p></w:footnote><w:footnote w:id="132"><w:p><w:fldSimple w:instr=" FILENAME \x "><w:r><w:t>REJECTED MALFORMED FILENAME</w:t></w:r></w:fldSimple><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="141"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> FILENAME \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>report.docx</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END TAIL</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="142"><w:p><w:fldSimple w:instr=" CUSTOM filename-payload "><w:r><w:t>REJECTED UNKNOWN FILENAME SIBLING</w:t></w:r></w:fldSimple><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -1223,6 +1252,108 @@ fn opened_docx_note_merge_fields_keep_validated_cached_results() {
         panic!("rejected unknown-field fallback paragraph")
     };
     assert_eq!(rejected_unknown.text(), "REJECTED UNKNOWN FIELD FALLBACK");
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_filename_fields_keep_validated_cached_results() {
+    let document = Document::open(&filename_field_note_docx()).expect("filename notes open");
+    assert_eq!(document.notes().len(), 4, "source note records missing");
+    assert_eq!(document.report().features.fields, 4);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone filename normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "/work/REPORT.DOCX");
+    let endnote = note_with_marker(endnotes, "endnote", "report.docx");
+    let rejected_malformed = note_with_marker(footnotes, "footnote", "REJECTED MALFORMED FILENAME");
+    let rejected_unknown =
+        note_with_marker(endnotes, "endnote", "REJECTED UNKNOWN FILENAME SIBLING");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(r#"<w:fldSimple w:instr=" FILENAME \p \* Upper ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains("/work/REPORT.DOCX")
+            && footnote.contains("FOOT TAIL"),
+        "top-level filename field missing: {footnote}"
+    );
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:fldSimple w:instr=" FILENAME \* MERGEFORMAT ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains("report.docx")
+            && endnote.contains("END TAIL"),
+        "nested filename field missing: {endnote}"
+    );
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [rejected_malformed, rejected_unknown] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains("FILENAME \\x"), "{footnotes}");
+    assert!(!endnotes.contains("CUSTOM filename-payload"), "{endnotes}");
+
+    let reopened = Document::open(&converted).expect("converted filename notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::Filename));
+    assert_eq!(fields[0].instruction, r#"FILENAME \p \* Upper"#);
+    assert_eq!(fields[0].result, "/work/REPORT.DOCX");
+    assert_eq!(fields[1].instruction, r#"FILENAME \* MERGEFORMAT"#);
+    assert_eq!(fields[1].result, "report.docx");
+    assert!(fields.iter().all(|field| field.computed_result.is_none()));
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 3] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_malformed) = &reopened_model.blocks[2] else {
+        panic!("rejected malformed-filename fallback paragraph")
+    };
+    assert_eq!(
+        rejected_malformed.text(),
+        "REJECTED MALFORMED FILENAME FALLBACK"
+    );
+    let Block::Paragraph(rejected_unknown) = &reopened_model.blocks[4] else {
+        panic!("rejected unknown-field fallback paragraph")
+    };
+    assert_eq!(
+        rejected_unknown.text(),
+        "REJECTED UNKNOWN FILENAME SIBLING FALLBACK"
+    );
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);

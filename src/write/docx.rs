@@ -16,7 +16,7 @@
 
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
-use crate::annotation::merge_field_syntax;
+use crate::annotation::{filename_field_syntax, merge_field_syntax};
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
@@ -3112,6 +3112,9 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                 FieldKind::MergeField => {
                     run.field_unsupported_reason.is_none() && merge_field_syntax(instruction)
                 }
+                FieldKind::Filename => {
+                    run.field_unsupported_reason.is_none() && filename_field_syntax(instruction)
+                }
                 FieldKind::Compatibility(_)
                 | FieldKind::InsertedContent(_)
                 | FieldKind::MailMerge(_)
@@ -5251,6 +5254,16 @@ mod tests {
             ..Run::default()
         };
         assert!(source_note_field_is_supported(&merge));
+        let filename = Run {
+            text: "cached".to_string(),
+            field: FieldRole::Simple {
+                instruction: r#"FILENAME \p \* Upper"#.to_string(),
+            },
+            ..Run::default()
+        };
+        assert!(source_note_field_is_supported(&filename));
+        let mut dirty_filename = filename.clone();
+        dirty_filename.field_dirty = true;
 
         let mut dirty = cached("PRIVATE legacy-data");
         dirty.field_dirty = true;
@@ -5262,11 +5275,20 @@ mod tests {
             },
             ..Run::default()
         };
+        let malformed_filename = Run {
+            field: FieldRole::Simple {
+                instruction: "FILENAME \\x".to_string(),
+            },
+            ..Run::default()
+        };
         for rejected in [
             dirty,
+            dirty_filename,
             malformed,
             malformed_merge,
+            malformed_filename,
             cached("MERGEFIELD Client"),
+            cached("FILENAME \\p"),
             Run {
                 field: FieldRole::Simple {
                     instruction: "CUSTOM literal payload".to_string(),

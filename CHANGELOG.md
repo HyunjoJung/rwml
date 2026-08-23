@@ -9,6 +9,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty `FILENAME` cached result runs in exact real footnote
+  and endnote payloads. Bounded path-display and text-format switches survive
+  with normalized instructions and modeled formatting at the top level and
+  through recursively nested table cells; one-result-run complex source fields
+  normalize to non-dirty `w:fldSimple`. Both note families, deterministic bytes,
+  source-model immutability, native reopen/reconversion, standalone note
+  exclusion, and malformed/unknown sibling fallback are covered. No filesystem
+  path is read and no destination filename is inferred. Source field grouping and
+  update state are not preserved; dirty modeled runs, malformed filename syntax,
+  unknown and context-sensitive/computed fields, comments, tracked revisions,
+  nested notes, floating placement, page-bottom composition, and Word-exact
+  pagination remain outside this bounded path.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-validated, non-dirty `MERGEFIELD` cached result runs in exact real
   footnote and endnote payloads. Valid names and bounded before/after and text-
   format switches survive with normalized instructions and modeled formatting at

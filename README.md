@@ -1110,8 +1110,11 @@ source fields normalize to the same form; source simple/complex grouping and
 source update state are not preserved. Parser-validated, non-dirty `MERGEFIELD`
 cached results with valid names and bounded before/after and text-format switches
 also survive as normalized simple fields; no external merge data source is copied
-or evaluated. Dirty modeled runs, malformed merge syntax, and unknown or context-
-sensitive/computed fields reject that note atomically.
+or evaluated. Parser-validated, non-dirty `FILENAME` cached results with bounded
+path-display and text-format switches likewise survive as normalized simple
+fields; no filesystem path is read and no destination filename is inferred.
+Dirty modeled runs, malformed field syntax, and unknown or context-sensitive/
+computed fields reject that note atomically.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names
