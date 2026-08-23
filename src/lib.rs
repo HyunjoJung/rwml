@@ -1028,14 +1028,16 @@ impl Document {
     /// character offsets. Direct top-level paragraphs in selected
     /// default/first/even running headers and footers from an opened DOCX also
     /// carry reader-resolved explicit tab stops through section-aligned private
-    /// hints. Nested-table descendants and notes remain outside these
+    /// hints. Direct paragraph blocks in surviving cells of top-level tables on
+    /// those running surfaces use a companion block/row/surviving-cell/paragraph-
+    /// aligned bridge. Nested-table descendants and notes remain outside these
     /// fresh-conversion paths; running surfaces remain outside line-rule and
-    /// pagination conversion, while legacy-DOC running stories and running-table-
-    /// cell paragraphs remain outside tab conversion. Settings-defined default-
-    /// tab intervals remain outside the tab path, and table-cell, note, running-
-    /// surface, and nested-content manual breaks remain outside the column-break
-    /// path. Standalone [`write_docx`] remains model-only for all of these private
-    /// hints.
+    /// pagination conversion, while legacy-DOC running stories and nested
+    /// running-table descendants remain outside tab conversion. Settings-defined
+    /// default-tab intervals remain outside the tab path, and table-cell, note,
+    /// running-surface, and nested-content manual breaks remain outside the
+    /// column-break path. Standalone [`write_docx`] remains model-only for all of
+    /// these private hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
@@ -1055,6 +1057,7 @@ impl Document {
                         final_rtl: assembled.final_section_column_rtl,
                         running_surface_distances: &assembled.running_surface_distances,
                         running_tab_stops: &[],
+                        running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
                         paragraph_tab_stops: &[],
@@ -1082,6 +1085,7 @@ impl Document {
                         final_rtl: state.final_section_column_rtl,
                         running_surface_distances: &state.running_surface_distances,
                         running_tab_stops: &state.running_tab_stops,
+                        running_table_cell_tab_stops: &state.running_table_cell_tab_stops,
                         paragraph_line_spacing: &state.line_spacing_hints,
                         paragraph_pagination: &state.pagination_hints,
                         paragraph_tab_stops: &state.tab_stops,

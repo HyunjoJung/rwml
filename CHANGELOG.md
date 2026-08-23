@@ -27,8 +27,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bytes, native reopen/model equality, nonparagraph slots, local relationships,
   generated page-number fields, and malformed section/variant isolation are
   covered. Standalone model writing remains unchanged; legacy-DOC running
-  stories, running-table-cell paragraphs, settings-defined default-tab
-  intervals, and fresh note conversion remain outside this bridge.
+  stories, settings-defined default-tab intervals, and fresh note conversion
+  remain outside this bridge.
+- Preserves reader-resolved explicit paragraph tab stops when
+  `Document::to_docx()` freshly converts direct paragraph blocks in surviving
+  cells of top-level tables in selected default/first/even headers and footers
+  from an opened DOCX. A section-aligned six-variant sidecar follows effective
+  default-surface inheritance and validates complete running block streams plus
+  each table's row, surviving-cell, and cell-block tree through the established
+  bounded tab formatter. Vertical-merge ownership, all six variants, malformed
+  section/variant/table isolation, coexistence with direct running-paragraph
+  tabs and distances, local relationships, generated page numbering,
+  deterministic bytes, and native reopen/model equality are covered. Standalone
+  model writing remains unchanged; nested running tables, legacy-DOC running
+  stories, settings-defined default-tab intervals, and fresh note conversion
+  remain outside this bridge.
 - Applies opened-DOCX table-cell tab stops in top-level real footnote and endnote
   tables through the existing table shaper. A private block/row/surviving-cell/
   paragraph tree follows visible note blocks in footnote-then-endnote order,
@@ -53,8 +66,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   preserving the public model; supported leaders and a positive
   `w:defaultTabStop` interval use the established paragraph shaper. Running
   table-cell tab hints remain independently aligned. Legacy-DOC running stories,
-  running-table-cell fresh conversion, post-tab field containment, and
-  Word-exact tab reflow and pagination remain outside this bounded path.
+  post-tab field containment, and Word-exact tab reflow and pagination remain
+  outside this bounded path.
 - Preserves reader-resolved explicit DOCX paragraph tab stops when
   `Document::to_docx()` freshly converts aligned top-level body paragraphs and
   direct paragraph blocks in surviving cells of top-level tables. The bounded

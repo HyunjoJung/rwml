@@ -1380,7 +1380,6 @@ fn opened_docx_render_consumes_running_surface_paragraph_tab_stops() {
     assert_eq!(wider_default, render("", "", 1440));
 }
 
-#[cfg(feature = "render")]
 fn running_surface_table_tab_docx(
     header_tabs: &str,
     even_footer_tabs: &str,
@@ -1388,7 +1387,7 @@ fn running_surface_table_tab_docx(
 ) -> Vec<u8> {
     let table = |tabs: &str| {
         format!(
-            r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr>{tabs}</w:pPr><w:r><w:t>A</w:t><w:tab/><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+            r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr>{tabs}</w:pPr><w:r><w:t>A</w:t><w:tab/><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
         )
     };
     let header = format!(
@@ -1396,7 +1395,7 @@ fn running_surface_table_tab_docx(
         table(header_tabs)
     );
     let footer = format!(
-        r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>FOOTER PREFIX</w:t></w:r></w:p>{}</w:ftr>"#,
+        r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>DEFAULT FOOTER PREFIX</w:t></w:r></w:p>{}</w:ftr>"#,
         table("")
     );
     let even_footer = format!(
@@ -1421,13 +1420,75 @@ fn running_surface_table_tab_docx(
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>PAGE ONE</w:t></w:r></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:t>PAGE TWO</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="4400" w:h="7000"/><w:pgMar w:top="1800" w:right="400" w:bottom="1800" w:left="400"/><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/><w:footerReference w:type="even" r:id="rIdEvenFooter"/></w:sectPr></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>
+                <w:p><w:r><w:t>PAGE ONE</w:t></w:r></w:p>
+                <w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:w="4400" w:h="7000"/><w:pgMar w:top="1800" w:right="400" w:bottom="1800" w:left="400"/><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:pPr></w:p>
+                <w:p><w:r><w:t>PAGE TWO</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="7000"/><w:pgMar w:top="1800" w:right="400" w:bottom="1800" w:left="400"/><w:footerReference w:type="default" r:id="rIdFooter"/><w:footerReference w:type="even" r:id="rIdEvenFooter"/></w:sectPr>
+            </w:body></w:document>"#,
         ),
         ("word/settings.xml", &settings),
         ("word/header1.xml", &header),
         ("word/footer1.xml", &footer),
         ("word/footer2.xml", &even_footer),
     ])
+}
+
+#[test]
+fn opened_docx_running_table_cell_tabs_roundtrip_through_fresh_conversion() {
+    let document = Document::open(&running_surface_table_tab_docx(
+        r#"<w:tabs><w:tab w:val="left" w:pos="1440" w:leader="dot"/></w:tabs>"#,
+        r#"<w:tabs><w:tab w:val="right" w:pos="1200" w:leader="hyphen"/></w:tabs>"#,
+        720,
+    ))
+    .expect("running-table tab fixture opens");
+    let model = document.model();
+    let converted = document.to_docx();
+
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(
+        Document::open(&converted)
+            .expect("fresh conversion reopens")
+            .model(),
+        model
+    );
+
+    let parts = unzip_parts(&converted);
+    let running_parts = |needle: &str| {
+        parts
+            .iter()
+            .filter(|(name, body)| {
+                (name.starts_with("word/header") || name.starts_with("word/footer"))
+                    && std::str::from_utf8(body).is_ok_and(|xml| xml.contains(needle))
+            })
+            .map(|(_, body)| std::str::from_utf8(body).unwrap())
+            .collect::<Vec<_>>()
+    };
+    let headers = running_parts("HEADER PREFIX");
+    assert_eq!(
+        headers.len(),
+        2,
+        "default header is effective in both sections"
+    );
+    assert!(headers
+        .iter()
+        .all(|xml| xml
+            .contains(r#"<w:tabs><w:tab w:val="left" w:pos="1440" w:leader="dot"/></w:tabs>"#)));
+
+    let default_footers = running_parts("DEFAULT FOOTER PREFIX");
+    assert_eq!(default_footers.len(), 1);
+    assert!(default_footers.iter().all(|xml| !xml.contains("<w:tabs>")));
+
+    let even_footers = running_parts("EVEN FOOTER PREFIX");
+    assert_eq!(even_footers.len(), 1);
+    assert!(even_footers[0]
+        .contains(r#"<w:tabs><w:tab w:val="right" w:pos="1200" w:leader="hyphen"/></w:tabs>"#));
+
+    let standalone = unzip_parts(&rwml::write_docx(&model));
+    assert!(standalone.iter().all(|(name, body)| {
+        !(name.starts_with("word/header") || name.starts_with("word/footer"))
+            || !std::str::from_utf8(body).unwrap().contains("<w:tabs>")
+    }));
 }
 
 #[cfg(feature = "render")]

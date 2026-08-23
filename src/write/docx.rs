@@ -20,10 +20,10 @@ use crate::model::{
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
     ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, LineSpacingHint,
     PaginationHint, ParaProps, Paragraph, ParagraphStyle, RunningSurfaceDistanceHints,
-    RunningSurfaceTabStopHints, SectionBreakKind, SectionColumnLayoutHints, SectionSetup, Spacing,
-    TabAlignment, TabLeader, TabStop, Table, TableBorderSide, TableBorderStyle,
-    TableCellLineSpacingHints, TableCellPaginationHints, TableCellTabStopHints,
-    TableRowPaginationHint, VertAlign, WebExtensionTaskPane, MAX_TAB_STOPS,
+    RunningSurfaceTabStopHints, RunningSurfaceTableCellTabStopHints, SectionBreakKind,
+    SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
+    TableBorderSide, TableBorderStyle, TableCellLineSpacingHints, TableCellPaginationHints,
+    TableCellTabStopHints, TableRowPaginationHint, VertAlign, WebExtensionTaskPane, MAX_TAB_STOPS,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -76,6 +76,7 @@ struct SectionWriteHint<'a> {
     columns: SectionColumnWriteHint<'a>,
     running_surface_distances: RunningSurfaceDistanceHints,
     running_tab_stops: Option<&'a RunningSurfaceTabStopHints>,
+    running_table_cell_tab_stops: Option<&'a RunningSurfaceTableCellTabStopHints>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -113,6 +114,7 @@ pub(crate) struct SourceWriteHints<'a> {
     pub(crate) final_rtl: bool,
     pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
     pub(crate) running_tab_stops: &'a [RunningSurfaceTabStopHints],
+    pub(crate) running_table_cell_tab_stops: &'a [RunningSurfaceTableCellTabStopHints],
     pub(crate) paragraph_line_spacing: &'a [Option<LineSpacingHint>],
     pub(crate) paragraph_pagination: &'a [PaginationHint],
     pub(crate) paragraph_tab_stops: &'a [Vec<TabStop>],
@@ -134,6 +136,14 @@ impl<'a> SourceWriteHints<'a> {
         section_count: usize,
     ) -> Option<&'a [RunningSurfaceTabStopHints]> {
         (self.running_tab_stops.len() == section_count).then_some(self.running_tab_stops)
+    }
+
+    fn aligned_running_table_cell_tab_stops(
+        self,
+        section_count: usize,
+    ) -> Option<&'a [RunningSurfaceTableCellTabStopHints]> {
+        (self.running_table_cell_tab_stops.len() == section_count)
+            .then_some(self.running_table_cell_tab_stops)
     }
 
     fn aligned_paragraph_line_spacing(
@@ -189,6 +199,7 @@ impl<'a> SourceWriteHints<'a> {
         section_index: usize,
         distances: Option<&[RunningSurfaceDistanceHints]>,
         running_tab_stops: Option<&'a [RunningSurfaceTabStopHints]>,
+        running_table_cell_tab_stops: Option<&'a [RunningSurfaceTableCellTabStopHints]>,
     ) -> SectionWriteHint<'a> {
         SectionWriteHint {
             columns: SectionColumnWriteHint {
@@ -202,6 +213,8 @@ impl<'a> SourceWriteHints<'a> {
                 .copied()
                 .unwrap_or_default(),
             running_tab_stops: running_tab_stops.and_then(|values| values.get(section_index)),
+            running_table_cell_tab_stops: running_table_cell_tab_stops
+                .and_then(|values| values.get(section_index)),
         }
     }
 
@@ -209,6 +222,7 @@ impl<'a> SourceWriteHints<'a> {
         self,
         distances: Option<&[RunningSurfaceDistanceHints]>,
         running_tab_stops: Option<&'a [RunningSurfaceTabStopHints]>,
+        running_table_cell_tab_stops: Option<&'a [RunningSurfaceTableCellTabStopHints]>,
     ) -> SectionWriteHint<'a> {
         SectionWriteHint {
             columns: SectionColumnWriteHint {
@@ -222,6 +236,8 @@ impl<'a> SourceWriteHints<'a> {
                 .copied()
                 .unwrap_or_default(),
             running_tab_stops: running_tab_stops.and_then(|values| values.last()),
+            running_table_cell_tab_stops: running_table_cell_tab_stops
+                .and_then(|values| values.last()),
         }
     }
 }
@@ -496,11 +512,13 @@ fn render_hf_body(
     ctx: &mut Ctx,
     blocks: &[crate::model::Block],
     tab_stops: Option<&[Vec<TabStop>]>,
+    table_cell_tab_stops: Option<&[TableCellTabStopHints]>,
     page_numbers: bool,
     rels: &mut Vec<Rel>,
 ) -> String {
     let mut out = String::new();
     let tab_stops = tab_stops.filter(|hints| hints.len() == blocks.len());
+    let table_cell_tab_stops = table_cell_tab_stops.filter(|hints| hints.len() == blocks.len());
     for (index, block) in blocks.iter().enumerate() {
         ctx.write_hf_block(
             &mut out,
@@ -509,6 +527,7 @@ fn render_hf_body(
             tab_stops
                 .and_then(|hints| hints.get(index))
                 .map(Vec::as_slice),
+            table_cell_tab_stops.and_then(|hints| hints.get(index)),
         );
     }
     if page_numbers {
@@ -1056,6 +1075,7 @@ impl Ctx {
         block: &Block,
         rels: &mut Vec<Rel>,
         tab_stops: Option<&[TabStop]>,
+        table_cell_tab_stops: Option<&TableCellTabStopHints>,
     ) {
         match block {
             Block::Paragraph(p) => {
@@ -1067,7 +1087,17 @@ impl Ctx {
                 out.push_str("</w:p>");
             }
             Block::Table(t) => {
-                self.write_table_inner(out, t, Some(rels), TableWriteHints::default())
+                let cell_tab_stops =
+                    table_cell_tab_stops.filter(|hints| Self::table_cell_tab_stops_align(t, hints));
+                self.write_table_inner(
+                    out,
+                    t,
+                    Some(rels),
+                    TableWriteHints {
+                        cell_tab_stops,
+                        ..TableWriteHints::default()
+                    },
+                )
             }
             Block::Image(img) => {
                 out.push_str("<w:p>");
@@ -1105,6 +1135,7 @@ impl Ctx {
         type_name: &str,
         blocks: &[Block],
         tab_stops: Option<&[Vec<TabStop>]>,
+        table_cell_tab_stops: Option<&[TableCellTabStopHints]>,
     ) {
         if blocks.is_empty() {
             return;
@@ -1114,7 +1145,14 @@ impl Ctx {
         let target = format!("header{}.xml", self.header_id);
         let rid = self.add_rel(REL_HEADER, &target, false);
         let mut rels = Vec::new();
-        let body = render_hf_body(self, blocks, tab_stops, false, &mut rels);
+        let body = render_hf_body(
+            self,
+            blocks,
+            tab_stops,
+            table_cell_tab_stops,
+            false,
+            &mut rels,
+        );
         if !rels.is_empty() {
             self.hf_rels.push((rels_path_for_part(&path), rels));
         }
@@ -1130,6 +1168,7 @@ impl Ctx {
         type_name: &str,
         blocks: &[Block],
         tab_stops: Option<&[Vec<TabStop>]>,
+        table_cell_tab_stops: Option<&[TableCellTabStopHints]>,
         page_numbers: bool,
     ) {
         if blocks.is_empty() && !page_numbers {
@@ -1140,7 +1179,14 @@ impl Ctx {
         let target = format!("footer{}.xml", self.footer_id);
         let rid = self.add_rel(REL_FOOTER, &target, false);
         let mut rels = Vec::new();
-        let body = render_hf_body(self, blocks, tab_stops, page_numbers, &mut rels);
+        let body = render_hf_body(
+            self,
+            blocks,
+            tab_stops,
+            table_cell_tab_stops,
+            page_numbers,
+            &mut rels,
+        );
         if !rels.is_empty() {
             self.hf_rels.push((rels_path_for_part(&path), rels));
         }
@@ -1159,29 +1205,34 @@ impl Ctx {
     ) {
         let mut refs = String::new();
         let running_tabs = section_hints.running_tab_stops;
+        let running_table_tabs = section_hints.running_table_cell_tab_stops;
         self.write_header_ref(
             &mut refs,
             "default",
             &setup.header,
             running_tabs.map(|hints| hints.header.as_slice()),
+            running_table_tabs.map(|hints| hints.header.as_slice()),
         );
         self.write_header_ref(
             &mut refs,
             "first",
             &setup.first_header,
             running_tabs.map(|hints| hints.first_header.as_slice()),
+            running_table_tabs.map(|hints| hints.first_header.as_slice()),
         );
         self.write_header_ref(
             &mut refs,
             "even",
             &setup.even_header,
             running_tabs.map(|hints| hints.even_header.as_slice()),
+            running_table_tabs.map(|hints| hints.even_header.as_slice()),
         );
         self.write_footer_ref(
             &mut refs,
             "default",
             &setup.footer,
             running_tabs.map(|hints| hints.footer.as_slice()),
+            running_table_tabs.map(|hints| hints.footer.as_slice()),
             setup.page_numbers,
         );
         self.write_footer_ref(
@@ -1189,6 +1240,7 @@ impl Ctx {
             "first",
             &setup.first_footer,
             running_tabs.map(|hints| hints.first_footer.as_slice()),
+            running_table_tabs.map(|hints| hints.first_footer.as_slice()),
             false,
         );
         self.write_footer_ref(
@@ -1196,6 +1248,7 @@ impl Ctx {
             "even",
             &setup.even_footer,
             running_tabs.map(|hints| hints.even_footer.as_slice()),
+            running_table_tabs.map(|hints| hints.even_footer.as_slice()),
             false,
         );
 
@@ -1775,13 +1828,27 @@ impl Ctx {
         }
     }
 
-    fn write_hf_cell_blocks(&mut self, out: &mut String, blocks: &[Block], rels: &mut Vec<Rel>) {
+    fn write_hf_cell_blocks(
+        &mut self,
+        out: &mut String,
+        blocks: &[Block],
+        rels: &mut Vec<Rel>,
+        tab_stops: Option<&[Vec<TabStop>]>,
+    ) {
         if blocks.is_empty() {
             out.push_str("<w:p/>");
             return;
         }
-        for b in blocks {
-            self.write_hf_block(out, b, rels, None);
+        for (index, block) in blocks.iter().enumerate() {
+            self.write_hf_block(
+                out,
+                block,
+                rels,
+                tab_stops
+                    .and_then(|hints| hints.get(index))
+                    .map(Vec::as_slice),
+                None,
+            );
         }
         if matches!(blocks.last(), Some(Block::Table(_))) {
             out.push_str("<w:p/>");
@@ -1983,7 +2050,7 @@ impl Ctx {
                     }
                     row_xml.push_str("</w:tcPr>");
                     if let Some(rels) = hf_rels.as_deref_mut() {
-                        self.write_hf_cell_blocks(&mut row_xml, &c.blocks, rels);
+                        self.write_hf_cell_blocks(&mut row_xml, &c.blocks, rels, source_tab_stops);
                     } else {
                         self.write_cell_blocks_with_source_hints(
                             &mut row_xml,
@@ -4119,6 +4186,8 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         source_hints.and_then(|hints| hints.aligned_distances(section_count));
     let running_tab_stops =
         source_hints.and_then(|hints| hints.aligned_running_tab_stops(section_count));
+    let running_table_cell_tab_stops =
+        source_hints.and_then(|hints| hints.aligned_running_table_cell_tab_stops(section_count));
     let paragraph_line_spacing =
         source_hints.and_then(|hints| hints.aligned_paragraph_line_spacing(model.blocks.len()));
     let paragraph_pagination =
@@ -4147,6 +4216,7 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
                         section_index,
                         running_surface_distances,
                         running_tab_stops,
+                        running_table_cell_tab_stops,
                     )
                 })
                 .unwrap_or_default(),
@@ -4194,7 +4264,13 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         &SectionSetup::from(&model.setup),
         None,
         source_hints
-            .map(|hints| hints.final_section(running_surface_distances, running_tab_stops))
+            .map(|hints| {
+                hints.final_section(
+                    running_surface_distances,
+                    running_tab_stops,
+                    running_table_cell_tab_stops,
+                )
+            })
             .unwrap_or_default(),
     );
     let comments_xml = if ctx.comments.is_empty() {
@@ -4319,9 +4395,9 @@ mod tests {
         Align, AuthoredComment, AuthoredContentControl, AuthoredRevision, Block, Cell, CharProps,
         DocModel, DocSetup, FieldRole, Image, LineSpacingHint, ListInfo, PaginationHint, ParaProps,
         Paragraph, Row, Run, RunningSurfaceDistanceHints, RunningSurfaceTabStopHints,
-        SectionColumnHint, SectionColumnLayoutHints, SectionSetup, TabAlignment, TabLeader,
-        TabStop, Table, TableCellLineSpacingHints, TableCellPaginationHints, TableCellTabStopHints,
-        TableRowPaginationHint, MAX_TAB_STOPS,
+        RunningSurfaceTableCellTabStopHints, SectionColumnHint, SectionColumnLayoutHints,
+        SectionSetup, TabAlignment, TabLeader, TabStop, Table, TableCellLineSpacingHints,
+        TableCellPaginationHints, TableCellTabStopHints, TableRowPaginationHint, MAX_TAB_STOPS,
     };
     use crate::Document;
 
@@ -4447,6 +4523,7 @@ mod tests {
                 final_rtl: false,
                 running_surface_distances: &distances,
                 running_tab_stops: &[],
+                running_table_cell_tab_stops: &[],
                 paragraph_line_spacing: &[],
                 paragraph_pagination: &[],
                 paragraph_tab_stops: &[],
@@ -4496,6 +4573,7 @@ mod tests {
                 final_rtl: false,
                 running_surface_distances: &distances,
                 running_tab_stops: &[],
+                running_table_cell_tab_stops: &[],
                 paragraph_line_spacing: &line_spacing,
                 paragraph_pagination: &[],
                 paragraph_tab_stops: &[],
@@ -4606,6 +4684,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                         running_tab_stops: &[],
+                        running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &line_spacing,
                         paragraph_pagination: &pagination,
                         paragraph_tab_stops,
@@ -4726,6 +4805,7 @@ mod tests {
                     final_rtl: false,
                     running_surface_distances: &distances,
                     running_tab_stops: running_tabs,
+                    running_table_cell_tab_stops: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -4831,6 +4911,320 @@ mod tests {
     }
 
     #[test]
+    fn source_running_table_cell_tab_writer_aligns_sections_and_isolates_tables() {
+        let simple_table = |label: &str, hyperlink: bool| {
+            let mut paragraph = para(label);
+            if hyperlink {
+                paragraph.runs[0].field = FieldRole::Hyperlink {
+                    url: "https://example.com/running-table-tabs".to_string(),
+                };
+            }
+            Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(paragraph)],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            }
+        };
+        let vertical_table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![
+                        Cell {
+                            blocks: vec![Block::Paragraph(para("DEFAULT HEADER OWNER"))],
+                            row_span: 2,
+                            ..Cell::default()
+                        },
+                        cell("DEFAULT HEADER PEER"),
+                    ],
+                },
+                Row {
+                    cells: vec![cell("DEFAULT HEADER BOTTOM")],
+                },
+            ],
+            ..Table::default()
+        };
+        let running_blocks = |prefix: &str, cell_label: &str| {
+            vec![
+                Block::Paragraph(para(prefix)),
+                Block::Table(simple_table(cell_label, false)),
+            ]
+        };
+        let mut first_section = SectionSetup {
+            header: running_blocks("SECTION ZERO PREFIX", "SECTION ZERO CELL"),
+            ..SectionSetup::default()
+        };
+        first_section.section_break = Some(crate::model::SectionBreakKind::NextPage);
+        let model = DocModel {
+            blocks: vec![
+                Block::Paragraph(para("body one")),
+                Block::SectionBreak(first_section),
+                Block::Paragraph(para("body two")),
+            ],
+            setup: DocSetup {
+                header: vec![
+                    Block::Paragraph(para("DEFAULT HEADER PREFIX")),
+                    Block::Table(vertical_table),
+                    Block::Table(simple_table("DEFAULT HEADER SECOND", true)),
+                ],
+                first_header: running_blocks("FIRST HEADER PREFIX", "FIRST HEADER CELL"),
+                even_header: running_blocks("EVEN HEADER PREFIX", "EVEN HEADER CELL"),
+                footer: running_blocks("DEFAULT FOOTER PREFIX", "DEFAULT FOOTER CELL"),
+                first_footer: running_blocks("FIRST FOOTER PREFIX", "FIRST FOOTER CELL"),
+                even_footer: running_blocks("EVEN FOOTER PREFIX", "EVEN FOOTER CELL"),
+                page_numbers: true,
+                ..DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let one_cell_tabs = |stop| vec![vec![vec![vec![stop]]]];
+        let section_zero_tabs = RunningSurfaceTableCellTabStopHints {
+            header: vec![
+                Vec::new(),
+                one_cell_tabs(tab(10.0, TabAlignment::Left, TabLeader::None)),
+            ],
+            ..RunningSurfaceTableCellTabStopHints::default()
+        };
+        let final_tabs = RunningSurfaceTableCellTabStopHints {
+            header: vec![
+                Vec::new(),
+                vec![
+                    vec![
+                        vec![vec![tab(11.0, TabAlignment::Left, TabLeader::None)]],
+                        vec![vec![tab(12.0, TabAlignment::Center, TabLeader::Dot)]],
+                    ],
+                    vec![vec![vec![tab(
+                        13.0,
+                        TabAlignment::Right,
+                        TabLeader::Hyphen,
+                    )]]],
+                ],
+                one_cell_tabs(tab(14.0, TabAlignment::Decimal, TabLeader::Underscore)),
+            ],
+            first_header: vec![
+                Vec::new(),
+                one_cell_tabs(tab(20.0, TabAlignment::Bar, TabLeader::Heavy)),
+            ],
+            even_header: vec![
+                Vec::new(),
+                one_cell_tabs(tab(30.0, TabAlignment::Left, TabLeader::MiddleDot)),
+            ],
+            footer: vec![
+                Vec::new(),
+                one_cell_tabs(tab(40.0, TabAlignment::Center, TabLeader::Dot)),
+            ],
+            first_footer: vec![
+                Vec::new(),
+                one_cell_tabs(tab(50.0, TabAlignment::Right, TabLeader::Hyphen)),
+            ],
+            even_footer: vec![
+                Vec::new(),
+                one_cell_tabs(tab(60.0, TabAlignment::Decimal, TabLeader::Underscore)),
+            ],
+        };
+        let running_table_tabs = [section_zero_tabs, final_tabs];
+        let prefix_tabs = |block_count: usize| {
+            let mut blocks = vec![Vec::new(); block_count];
+            blocks[0] = vec![tab(72.0, TabAlignment::Right, TabLeader::Dot)];
+            blocks
+        };
+        let running_tabs = [
+            RunningSurfaceTabStopHints {
+                header: prefix_tabs(2),
+                ..RunningSurfaceTabStopHints::default()
+            },
+            RunningSurfaceTabStopHints {
+                header: prefix_tabs(3),
+                first_header: prefix_tabs(2),
+                even_header: prefix_tabs(2),
+                footer: prefix_tabs(2),
+                first_footer: prefix_tabs(2),
+                even_footer: prefix_tabs(2),
+            },
+        ];
+        let distances = [
+            RunningSurfaceDistanceHints {
+                header_pt: Some(11.0),
+                footer_pt: Some(12.0),
+            },
+            RunningSurfaceDistanceHints {
+                header_pt: Some(21.0),
+                footer_pt: Some(22.0),
+            },
+        ];
+        let render = |table_tabs: &[RunningSurfaceTableCellTabStopHints]| {
+            render_body(
+                &model,
+                Some(SourceWriteHints {
+                    gaps: &[],
+                    layouts: &[],
+                    separators: &[],
+                    rtl: &[],
+                    final_gap: None,
+                    final_layout: None,
+                    final_separator: false,
+                    final_rtl: false,
+                    running_surface_distances: &distances,
+                    running_tab_stops: &running_tabs,
+                    running_table_cell_tab_stops: table_tabs,
+                    paragraph_line_spacing: &[],
+                    paragraph_pagination: &[],
+                    paragraph_tab_stops: &[],
+                    column_break_offsets: &[],
+                    table_row_pagination: &[],
+                    table_cell_pagination: &[],
+                    table_cell_line_spacing: &[],
+                    table_cell_tab_stops: &[],
+                }),
+            )
+        };
+
+        let rendered = render(&running_table_tabs);
+        let document_xml = std::str::from_utf8(&rendered.document_xml).unwrap();
+        assert!(document_xml.contains(r#"w:header="220" w:footer="240""#));
+        assert!(document_xml.contains(r#"w:header="420" w:footer="440""#));
+        for (label, expected) in [
+            ("SECTION ZERO CELL", r#"w:val="left" w:pos="200""#),
+            ("DEFAULT HEADER OWNER", r#"w:val="left" w:pos="220""#),
+            (
+                "DEFAULT HEADER PEER",
+                r#"w:val="center" w:pos="240" w:leader="dot""#,
+            ),
+            (
+                "DEFAULT HEADER BOTTOM",
+                r#"w:val="right" w:pos="260" w:leader="hyphen""#,
+            ),
+            (
+                "DEFAULT HEADER SECOND",
+                r#"w:val="decimal" w:pos="280" w:leader="underscore""#,
+            ),
+            (
+                "FIRST HEADER CELL",
+                r#"w:val="bar" w:pos="400" w:leader="heavy""#,
+            ),
+            (
+                "EVEN HEADER CELL",
+                r#"w:val="left" w:pos="600" w:leader="middleDot""#,
+            ),
+            (
+                "DEFAULT FOOTER CELL",
+                r#"w:val="center" w:pos="800" w:leader="dot""#,
+            ),
+            (
+                "FIRST FOOTER CELL",
+                r#"w:val="right" w:pos="1000" w:leader="hyphen""#,
+            ),
+            (
+                "EVEN FOOTER CELL",
+                r#"w:val="decimal" w:pos="1200" w:leader="underscore""#,
+            ),
+        ] {
+            let (_, xml) = generated_running_part(&rendered, label);
+            let paragraph = written_paragraph_with_text(xml, label);
+            assert!(paragraph.contains(expected), "{label}: {paragraph}");
+        }
+        for prefix in [
+            "SECTION ZERO PREFIX",
+            "DEFAULT HEADER PREFIX",
+            "FIRST HEADER PREFIX",
+            "EVEN HEADER PREFIX",
+            "DEFAULT FOOTER PREFIX",
+            "FIRST FOOTER PREFIX",
+            "EVEN FOOTER PREFIX",
+        ] {
+            let (_, xml) = generated_running_part(&rendered, prefix);
+            let paragraph = written_paragraph_with_text(xml, prefix);
+            assert!(
+                paragraph.contains(r#"w:val="right" w:pos="1440" w:leader="dot""#),
+                "{prefix}: {paragraph}"
+            );
+        }
+        let (default_header_path, default_header) =
+            generated_running_part(&rendered, "DEFAULT HEADER SECOND");
+        assert_eq!(default_header.matches("<w:vMerge/>").count(), 1);
+        let default_header_rels = format!(
+            "word/_rels/{}.rels",
+            default_header_path.strip_prefix("word/").unwrap()
+        );
+        assert!(rendered.hf_rels.iter().any(|(path, rels)| {
+            path == &default_header_rels
+                && rels.iter().any(|rel| {
+                    rel.external && rel.target == "https://example.com/running-table-tabs"
+                })
+        }));
+        let (_, default_footer) = generated_running_part(&rendered, "DEFAULT FOOTER CELL");
+        assert!(default_footer.contains(r#"<w:fldSimple w:instr=" PAGE ">"#));
+
+        let section_misaligned = render(&running_table_tabs[..1]);
+        for label in [
+            "SECTION ZERO CELL",
+            "DEFAULT HEADER OWNER",
+            "DEFAULT HEADER SECOND",
+            "FIRST HEADER CELL",
+            "EVEN HEADER CELL",
+            "DEFAULT FOOTER CELL",
+            "FIRST FOOTER CELL",
+            "EVEN FOOTER CELL",
+        ] {
+            let (_, xml) = generated_running_part(&section_misaligned, label);
+            assert!(
+                !written_paragraph_with_text(xml, label).contains("<w:tabs>"),
+                "{label}: {xml}"
+            );
+        }
+        let (_, misaligned_header) =
+            generated_running_part(&section_misaligned, "DEFAULT HEADER PREFIX");
+        assert!(
+            written_paragraph_with_text(misaligned_header, "DEFAULT HEADER PREFIX")
+                .contains(r#"w:pos="1440""#)
+        );
+        let misaligned_document = std::str::from_utf8(&section_misaligned.document_xml).unwrap();
+        assert!(misaligned_document.contains(r#"w:header="420" w:footer="440""#));
+        let (_, misaligned_footer) =
+            generated_running_part(&section_misaligned, "DEFAULT FOOTER CELL");
+        assert!(misaligned_footer.contains(r#"<w:fldSimple w:instr=" PAGE ">"#));
+
+        let mut variant_misaligned = running_table_tabs.clone();
+        variant_misaligned[1].even_footer.pop();
+        let isolated_variant = render(&variant_misaligned);
+        let (_, even_footer) = generated_running_part(&isolated_variant, "EVEN FOOTER CELL");
+        assert!(!written_paragraph_with_text(even_footer, "EVEN FOOTER CELL").contains("<w:tabs>"));
+        let (_, first_footer) = generated_running_part(&isolated_variant, "FIRST FOOTER CELL");
+        assert!(
+            written_paragraph_with_text(first_footer, "FIRST FOOTER CELL")
+                .contains(r#"w:pos="1000""#)
+        );
+        let (_, even_prefix) = generated_running_part(&isolated_variant, "EVEN FOOTER PREFIX");
+        assert!(
+            written_paragraph_with_text(even_prefix, "EVEN FOOTER PREFIX")
+                .contains(r#"w:pos="1440""#)
+        );
+
+        let mut malformed_table = running_table_tabs.clone();
+        malformed_table[1].header[1].pop();
+        let isolated_table = render(&malformed_table);
+        let (_, header) = generated_running_part(&isolated_table, "DEFAULT HEADER SECOND");
+        for label in [
+            "DEFAULT HEADER OWNER",
+            "DEFAULT HEADER PEER",
+            "DEFAULT HEADER BOTTOM",
+        ] {
+            assert!(
+                !written_paragraph_with_text(header, label).contains("<w:tabs>"),
+                "{label}: {header}"
+            );
+        }
+        assert!(
+            written_paragraph_with_text(header, "DEFAULT HEADER SECOND").contains(r#"w:pos="280""#)
+        );
+        assert!(written_paragraph_with_text(header, "DEFAULT HEADER PREFIX")
+            .contains(r#"w:pos="1440""#));
+    }
+
+    #[test]
     fn source_column_break_writer_validates_offsets_and_preserves_wrappers() {
         let paragraph = Paragraph {
             props: ParaProps::default(),
@@ -4892,6 +5286,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                         running_tab_stops: &[],
+                        running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &line_spacing,
                         paragraph_pagination: &pagination,
                         paragraph_tab_stops: &tabs,
@@ -5012,6 +5407,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &distances,
                         running_tab_stops: &[],
+                        running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination,
                         paragraph_tab_stops: &[],
@@ -5068,6 +5464,7 @@ mod tests {
                 final_rtl: false,
                 running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                 running_tab_stops: &[],
+                running_table_cell_tab_stops: &[],
                 paragraph_line_spacing: &[Some(LineSpacingHint::Exact(12.0))],
                 paragraph_pagination: &[PaginationHint {
                     keep_next: true,
@@ -5142,6 +5539,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &distances,
                         running_tab_stops: &[],
+                        running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
@@ -5214,6 +5612,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &distances,
                         running_tab_stops: &[],
+                        running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
@@ -5297,6 +5696,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                         running_tab_stops: &[],
+                        running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
@@ -5415,6 +5815,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                         running_tab_stops: &[],
+                        running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
@@ -5522,6 +5923,7 @@ mod tests {
                     final_rtl: false,
                     running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                     running_tab_stops: &[],
+                    running_table_cell_tab_stops: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -5598,6 +6000,7 @@ mod tests {
                     final_rtl: false,
                     running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                     running_tab_stops: &[],
+                    running_table_cell_tab_stops: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -5676,6 +6079,7 @@ mod tests {
                     final_rtl: false,
                     running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                     running_tab_stops: &[],
+                    running_table_cell_tab_stops: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -5776,6 +6180,7 @@ mod tests {
                 final_rtl: false,
                 running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                 running_tab_stops: &[],
+                running_table_cell_tab_stops: &[],
                 paragraph_line_spacing: &[],
                 paragraph_pagination: &[],
                 paragraph_tab_stops: &[],

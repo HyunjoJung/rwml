@@ -221,9 +221,8 @@ pub(crate) struct DocxState {
     pub running_line_spacing_hints: Vec<crate::render::RunningSurfaceLineSpacingHints>,
     /// Source-only explicit paragraph tab stops for section running surfaces.
     pub running_tab_stops: Vec<crate::model::RunningSurfaceTabStopHints>,
-    /// Renderer-only table-cell tab stops for section running surfaces.
-    #[cfg(feature = "render")]
-    pub running_table_cell_tab_stops: Vec<crate::render::RunningSurfaceTableCellTabStopHints>,
+    /// Source-only table-cell tab stops for section running surfaces.
+    pub running_table_cell_tab_stops: Vec<crate::model::RunningSurfaceTableCellTabStopHints>,
     /// Source-only header/footer edge distances by section.
     pub running_surface_distances: Vec<crate::model::RunningSurfaceDistanceHints>,
     /// Source-only resolved explicit tab stops aligned to body model blocks.
@@ -586,7 +585,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let running_line_spacing_hints =
         running_line_spacing_by_model_section(&blocks, &section_header_footers);
     let running_tab_stops = running_tab_stops_by_model_section(&blocks, &section_header_footers);
-    #[cfg(feature = "render")]
     let running_table_cell_tab_stops =
         running_table_cell_tab_stops_by_model_section(&blocks, &section_header_footers);
     let running_surface_distances =
@@ -745,7 +743,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         #[cfg(feature = "render")]
         running_line_spacing_hints,
         running_tab_stops,
-        #[cfg(feature = "render")]
         running_table_cell_tab_stops,
         running_surface_distances,
         tab_stops,
@@ -800,8 +797,7 @@ struct SectionHeaderFooter {
     #[cfg(feature = "render")]
     line_spacing: crate::render::RunningSurfaceLineSpacingHints,
     tab_stops: crate::model::RunningSurfaceTabStopHints,
-    #[cfg(feature = "render")]
-    table_cell_tab_stops: crate::render::RunningSurfaceTableCellTabStopHints,
+    table_cell_tab_stops: crate::model::RunningSurfaceTableCellTabStopHints,
     distances: crate::model::RunningSurfaceDistanceHints,
 }
 
@@ -823,7 +819,6 @@ struct HeaderFooterLineSpacing {
     even_table_cells: Vec<crate::model::TableCellLineSpacingHints>,
 }
 
-#[cfg(feature = "render")]
 #[derive(Default)]
 struct HeaderFooterTableCellTabStops {
     default: Vec<crate::model::TableCellTabStopHints>,
@@ -854,7 +849,6 @@ struct HeaderFooterPartRead {
     #[cfg(feature = "render")]
     line_spacing: HeaderFooterLineSpacing,
     tab_stops: HeaderFooterTabStops,
-    #[cfg(feature = "render")]
     table_cell_tab_stops: HeaderFooterTableCellTabStops,
     records: Vec<HeaderFooter>,
     comment_anchors: HashMap<String, TextAnchor>,
@@ -917,14 +911,12 @@ fn read_headers_footers(
     let mut inherited_header_tab_stops = Vec::new();
     #[cfg(feature = "render")]
     let mut inherited_header_table_cell_line_spacing = Vec::new();
-    #[cfg(feature = "render")]
     let mut inherited_header_table_cell_tab_stops = Vec::new();
     #[cfg(feature = "render")]
     let mut inherited_footer_line_spacing = Vec::new();
     let mut inherited_footer_tab_stops = Vec::new();
     #[cfg(feature = "render")]
     let mut inherited_footer_table_cell_line_spacing = Vec::new();
-    #[cfg(feature = "render")]
     let mut inherited_footer_table_cell_tab_stops = Vec::new();
 
     for refs in section_refs {
@@ -943,8 +935,7 @@ fn read_headers_footers(
             #[cfg(feature = "render")]
                 line_spacing: header_line_spacing,
             tab_stops: header_tab_stops,
-            #[cfg(feature = "render")]
-                table_cell_tab_stops: header_table_cell_tab_stops,
+            table_cell_tab_stops: header_table_cell_tab_stops,
             records: header_records,
             comment_anchors: header_comment_anchors,
             text_boxes: header_text_boxes,
@@ -970,28 +961,27 @@ fn read_headers_footers(
         let mut header_tabs = header_tab_stops.default;
         #[cfg(feature = "render")]
         let mut header_table_cell_spacing = header_line_spacing.default_table_cells;
-        #[cfg(feature = "render")]
         let mut header_table_cell_tabs = header_table_cell_tab_stops.default;
         // Omitted odd/default refs inherit the previous section; an explicit
         // default ref, even when blank/unresolved, resets the inherited surface.
         if !header_has_default && !inherited_header.is_empty() {
             header = inherited_header.clone();
             header_tabs = inherited_header_tab_stops.clone();
+            header_table_cell_tabs = inherited_header_table_cell_tab_stops.clone();
             #[cfg(feature = "render")]
             {
                 header_spacing = inherited_header_line_spacing.clone();
                 header_table_cell_spacing = inherited_header_table_cell_line_spacing.clone();
-                header_table_cell_tabs = inherited_header_table_cell_tab_stops.clone();
             }
         }
         if header_has_default || !header.is_empty() {
             inherited_header = header.clone();
             inherited_header_tab_stops = header_tabs.clone();
+            inherited_header_table_cell_tab_stops = header_table_cell_tabs.clone();
             #[cfg(feature = "render")]
             {
                 inherited_header_line_spacing = header_spacing.clone();
                 inherited_header_table_cell_line_spacing = header_table_cell_spacing.clone();
-                inherited_header_table_cell_tab_stops = header_table_cell_tabs.clone();
             }
         }
 
@@ -1000,8 +990,7 @@ fn read_headers_footers(
             #[cfg(feature = "render")]
                 line_spacing: footer_line_spacing,
             tab_stops: footer_tab_stops,
-            #[cfg(feature = "render")]
-                table_cell_tab_stops: footer_table_cell_tab_stops,
+            table_cell_tab_stops: footer_table_cell_tab_stops,
             records: footer_records,
             comment_anchors: footer_comment_anchors,
             text_boxes: footer_text_boxes,
@@ -1027,27 +1016,26 @@ fn read_headers_footers(
         let mut footer_tabs = footer_tab_stops.default;
         #[cfg(feature = "render")]
         let mut footer_table_cell_spacing = footer_line_spacing.default_table_cells;
-        #[cfg(feature = "render")]
         let mut footer_table_cell_tabs = footer_table_cell_tab_stops.default;
         // Same inheritance rule as headers.
         if !footer_has_default && !inherited_footer.is_empty() {
             footer = inherited_footer.clone();
             footer_tabs = inherited_footer_tab_stops.clone();
+            footer_table_cell_tabs = inherited_footer_table_cell_tab_stops.clone();
             #[cfg(feature = "render")]
             {
                 footer_spacing = inherited_footer_line_spacing.clone();
                 footer_table_cell_spacing = inherited_footer_table_cell_line_spacing.clone();
-                footer_table_cell_tabs = inherited_footer_table_cell_tab_stops.clone();
             }
         }
         if footer_has_default || !footer.is_empty() {
             inherited_footer = footer.clone();
             inherited_footer_tab_stops = footer_tabs.clone();
+            inherited_footer_table_cell_tab_stops = footer_table_cell_tabs.clone();
             #[cfg(feature = "render")]
             {
                 inherited_footer_line_spacing = footer_spacing.clone();
                 inherited_footer_table_cell_line_spacing = footer_table_cell_spacing.clone();
-                inherited_footer_table_cell_tab_stops = footer_table_cell_tabs.clone();
             }
         }
         sections.push(SectionHeaderFooter {
@@ -1080,8 +1068,7 @@ fn read_headers_footers(
                 first_footer: footer_tab_stops.first,
                 even_footer: footer_tab_stops.even,
             },
-            #[cfg(feature = "render")]
-            table_cell_tab_stops: crate::render::RunningSurfaceTableCellTabStopHints {
+            table_cell_tab_stops: crate::model::RunningSurfaceTableCellTabStopHints {
                 header: header_table_cell_tabs,
                 first_header: header_table_cell_tab_stops.first,
                 even_header: header_table_cell_tab_stops.even,
@@ -1225,19 +1212,16 @@ fn running_tab_stops_by_model_section(
     aligned
 }
 
-#[cfg(feature = "render")]
 fn running_table_cell_tab_stops_by_model_section(
     blocks: &[Block],
     sections: &[SectionHeaderFooter],
-) -> Vec<crate::render::RunningSurfaceTableCellTabStopHints> {
+) -> Vec<crate::model::RunningSurfaceTableCellTabStopHints> {
     let section_break_count = blocks
         .iter()
         .filter(|block| matches!(block, Block::SectionBreak(_)))
         .count();
-    let mut aligned = vec![
-        crate::render::RunningSurfaceTableCellTabStopHints::default();
-        section_break_count + 1
-    ];
+    let mut aligned =
+        vec![crate::model::RunningSurfaceTableCellTabStopHints::default(); section_break_count + 1];
     for (target, source) in aligned
         .iter_mut()
         .take(section_break_count)
@@ -1309,7 +1293,6 @@ fn read_hf_parts(
     #[cfg(feature = "render")]
     let mut line_spacing = HeaderFooterLineSpacing::default();
     let mut tab_stops = HeaderFooterTabStops::default();
-    #[cfg(feature = "render")]
     let mut table_cell_tab_stops = HeaderFooterTableCellTabStops::default();
     let mut records = Vec::new();
     let mut comment_anchors = HashMap::new();
@@ -1514,43 +1497,43 @@ fn read_hf_parts(
                 "first" => {
                     blocks.first.extend(part_blocks.clone());
                     tab_stops.first.extend(part_layout_hints.tab_stops);
+                    table_cell_tab_stops
+                        .first
+                        .extend(part_layout_hints.table_cell_tabs);
                     #[cfg(feature = "render")]
                     {
                         line_spacing.first.extend(part_layout_hints.line_spacing);
                         line_spacing
                             .first_table_cells
                             .extend(part_layout_hints.table_cell_line_spacing);
-                        table_cell_tab_stops
-                            .first
-                            .extend(part_layout_hints.table_cell_tabs);
                     }
                 }
                 "even" => {
                     blocks.even.extend(part_blocks.clone());
                     tab_stops.even.extend(part_layout_hints.tab_stops);
+                    table_cell_tab_stops
+                        .even
+                        .extend(part_layout_hints.table_cell_tabs);
                     #[cfg(feature = "render")]
                     {
                         line_spacing.even.extend(part_layout_hints.line_spacing);
                         line_spacing
                             .even_table_cells
                             .extend(part_layout_hints.table_cell_line_spacing);
-                        table_cell_tab_stops
-                            .even
-                            .extend(part_layout_hints.table_cell_tabs);
                     }
                 }
                 _ => {
                     blocks.default.extend(part_blocks.clone());
                     tab_stops.default.extend(part_layout_hints.tab_stops);
+                    table_cell_tab_stops
+                        .default
+                        .extend(part_layout_hints.table_cell_tabs);
                     #[cfg(feature = "render")]
                     {
                         line_spacing.default.extend(part_layout_hints.line_spacing);
                         line_spacing
                             .default_table_cells
                             .extend(part_layout_hints.table_cell_line_spacing);
-                        table_cell_tab_stops
-                            .default
-                            .extend(part_layout_hints.table_cell_tabs);
                     }
                 }
             }
@@ -1572,7 +1555,6 @@ fn read_hf_parts(
         #[cfg(feature = "render")]
         line_spacing,
         tab_stops,
-        #[cfg(feature = "render")]
         table_cell_tab_stops,
         records,
         comment_anchors,

@@ -47,11 +47,11 @@ use parley::{FontContext, Layout, LayoutContext};
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
     FieldRole, Image, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
-    Run, RunningSurfaceDistanceHints, RunningSurfaceTabStopHints, SectionBreakKind,
-    SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
-    TableBorderSide, TableCellLineSpacingHints, TableCellNestedPaginationHints,
-    TableCellPaginationHints, TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint,
-    VCell, VertAlign,
+    Run, RunningSurfaceDistanceHints, RunningSurfaceTabStopHints,
+    RunningSurfaceTableCellTabStopHints, SectionBreakKind, SectionColumnLayoutHints, SectionSetup,
+    Spacing, TabAlignment, TabLeader, TabStop, Table, TableBorderSide, TableCellLineSpacingHints,
+    TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
+    TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
 };
 use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
 use crate::{Error, Result};
@@ -175,16 +175,6 @@ pub(crate) struct RunningSurfaceLineSpacingHints {
     pub(crate) first_footer_table_cells: Vec<TableCellLineSpacingHints>,
     pub(crate) even_footer: Vec<Option<LineSpacingHint>>,
     pub(crate) even_footer_table_cells: Vec<TableCellLineSpacingHints>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct RunningSurfaceTableCellTabStopHints {
-    pub(crate) header: Vec<TableCellTabStopHints>,
-    pub(crate) first_header: Vec<TableCellTabStopHints>,
-    pub(crate) even_header: Vec<TableCellTabStopHints>,
-    pub(crate) footer: Vec<TableCellTabStopHints>,
-    pub(crate) first_footer: Vec<TableCellTabStopHints>,
-    pub(crate) even_footer: Vec<TableCellTabStopHints>,
 }
 
 #[derive(Clone, Copy, Default)]
