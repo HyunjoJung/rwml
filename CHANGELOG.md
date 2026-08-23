@@ -9,6 +9,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  complete extracted inline PNG, JPEG, GIF, BMP, TIFF, and WebP runs in exact
+  real footnote and endnote payloads. Note-local image relationships coexist with
+  optional external hyperlink wrappers, while media names and drawing IDs remain
+  globally unique across body and both note parts. Top-level and recursively
+  nested table-cell images, escaped alt text, intrinsic dimensions, rotation,
+  exact media bytes/content types, deterministic bytes, native reopen/
+  reconversion, source-model immutability, standalone model writing, and atomic
+  fallback without orphan media or relationships are covered. Missing or empty
+  bytes, unknown or raw-RGBA MIME data, floating and block images, image-only
+  notes, charts, vector metafiles, page-bottom placement, and Word-exact
+  pagination remain outside this bounded path.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   relationship-backed external hyperlinks in exact real footnote and endnote
   payloads. Each generated note part owns an independent relationship file, IDs
   remain unique across multiple notes in that part, and links survive in ordinary
@@ -17,9 +29,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deterministic bytes, native reopen/reconversion, source-model immutability,
   standalone-writer exclusion, and all-or-nothing fallback without orphan
   relationships are covered. Simple HYPERLINK field syntax may normalize to a
-  `w:hyperlink` element. Internal-anchor links, media, charts, other fields,
-  annotations, bookmarks, nested notes, page-bottom placement, and Word-exact
-  pagination remain outside this bounded path.
+  `w:hyperlink` element. Internal-anchor links, unsupported raster classes,
+  charts, other fields, annotations, bookmarks, nested notes, page-bottom
+  placement, and Word-exact pagination remain outside this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs retains typed
   manual page breaks in direct and recursively nested body and running-surface
   table cells through the existing ordered public block tree. Evidence covers
@@ -60,9 +72,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   table-component and break-leaf isolation, deterministic bytes, native reopen
   and reconversion, public-model equality, and standalone-writer exclusion are
   covered. Relationship-backed external hyperlink runs are retained with
-  note-part-local relationships. Media, charts, internal-anchor links, other
-  fields, annotations, bookmarks, nested notes, custom marks, source IDs/
-  numbering and separators, page-bottom placement, and Word-exact pagination
+  note-part-local relationships. Complete encoded inline raster runs use the same
+  boundary and retain note-local image relationships. Missing/empty, unknown-MIME,
+  raw-RGBA, floating, block, or image-only raster cases, charts, internal-anchor
+  links, other fields, annotations, bookmarks, nested notes, custom marks, source
+  IDs/numbering and separators, page-bottom placement, and Word-exact pagination
   remain unsupported by this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   visible manual column breaks in ordinary top-level paragraphs across all

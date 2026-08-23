@@ -5,6 +5,10 @@ use std::io::{Read, Write};
 use rwml::Document;
 
 fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
+    docx_fixture_with_media(parts, &[])
+}
+
+fn docx_fixture_with_media(parts: &[(&str, &str)], media: &[(&str, &[u8])]) -> Vec<u8> {
     let mut out = Vec::new();
     {
         let cursor = std::io::Cursor::new(&mut out);
@@ -13,6 +17,10 @@ fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
         for (name, body) in parts {
             zip.start_file(*name, options).unwrap();
             zip.write_all(body.as_bytes()).unwrap();
+        }
+        for (name, body) in media {
+            zip.start_file(*name, options).unwrap();
+            zip.write_all(body).unwrap();
         }
         zip.finish().unwrap();
     }
@@ -29,6 +37,22 @@ fn unzip_parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
         parts.insert(file.name().to_string(), body);
     }
     parts
+}
+
+fn tiny_png() -> Vec<u8> {
+    vec![
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x08, 0x02, 0x00, 0x00, 0x00, 0x36,
+        0x88, 0x49, 0xD6, 0x00, 0x00, 0x00, 0x0B, 0x49, 0x44, 0x41, 0x54, 0x78, 0xDA, 0x63, 0x60,
+        0xC0, 0x02, 0x00, 0x00, 0x15, 0x00, 0x01, 0x39, 0xC1, 0xE0, 0x23, 0x00, 0x00, 0x00, 0x00,
+        0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ]
+}
+
+fn source_inline_drawing(rel_id: &str, alt: &str, rotation: i64) -> String {
+    format!(
+        r#"<w:r><w:drawing><wp:inline><wp:extent cx="19050" cy="28575"/><wp:docPr id="1" name="Source image" descr="{alt}"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="{rel_id}"/></pic:blipFill><pic:spPr><a:xfrm rot="{rotation}"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#
+    )
 }
 
 fn exact_note_paragraphs_docx() -> Vec<u8> {
@@ -184,6 +208,61 @@ fn relationship_note_docx() -> Vec<u8> {
             r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rEndOne" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/end-one" TargetMode="External"/><Relationship Id="rEndTwo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/end-two" TargetMode="External"/><Relationship Id="rRejected" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/rejected" TargetMode="External"/></Relationships>"#,
         ),
     ])
+}
+
+fn raster_note_docx() -> Vec<u8> {
+    let png = tiny_png();
+    let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
+    let foot_one_image = source_inline_drawing("rFootImageOne", "Foot &lt;one&gt;", 0);
+    let foot_two_image = source_inline_drawing("rFootImageTwo", "Foot nested", 0);
+    let end_one_image = source_inline_drawing("rEndImageOne", "End rotate", 5_400_000);
+    let end_two_image = source_inline_drawing("rEndImageTwo", "End nested", 0);
+    let rejected_image = source_inline_drawing("rRejectedImage", "Rejected image", 0);
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body><w:p>{body_image}</w:p><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="51"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="61"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="52"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="62"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:endnoteReference w:id="63"/></w:r></w:p><w:sectPr/></w:body></w:document>"#
+    );
+    let footnotes_xml = format!(
+        r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:footnote w:id="51"><w:p><w:r><w:t>FOOT IMAGE ONE</w:t></w:r><w:hyperlink r:id="rFootLink">{foot_one_image}</w:hyperlink></w:p></w:footnote><w:footnote w:id="52"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>FOOT NESTED IMAGE</w:t></w:r>{foot_two_image}</w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:footnote></w:footnotes>"#
+    );
+    let endnotes_xml = format!(
+        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:endnote w:id="61"><w:p><w:r><w:t>END IMAGE ONE</w:t></w:r>{end_one_image}</w:p></w:endnote><w:endnote w:id="62"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>END NESTED IMAGE</w:t></w:r><w:hyperlink r:id="rEndLink">{end_two_image}</w:hyperlink></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="63"><w:p><w:r><w:t>REJECTED IMAGE</w:t></w:r>{rejected_image}<w:fldSimple w:instr=" MERGEFIELD Client "><w:r><w:t> UNSUPPORTED FIELD</w:t></w:r></w:fldSimple></w:p></w:endnote></w:endnotes>"#
+    );
+
+    docx_fixture_with_media(
+        &[
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/><Relationship Id="rBodyImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/body.png"/></Relationships>"#,
+            ),
+            ("word/document.xml", document_xml.as_str()),
+            ("word/footnotes.xml", footnotes_xml.as_str()),
+            (
+                "word/_rels/footnotes.xml.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rFootLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/foot-image" TargetMode="External"/><Relationship Id="rFootImageOne" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/foot-one.png"/><Relationship Id="rFootImageTwo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/foot-two.png"/></Relationships>"#,
+            ),
+            ("word/endnotes.xml", endnotes_xml.as_str()),
+            (
+                "word/_rels/endnotes.xml.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rEndImageOne" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/end-one.png"/><Relationship Id="rEndLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/end-image" TargetMode="External"/><Relationship Id="rEndImageTwo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/end-two.png"/><Relationship Id="rRejectedImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/rejected.png"/></Relationships>"#,
+            ),
+        ],
+        &[
+            ("word/media/body.png", png.as_slice()),
+            ("word/media/foot-one.png", png.as_slice()),
+            ("word/media/foot-two.png", png.as_slice()),
+            ("word/media/end-one.png", png.as_slice()),
+            ("word/media/end-two.png", png.as_slice()),
+            ("word/media/rejected.png", png.as_slice()),
+        ],
+    )
 }
 
 fn note_with_marker<'a>(xml: &'a str, item: &str, marker: &str) -> &'a str {
@@ -466,6 +545,98 @@ fn opened_docx_note_external_hyperlinks_keep_part_local_relationships() {
     }
 
     let reopened = Document::open(&converted).expect("converted relationship notes reopen");
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    assert_eq!(
+        &reopened_model.blocks[..reopened_model.blocks.len() - 1],
+        &normalized_model.blocks[..normalized_model.blocks.len() - 1]
+    );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_inline_rasters_keep_media_and_relationship_ownership() {
+    let png = tiny_png();
+    let document = Document::open(&raster_note_docx()).expect("raster notes open");
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone raster normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    let document_rels = std::str::from_utf8(&parts["word/_rels/document.xml.rels"]).unwrap();
+    assert!(parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(parts.contains_key("word/_rels/endnotes.xml.rels"));
+    let footnote_rels = std::str::from_utf8(&parts["word/_rels/footnotes.xml.rels"]).unwrap();
+    let endnote_rels = std::str::from_utf8(&parts["word/_rels/endnotes.xml.rels"]).unwrap();
+    let content_types = std::str::from_utf8(&parts["[Content_Types].xml"]).unwrap();
+
+    let foot_one = note_with_marker(footnotes, "footnote", "FOOT IMAGE ONE");
+    let foot_two = note_with_marker(footnotes, "footnote", "FOOT NESTED IMAGE");
+    let end_one = note_with_marker(endnotes, "endnote", "END IMAGE ONE");
+    let end_two = note_with_marker(endnotes, "endnote", "END NESTED IMAGE");
+    let rejected = note_with_marker(endnotes, "endnote", "REJECTED IMAGE");
+    for namespace in ["xmlns:r=", "xmlns:wp=", "xmlns:a=", "xmlns:pic="] {
+        assert!(footnotes.contains(namespace), "{footnotes}");
+        assert!(endnotes.contains(namespace), "{endnotes}");
+    }
+    assert!(foot_one.contains(r#"<w:hyperlink r:id="rId1">"#));
+    assert!(foot_one.contains(r#"r:embed="rId2""#));
+    assert!(foot_one.contains(r#"descr="Foot &lt;one&gt;""#));
+    assert!(foot_one.contains(r#"<wp:extent cx="19050" cy="28575"/>"#));
+    assert!(foot_two.contains(r#"r:embed="rId3""#));
+    assert_eq!(foot_two.matches("<w:tbl>").count(), 2, "{foot_two}");
+    assert!(end_one.contains(r#"r:embed="rId1""#));
+    assert!(end_one.contains(r#"<a:xfrm rot="5400000">"#));
+    assert!(end_two.contains(r#"<w:hyperlink r:id="rId2">"#));
+    assert!(end_two.contains(r#"r:embed="rId3""#));
+    assert_eq!(end_two.matches("<w:tbl>").count(), 2, "{end_two}");
+    assert!(!rejected.contains("<w:drawing>"), "{rejected}");
+    assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+    assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+
+    assert!(document_rels.contains(r#"Target="media/image1.png""#));
+    for target in ["image2.png", "image3.png", "image4.png", "image5.png"] {
+        assert!(!document_rels.contains(target), "{document_rels}");
+    }
+    assert!(footnote_rels.contains(r#"Id="rId1""#));
+    assert!(footnote_rels.contains(r#"Target="https://example.com/foot-image""#));
+    assert!(footnote_rels.contains(r#"Id="rId2""#));
+    assert!(footnote_rels.contains(r#"Target="media/image2.png""#));
+    assert!(footnote_rels.contains(r#"Id="rId3""#));
+    assert!(footnote_rels.contains(r#"Target="media/image4.png""#));
+    assert!(endnote_rels.contains(r#"Id="rId1""#));
+    assert!(endnote_rels.contains(r#"Target="media/image3.png""#));
+    assert!(endnote_rels.contains(r#"Id="rId2""#));
+    assert!(endnote_rels.contains(r#"Target="https://example.com/end-image""#));
+    assert!(endnote_rels.contains(r#"Id="rId3""#));
+    assert!(endnote_rels.contains(r#"Target="media/image5.png""#));
+    assert!(!endnote_rels.contains("rejected"));
+    assert!(content_types.contains(r#"Extension="png" ContentType="image/png""#));
+
+    let media = parts
+        .iter()
+        .filter(|(name, _)| name.starts_with("word/media/"))
+        .collect::<Vec<_>>();
+    assert_eq!(media.len(), 5, "{:?}", parts.keys().collect::<Vec<_>>());
+    for index in 1..=5 {
+        assert_eq!(parts[&format!("word/media/image{index}.png")], png);
+    }
+    assert!(!parts.contains_key("word/media/image6.png"));
+
+    let reopened = Document::open(&converted).expect("converted raster notes reopen");
     let reopened_model = reopened.model();
     assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
     assert_eq!(

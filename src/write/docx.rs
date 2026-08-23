@@ -3016,7 +3016,10 @@ fn source_note_payload_is_supported(note: &AuthoredNote, payload: &NoteWritePayl
 
 fn source_note_paragraph_is_supported(paragraph: &Paragraph) -> bool {
     paragraph.runs.iter().all(|run| {
-        run.image.is_none()
+        run.image
+            .as_ref()
+            .map(source_note_image_is_supported)
+            .unwrap_or(true)
             && source_note_field_is_supported(&run.field)
             && run.comment.is_none()
             && run.revision.is_none()
@@ -3024,6 +3027,22 @@ fn source_note_paragraph_is_supported(paragraph: &Paragraph) -> bool {
             && run.bookmark.is_none()
             && run.note.is_none()
     })
+}
+
+fn source_note_image_is_supported(image: &Image) -> bool {
+    image.bytes.as_ref().is_some_and(|bytes| !bytes.is_empty())
+        && matches!(
+            image.mime.as_deref(),
+            Some(
+                "image/png"
+                    | "image/jpeg"
+                    | "image/gif"
+                    | "image/bmp"
+                    | "image/tiff"
+                    | "image/webp"
+            )
+        )
+        && image.floating_offset_emu.is_none()
 }
 
 fn source_note_field_is_supported(field: &FieldRole) -> bool {
@@ -3066,7 +3085,16 @@ fn source_note_table_is_supported(table: &Table) -> bool {
 fn notes_xml(root: &str, item: &str, notes: &[WrittenNote], has_relationships: bool) -> Vec<u8> {
     let mut s = String::new();
     s.push_str(XML_DECL);
-    if has_relationships {
+    let has_drawing = notes.iter().any(|note| {
+        note.body_xml
+            .as_deref()
+            .is_some_and(|xml| xml.contains("<w:drawing>"))
+    });
+    if has_drawing {
+        s.push_str(&format!(
+            r#"<w:{root} xmlns:w="{W_NS}" xmlns:r="{R_NS}" xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:pic="{PIC_NS}">"#
+        ));
+    } else if has_relationships {
         s.push_str(&format!(r#"<w:{root} xmlns:w="{W_NS}" xmlns:r="{R_NS}">"#));
     } else {
         s.push_str(&format!(r#"<w:{root} xmlns:w="{W_NS}">"#));
@@ -4999,7 +5027,7 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
 mod tests {
     use super::{
         render_body, section_columns_xml, source_column_break_offsets, source_line_spacing,
-        source_tab_stops_xml, SectionColumnWriteHint, SourceWriteHints, REL_HYPERLINK,
+        source_tab_stops_xml, SectionColumnWriteHint, SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
     };
     use crate::model::{
         Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
@@ -6469,6 +6497,7 @@ mod tests {
                 String::from_utf8(rendered.endnotes_xml.expect("endnotes part")).unwrap(),
                 rendered.footnote_rels,
                 rendered.endnote_rels,
+                rendered.media,
             )
         };
         let counts = |xml: &str, item: &str, text: &str| {
@@ -6483,7 +6512,7 @@ mod tests {
             )
         };
         let render_counts = |payloads: &[Vec<Option<NoteWritePayload>>]| {
-            let (footnotes, endnotes, _, _) = render(payloads);
+            let (footnotes, endnotes, _, _, _) = render(payloads);
             (
                 counts(&footnotes, "footnote", "FOOT"),
                 counts(&endnotes, "endnote", "END"),
@@ -6543,7 +6572,7 @@ mod tests {
         paragraph.runs[0].field = FieldRole::Hyperlink {
             url: "https://example.com/note".to_string(),
         };
-        let (footnotes, endnotes, footnote_rels, endnote_rels) = render(&relationship_bearing);
+        let (footnotes, endnotes, footnote_rels, endnote_rels, _) = render(&relationship_bearing);
         assert_eq!(
             (
                 counts(&footnotes, "footnote", "FOOT"),
@@ -6566,7 +6595,7 @@ mod tests {
         paragraph.runs[0].field = FieldRole::Hyperlink {
             url: "#note-anchor".to_string(),
         };
-        let (footnotes, _, footnote_rels, _) = render(&internal_anchor);
+        let (footnotes, _, footnote_rels, _, _) = render(&internal_anchor);
         assert_eq!(counts(&footnotes, "footnote", "FOOT"), (1, 0, 2, 0, 0, 0));
         assert!(footnote_rels.is_empty());
 
@@ -6578,9 +6607,106 @@ mod tests {
         paragraph.runs[0].field = FieldRole::Simple {
             instruction: "MERGEFIELD Client".to_string(),
         };
-        let (footnotes, _, footnote_rels, _) = render(&mixed_semantics);
+        let (footnotes, _, footnote_rels, _, _) = render(&mixed_semantics);
         assert_eq!(counts(&footnotes, "footnote", "FOOT"), (1, 0, 2, 0, 0, 0));
         assert!(footnote_rels.is_empty());
+
+        let image_run = |mime: &str| Run {
+            image: Some(Image {
+                alt: Some("Note raster".to_string()),
+                bytes: Some(vec![1, 2, 3]),
+                mime: Some(mime.to_string()),
+                width_px: Some(2),
+                height_px: Some(3),
+                ..Image::default()
+            }),
+            ..Run::default()
+        };
+        for (mime, ext, content_type) in [
+            ("image/png", "png", "image/png"),
+            ("image/jpeg", "jpg", "image/jpeg"),
+            ("image/gif", "gif", "image/gif"),
+            ("image/bmp", "bmp", "image/bmp"),
+            ("image/tiff", "tif", "image/tiff"),
+            ("image/webp", "webp", "image/webp"),
+        ] {
+            let mut encoded = valid.clone();
+            let Block::Paragraph(paragraph) = &mut encoded[0][0].as_mut().unwrap().blocks[1] else {
+                panic!("paragraph payload")
+            };
+            paragraph.runs.push(image_run(mime));
+            let (footnotes, _, footnote_rels, _, media) = render(&encoded);
+            assert!(footnotes.contains("<w:drawing>"), "{mime}: {footnotes}");
+            assert!(footnotes.contains("xmlns:wp="), "{mime}: {footnotes}");
+            assert_eq!(footnote_rels.len(), 1, "{mime}");
+            assert_eq!(footnote_rels[0].rel_type, REL_IMAGE, "{mime}");
+            assert_eq!(footnote_rels[0].target, format!("media/image1.{ext}"));
+            assert!(!footnote_rels[0].external);
+            assert_eq!(media.len(), 1, "{mime}");
+            assert_eq!(media[0].1, [1, 2, 3]);
+            assert_eq!(media[0].2, ext);
+            assert_eq!(media[0].3, content_type);
+        }
+
+        let mut linked_raster = valid.clone();
+        let Block::Paragraph(paragraph) = &mut linked_raster[0][0].as_mut().unwrap().blocks[1]
+        else {
+            panic!("paragraph payload")
+        };
+        let mut run = image_run("image/png");
+        run.field = FieldRole::Hyperlink {
+            url: "https://example.com/note-raster".to_string(),
+        };
+        paragraph.runs.push(run);
+        let (footnotes, _, footnote_rels, _, media) = render(&linked_raster);
+        assert!(footnotes.contains(r#"<w:hyperlink r:id="rId1">"#));
+        assert!(footnotes.contains(r#"r:embed="rId2""#));
+        assert_eq!(footnote_rels.len(), 2);
+        assert_eq!(footnote_rels[0].rel_type, REL_HYPERLINK);
+        assert_eq!(footnote_rels[1].rel_type, REL_IMAGE);
+        assert_eq!(media.len(), 1);
+
+        let reject_image = |image: Image| {
+            let mut payloads = valid.clone();
+            let Block::Paragraph(paragraph) = &mut payloads[0][0].as_mut().unwrap().blocks[1]
+            else {
+                panic!("paragraph payload")
+            };
+            paragraph.runs.push(Run {
+                image: Some(image),
+                ..Run::default()
+            });
+            let (footnotes, _, footnote_rels, _, media) = render(&payloads);
+            assert_eq!(counts(&footnotes, "footnote", "FOOT"), (1, 0, 2, 0, 0, 0));
+            assert!(!footnotes.contains("<w:drawing>"));
+            assert!(footnote_rels.is_empty());
+            assert!(media.is_empty());
+        };
+        reject_image(Image {
+            mime: Some("image/png".to_string()),
+            ..Image::default()
+        });
+        reject_image(Image {
+            bytes: Some(Vec::new()),
+            mime: Some("image/png".to_string()),
+            ..Image::default()
+        });
+        reject_image(Image {
+            bytes: Some(vec![1, 2, 3]),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            ..Image::default()
+        });
+        reject_image(Image {
+            bytes: Some(vec![1, 2, 3]),
+            mime: Some("image/unknown".to_string()),
+            ..Image::default()
+        });
+        reject_image(Image {
+            bytes: Some(vec![1, 2, 3]),
+            mime: Some("image/png".to_string()),
+            floating_offset_emu: Some((1, 2)),
+            ..Image::default()
+        });
     }
 
     #[test]

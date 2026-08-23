@@ -1099,6 +1099,10 @@ impl Document {
     /// relationships owned by the corresponding footnote or endnote part,
     /// including through nested tables. Simple HYPERLINK field syntax may
     /// normalize to a `w:hyperlink` element.
+    /// Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline
+    /// runs also retain globally unique media parts and relationships owned by
+    /// the corresponding note part, including through nested tables and under
+    /// an external hyperlink.
     /// An unsupported opened-DOCX note body falls back independently to normalized
     /// one-paragraph text.
     /// Legacy nested-table descendants and note paragraph layout properties
@@ -1109,10 +1113,11 @@ impl Document {
     /// recursively nested body and running-surface table cells survive fresh
     /// conversion through the ordered public block tree across all six selected
     /// running variants; preview table fragmentation and Word-exact pagination
-    /// are not claimed. Media, charts, internal-anchor links, other fields,
-    /// annotations, bookmarks, nested notes, source IDs and numbering, separators,
-    /// custom marks, complex anchors, and page-bottom placement remain outside the
-    /// bounded opened-DOCX note path.
+    /// are not claimed. Missing/empty, unknown-MIME, raw-RGBA, floating, block,
+    /// or image-only raster cases, charts, vector metafiles, internal-anchor
+    /// links, other fields, annotations, bookmarks, nested notes, source IDs and
+    /// numbering, separators, custom marks, complex anchors, and page-bottom
+    /// placement remain outside the bounded opened-DOCX note path.
     /// Standalone [`write_docx`] remains model-only for all of these private
     /// hints.
     /// Available with the default `docx` feature.

@@ -1093,12 +1093,17 @@ manual page breaks between top-level paragraph fragments and inside table cells
 at every selected depth. Relationship-backed external hyperlinks survive in
 top-level and recursively nested note paragraphs through relationship files owned
 by the corresponding footnote or endnote part; simple HYPERLINK field syntax may
-normalize to a `w:hyperlink` element. Unsupported media, charts, internal-anchor
-links, other fields, annotations, bookmarks, or nested notes degrade only that
-note to the normalized one-paragraph text fallback without leaving an orphan
-relationship; supported sibling notes remain rich. Source IDs, numbering and
-separators, custom marks, page-bottom placement, and Word-exact pagination are not
-preserved. Standalone `write_docx` and the public model remain unchanged.
+normalize to a `w:hyperlink` element. Complete nonempty extracted PNG, JPEG, GIF,
+BMP, TIFF, and WebP inline runs likewise survive at every supported paragraph
+depth, including under an external hyperlink, with globally unique media names
+and relationships owned by the corresponding note part. Missing or empty bytes,
+unknown or raw-RGBA MIME data, floating and block images, image-only notes,
+charts, vector metafiles, internal-anchor links, other fields, annotations,
+bookmarks, or nested notes degrade only that note to the normalized one-paragraph
+text fallback without leaving orphan media or relationships; supported sibling
+notes remain rich. Source IDs, numbering and separators, custom marks, page-
+bottom placement, and Word-exact pagination are not preserved. Standalone
+`write_docx` and the public model remain unchanged.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the
