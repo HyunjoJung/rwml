@@ -24,7 +24,9 @@ use crate::model::{
     TextDirection,
 };
 #[cfg(feature = "docx")]
-use crate::model::{RunningBlockPaginationHints, RunningSurfacePaginationHints};
+use crate::model::{
+    RunningBlockPaginationHints, RunningSurfacePaginationHints, TableCellColumnBreakHints,
+};
 #[cfg(any(feature = "docx", feature = "render"))]
 use crate::model::{
     RunningSurfaceLineSpacingHints, RunningSurfaceTabStopHints,
@@ -93,6 +95,8 @@ pub(crate) struct LegacyBuildOutput {
     #[cfg(feature = "docx")]
     pub(crate) note_reference_anchors: Vec<Vec<LegacyNoteReferenceAnchor>>,
     pub(crate) column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(feature = "docx")]
+    pub(crate) table_cell_column_break_offsets: Vec<TableCellColumnBreakHints>,
     pub(crate) section_column_gap_pt: Vec<Option<f32>>,
     pub(crate) final_section_column_gap_pt: Option<f32>,
     pub(crate) section_column_layouts: Vec<Option<SectionColumnLayoutHints>>,
@@ -168,6 +172,8 @@ pub(crate) fn build_model_with_render_hints(
         #[cfg(feature = "docx")]
         note_reference_anchors,
         column_break_offsets,
+        #[cfg(feature = "docx")]
+        table_cell_column_break_offsets,
         mut table_row_pagination,
         mut table_cell_pagination,
         mut table_cell_line_spacing,
@@ -250,6 +256,8 @@ pub(crate) fn build_model_with_render_hints(
         #[cfg(feature = "docx")]
         note_reference_anchors,
         column_break_offsets,
+        #[cfg(feature = "docx")]
+        table_cell_column_break_offsets,
         section_column_gap_pt,
         final_section_column_gap_pt,
         section_column_layouts,
@@ -607,6 +615,8 @@ fn push_legacy_main_section_regions(
             #[cfg(feature = "docx")]
             output.note_reference_anchors.push(Vec::new());
             output.column_break_offsets.push(Vec::new());
+            #[cfg(feature = "docx")]
+            output.table_cell_column_break_offsets.push(Vec::new());
             output.table_row_pagination.push(Vec::new());
             output.table_cell_pagination.push(Vec::new());
             output.table_cell_line_spacing.push(Vec::new());
@@ -716,6 +726,12 @@ fn push_legacy_region(
     } else {
         vec![Vec::new(); region_output.blocks.len()]
     };
+    #[cfg(feature = "docx")]
+    let mut table_cell_column_break_offsets = if kind == SourceRegionKind::Main {
+        std::mem::take(&mut region_output.table_cell_column_break_offsets)
+    } else {
+        vec![Vec::new(); region_output.blocks.len()]
+    };
     output.blocks.append(&mut region_output.blocks);
     output
         .pagination_hints
@@ -734,6 +750,10 @@ fn push_legacy_region(
     output
         .column_break_offsets
         .append(&mut column_break_offsets);
+    #[cfg(feature = "docx")]
+    output
+        .table_cell_column_break_offsets
+        .append(&mut table_cell_column_break_offsets);
     output
         .table_row_pagination
         .append(&mut region_output.table_row_pagination);
@@ -786,6 +806,8 @@ struct LegacyRegionOutput {
     #[cfg(feature = "docx")]
     note_reference_anchors: Vec<Vec<LegacyNoteReferenceAnchor>>,
     column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(feature = "docx")]
+    table_cell_column_break_offsets: Vec<TableCellColumnBreakHints>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
     table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
@@ -1909,6 +1931,8 @@ struct Asm<'a, 'l> {
     #[cfg(feature = "docx")]
     note_reference_anchors: Vec<Vec<LegacyNoteReferenceAnchor>>,
     column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(feature = "docx")]
+    table_cell_column_break_offsets: Vec<TableCellColumnBreakHints>,
     page_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
@@ -1945,6 +1969,8 @@ struct Asm<'a, 'l> {
     cell_blocks: Vec<Block>,
     cell_pagination: Vec<Option<PaginationHint>>,
     cell_line_spacing: Vec<Option<LineSpacingHint>>,
+    #[cfg(feature = "docx")]
+    cell_column_break_offsets: Vec<Vec<usize>>,
     #[cfg(any(feature = "docx", feature = "render"))]
     cell_tab_stops: Vec<Vec<TabStop>>,
 
@@ -2078,6 +2104,8 @@ impl<'a, 'l> Asm<'a, 'l> {
             #[cfg(feature = "docx")]
             note_reference_anchors: Vec::new(),
             column_break_offsets: Vec::new(),
+            #[cfg(feature = "docx")]
+            table_cell_column_break_offsets: Vec::new(),
             page_break_offsets: Vec::new(),
             table_row_pagination: Vec::new(),
             table_cell_pagination: Vec::new(),
@@ -2102,6 +2130,8 @@ impl<'a, 'l> Asm<'a, 'l> {
             cell_blocks: Vec::new(),
             cell_pagination: Vec::new(),
             cell_line_spacing: Vec::new(),
+            #[cfg(feature = "docx")]
+            cell_column_break_offsets: Vec::new(),
             #[cfg(any(feature = "docx", feature = "render"))]
             cell_tab_stops: Vec::new(),
             field_stack: Vec::new(),
@@ -2511,6 +2541,8 @@ impl<'a, 'l> Asm<'a, 'l> {
                 #[cfg(feature = "docx")]
                 self.note_reference_anchors.push(note_reference_anchors);
                 self.column_break_offsets.push(column_break_offsets);
+                #[cfg(feature = "docx")]
+                self.table_cell_column_break_offsets.push(Vec::new());
                 self.page_break_offsets.push(page_break_offsets);
                 self.table_row_pagination.push(Vec::new());
                 self.table_cell_pagination.push(Vec::new());
@@ -2527,6 +2559,8 @@ impl<'a, 'l> Asm<'a, 'l> {
             self.cell_blocks.push(Block::Paragraph(para));
             self.cell_pagination.push(Some(pagination));
             self.cell_line_spacing.push(line_spacing_hint);
+            #[cfg(feature = "docx")]
+            self.cell_column_break_offsets.push(column_break_offsets);
             #[cfg(any(feature = "docx", feature = "render"))]
             self.cell_tab_stops.push(tab_stops);
             return;
@@ -2538,12 +2572,16 @@ impl<'a, 'l> Asm<'a, 'l> {
             self.cell_blocks.push(Block::Paragraph(para));
             self.cell_pagination.push(Some(pagination));
             self.cell_line_spacing.push(line_spacing_hint);
+            #[cfg(feature = "docx")]
+            self.cell_column_break_offsets.push(column_break_offsets);
             #[cfg(any(feature = "docx", feature = "render"))]
             self.cell_tab_stops.push(tab_stops);
             self.cur_row_cells.push(CellBuild {
                 blocks: std::mem::take(&mut self.cell_blocks),
                 pagination: std::mem::take(&mut self.cell_pagination),
                 line_spacing: std::mem::take(&mut self.cell_line_spacing),
+                #[cfg(feature = "docx")]
+                column_break_offsets: std::mem::take(&mut self.cell_column_break_offsets),
                 #[cfg(any(feature = "docx", feature = "render"))]
                 tab_stops: std::mem::take(&mut self.cell_tab_stops),
             });
@@ -2551,6 +2589,8 @@ impl<'a, 'l> Asm<'a, 'l> {
             self.cell_blocks.clear();
             self.cell_pagination.clear();
             self.cell_line_spacing.clear();
+            #[cfg(feature = "docx")]
+            self.cell_column_break_offsets.clear();
             #[cfg(any(feature = "docx", feature = "render"))]
             self.cell_tab_stops.clear();
         }
@@ -2595,6 +2635,8 @@ impl<'a, 'l> Asm<'a, 'l> {
         self.cell_blocks.clear();
         self.cell_pagination.clear();
         self.cell_line_spacing.clear();
+        #[cfg(feature = "docx")]
+        self.cell_column_break_offsets.clear();
         #[cfg(any(feature = "docx", feature = "render"))]
         self.cell_tab_stops.clear();
         let bidi_visual = self.cur_table_bidi_visual.take().unwrap_or(false);
@@ -2616,6 +2658,9 @@ impl<'a, 'l> Asm<'a, 'l> {
                 #[cfg(feature = "docx")]
                 self.note_reference_anchors.push(Vec::new());
                 self.column_break_offsets.push(Vec::new());
+                #[cfg(feature = "docx")]
+                self.table_cell_column_break_offsets
+                    .push(built.cell_column_breaks);
                 self.page_break_offsets.push(Vec::new());
                 self.table_row_pagination.push(row_pagination);
                 self.table_cell_pagination.push(built.cell_pagination);
@@ -2653,6 +2698,8 @@ impl<'a, 'l> Asm<'a, 'l> {
                 #[cfg(feature = "docx")]
                 self.note_reference_anchors.push(note_reference_anchors);
                 self.column_break_offsets.push(column_break_offsets);
+                #[cfg(feature = "docx")]
+                self.table_cell_column_break_offsets.push(Vec::new());
                 self.page_break_offsets.push(page_break_offsets);
                 self.table_row_pagination.push(Vec::new());
                 self.table_cell_pagination.push(Vec::new());
@@ -2669,6 +2716,11 @@ impl<'a, 'l> Asm<'a, 'l> {
         #[cfg(feature = "docx")]
         debug_assert_eq!(self.note_reference_anchors.len(), self.blocks.len());
         debug_assert_eq!(self.column_break_offsets.len(), self.blocks.len());
+        #[cfg(feature = "docx")]
+        debug_assert_eq!(
+            self.table_cell_column_break_offsets.len(),
+            self.blocks.len()
+        );
         debug_assert_eq!(self.page_break_offsets.len(), self.blocks.len());
         debug_assert_eq!(self.table_row_pagination.len(), self.blocks.len());
         debug_assert_eq!(self.table_cell_pagination.len(), self.blocks.len());
@@ -2684,6 +2736,8 @@ impl<'a, 'l> Asm<'a, 'l> {
             #[cfg(feature = "docx")]
             note_reference_anchors: self.note_reference_anchors,
             column_break_offsets: self.column_break_offsets,
+            #[cfg(feature = "docx")]
+            table_cell_column_break_offsets: self.table_cell_column_break_offsets,
             page_break_offsets: self.page_break_offsets,
             table_row_pagination: self.table_row_pagination,
             table_cell_pagination: self.table_cell_pagination,
@@ -2709,6 +2763,8 @@ struct LegacyBlockOutput {
     #[cfg(feature = "docx")]
     note_reference_anchors: Vec<Vec<LegacyNoteReferenceAnchor>>,
     column_break_offsets: Vec<Vec<usize>>,
+    #[cfg(feature = "docx")]
+    table_cell_column_break_offsets: Vec<TableCellColumnBreakHints>,
     page_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
@@ -2727,6 +2783,8 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
         #[cfg(feature = "docx")]
         note_reference_anchors,
         column_break_offsets,
+        #[cfg(feature = "docx")]
+        table_cell_column_break_offsets,
         page_break_offsets,
         table_row_pagination,
         table_cell_pagination,
@@ -2741,6 +2799,8 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
     #[cfg(feature = "docx")]
     debug_assert_eq!(note_reference_anchors.len(), blocks.len());
     debug_assert_eq!(column_break_offsets.len(), blocks.len());
+    #[cfg(feature = "docx")]
+    debug_assert_eq!(table_cell_column_break_offsets.len(), blocks.len());
     debug_assert_eq!(page_break_offsets.len(), blocks.len());
     debug_assert_eq!(table_row_pagination.len(), blocks.len());
     debug_assert_eq!(table_cell_pagination.len(), blocks.len());
@@ -2755,6 +2815,8 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
     #[cfg(feature = "docx")]
     let mut note_reference_anchors = note_reference_anchors.into_iter();
     let mut column_break_offsets = column_break_offsets.into_iter();
+    #[cfg(feature = "docx")]
+    let mut table_cell_column_break_offsets = table_cell_column_break_offsets.into_iter();
     let mut page_break_offsets = page_break_offsets.into_iter();
     let mut table_row_pagination = table_row_pagination.into_iter();
     let mut table_cell_pagination = table_cell_pagination.into_iter();
@@ -2771,6 +2833,8 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
         #[cfg(feature = "docx")]
         let paragraph_note_anchors = note_reference_anchors.next().unwrap_or_default();
         let column_offsets = column_break_offsets.next().unwrap_or_default();
+        #[cfg(feature = "docx")]
+        let cell_column_offsets = table_cell_column_break_offsets.next().unwrap_or_default();
         let page_offsets = page_break_offsets.next().unwrap_or_default();
         let row_pagination = table_row_pagination.next().unwrap_or_default();
         let cell_pagination = table_cell_pagination.next().unwrap_or_default();
@@ -2782,6 +2846,8 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
                 debug_assert!(row_pagination.is_empty());
                 debug_assert!(cell_pagination.is_empty());
                 debug_assert!(cell_line_spacing.is_empty());
+                #[cfg(feature = "docx")]
+                debug_assert!(cell_column_offsets.is_empty());
                 #[cfg(any(feature = "docx", feature = "render"))]
                 debug_assert!(cell_tab_stops.is_empty());
                 promote_legacy_paragraph_page_breaks(
@@ -2805,6 +2871,10 @@ fn promote_legacy_manual_page_breaks(output: LegacyBlockOutput) -> LegacyBlockOu
                 #[cfg(feature = "docx")]
                 promoted.note_reference_anchors.push(paragraph_note_anchors);
                 promoted.column_break_offsets.push(column_offsets);
+                #[cfg(feature = "docx")]
+                promoted
+                    .table_cell_column_break_offsets
+                    .push(cell_column_offsets);
                 promoted.page_break_offsets.push(Vec::new());
                 promoted.table_row_pagination.push(row_pagination);
                 promoted.table_cell_pagination.push(cell_pagination);
@@ -2867,6 +2937,8 @@ fn promote_legacy_paragraph_page_breaks(
                 #[cfg(feature = "docx")]
                 output.note_reference_anchors.push(Vec::new());
                 output.column_break_offsets.push(Vec::new());
+                #[cfg(feature = "docx")]
+                output.table_cell_column_break_offsets.push(Vec::new());
                 output.page_break_offsets.push(Vec::new());
                 output.table_row_pagination.push(Vec::new());
                 output.table_cell_pagination.push(Vec::new());
@@ -2945,6 +3017,8 @@ fn push_legacy_page_break_segment(
             .map(|offset| offset - segment.start)
             .collect(),
     );
+    #[cfg(feature = "docx")]
+    output.table_cell_column_break_offsets.push(Vec::new());
     output.page_break_offsets.push(Vec::new());
     output.table_row_pagination.push(Vec::new());
     output.table_cell_pagination.push(Vec::new());
@@ -3123,7 +3197,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_assembly_does_not_export_table_cell_column_breaks() {
+    fn legacy_assembly_aligns_table_cell_column_break_offsets() {
         let units = [
             b'A' as u16,
             0x000E,
@@ -3150,6 +3224,11 @@ mod tests {
         assert!(matches!(assembled.blocks[0], Block::Table(_)));
         assert!(matches!(assembled.blocks[1], Block::Paragraph(_)));
         assert_eq!(assembled.column_break_offsets, vec![vec![], vec![]]);
+        #[cfg(feature = "docx")]
+        assert_eq!(
+            assembled.table_cell_column_break_offsets,
+            vec![vec![vec![vec![vec![1]]]], Vec::new()]
+        );
     }
 
     #[test]
@@ -4776,6 +4855,8 @@ mod tests {
             #[cfg(feature = "docx")]
             note_reference_anchors,
             column_break_offsets,
+            #[cfg(feature = "docx")]
+            table_cell_column_break_offsets,
             table_row_pagination,
             table_cell_pagination,
             table_cell_line_spacing,
@@ -4795,6 +4876,8 @@ mod tests {
             assert!(tab_stops.iter().all(Vec::is_empty));
         }
         assert_eq!(column_break_offsets.len(), blocks.len());
+        #[cfg(feature = "docx")]
+        assert_eq!(table_cell_column_break_offsets.len(), blocks.len());
         assert_eq!(table_row_pagination.len(), blocks.len());
         assert_eq!(table_cell_pagination.len(), blocks.len());
         assert_eq!(table_cell_line_spacing.len(), blocks.len());

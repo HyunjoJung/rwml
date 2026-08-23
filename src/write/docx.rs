@@ -23,8 +23,9 @@ use crate::model::{
     RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints,
     RunningSurfaceTabStopHints, RunningSurfaceTableCellTabStopHints, SectionBreakKind,
     SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
-    TableBorderSide, TableBorderStyle, TableCellLineSpacingHints, TableCellPaginationHints,
-    TableCellTabStopHints, TableRowPaginationHint, VertAlign, WebExtensionTaskPane, MAX_TAB_STOPS,
+    TableBorderSide, TableBorderStyle, TableCellColumnBreakHints, TableCellLineSpacingHints,
+    TableCellPaginationHints, TableCellTabStopHints, TableRowPaginationHint, VertAlign,
+    WebExtensionTaskPane, MAX_TAB_STOPS,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -124,6 +125,7 @@ struct TableWriteHints<'a> {
     row_pagination: Option<&'a [TableRowPaginationHint]>,
     cell_pagination: Option<&'a TableCellPaginationHints>,
     cell_line_spacing: Option<&'a TableCellLineSpacingHints>,
+    cell_column_breaks: Option<&'a TableCellColumnBreakHints>,
     cell_tab_stops: Option<&'a TableCellTabStopHints>,
 }
 
@@ -131,6 +133,7 @@ struct TableWriteHints<'a> {
 struct CellWriteHints<'a> {
     pagination: Option<&'a [Option<PaginationHint>]>,
     line_spacing: Option<&'a [Option<LineSpacingHint>]>,
+    column_break_offsets: Option<&'a [Vec<usize>]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
 }
 
@@ -153,6 +156,7 @@ pub(crate) struct SourceWriteHints<'a> {
     pub(crate) paragraph_pagination: &'a [PaginationHint],
     pub(crate) paragraph_tab_stops: &'a [Vec<TabStop>],
     pub(crate) column_break_offsets: &'a [Vec<usize>],
+    pub(crate) table_cell_column_break_offsets: &'a [TableCellColumnBreakHints],
     pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     pub(crate) table_cell_pagination: &'a [TableCellPaginationHints],
     pub(crate) table_cell_line_spacing: &'a [TableCellLineSpacingHints],
@@ -225,6 +229,14 @@ impl<'a> SourceWriteHints<'a> {
         block_count: usize,
     ) -> Option<&'a [TableCellLineSpacingHints]> {
         (self.table_cell_line_spacing.len() == block_count).then_some(self.table_cell_line_spacing)
+    }
+
+    fn aligned_table_cell_column_break_offsets(
+        self,
+        block_count: usize,
+    ) -> Option<&'a [TableCellColumnBreakHints]> {
+        (self.table_cell_column_break_offsets.len() == block_count)
+            .then_some(self.table_cell_column_break_offsets)
     }
 
     fn aligned_table_cell_pagination(
@@ -1211,6 +1223,7 @@ impl Ctx {
                         row_pagination,
                         cell_pagination,
                         cell_line_spacing,
+                        cell_column_breaks: None,
                         cell_tab_stops,
                     },
                 )
@@ -1955,7 +1968,10 @@ impl Ctx {
                             .tab_stops
                             .and_then(|hints| hints.get(index))
                             .map(Vec::as_slice),
-                        column_break_offsets: None,
+                        column_break_offsets: hints
+                            .column_break_offsets
+                            .and_then(|hints| hints.get(index))
+                            .map(Vec::as_slice),
                     },
                 ),
                 _ => self.write_block(out, block),
@@ -2043,6 +2059,9 @@ impl Ctx {
         let cell_line_spacing = hints
             .cell_line_spacing
             .filter(|hints| Self::table_cell_paragraph_hints_align(table, hints));
+        let cell_column_breaks = hints
+            .cell_column_breaks
+            .filter(|hints| Self::table_cell_column_break_hints_align(table, hints));
         let cell_tab_stops = hints
             .cell_tab_stops
             .filter(|hints| Self::table_cell_tab_stops_align(table, hints));
@@ -2054,6 +2073,7 @@ impl Ctx {
                 row_pagination,
                 cell_pagination,
                 cell_line_spacing,
+                cell_column_breaks,
                 cell_tab_stops,
             },
         );
@@ -2092,6 +2112,30 @@ impl Ctx {
                 if cell_hints.len() != cell.blocks.len()
                     || cell.blocks.iter().zip(cell_hints).any(|(block, stops)| {
                         !stops.is_empty() && !matches!(block, Block::Paragraph(_))
+                    })
+                {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn table_cell_column_break_hints_align(
+        table: &Table,
+        hints: &TableCellColumnBreakHints,
+    ) -> bool {
+        if hints.len() != table.rows.len() {
+            return false;
+        }
+        for (row, row_hints) in table.rows.iter().zip(hints) {
+            if row_hints.len() != row.cells.len() {
+                return false;
+            }
+            for (cell, cell_hints) in row.cells.iter().zip(row_hints) {
+                if cell_hints.len() != cell.blocks.len()
+                    || cell.blocks.iter().zip(cell_hints).any(|(block, offsets)| {
+                        !offsets.is_empty() && !matches!(block, Block::Paragraph(_))
                     })
                 {
                     return false;
@@ -2160,6 +2204,11 @@ impl Ctx {
                         .and_then(|rows| rows.get(ri))
                         .and_then(|row| row.get(ci))
                         .map(Vec::as_slice);
+                    let source_column_breaks = hints
+                        .cell_column_breaks
+                        .and_then(|rows| rows.get(ri))
+                        .and_then(|row| row.get(ci))
+                        .map(Vec::as_slice);
                     let source_tab_stops = hints
                         .cell_tab_stops
                         .and_then(|rows| rows.get(ri))
@@ -2215,6 +2264,7 @@ impl Ctx {
                             CellWriteHints {
                                 pagination: source_pagination,
                                 line_spacing: source_line_spacing,
+                                column_break_offsets: source_column_breaks,
                                 tab_stops: source_tab_stops,
                             },
                         );
@@ -4370,6 +4420,8 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         source_hints.and_then(|hints| hints.aligned_table_cell_pagination(model.blocks.len()));
     let table_cell_line_spacing =
         source_hints.and_then(|hints| hints.aligned_table_cell_line_spacing(model.blocks.len()));
+    let table_cell_column_break_offsets = source_hints
+        .and_then(|hints| hints.aligned_table_cell_column_break_offsets(model.blocks.len()));
     let table_cell_tab_stops =
         source_hints.and_then(|hints| hints.aligned_table_cell_tab_stops(model.blocks.len()));
     let mut section_index = 0;
@@ -4401,6 +4453,8 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
                     .map(Vec::as_slice),
                 cell_pagination: table_cell_pagination.and_then(|hints| hints.get(index)),
                 cell_line_spacing: table_cell_line_spacing.and_then(|hints| hints.get(index)),
+                cell_column_breaks: table_cell_column_break_offsets
+                    .and_then(|hints| hints.get(index)),
                 cell_tab_stops: table_cell_tab_stops.and_then(|hints| hints.get(index)),
             },
         );
@@ -4551,8 +4605,9 @@ mod tests {
         Paragraph, Row, Run, RunningBlockPaginationHints, RunningSurfaceDistanceHints,
         RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints, RunningSurfaceTabStopHints,
         RunningSurfaceTableCellTabStopHints, SectionColumnHint, SectionColumnLayoutHints,
-        SectionSetup, TabAlignment, TabLeader, TabStop, Table, TableCellLineSpacingHints,
-        TableCellPaginationHints, TableCellTabStopHints, TableRowPaginationHint, MAX_TAB_STOPS,
+        SectionSetup, TabAlignment, TabLeader, TabStop, Table, TableCellColumnBreakHints,
+        TableCellLineSpacingHints, TableCellPaginationHints, TableCellTabStopHints,
+        TableRowPaginationHint, MAX_TAB_STOPS,
     };
     use crate::Document;
 
@@ -4685,6 +4740,7 @@ mod tests {
                 paragraph_pagination: &[],
                 paragraph_tab_stops: &[],
                 column_break_offsets: &[],
+                table_cell_column_break_offsets: &[],
                 table_row_pagination: &[],
                 table_cell_pagination: &[],
                 table_cell_line_spacing: &[],
@@ -4737,6 +4793,7 @@ mod tests {
                 paragraph_pagination: &[],
                 paragraph_tab_stops: &[],
                 column_break_offsets: &[],
+                table_cell_column_break_offsets: &[],
                 table_row_pagination: &[],
                 table_cell_pagination: &[],
                 table_cell_line_spacing: &[],
@@ -4850,6 +4907,7 @@ mod tests {
                         paragraph_pagination: &pagination,
                         paragraph_tab_stops,
                         column_break_offsets: &[],
+                        table_cell_column_break_offsets: &[],
                         table_row_pagination: &[],
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
@@ -5000,6 +5058,7 @@ mod tests {
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
                     column_break_offsets: &[],
+                    table_cell_column_break_offsets: &[],
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &[],
@@ -5143,6 +5202,7 @@ mod tests {
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
                     column_break_offsets: &[],
+                    table_cell_column_break_offsets: &[],
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &[],
@@ -5268,6 +5328,7 @@ mod tests {
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
                     column_break_offsets: &[],
+                    table_cell_column_break_offsets: &[],
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &[],
@@ -5590,6 +5651,7 @@ mod tests {
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
                     column_break_offsets: &[],
+                    table_cell_column_break_offsets: &[],
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &[],
@@ -5922,6 +5984,7 @@ mod tests {
                         paragraph_pagination: &pagination,
                         paragraph_tab_stops: &tabs,
                         column_break_offsets,
+                        table_cell_column_break_offsets: &[],
                         table_row_pagination: &[],
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
@@ -6000,6 +6063,135 @@ mod tests {
     }
 
     #[test]
+    fn source_table_cell_column_break_writer_validates_tree_and_leaves_independently() {
+        let wrapped = Paragraph {
+            runs: vec![
+                Run {
+                    text: "A\nB".to_string(),
+                    props: CharProps {
+                        bold: true,
+                        ..CharProps::default()
+                    },
+                    field: FieldRole::Hyperlink {
+                        url: "https://example.com/table-column-break".to_string(),
+                    },
+                    bookmark: Some("TableColumnBreak".to_string()),
+                    ..Run::default()
+                },
+                Run {
+                    text: "\nC".to_string(),
+                    content_control: Some(AuthoredContentControl {
+                        tag: Some("table-column-break".to_string()),
+                        ..AuthoredContentControl::default()
+                    }),
+                    revision: Some(AuthoredRevision::default()),
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        };
+        let trailing = Paragraph {
+            runs: vec![Run {
+                text: "D\nE\nF".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let model = DocModel {
+            blocks: vec![Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![
+                            Block::Paragraph(wrapped),
+                            Block::PageBreak,
+                            Block::Paragraph(trailing),
+                        ],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            })],
+            ..DocModel::default()
+        };
+        let row_pagination = [vec![TableRowPaginationHint { cant_split: true }]];
+        let line_spacing = [vec![vec![vec![
+            Some(LineSpacingHint::Exact(12.0)),
+            None,
+            Some(LineSpacingHint::AtLeast(14.0)),
+        ]]]];
+        let render = |table_cell_column_break_offsets: &[TableCellColumnBreakHints]| {
+            String::from_utf8(
+                render_body(
+                    &model,
+                    Some(SourceWriteHints {
+                        gaps: &[None],
+                        layouts: &[None],
+                        separators: &[false],
+                        rtl: &[false],
+                        final_gap: None,
+                        final_layout: None,
+                        final_separator: false,
+                        final_rtl: false,
+                        running_surface_distances: &[RunningSurfaceDistanceHints::default()],
+                        running_line_spacing: &[],
+                        running_pagination: &[],
+                        running_tab_stops: &[],
+                        running_table_cell_tab_stops: &[],
+                        paragraph_line_spacing: &[],
+                        paragraph_pagination: &[],
+                        paragraph_tab_stops: &[],
+                        column_break_offsets: &[],
+                        table_cell_column_break_offsets,
+                        table_row_pagination: &row_pagination,
+                        table_cell_pagination: &[],
+                        table_cell_line_spacing: &line_spacing,
+                        table_cell_tab_stops: &[],
+                    }),
+                )
+                .document_xml,
+            )
+            .unwrap()
+        };
+        let valid: TableCellColumnBreakHints = vec![vec![vec![vec![1, 3], Vec::new(), vec![1]]]];
+
+        let written = render(std::slice::from_ref(&valid));
+        assert_eq!(written.matches(r#"<w:br w:type="column"/>"#).count(), 3);
+        assert_eq!(written.matches("<w:br/>").count(), 1);
+        for marker in ["<w:bookmarkStart", "<w:hyperlink", "<w:sdt>", "<w:ins"] {
+            assert!(written.contains(marker), "missing {marker}: {written}");
+        }
+        assert!(written.contains("<w:cantSplit/>"), "{written}");
+        assert!(written.contains(r#"w:line="240" w:lineRule="exact""#));
+        assert!(written.contains(r#"w:line="280" w:lineRule="atLeast""#));
+
+        let mut malformed_trees = vec![
+            vec![valid.clone(), valid.clone()],
+            vec![vec![valid[0].clone(), valid[0].clone()]],
+            vec![vec![vec![valid[0][0].clone(), valid[0][0].clone()]]],
+            vec![vec![vec![vec![vec![1, 3]]]]],
+        ];
+        let mut nonparagraph = valid.clone();
+        nonparagraph[0][0][1] = vec![0];
+        malformed_trees.push(vec![nonparagraph]);
+        for malformed in malformed_trees {
+            let rejected = render(&malformed);
+            assert!(!rejected.contains(r#"<w:br w:type="column"/>"#));
+            assert_eq!(rejected.matches("<w:br/>").count(), 4);
+            assert!(rejected.contains("<w:cantSplit/>"), "{rejected}");
+            assert!(rejected.contains(r#"w:line="240" w:lineRule="exact""#));
+        }
+
+        for malformed_leaf in [vec![1, 1], vec![3, 1], vec![0], vec![99]] {
+            let mut malformed = valid.clone();
+            malformed[0][0][0] = malformed_leaf;
+            let isolated = render(&[malformed]);
+            assert_eq!(isolated.matches(r#"<w:br w:type="column"/>"#).count(), 1);
+            assert_eq!(isolated.matches("<w:br/>").count(), 3);
+            assert!(isolated.contains("<w:cantSplit/>"), "{isolated}");
+        }
+    }
+
+    #[test]
     fn source_paragraph_pagination_writer_rejects_misalignment_and_orders_controls() {
         let mut paragraph = para("body");
         paragraph.props.page_break_before = true;
@@ -6045,6 +6237,7 @@ mod tests {
                         paragraph_pagination,
                         paragraph_tab_stops: &[],
                         column_break_offsets: &[],
+                        table_cell_column_break_offsets: &[],
                         table_row_pagination: &[],
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
@@ -6108,6 +6301,7 @@ mod tests {
                 }],
                 paragraph_tab_stops: &body_tab_stops,
                 column_break_offsets: &[],
+                table_cell_column_break_offsets: &[],
                 table_row_pagination: &[],
                 table_cell_pagination: &[],
                 table_cell_line_spacing: &[],
@@ -6181,6 +6375,7 @@ mod tests {
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
                         column_break_offsets: &[],
+                        table_cell_column_break_offsets: &[],
                         table_row_pagination,
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
@@ -6256,6 +6451,7 @@ mod tests {
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
                         column_break_offsets: &[],
+                        table_cell_column_break_offsets: &[],
                         table_row_pagination: &[],
                         table_cell_pagination: &[],
                         table_cell_line_spacing,
@@ -6342,6 +6538,7 @@ mod tests {
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
                         column_break_offsets: &[],
+                        table_cell_column_break_offsets: &[],
                         table_row_pagination: &row_pagination,
                         table_cell_pagination,
                         table_cell_line_spacing,
@@ -6463,6 +6660,7 @@ mod tests {
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
                         column_break_offsets: &[],
+                        table_cell_column_break_offsets: &[],
                         table_row_pagination: &row_pagination,
                         table_cell_pagination: &cell_pagination,
                         table_cell_line_spacing: &cell_line_spacing,
@@ -6573,6 +6771,7 @@ mod tests {
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
                     column_break_offsets: &[],
+                    table_cell_column_break_offsets: &[],
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &table_cell_line_spacing,
@@ -6652,6 +6851,7 @@ mod tests {
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
                     column_break_offsets: &[],
+                    table_cell_column_break_offsets: &[],
                     table_row_pagination: &[],
                     table_cell_pagination: &table_cell_pagination,
                     table_cell_line_spacing: &[],
@@ -6733,6 +6933,7 @@ mod tests {
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
                     column_break_offsets: &[],
+                    table_cell_column_break_offsets: &[],
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &[],
@@ -6836,6 +7037,7 @@ mod tests {
                 paragraph_pagination: &[],
                 paragraph_tab_stops: &[],
                 column_break_offsets: &[],
+                table_cell_column_break_offsets: &[],
                 table_row_pagination: &[],
                 table_cell_pagination: &table_cell_pagination,
                 table_cell_line_spacing: &table_cell_line_spacing,

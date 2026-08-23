@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Fresh `Document::to_docx()` conversion now preserves visible manual column
+  breaks in direct paragraph blocks of surviving cells in top-level body tables
+  from opened DOCX and legacy DOC inputs. A private block/row/surviving-cell/
+  paragraph tree follows DOCX vertical merges and legacy horizontal/vertical
+  merge ownership, validates structure before use, and validates each strictly
+  increasing newline-backed offset leaf independently through the existing run-
+  aware column-break writer. Multiple cell paragraphs, accepted-current run
+  wrappers, hidden controls, malformed tree and leaf isolation, deterministic
+  bytes, native reopen, and unchanged public-model/standalone-writer behavior are
+  covered. Table-cell page breaks, nested tables, notes, running surfaces, and
+  PDF pagination remain outside this bounded path.
 - Fresh legacy `Document::to_docx()` conversion now excludes a HeaderFooter
   source region from `word/document.xml` only when assembly actually promoted
   that exact nonempty block range into a selected section running slot. The
@@ -81,8 +92,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keeps each break inside its existing run formatting and semantic wrappers.
   Ordinary and hidden-source line breaks remain ordinary, malformed hints fail
   independently, deterministic bytes and native reopen are covered, and
-  standalone model writing remains unchanged. Table-cell, note, running-surface,
-  and nested-content manual breaks remain outside this bounded path.
+  standalone model writing remains unchanged. Note, running-surface, and nested-
+  content manual breaks remain outside this bounded path; direct table-cell
+  column breaks use the separately validated bridge above.
 - Preserves reader-resolved explicit paragraph tab stops when
   `Document::to_docx()` freshly converts direct top-level paragraphs in selected
   default/first/even headers and footers from an opened DOCX. A private

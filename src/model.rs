@@ -381,12 +381,17 @@ pub(crate) type TableCellLineSpacingHints = Vec<Vec<Vec<Option<LineSpacingHint>>
 #[cfg(any(feature = "docx", feature = "render"))]
 pub(crate) type TableCellTabStopHints = Vec<Vec<Vec<Vec<TabStop>>>>;
 
+#[cfg(feature = "docx")]
+pub(crate) type TableCellColumnBreakHints = Vec<Vec<Vec<Vec<usize>>>>;
+
 #[cfg(any(feature = "docx", feature = "render"))]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct TablePaginationHints {
     pub(crate) rows: Vec<TableRowPaginationHint>,
     pub(crate) cells: TableCellPaginationHints,
     pub(crate) cell_line_spacing: TableCellLineSpacingHints,
+    #[cfg(feature = "docx")]
+    pub(crate) cell_column_breaks: TableCellColumnBreakHints,
     pub(crate) nested: TableCellNestedPaginationHints,
     pub(crate) cell_tabs: TableCellTabStopHints,
 }

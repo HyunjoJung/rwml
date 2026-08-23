@@ -13005,6 +13005,8 @@ mod tests {
                 rows: vec![TableRowPaginationHint::default()],
                 cells: vec![vec![vec![None]]],
                 cell_line_spacing: vec![vec![vec![Some(LineSpacingHint::AtLeast(40.0))]]],
+                #[cfg(feature = "docx")]
+                cell_column_breaks: Vec::new(),
                 nested: vec![vec![vec![None]]],
                 cell_tabs: vec![vec![vec![Vec::new()]]],
             }),
@@ -13809,6 +13811,8 @@ mod tests {
                 .iter()
                 .map(|paragraphs| vec![None; paragraphs.len()])
                 .collect()],
+            #[cfg(feature = "docx")]
+            cell_column_breaks: Vec::new(),
             nested: vec![nested_cells
                 .iter()
                 .map(|paragraphs| vec![None; paragraphs.len()])
@@ -13874,6 +13878,8 @@ mod tests {
                 rows: vec![TableRowPaginationHint::default()],
                 cells: vec![vec![direct_hints]],
                 cell_line_spacing: vec![vec![vec![None]]],
+                #[cfg(feature = "docx")]
+                cell_column_breaks: Vec::new(),
                 nested: vec![vec![nested_hints]],
                 cell_tabs: vec![vec![vec![Vec::new()]]],
             };

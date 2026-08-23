@@ -5,6 +5,8 @@
 //! Reference: [MS-DOC] 2.4.3 (cell boundaries), 2.9.349 (TDefTableOperand),
 //! 2.9.330 (TC80).
 
+#[cfg(feature = "docx")]
+use crate::model::TableCellColumnBreakHints;
 use crate::model::{
     Block, Cell, Color, LineSpacingHint, PaginationHint, Row, Table, TableBorderSide,
     TableBorderStyle, TableCellLineSpacingHints, TableCellPaginationHints,
@@ -241,6 +243,8 @@ pub(crate) struct CellBuild {
     pub blocks: Vec<Block>,
     pub pagination: Vec<Option<PaginationHint>>,
     pub line_spacing: Vec<Option<LineSpacingHint>>,
+    #[cfg(feature = "docx")]
+    pub column_break_offsets: Vec<Vec<usize>>,
     #[cfg(any(feature = "docx", feature = "render"))]
     pub tab_stops: Vec<Vec<TabStop>>,
 }
@@ -256,6 +260,8 @@ pub(crate) struct TableBuildOutput {
     pub table: Table,
     pub cell_pagination: TableCellPaginationHints,
     pub cell_line_spacing: TableCellLineSpacingHints,
+    #[cfg(feature = "docx")]
+    pub cell_column_breaks: TableCellColumnBreakHints,
     #[cfg(any(feature = "docx", feature = "render"))]
     pub cell_tab_stops: TableCellTabStopHints,
 }
@@ -265,6 +271,8 @@ struct Out {
     blocks: Vec<Block>,
     pagination: Vec<Option<PaginationHint>>,
     line_spacing: Vec<Option<LineSpacingHint>>,
+    #[cfg(feature = "docx")]
+    column_break_offsets: Vec<Vec<usize>>,
     #[cfg(any(feature = "docx", feature = "render"))]
     tab_stops: Vec<Vec<TabStop>>,
     /// Starting column over the table's global boundary set.
@@ -538,6 +546,8 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
                         last.blocks.extend(cell.blocks);
                         last.pagination.extend(cell.pagination);
                         last.line_spacing.extend(cell.line_spacing);
+                        #[cfg(feature = "docx")]
+                        last.column_break_offsets.extend(cell.column_break_offsets);
                         #[cfg(any(feature = "docx", feature = "render"))]
                         last.tab_stops.extend(cell.tab_stops);
                     } else {
@@ -547,6 +557,8 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
                             blocks: cell.blocks,
                             pagination: cell.pagination,
                             line_spacing: cell.line_spacing,
+                            #[cfg(feature = "docx")]
+                            column_break_offsets: cell.column_break_offsets,
                             #[cfg(any(feature = "docx", feature = "render"))]
                             tab_stops: cell.tab_stops,
                             col,
@@ -563,6 +575,8 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
                         last.blocks.extend(cell.blocks);
                         last.pagination.extend(cell.pagination);
                         last.line_spacing.extend(cell.line_spacing);
+                        #[cfg(feature = "docx")]
+                        last.column_break_offsets.extend(cell.column_break_offsets);
                         #[cfg(any(feature = "docx", feature = "render"))]
                         last.tab_stops.extend(cell.tab_stops);
                     }
@@ -574,6 +588,8 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
                         blocks: cell.blocks,
                         pagination: cell.pagination,
                         line_spacing: cell.line_spacing,
+                        #[cfg(feature = "docx")]
+                        column_break_offsets: cell.column_break_offsets,
                         #[cfg(any(feature = "docx", feature = "render"))]
                         tab_stops: cell.tab_stops,
                         col: k,
@@ -615,6 +631,8 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
     let mut model_rows = Vec::with_capacity(grid.len());
     let mut cell_pagination = Vec::with_capacity(grid.len());
     let mut cell_line_spacing = Vec::with_capacity(grid.len());
+    #[cfg(feature = "docx")]
+    let mut cell_column_breaks = Vec::with_capacity(grid.len());
     #[cfg(any(feature = "docx", feature = "render"))]
     let mut cell_tab_stops = Vec::with_capacity(grid.len());
     for (r, row) in grid.into_iter().enumerate() {
@@ -622,6 +640,8 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
         let mut cells = Vec::with_capacity(row.len());
         let mut row_pagination = Vec::with_capacity(row.len());
         let mut row_line_spacing = Vec::with_capacity(row.len());
+        #[cfg(feature = "docx")]
+        let mut row_column_breaks = Vec::with_capacity(row.len());
         #[cfg(any(feature = "docx", feature = "render"))]
         let mut row_tab_stops = Vec::with_capacity(row.len());
         for output in row.into_iter().filter(|output| !output.dropped) {
@@ -631,12 +651,19 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
             debug_assert!(
                 output.line_spacing.is_empty() || output.blocks.len() == output.line_spacing.len()
             );
+            #[cfg(feature = "docx")]
+            debug_assert!(
+                output.column_break_offsets.is_empty()
+                    || output.blocks.len() == output.column_break_offsets.len()
+            );
             #[cfg(any(feature = "docx", feature = "render"))]
             debug_assert!(
                 output.tab_stops.is_empty() || output.blocks.len() == output.tab_stops.len()
             );
             row_pagination.push(output.pagination);
             row_line_spacing.push(output.line_spacing);
+            #[cfg(feature = "docx")]
+            row_column_breaks.push(output.column_break_offsets);
             #[cfg(any(feature = "docx", feature = "render"))]
             row_tab_stops.push(output.tab_stops);
             cells.push(Cell {
@@ -650,6 +677,8 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
         model_rows.push(Row { cells });
         cell_pagination.push(row_pagination);
         cell_line_spacing.push(row_line_spacing);
+        #[cfg(feature = "docx")]
+        cell_column_breaks.push(row_column_breaks);
         #[cfg(any(feature = "docx", feature = "render"))]
         cell_tab_stops.push(row_tab_stops);
     }
@@ -667,6 +696,8 @@ pub(crate) fn build_with_direction(rows: Vec<RowBuild>, bidi_visual: bool) -> Ta
         table,
         cell_pagination,
         cell_line_spacing,
+        #[cfg(feature = "docx")]
+        cell_column_breaks,
         #[cfg(any(feature = "docx", feature = "render"))]
         cell_tab_stops,
     }
@@ -1212,6 +1243,8 @@ mod tests {
             blocks: cell(text),
             pagination: vec![Some(pagination)],
             line_spacing: vec![Some(line_spacing)],
+            #[cfg(feature = "docx")]
+            column_break_offsets: vec![vec![usize::from(text.as_bytes()[0])]],
             #[cfg(any(feature = "docx", feature = "render"))]
             tab_stops: vec![vec![TabStop {
                 position_pt: f32::from(text.as_bytes()[0]),
@@ -1278,6 +1311,17 @@ mod tests {
                     vec![Some(LineSpacingHint::Exact(5.0))],
                     vec![Some(LineSpacingHint::AtLeast(6.0))],
                 ],
+            ]
+        );
+        #[cfg(feature = "docx")]
+        assert_eq!(
+            built.cell_column_breaks,
+            vec![
+                vec![
+                    vec![vec![usize::from(b'A')], vec![usize::from(b'B')]],
+                    vec![vec![usize::from(b'C')], vec![usize::from(b'e')]],
+                ],
+                vec![vec![vec![usize::from(b'D')]], vec![vec![usize::from(b'E')]],],
             ]
         );
         #[cfg(any(feature = "docx", feature = "render"))]

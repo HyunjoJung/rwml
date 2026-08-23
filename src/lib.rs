@@ -578,6 +578,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         #[cfg(feature = "docx")]
             note_reference_anchors: _note_reference_anchors,
         column_break_offsets: _column_break_offsets,
+        #[cfg(feature = "docx")]
+            table_cell_column_break_offsets: _table_cell_column_break_offsets,
         section_column_gap_pt: _section_column_gap_pt,
         final_section_column_gap_pt: _final_section_column_gap_pt,
         section_column_layouts: _section_column_layouts,
@@ -1042,8 +1044,9 @@ impl Document {
     /// cells of aligned top-level tables, plus effective no-split state for
     /// aligned top-level table rows. That direct body subset also carries
     /// reader-resolved explicit paragraph tab stops, while aligned top-level body
-    /// paragraphs carry visible manual column breaks through validated source
-    /// character offsets. Direct top-level paragraphs in selected
+    /// paragraphs and aligned direct paragraph blocks in surviving cells of top-
+    /// level body tables carry visible manual column breaks through independently
+    /// validated source character offsets. Direct top-level paragraphs in selected
     /// default/first/even running headers and footers from opened DOCX and legacy
     /// DOC inputs also carry reader-resolved explicit tab stops through section-
     /// aligned private hints. Direct paragraph blocks in surviving cells of
@@ -1067,10 +1070,10 @@ impl Document {
     /// normalized subset through an exact private block/id/offset bridge.
     /// Nested-table descendants and note paragraph layout properties remain
     /// outside these layout-hint paths, while nested running-table descendants
-    /// remain outside pagination, tab, and line-rule conversion. Settings-defined default-tab
-    /// intervals remain outside the tab path, and table-cell, note, running-
-    /// surface, and nested-content manual breaks remain outside the column-break
-    /// path. Rich note formatting, tables, media, source IDs and numbering,
+    /// remain outside pagination, tab, and line-rule conversion. Settings-defined
+    /// default-tab intervals remain outside the tab path. Table-cell page breaks
+    /// plus note, running-surface, and nested-table manual breaks remain outside
+    /// the break-preservation paths. Rich note formatting, tables, media, source IDs and numbering,
     /// separators, custom marks, complex anchors, and page-bottom placement
     /// remain outside the normalized note path.
     /// Standalone [`write_docx`] remains model-only for all of these private
@@ -1103,6 +1106,7 @@ impl Document {
                         paragraph_pagination: &assembled.pagination_hints,
                         paragraph_tab_stops: &assembled.tab_stops,
                         column_break_offsets: &assembled.column_break_offsets,
+                        table_cell_column_break_offsets: &assembled.table_cell_column_break_offsets,
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
@@ -1137,6 +1141,7 @@ impl Document {
                         paragraph_pagination: &state.pagination_hints,
                         paragraph_tab_stops: &state.tab_stops,
                         column_break_offsets: &state.column_break_offsets,
+                        table_cell_column_break_offsets: &state.table_cell_column_break_offsets,
                         table_row_pagination: &state.table_row_pagination,
                         table_cell_pagination: &state.table_cell_pagination,
                         table_cell_line_spacing: &state.table_cell_line_spacing,
@@ -3524,6 +3529,7 @@ fn legacy_project_promoted_running_surfaces(assembled: &mut assemble::LegacyBuil
         && assembled.tab_stops.len() == block_count
         && assembled.note_reference_anchors.len() == block_count
         && assembled.column_break_offsets.len() == block_count
+        && assembled.table_cell_column_break_offsets.len() == block_count
         && assembled.section_column_gap_pt.len() == block_count
         && assembled.section_column_layouts.len() == block_count
         && assembled.section_column_separators.len() == block_count
@@ -3623,6 +3629,7 @@ fn legacy_project_promoted_running_surfaces(assembled: &mut assemble::LegacyBuil
     retain_legacy_conversion_slots(&mut assembled.render_tab_stops, &removed);
     retain_legacy_conversion_slots(&mut assembled.note_reference_anchors, &removed);
     retain_legacy_conversion_slots(&mut assembled.column_break_offsets, &removed);
+    retain_legacy_conversion_slots(&mut assembled.table_cell_column_break_offsets, &removed);
     retain_legacy_conversion_slots(&mut assembled.section_column_gap_pt, &removed);
     retain_legacy_conversion_slots(&mut assembled.section_column_layouts, &removed);
     retain_legacy_conversion_slots(&mut assembled.section_column_separators, &removed);
@@ -3663,6 +3670,9 @@ fn legacy_promote_exact_notes_for_fresh_conversion(
     assembled.render_tab_stops.truncate(body_block_end);
     assembled.note_reference_anchors.truncate(body_block_end);
     assembled.column_break_offsets.truncate(body_block_end);
+    assembled
+        .table_cell_column_break_offsets
+        .truncate(body_block_end);
     assembled.section_column_gap_pt.truncate(body_block_end);
     assembled.section_column_layouts.truncate(body_block_end);
     assembled.section_column_separators.truncate(body_block_end);
@@ -7478,6 +7488,7 @@ mod tests {
         assert_eq!(assembled.tab_stops.len(), block_count);
         assert_eq!(assembled.note_reference_anchors.len(), block_count);
         assert_eq!(assembled.column_break_offsets.len(), block_count);
+        assert_eq!(assembled.table_cell_column_break_offsets.len(), block_count);
         assert_eq!(assembled.section_column_gap_pt.len(), block_count);
         assert_eq!(assembled.section_column_layouts.len(), block_count);
         assert_eq!(assembled.section_column_separators.len(), block_count);
@@ -7546,6 +7557,19 @@ mod tests {
         assert!(!legacy_project_promoted_running_surfaces(&mut misaligned));
         assert_eq!(misaligned.model, misaligned_model);
         assert_eq!(misaligned.promoted_running_block_ranges, misaligned_ranges);
+
+        let mut misaligned_breaks = legacy_build_output_from_doc_state(state);
+        misaligned_breaks.table_cell_column_break_offsets.pop();
+        let break_model = misaligned_breaks.model.clone();
+        let break_ranges = misaligned_breaks.promoted_running_block_ranges.clone();
+        assert!(!legacy_project_promoted_running_surfaces(
+            &mut misaligned_breaks
+        ));
+        assert_eq!(misaligned_breaks.model, break_model);
+        assert_eq!(
+            misaligned_breaks.promoted_running_block_ranges,
+            break_ranges
+        );
     }
 
     #[test]
@@ -15108,6 +15132,53 @@ mod tests {
         legacy_doc_with_section_page_grpprls(text, &[0, text_end], &[&section])
     }
 
+    #[cfg(feature = "docx")]
+    fn legacy_table_cell_column_break_conversion_doc() -> Vec<u8> {
+        let text = "A\u{000e}B\rC\u{000e}D\u{0007}\u{0007}TAIL\r";
+        let first_paragraph_end = "A\u{000e}B\r".encode_utf16().count() as u32;
+        let cell_end = "A\u{000e}B\rC\u{000e}D\u{0007}".encode_utf16().count() as u32;
+        let row_end = cell_end + 1;
+        let text_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        let runs = [
+            SyntheticPapxRun {
+                cp_lim: first_paragraph_end,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: cell_end,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: row_end,
+                grpprl: row_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: text_end,
+                grpprl: Vec::new(),
+            },
+        ];
+        synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
     #[cfg(feature = "render")]
     #[test]
     fn opened_legacy_doc_manual_column_breaks_reach_preview_flow() {
@@ -16389,6 +16460,121 @@ mod tests {
                 alignment: crate::model::TabAlignment::Center,
                 leader: crate::model::TabLeader::None,
             }]
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_table_cell_column_break_roundtrips_through_fresh_conversion() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="auto"/><w:left w:val="single" w:sz="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:color="auto"/><w:right w:val="single" w:sz="4" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:color="auto"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="9000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>A</w:t><w:br w:type="column"/><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let source_blocks = opened.model().blocks;
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            1,
+            "{document_xml}"
+        );
+        assert!(!document_xml.contains("<w:br/>"), "{document_xml}");
+        assert_eq!(converted, opened.to_docx());
+        assert_eq!(
+            Document::open(&converted).unwrap().model().blocks,
+            source_blocks
+        );
+
+        let model_only_xml = docx_part(&write_docx(&opened.model()), "word/document.xml");
+        assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_table_cell_column_breaks_follow_wrappers_and_merge_survivors() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="auto"/><w:left w:val="single" w:sz="4" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:color="auto"/><w:right w:val="single" w:sz="4" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:color="auto"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="4500"/><w:gridCol w:w="4500"/></w:tblGrid>
+                    <w:tr>
+                        <w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>A</w:t><w:br w:type="column"/><w:t>B</w:t></w:r><w:r><w:rPr><w:vanish/></w:rPr><w:br w:type="column"/><w:t>HIDDEN</w:t></w:r></w:p><w:p><w:sdt><w:sdtPr><w:tag w:val="cell-break"/></w:sdtPr><w:sdtContent><w:r><w:t>C</w:t><w:br w:type=" column "/><w:t>D</w:t></w:r></w:sdtContent></w:sdt></w:p></w:tc>
+                        <w:tc><w:p><w:r><w:t>E</w:t><w:br/><w:t>F</w:t><w:br w:type="column"/><w:t>G</w:t></w:r></w:p></w:tc>
+                    </w:tr>
+                    <w:tr>
+                        <w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:r><w:t>DROP</w:t><w:br w:type="column"/><w:t>LEAK</w:t></w:r></w:p></w:tc>
+                        <w:tc><w:p><w:r><w:t>TAIL</w:t></w:r></w:p></w:tc>
+                    </w:tr>
+                </w:tbl>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let Backend::Docx(state) = &opened.backend else {
+            panic!("fixture must open through the DOCX backend");
+        };
+        assert_eq!(
+            state.table_cell_column_break_offsets,
+            vec![vec![
+                vec![vec![vec![1], vec![1]], vec![vec![3]]],
+                vec![vec![vec![]]],
+            ]]
+        );
+        let source_blocks = opened.model().blocks;
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            3,
+            "{document_xml}"
+        );
+        assert_eq!(document_xml.matches("<w:br/>").count(), 2, "{document_xml}");
+        assert!(document_xml.contains("<w:sdt>"), "{document_xml}");
+        assert!(!document_xml.contains("DROP"), "{document_xml}");
+        assert!(!document_xml.contains("LEAK"), "{document_xml}");
+        assert_eq!(converted, opened.to_docx());
+        assert_eq!(
+            Document::open(&converted).unwrap().model().blocks,
+            source_blocks
+        );
+
+        let model_only_xml = docx_part(&write_docx(&opened.model()), "word/document.xml");
+        assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_table_cell_column_breaks_roundtrip_through_fresh_conversion() {
+        let legacy = Document::open(&legacy_table_cell_column_break_conversion_doc()).unwrap();
+        let assembled = legacy_build_output_from_doc_state(match &legacy.backend {
+            Backend::Doc(state) => state,
+            Backend::Docx(_) => panic!("fixture must open through the legacy backend"),
+        });
+        assert_eq!(
+            assembled.table_cell_column_break_offsets,
+            vec![vec![vec![vec![vec![1], vec![1]]]], Vec::new()]
+        );
+
+        let converted = legacy.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            2,
+            "{document_xml}"
+        );
+        assert!(!document_xml.contains("<w:br/>"), "{document_xml}");
+        assert_eq!(converted, legacy.to_docx());
+
+        let model_only = write_docx(&legacy.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+        assert_eq!(model_only_xml.matches("<w:br/>").count(), 2);
+        assert_eq!(
+            Document::open(&converted).unwrap().model().blocks,
+            Document::open(&model_only).unwrap().model().blocks
         );
     }
 

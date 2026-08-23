@@ -233,6 +233,8 @@ pub(crate) struct DocxState {
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
     /// Source-only manual column-break character offsets within body paragraphs.
     pub column_break_offsets: Vec<Vec<usize>>,
+    /// Source-only manual column-break offsets in direct paragraphs of top-level body tables.
+    pub table_cell_column_break_offsets: Vec<crate::model::TableCellColumnBreakHints>,
     /// Source-only explicit equal-column gaps aligned to body model blocks.
     pub section_column_gap_pt: Vec<Option<f32>>,
     /// Source-only explicit unequal-column geometry aligned to body model blocks.
@@ -484,6 +486,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let table_row_pagination = body_hints.table_rows;
     let table_cell_pagination = body_hints.table_cells;
     let table_cell_line_spacing = body_hints.table_cell_line_spacing;
+    let table_cell_column_break_offsets = body_hints.table_cell_column_breaks;
     let table_cell_tab_stops = body_hints.table_cell_tabs;
     let column_break_offsets = body_hints.column_break_offsets;
     #[cfg(feature = "render")]
@@ -759,6 +762,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         running_surface_distances,
         tab_stops,
         column_break_offsets,
+        table_cell_column_break_offsets,
         section_column_gap_pt,
         section_column_layouts,
         section_column_separators,

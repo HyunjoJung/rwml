@@ -39,9 +39,9 @@ use crate::model::{
     PageNumberFormat, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind,
     SectionColumnHint, SectionColumnLayoutHints, SectionSetup, TabAlignment, TabStop, Table,
     TableBorderColors, TableBorderSide, TableBorderSizes, TableBorderStyle, TableBorderStyles,
-    TableCellLineSpacingHints, TableCellNestedPaginationHints, TableCellPaginationHints,
-    TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, TextDirection, VCell,
-    MAX_TAB_STOPS,
+    TableCellColumnBreakHints, TableCellLineSpacingHints, TableCellNestedPaginationHints,
+    TableCellPaginationHints, TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint,
+    TextDirection, VCell, MAX_TAB_STOPS,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -85,6 +85,7 @@ pub(super) struct PaginationCapture {
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
     table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
+    table_cell_column_breaks: Vec<TableCellColumnBreakHints>,
     #[cfg(any(test, feature = "render"))]
     table_nested_pagination: Vec<TableCellNestedPaginationHints>,
     table_cell_tab_stops: Vec<TableCellTabStopHints>,
@@ -117,6 +118,7 @@ pub(super) struct BodyLayoutHints {
     pub(super) table_rows: Vec<Vec<TableRowPaginationHint>>,
     pub(super) table_cells: Vec<TableCellPaginationHints>,
     pub(super) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
+    pub(super) table_cell_column_breaks: Vec<TableCellColumnBreakHints>,
     #[cfg(feature = "render")]
     pub(super) table_nested: Vec<TableCellNestedPaginationHints>,
     pub(super) table_cell_tabs: Vec<TableCellTabStopHints>,
@@ -225,6 +227,7 @@ impl Ctx<'_> {
                 table_rows: capture.table_row_pagination,
                 table_cells: capture.table_cell_pagination,
                 table_cell_line_spacing: capture.table_cell_line_spacing,
+                table_cell_column_breaks: capture.table_cell_column_breaks,
                 #[cfg(feature = "render")]
                 table_nested: capture.table_nested_pagination,
                 table_cell_tabs: capture.table_cell_tab_stops,
@@ -273,6 +276,7 @@ impl Ctx<'_> {
                 capture.table_row_pagination.push(Vec::new());
                 capture.table_cell_pagination.push(Vec::new());
                 capture.table_cell_line_spacing.push(Vec::new());
+                capture.table_cell_column_breaks.push(Vec::new());
                 capture.tab_stops.push(_tab_stops.to_vec());
                 capture.table_cell_tab_stops.push(Vec::new());
                 capture
@@ -302,6 +306,9 @@ impl Ctx<'_> {
                 capture
                     .table_cell_line_spacing
                     .push(table.cell_line_spacing.clone());
+                capture
+                    .table_cell_column_breaks
+                    .push(table.cell_column_breaks.clone());
                 capture.tab_stops.push(Vec::new());
                 capture.table_cell_tab_stops.push(table.cell_tabs.clone());
                 capture.column_break_offsets.push(Vec::new());
@@ -2289,6 +2296,7 @@ struct BlockBatch {
     line_spacing: Vec<Option<LineSpacingHint>>,
     nested_tables: Vec<Option<TablePaginationHints>>,
     tab_stops: Vec<Vec<TabStop>>,
+    column_break_offsets: Vec<Vec<usize>>,
 }
 
 impl BlockBatch {
@@ -2298,6 +2306,7 @@ impl BlockBatch {
         self.line_spacing.push(None);
         self.nested_tables.push(Some(pagination));
         self.tab_stops.push(Vec::new());
+        self.column_break_offsets.push(Vec::new());
     }
 
     fn extend(&mut self, other: Self) {
@@ -2306,6 +2315,7 @@ impl BlockBatch {
         self.line_spacing.extend(other.line_spacing);
         self.nested_tables.extend(other.nested_tables);
         self.tab_stops.extend(other.tab_stops);
+        self.column_break_offsets.extend(other.column_break_offsets);
     }
 
     fn append_to(
@@ -2315,12 +2325,14 @@ impl BlockBatch {
         line_spacing: &mut Vec<Option<LineSpacingHint>>,
         nested_tables: &mut Vec<Option<TablePaginationHints>>,
         tab_stops: &mut Vec<Vec<TabStop>>,
+        column_break_offsets: &mut Vec<Vec<usize>>,
     ) {
         blocks.extend(self.blocks);
         pagination.extend(self.pagination);
         line_spacing.extend(self.line_spacing);
         nested_tables.extend(self.nested_tables);
         tab_stops.extend(self.tab_stops);
+        column_break_offsets.extend(self.column_break_offsets);
     }
 }
 
@@ -2819,6 +2831,7 @@ fn read_paragraph_block_batch(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Blo
         line_spacing,
         nested_tables,
         tab_stops,
+        column_break_offsets: data.column_break_offsets,
     }
 }
 
@@ -6266,6 +6279,7 @@ struct CellRaw {
     line_spacing: Vec<Option<LineSpacingHint>>,
     nested_tables: Vec<Option<TablePaginationHints>>,
     tab_stops: Vec<Vec<TabStop>>,
+    column_break_offsets: Vec<Vec<usize>>,
     col_span: u16,
     vmerge: VMerge,
     shading: Option<Color>,
@@ -6447,22 +6461,29 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
             props.border_styles = borders.5;
         }
     }
-    let (table, cell_pagination, cell_line_spacing, nested_pagination, cell_tab_stops) =
-        build_table(
-            rows,
-            props,
-            grid_widths,
-            style_cell_props,
-            row_regions,
-            table_look,
-            col_band_size,
-        );
+    let (
+        table,
+        cell_pagination,
+        cell_line_spacing,
+        cell_column_breaks,
+        nested_pagination,
+        cell_tab_stops,
+    ) = build_table(
+        rows,
+        props,
+        grid_widths,
+        style_cell_props,
+        row_regions,
+        table_look,
+        col_band_size,
+    );
     (
         table,
         TablePaginationHints {
             rows: row_pagination,
             cells: cell_pagination,
             cell_line_spacing,
+            cell_column_breaks,
             nested: nested_pagination,
             cell_tabs: cell_tab_stops,
         },
@@ -7696,6 +7717,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
             line_spacing: Vec::new(),
             nested_tables: Vec::new(),
             tab_stops: Vec::new(),
+            column_break_offsets: Vec::new(),
             col_span: 1,
             vmerge: VMerge::None,
             shading: None,
@@ -7713,6 +7735,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
     let mut line_spacing = Vec::new();
     let mut nested_tables = Vec::new();
     let mut tab_stops = Vec::new();
+    let mut column_break_offsets = Vec::new();
     let mut tc: Option<TcPr> = None;
     loop {
         match r.read_event() {
@@ -7725,6 +7748,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
                         &mut line_spacing,
                         &mut nested_tables,
                         &mut tab_stops,
+                        &mut column_break_offsets,
                     );
                 }
                 b"tbl" => {
@@ -7733,6 +7757,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
                         line_spacing.push(None);
                         nested_tables.push(Some(table_pagination));
                         tab_stops.push(Vec::new());
+                        column_break_offsets.push(Vec::new());
                         blocks.push(table);
                     }
                 }
@@ -7743,6 +7768,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
                         &mut line_spacing,
                         &mut nested_tables,
                         &mut tab_stops,
+                        &mut column_break_offsets,
                     );
                 }
                 b"AlternateContent" => read_cell_alternate_content(r, ctx, depth + 1, &mut tc)
@@ -7752,6 +7778,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
                         &mut line_spacing,
                         &mut nested_tables,
                         &mut tab_stops,
+                        &mut column_break_offsets,
                     ),
                 _ => skip_subtree(r),
             },
@@ -7777,6 +7804,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         line_spacing,
         nested_tables,
         tab_stops,
+        column_break_offsets,
         col_span: tc.gs,
         vmerge: tc.vm,
         shading: tc.shading,
@@ -8202,6 +8230,7 @@ fn build_table(
     Table,
     TableCellPaginationHints,
     TableCellLineSpacingHints,
+    TableCellColumnBreakHints,
     TableCellNestedPaginationHints,
     TableCellTabStopHints,
 ) {
@@ -8214,6 +8243,7 @@ fn build_table(
         blocks: Vec<Block>,
         pagination: Vec<Option<PaginationHint>>,
         line_spacing: Vec<Option<LineSpacingHint>>,
+        column_break_offsets: Vec<Vec<usize>>,
         nested_tables: Vec<Option<TablePaginationHints>>,
         tab_stops: Vec<Vec<TabStop>>,
         col: usize,
@@ -8246,6 +8276,7 @@ fn build_table(
                 blocks: c.blocks,
                 pagination: c.pagination,
                 line_spacing: c.line_spacing,
+                column_break_offsets: c.column_break_offsets,
                 nested_tables: c.nested_tables,
                 tab_stops: c.tab_stops,
                 col,
@@ -8322,6 +8353,7 @@ fn build_table(
     let mut rows = Vec::with_capacity(grid.len());
     let mut table_cell_pagination = Vec::with_capacity(grid.len());
     let mut table_cell_line_spacing = Vec::with_capacity(grid.len());
+    let mut table_cell_column_breaks = Vec::with_capacity(grid.len());
     let mut table_nested_pagination = Vec::with_capacity(grid.len());
     let mut table_cell_tab_stops = Vec::with_capacity(grid.len());
     for (row_index, row) in grid.into_iter().enumerate() {
@@ -8329,6 +8361,7 @@ fn build_table(
         let mut cells = Vec::with_capacity(row.len());
         let mut cell_pagination = Vec::with_capacity(row.len());
         let mut cell_line_spacing = Vec::with_capacity(row.len());
+        let mut cell_column_breaks = Vec::with_capacity(row.len());
         let mut cell_nested_pagination = Vec::with_capacity(row.len());
         let mut cell_tab_stops = Vec::with_capacity(row.len());
         for p in row.into_iter().filter(|p| !p.dropped) {
@@ -8347,6 +8380,7 @@ fn build_table(
             let style_presentation = style_cell_props.presentation_for_regions(regions);
             cell_pagination.push(p.pagination);
             cell_line_spacing.push(p.line_spacing);
+            cell_column_breaks.push(p.column_break_offsets);
             cell_nested_pagination.push(p.nested_tables);
             cell_tab_stops.push(p.tab_stops);
             cells.push(Cell {
@@ -8383,6 +8417,7 @@ fn build_table(
         rows.push(Row { cells });
         table_cell_pagination.push(cell_pagination);
         table_cell_line_spacing.push(cell_line_spacing);
+        table_cell_column_breaks.push(cell_column_breaks);
         table_nested_pagination.push(cell_nested_pagination);
         table_cell_tab_stops.push(cell_tab_stops);
     }
@@ -8405,6 +8440,7 @@ fn build_table(
         },
         table_cell_pagination,
         table_cell_line_spacing,
+        table_cell_column_breaks,
         table_nested_pagination,
         table_cell_tab_stops,
     )
@@ -10146,6 +10182,7 @@ mod tests {
             line_spacing: Vec::new(),
             nested_tables: Vec::new(),
             tab_stops: Vec::new(),
+            column_break_offsets: Vec::new(),
             col_span: 1,
             vmerge,
             shading: None,

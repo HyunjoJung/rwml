@@ -480,11 +480,12 @@ aligned top-level body paragraphs and aligned direct paragraph blocks in
 surviving cells of top-level tables, plus effective no-split state for aligned
 top-level table rows. The same direct body subset carries resolved exact/minimum
 line rules and explicit tab stops into fresh DOCX conversion. Visible manual
-column breaks in aligned top-level body paragraphs also survive through a
-strictly validated source-offset bridge. Direct top-level paragraphs in selected
-default/first/even running headers and footers from opened DOCX and legacy DOC
-inputs also retain reader-resolved explicit tab stops through section-aligned
-six-variant bridges.
+column breaks in aligned top-level body paragraphs and aligned direct paragraph
+blocks in surviving cells of top-level body tables also survive through
+independently validated source-offset bridges. Direct top-level paragraphs in
+selected default/first/even running headers and footers from opened DOCX and
+legacy DOC inputs also retain reader-resolved explicit tab stops through
+section-aligned six-variant bridges.
 Direct paragraph blocks in surviving cells of top-level tables on those same
 running surfaces retain explicit tabs through an independently validated
 companion block/row/surviving-cell/paragraph-aligned bridge. For opened DOCX and
@@ -502,9 +503,9 @@ Unselected running stories retain their flattened fallback. Nested-table
 descendants and note paragraph layout properties remain outside these layout-
 hint paths, while nested running-table descendants remain outside pagination,
 tab, and line-rule conversion.
-Settings-defined default-tab intervals remain outside the tab path, and table-
-cell, note, running-surface, and nested-content manual breaks remain outside the
-column-break path.
+Settings-defined default-tab intervals remain outside the tab path. Table-cell
+page breaks plus note, running-surface, and nested-table manual breaks remain
+outside the break-preservation paths.
 Ordinary top-level paragraphs in selected default/first/even running headers
 and footers from opened DOCX and legacy DOC inputs also consume reader-resolved
 explicit tab stops and supported leaders through section-aligned render hints.
@@ -1006,8 +1007,10 @@ state for aligned top-level body paragraphs and aligned direct paragraph blocks
 in surviving cells of top-level tables, plus effective no-split state for
 aligned top-level table rows. The same direct body subset retains resolved
 explicit paragraph tab stops; legacy inputs resolve the bounded common
-STSH/PAPX subset described above. Aligned top-level body paragraphs retain
-visible manual column breaks through validated source character offsets.
+STSH/PAPX subset described above. Aligned top-level body paragraphs and aligned
+direct paragraph blocks in surviving cells of top-level body tables retain
+visible manual column breaks through independently validated source character
+offsets.
 Standalone model writing remains proportional-only and consumes no private
 layout hints. Direct top-level paragraphs in selected default/first/even running
 headers and footers from opened DOCX and legacy DOC inputs also retain
@@ -1023,10 +1026,9 @@ paragraphs and direct paragraphs in surviving cells of top-level tables, plus
 effective no-split state for aligned top-level table rows. Nested-table
 descendants and note paragraph layout properties remain outside these layout-
 hint paths, while nested running-table descendants remain outside pagination,
-tab, and line-rule conversion. Settings-
-defined default-tab intervals remain outside the tab path, and table-cell, note,
-running-surface, and nested-content manual breaks remain outside the column-
-break path.
+tab, and line-rule conversion. Settings-defined default-tab intervals remain
+outside the tab path. Table-cell page breaks plus note, running-surface, and
+nested-table manual breaks remain outside the break-preservation paths.
 
 Opened legacy `.doc` inputs additionally promote normalized footnote/endnote
 text into real references and note parts only when nonempty
