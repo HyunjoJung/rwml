@@ -1111,6 +1111,14 @@ impl Document {
     /// supported depth with trimmed metadata and no additional relationships.
     /// A one-sided binding rejects that note atomically; property-empty source
     /// wrappers are normalized out by the reader and are not claimed.
+    /// Parser-normalized cached result runs for nonempty compatibility/private,
+    /// inserted-content, mail-merge-helper, and barcode fields reported as
+    /// `NoComputedResult` likewise survive at every supported depth as non-dirty
+    /// `w:fldSimple` fields with normalized instructions and modeled formatting.
+    /// Complex source fields normalize to the same form; source simple/complex
+    /// grouping and source update state are not preserved. Dirty or malformed
+    /// fields, `MERGEFIELD`, and unknown or context-sensitive/computed fields
+    /// reject that note atomically.
     /// Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline
     /// runs also retain globally unique media parts and relationships owned by
     /// the corresponding note part, including through nested tables and under

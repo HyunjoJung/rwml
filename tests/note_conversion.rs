@@ -2,7 +2,10 @@
 
 use std::io::{Read, Write};
 
-use rwml::{Block, Chart, ChartKind, ChartSeries, DocModel, Document};
+use rwml::{
+    Block, Chart, ChartKind, ChartSeries, DocModel, Document, FieldEvaluationReason,
+    FieldEvaluationReasonCount, FieldKind,
+};
 
 fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
     docx_fixture_with_media(parts, &[])
@@ -313,6 +316,35 @@ fn content_control_note_docx() -> Vec<u8> {
         (
             "word/endnotes.xml",
             r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="81"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:sdt><w:sdtPr><w:alias w:val=" End binding "/><w:dataBinding w:xpath=" /root/client " w:storeItemID=" {11111111-2222-3333-4444-555555555555} "/></w:sdtPr><w:sdtContent><w:r><w:rPr><w:i/></w:rPr><w:t>END BOUND CONTROL</w:t></w:r></w:sdtContent></w:sdt></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="82"><w:p><w:sdt><w:sdtPr><w:tag w:val=" rejected-tag "/><w:dataBinding w:storeItemID=" {AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE} "/></w:sdtPr><w:sdtContent><w:r><w:t>REJECTED TAGGED HALF</w:t></w:r></w:sdtContent></w:sdt><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
+fn cached_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="91"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="101"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="92"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="102"/></w:r><w:r><w:t> BODY E</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="91"><w:p><w:fldSimple w:instr=" PRIVATE legacy-data "><w:r><w:rPr><w:b/></w:rPr><w:t>PRIVATE CACHE</w:t></w:r></w:fldSimple><w:r><w:t> | </w:t></w:r><w:fldSimple w:instr=" INCLUDETEXT &quot;appendix.docx&quot; "><w:r><w:t>INCLUDE CACHE</w:t></w:r></w:fldSimple></w:p></w:footnote><w:footnote w:id="92"><w:p><w:fldSimple w:instr=" ADDIN &quot;bad "><w:r><w:t>REJECTED MALFORMED FIELD</w:t></w:r></w:fldSimple><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="101"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:fldSimple w:instr=" ADDRESSBLOCK "><w:r><w:t>ADDRESS CACHE</w:t></w:r></w:fldSimple><w:r><w:t> | </w:t></w:r><w:fldSimple w:instr=" BARCODE &quot;9781234567890&quot; "><w:r><w:rPr><w:i/></w:rPr><w:t>BARCODE CACHE</w:t></w:r></w:fldSimple><w:r><w:t> | </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PRIVATE complex-data </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>COMPLEX CACHE</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="102"><w:p><w:fldSimple w:instr=" REF MissingTarget "><w:r><w:t>REJECTED CONTEXT FIELD</w:t></w:r></w:fldSimple><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
         ),
     ])
 }
@@ -927,6 +959,131 @@ fn opened_docx_note_content_controls_keep_complete_modeled_metadata() {
         .runs
         .iter()
         .all(|run| run.content_control.is_none()));
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_cache_only_fields_keep_normalized_results() {
+    let document = Document::open(&cached_field_note_docx()).expect("cached-field notes open");
+    assert_eq!(document.notes().len(), 4, "source note records missing");
+    assert_eq!(document.report().features.fields, 7);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone cached-field normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "PRIVATE CACHE");
+    let endnote = note_with_marker(endnotes, "endnote", "ADDRESS CACHE");
+    let rejected_malformed = note_with_marker(footnotes, "footnote", "REJECTED MALFORMED FIELD");
+    let rejected_context = note_with_marker(endnotes, "endnote", "REJECTED CONTEXT FIELD");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 2, "{footnote}");
+    assert!(
+        footnote.contains(r#"<w:fldSimple w:instr=" PRIVATE legacy-data ">"#)
+            && footnote
+                .contains(r#"<w:fldSimple w:instr=" INCLUDETEXT &quot;appendix.docx&quot; ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains("PRIVATE CACHE")
+            && footnote.contains("INCLUDE CACHE"),
+        "top-level cached fields missing: {footnote}"
+    );
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 3, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:fldSimple w:instr=" ADDRESSBLOCK ">"#)
+            && endnote.contains(r#"<w:fldSimple w:instr=" BARCODE &quot;9781234567890&quot; ">"#)
+            && endnote.contains(r#"<w:fldSimple w:instr=" PRIVATE complex-data ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains("BARCODE CACHE")
+            && endnote.contains("COMPLEX CACHE"),
+        "nested cached fields missing: {endnote}"
+    );
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [rejected_malformed, rejected_context] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains("ADDIN"), "{footnotes}");
+    assert!(!endnotes.contains("REF MissingTarget"), "{endnotes}");
+
+    let reopened = Document::open(&converted).expect("converted cached-field notes reopen");
+    assert_eq!(reopened.report().features.fields, 5);
+    assert_eq!(
+        reopened.report().features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 5,
+        }]
+    );
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 5);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::Compatibility("PRIVATE".to_string())
+    );
+    assert_eq!(fields[0].instruction, "PRIVATE legacy-data");
+    assert_eq!(fields[0].result, "PRIVATE CACHE");
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::InsertedContent("INCLUDETEXT".to_string())
+    );
+    assert_eq!(fields[1].instruction, r#"INCLUDETEXT "appendix.docx""#);
+    assert_eq!(fields[1].result, "INCLUDE CACHE");
+    assert_eq!(
+        fields[2].kind,
+        FieldKind::MailMerge("ADDRESSBLOCK".to_string())
+    );
+    assert_eq!(fields[2].result, "ADDRESS CACHE");
+    assert_eq!(fields[3].kind, FieldKind::Barcode("BARCODE".to_string()));
+    assert_eq!(fields[3].instruction, r#"BARCODE "9781234567890""#);
+    assert_eq!(fields[3].result, "BARCODE CACHE");
+    assert_eq!(
+        fields[4].kind,
+        FieldKind::Compatibility("PRIVATE".to_string())
+    );
+    assert_eq!(fields[4].instruction, "PRIVATE complex-data");
+    assert_eq!(fields[4].result, "COMPLEX CACHE");
+    assert!(fields.iter().all(|field| field.computed_result.is_none()));
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 3] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_malformed) = &reopened_model.blocks[2] else {
+        panic!("rejected malformed-field fallback paragraph")
+    };
+    assert_eq!(
+        rejected_malformed.text(),
+        "REJECTED MALFORMED FIELD FALLBACK"
+    );
+    let Block::Paragraph(rejected_context) = &reopened_model.blocks[4] else {
+        panic!("rejected context-field fallback paragraph")
+    };
+    assert_eq!(rejected_context.text(), "REJECTED CONTEXT FIELD FALLBACK");
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);

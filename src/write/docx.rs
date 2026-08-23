@@ -19,18 +19,18 @@ use super::{esc_attr, esc_text};
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
-    ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, LineSpacingHint,
-    NoteWritePayload, PaginationHint, ParaProps, Paragraph, ParagraphStyle,
-    RunningBlockPaginationHints, RunningSurfaceColumnBreakHints, RunningSurfaceDistanceHints,
-    RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints, RunningSurfaceTabStopHints,
-    RunningSurfaceTableCellTabStopHints, RunningSurfaceTableLayoutHints, RunningTableLayoutHints,
-    SectionBreakKind, SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader,
-    TabStop, Table, TableBorderSide, TableBorderStyle, TableCellColumnBreakHints,
-    TableCellLineSpacingHints, TableCellNestedPaginationHints, TableCellPaginationHints,
-    TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, VertAlign,
-    WebExtensionTaskPane, MAX_TAB_STOPS,
+    ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, FieldUnsupportedReason, Image,
+    Indent, LineSpacingHint, NoteWritePayload, PaginationHint, ParaProps, Paragraph,
+    ParagraphStyle, RunningBlockPaginationHints, RunningSurfaceColumnBreakHints,
+    RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints,
+    RunningSurfaceTabStopHints, RunningSurfaceTableCellTabStopHints,
+    RunningSurfaceTableLayoutHints, RunningTableLayoutHints, SectionBreakKind,
+    SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
+    TableBorderSide, TableBorderStyle, TableCellColumnBreakHints, TableCellLineSpacingHints,
+    TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
+    TablePaginationHints, TableRowPaginationHint, VertAlign, WebExtensionTaskPane, MAX_TAB_STOPS,
 };
-use crate::{NoteKind, RevisionKind};
+use crate::{FieldKind, NoteKind, RevisionKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum HyperlinkWriteTarget<'a> {
@@ -3069,7 +3069,7 @@ fn source_note_paragraph_is_supported(paragraph: &Paragraph) -> bool {
             .as_ref()
             .map(source_note_image_is_supported)
             .unwrap_or(true)
-            && source_note_field_is_supported(&run.field)
+            && source_note_field_is_supported(run)
             && run.comment.is_none()
             && run.revision.is_none()
             && source_note_content_control_is_supported(run.content_control.as_ref())
@@ -3098,11 +3098,25 @@ fn source_note_image_is_supported(image: &Image) -> bool {
         && image.floating_offset_emu.is_none()
 }
 
-fn source_note_field_is_supported(field: &FieldRole) -> bool {
-    match field {
+fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
+    match &run.field {
         FieldRole::None => true,
         FieldRole::Hyperlink { url } => {
             !matches!(hyperlink_write_target(url), HyperlinkWriteTarget::Invalid)
+        }
+        FieldRole::Simple { instruction }
+            if !run.field_dirty
+                && run.field_unsupported_reason
+                    == Some(FieldUnsupportedReason::NoComputedResult)
+                && !normalize_field_instruction(instruction).is_empty() =>
+        {
+            matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::Compatibility(_)
+                    | FieldKind::InsertedContent(_)
+                    | FieldKind::MailMerge(_)
+                    | FieldKind::Barcode(_)
+            )
         }
         _ => false,
     }
@@ -5115,21 +5129,22 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
 mod tests {
     use super::{
         render_body, section_columns_xml, source_column_break_offsets, source_line_spacing,
-        source_note_content_control_is_supported, source_note_payload_is_supported,
-        source_tab_stops_xml, SectionColumnWriteHint, SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
+        source_note_content_control_is_supported, source_note_field_is_supported,
+        source_note_payload_is_supported, source_tab_stops_xml, SectionColumnWriteHint,
+        SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
     };
     use crate::model::{
         Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
-        Cell, CharProps, Chart, ChartKind, ChartSeries, DocModel, DocSetup, FieldRole, Image,
-        LineSpacingHint, ListInfo, NoteWritePayload, PaginationHint, ParaProps, Paragraph, Row,
-        Run, RunningBlockPaginationHints, RunningSurfaceColumnBreakHints,
-        RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints,
-        RunningSurfaceTabStopHints, RunningSurfaceTableCellTabStopHints,
-        RunningSurfaceTableLayoutHints, RunningTableLayoutHints, SectionColumnHint,
-        SectionColumnLayoutHints, SectionSetup, TabAlignment, TabLeader, TabStop, Table,
-        TableCellColumnBreakHints, TableCellLineSpacingHints, TableCellNestedPaginationHints,
-        TableCellPaginationHints, TableCellTabStopHints, TablePaginationHints,
-        TableRowPaginationHint, MAX_TAB_STOPS,
+        Cell, CharProps, Chart, ChartKind, ChartSeries, DocModel, DocSetup, FieldRole,
+        FieldUnsupportedReason, Image, LineSpacingHint, ListInfo, NoteWritePayload, PaginationHint,
+        ParaProps, Paragraph, Row, Run, RunningBlockPaginationHints,
+        RunningSurfaceColumnBreakHints, RunningSurfaceDistanceHints,
+        RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints, RunningSurfaceTabStopHints,
+        RunningSurfaceTableCellTabStopHints, RunningSurfaceTableLayoutHints,
+        RunningTableLayoutHints, SectionColumnHint, SectionColumnLayoutHints, SectionSetup,
+        TabAlignment, TabLeader, TabStop, Table, TableCellColumnBreakHints,
+        TableCellLineSpacingHints, TableCellNestedPaginationHints, TableCellPaginationHints,
+        TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, MAX_TAB_STOPS,
     };
     use crate::{Document, NoteKind};
 
@@ -5203,6 +5218,50 @@ mod tests {
             },
         ] {
             assert!(!source_note_content_control_is_supported(Some(&rejected)));
+        }
+    }
+
+    #[test]
+    fn source_note_field_guard_accepts_only_cache_only_named_results() {
+        let cached = |instruction: &str| Run {
+            text: "cached".to_string(),
+            field: FieldRole::Simple {
+                instruction: instruction.to_string(),
+            },
+            field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+            ..Run::default()
+        };
+        for instruction in [
+            "PRIVATE legacy-data",
+            r#"INCLUDETEXT "appendix.docx""#,
+            "ADDRESSBLOCK",
+            r#"DISPLAYBARCODE "12345" QR \q H"#,
+        ] {
+            assert!(source_note_field_is_supported(&cached(instruction)));
+        }
+
+        let mut dirty = cached("PRIVATE legacy-data");
+        dirty.field_dirty = true;
+        let mut malformed = cached(r#"ADDIN "bad"#);
+        malformed.field_unsupported_reason = Some(FieldUnsupportedReason::UnsupportedSwitch);
+        for rejected in [
+            dirty,
+            malformed,
+            cached("MERGEFIELD Client"),
+            cached("CUSTOM literal payload"),
+            Run {
+                field: FieldRole::Simple {
+                    instruction: String::new(),
+                },
+                field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                ..Run::default()
+            },
+            Run {
+                field: FieldRole::Other,
+                ..Run::default()
+            },
+        ] {
+            assert!(!source_note_field_is_supported(&rejected));
         }
     }
 
