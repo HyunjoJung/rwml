@@ -5,16 +5,20 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import pathlib
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 from typing import Optional
 from urllib import error, parse, request
 
 
 API_ROOT = "https://crates.io/api/v1/crates"
+DOWNLOAD_ROOT = "https://static.crates.io/crates"
 USER_AGENT = "rwml-release-ci (github actions)"
 
 
@@ -60,6 +64,123 @@ def require_matching_checksum(name: str, version: str, local: str, remote: str) 
         raise PublishError(
             f"published {name} {version} checksum {remote} does not match local artifact {local}"
         )
+
+
+def registry_artifact(name: str, version: str, expected_checksum: str) -> bytes:
+    encoded_name = parse.quote(name, safe="")
+    encoded_file = parse.quote(f"{name}-{version}.crate", safe="")
+    url = f"{DOWNLOAD_ROOT}/{encoded_name}/{encoded_file}"
+    artifact_request = request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with request.urlopen(artifact_request, timeout=30) as response:
+            artifact = response.read()
+    except error.HTTPError as exc:
+        if exc.fp is not None:
+            exc.close()
+        raise PublishError(
+            f"crates.io returned HTTP {exc.code} for {name} {version} artifact"
+        ) from exc
+    except (error.URLError, TimeoutError) as exc:
+        raise PublishError(
+            f"failed to download crates.io artifact for {name} {version}: {exc}"
+        ) from exc
+
+    actual_checksum = hashlib.sha256(artifact).hexdigest()
+    require_matching_checksum(name, version, actual_checksum, expected_checksum)
+    return artifact
+
+
+def normalized_vcs_info(data: bytes, name: str, version: str) -> bytes:
+    try:
+        payload = json.loads(data)
+        git = payload["git"]
+        sha1 = git["sha1"]
+    except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise PublishError(
+            f"invalid .cargo_vcs_info.json in {name} {version} artifact"
+        ) from exc
+    if not isinstance(sha1, str) or len(sha1) != 40:
+        raise PublishError(f"invalid VCS revision in {name} {version} artifact")
+    try:
+        bytes.fromhex(sha1)
+    except ValueError as exc:
+        raise PublishError(f"invalid VCS revision in {name} {version} artifact") from exc
+    git["sha1"] = "<normalized>"
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def crate_payload(
+    archive_source: pathlib.Path | bytes, name: str, version: str
+) -> dict[str, tuple[int, bytes]]:
+    expected_root = f"{name}-{version}"
+    fileobj = io.BytesIO(archive_source) if isinstance(archive_source, bytes) else None
+    try:
+        with tarfile.open(
+            archive_source if isinstance(archive_source, pathlib.Path) else None,
+            mode="r:gz",
+            fileobj=fileobj,
+        ) as archive:
+            files: dict[str, tuple[int, bytes]] = {}
+            for member in archive.getmembers():
+                path = pathlib.PurePosixPath(member.name)
+                if path.is_absolute() or ".." in path.parts:
+                    raise PublishError(f"unsafe path in {name} {version} artifact")
+                if not path.parts or path.parts[0] != expected_root:
+                    raise PublishError(f"unexpected package root in {name} {version} artifact")
+                if member.isdir():
+                    continue
+                if not member.isfile() or len(path.parts) < 2:
+                    raise PublishError(f"unsupported entry in {name} {version} artifact")
+                relative = pathlib.PurePosixPath(*path.parts[1:]).as_posix()
+                if relative in files:
+                    raise PublishError(f"duplicate path in {name} {version} artifact")
+                extracted = archive.extractfile(member)
+                if extracted is None:
+                    raise PublishError(f"unreadable entry in {name} {version} artifact")
+                data = extracted.read()
+                if relative == ".cargo_vcs_info.json":
+                    data = normalized_vcs_info(data, name, version)
+                files[relative] = (member.mode & 0o777, data)
+    except (OSError, tarfile.TarError) as exc:
+        raise PublishError(f"invalid crate archive for {name} {version}: {exc}") from exc
+    return files
+
+
+def synchronize_published_artifact(
+    name: str,
+    version: str,
+    artifact: pathlib.Path,
+    local_checksum: str,
+    published_checksum: str,
+) -> None:
+    published_artifact = registry_artifact(name, version, published_checksum)
+    local_payload = crate_payload(artifact, name, version)
+    published_payload = crate_payload(published_artifact, name, version)
+    if local_payload != published_payload:
+        raise PublishError(
+            f"published {name} {version} package payload differs from local artifact"
+        )
+
+    staged_path: Optional[pathlib.Path] = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=artifact.parent,
+            prefix=f".{artifact.name}.",
+            delete=False,
+        ) as staged:
+            staged.write(published_artifact)
+            staged_path = pathlib.Path(staged.name)
+        staged_path.replace(artifact)
+        staged_path = None
+    finally:
+        if staged_path is not None:
+            staged_path.unlink(missing_ok=True)
+
+    print(
+        f"{name} {version} already published as {published_checksum}; "
+        f"synchronized equivalent local repackage {local_checksum} to registry artifact"
+    )
 
 
 def wait_for_matching_version(
@@ -108,19 +229,15 @@ def ensure_published(
     local_checksum = sha256_file(artifact)
     published = registry_checksum(name, version)
     if published is not None:
-        # Published versions are immutable on crates.io, and the upload that
-        # created this one was checksum-verified at the time. A re-run rebuilds
-        # the artifact, and `cargo package` is not byte-reproducible (embedded
-        # lockfile, entry ordering, gzip timestamps, `.cargo_vcs_info.json`), so
-        # a difference here means the local repackage differs — never that the
-        # registry content changed. Report it and stay idempotent.
         if published == local_checksum:
             print(f"{name} {version} already published with matching checksum")
         else:
-            print(
-                f"{name} {version} already published as {published}; "
-                f"local repackage is {local_checksum} (cargo package is not "
-                f"byte-reproducible, registry content is immutable)"
+            synchronize_published_artifact(
+                name,
+                version,
+                artifact,
+                local_checksum,
+                published,
             )
         return "already-published"
     if check_only:
