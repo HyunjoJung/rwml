@@ -3072,7 +3072,7 @@ fn source_note_paragraph_is_supported(paragraph: &Paragraph) -> bool {
             && source_note_field_is_supported(&run.field)
             && run.comment.is_none()
             && run.revision.is_none()
-            && run.content_control.is_none()
+            && source_note_content_control_is_supported(run.content_control.as_ref())
             && run
                 .bookmark
                 .as_deref()
@@ -3106,6 +3106,23 @@ fn source_note_field_is_supported(field: &FieldRole) -> bool {
         }
         _ => false,
     }
+}
+
+fn source_note_content_control_is_supported(control: Option<&AuthoredContentControl>) -> bool {
+    let Some(control) = control else {
+        return true;
+    };
+    let alias = non_empty_trimmed(control.alias.as_deref());
+    let tag = non_empty_trimmed(control.tag.as_deref());
+    let xpath = non_empty_trimmed(control.data_binding_xpath.as_deref());
+    let store_item_id = non_empty_trimmed(control.data_binding_store_item_id.as_deref());
+    let has_binding_metadata =
+        control.data_binding_xpath.is_some() || control.data_binding_store_item_id.is_some();
+    let has_complete_binding = xpath.is_some() && store_item_id.is_some();
+    if has_binding_metadata && !has_complete_binding {
+        return false;
+    }
+    alias.is_some() || tag.is_some() || has_complete_binding
 }
 
 fn source_note_table_is_supported(table: &Table) -> bool {
@@ -5098,8 +5115,8 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
 mod tests {
     use super::{
         render_body, section_columns_xml, source_column_break_offsets, source_line_spacing,
-        source_note_payload_is_supported, source_tab_stops_xml, SectionColumnWriteHint,
-        SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
+        source_note_content_control_is_supported, source_note_payload_is_supported,
+        source_tab_stops_xml, SectionColumnWriteHint, SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
     };
     use crate::model::{
         Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
@@ -5138,6 +5155,54 @@ mod tests {
             position_pt,
             alignment,
             leader,
+        }
+    }
+
+    #[test]
+    fn source_note_content_control_guard_requires_meaningful_complete_metadata() {
+        assert!(source_note_content_control_is_supported(None));
+        assert!(source_note_content_control_is_supported(Some(
+            &AuthoredContentControl {
+                alias: Some(" Alias ".to_string()),
+                ..AuthoredContentControl::default()
+            }
+        )));
+        assert!(source_note_content_control_is_supported(Some(
+            &AuthoredContentControl {
+                tag: Some(" Tag ".to_string()),
+                ..AuthoredContentControl::default()
+            }
+        )));
+        assert!(source_note_content_control_is_supported(Some(
+            &AuthoredContentControl {
+                data_binding_xpath: Some(" /root/value ".to_string()),
+                data_binding_store_item_id: Some(" {STORE-ID} ".to_string()),
+                ..AuthoredContentControl::default()
+            }
+        )));
+
+        for rejected in [
+            AuthoredContentControl::default(),
+            AuthoredContentControl {
+                alias: Some("   ".to_string()),
+                tag: Some("\t".to_string()),
+                ..AuthoredContentControl::default()
+            },
+            AuthoredContentControl {
+                data_binding_xpath: Some("/root/value".to_string()),
+                ..AuthoredContentControl::default()
+            },
+            AuthoredContentControl {
+                data_binding_store_item_id: Some("{STORE-ID}".to_string()),
+                ..AuthoredContentControl::default()
+            },
+            AuthoredContentControl {
+                tag: Some("tag".to_string()),
+                data_binding_xpath: Some("/root/value".to_string()),
+                ..AuthoredContentControl::default()
+            },
+        ] {
+            assert!(!source_note_content_control_is_supported(Some(&rejected)));
         }
     }
 

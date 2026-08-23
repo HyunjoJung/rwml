@@ -1097,6 +1097,11 @@ by the corresponding footnote or endnote part; simple HYPERLINK field syntax may
 normalize to a `w:hyperlink` element. Validator-approved internal-anchor links
 and run bookmarks likewise survive at every supported depth without note
 relationships, using paired bookmark IDs unique across body and note stories.
+Parser-modeled run content controls with a nonempty alias or tag, or a complete
+XPath/store-item data-binding pair, likewise survive at every supported depth
+with trimmed metadata and no additional package relationships. A one-sided
+data binding rejects that note atomically; property-empty source wrappers are
+normalized out by the reader and are not claimed.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names

@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-modeled run content controls in exact real footnote and endnote payloads
+  at the top level and through recursively nested table cells. Nonempty alias/tag
+  metadata and complete XPath/store-item data-binding pairs retain trimmed values,
+  formatting, deterministic bytes, source-model immutability, native reopen and
+  reconversion, and standalone note exclusion without adding relationships or
+  package parts. One-sided bindings and all-empty modeled metadata reject only
+  that note before rendering, preserving atomic text fallback. Property-empty
+  source wrappers are normalized out by the reader and are not claimed; comments,
+  tracked revisions, other fields, nested notes, floating placement, page-bottom
+  composition, and Word-exact pagination remain outside this bounded path.
 - Fresh DOCX writers now serialize validator-approved `#bookmark` hyperlink
   targets as `w:hyperlink w:anchor` without external relationships, while
   preserving the existing relationship-backed path for external targets.

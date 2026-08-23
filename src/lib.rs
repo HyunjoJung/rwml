@@ -1106,6 +1106,11 @@ impl Document {
     /// links and run bookmarks likewise survive at every supported depth without
     /// note relationships, using paired bookmark IDs unique across body and note
     /// stories.
+    /// Parser-modeled run content controls with a nonempty alias or tag, or a
+    /// complete XPath/store-item data-binding pair, likewise survive at every
+    /// supported depth with trimmed metadata and no additional relationships.
+    /// A one-sided binding rejects that note atomically; property-empty source
+    /// wrappers are normalized out by the reader and are not claimed.
     /// Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline
     /// runs also retain globally unique media parts and relationships owned by
     /// the corresponding note part, including through nested tables and under

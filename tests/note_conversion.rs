@@ -288,6 +288,35 @@ fn internal_anchor_note_docx() -> Vec<u8> {
     ])
 }
 
+fn content_control_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="71"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="81"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="72"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="82"/></w:r><w:r><w:t> BODY E</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="71"><w:p><w:sdt><w:sdtPr><w:alias w:val=" Foot alias "/><w:tag w:val=" foot-tag "/></w:sdtPr><w:sdtContent><w:r><w:rPr><w:b/></w:rPr><w:t>FOOT CONTROL</w:t></w:r></w:sdtContent></w:sdt><w:r><w:t> TAIL</w:t></w:r></w:p></w:footnote><w:footnote w:id="72"><w:p><w:sdt><w:sdtPr><w:dataBinding w:xpath=" /root/half "/></w:sdtPr><w:sdtContent><w:r><w:t>REJECTED HALF BINDING</w:t></w:r></w:sdtContent></w:sdt><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="81"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:sdt><w:sdtPr><w:alias w:val=" End binding "/><w:dataBinding w:xpath=" /root/client " w:storeItemID=" {11111111-2222-3333-4444-555555555555} "/></w:sdtPr><w:sdtContent><w:r><w:rPr><w:i/></w:rPr><w:t>END BOUND CONTROL</w:t></w:r></w:sdtContent></w:sdt></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="82"><w:p><w:sdt><w:sdtPr><w:tag w:val=" rejected-tag "/><w:dataBinding w:storeItemID=" {AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE} "/></w:sdtPr><w:sdtContent><w:r><w:t>REJECTED TAGGED HALF</w:t></w:r></w:sdtContent></w:sdt><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -790,6 +819,114 @@ fn opened_docx_note_internal_anchors_keep_bookmarks_without_relationships() {
         panic!("rejected bookmark fallback paragraph")
     };
     assert_eq!(rejected_bookmark.text(), "REJECTED BOOKMARK VALID LINK");
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_content_controls_keep_complete_modeled_metadata() {
+    let document =
+        Document::open(&content_control_note_docx()).expect("content-control notes open");
+    assert_eq!(document.notes().len(), 4, "source note records missing");
+    assert_eq!(document.report().features.content_controls, 4);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone content-control normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT CONTROL");
+    let endnote = note_with_marker(endnotes, "endnote", "END BOUND CONTROL");
+    let rejected_binding = note_with_marker(footnotes, "footnote", "REJECTED HALF BINDING");
+    let rejected_tagged = note_with_marker(endnotes, "endnote", "REJECTED TAGGED HALF");
+
+    let foot_sdt = footnote.find("<w:sdt>").unwrap_or(usize::MAX);
+    let foot_alias = footnote
+        .find(r#"<w:alias w:val="Foot alias"/>"#)
+        .unwrap_or(usize::MAX);
+    let foot_tag = footnote
+        .find(r#"<w:tag w:val="foot-tag"/>"#)
+        .unwrap_or(usize::MAX);
+    let foot_content = footnote.find("<w:sdtContent>").unwrap_or(usize::MAX);
+    let foot_bold = footnote.find("<w:b/>").unwrap_or(usize::MAX);
+    let foot_text = footnote.find("FOOT CONTROL").unwrap_or(usize::MAX);
+    let foot_end = footnote.find("</w:sdt>").unwrap_or(usize::MAX);
+    assert!(
+        foot_sdt < foot_alias
+            && foot_alias < foot_tag
+            && foot_tag < foot_content
+            && foot_content < foot_bold
+            && foot_bold < foot_text
+            && foot_text < foot_end,
+        "footnote content-control XML missing or out of order: {footnote}"
+    );
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    let end_alias = endnote
+        .find(r#"<w:alias w:val="End binding"/>"#)
+        .unwrap_or(usize::MAX);
+    let end_binding = endnote
+        .find(r#"<w:dataBinding w:xpath="/root/client" w:storeItemID="{11111111-2222-3333-4444-555555555555}"/>"#)
+        .unwrap_or(usize::MAX);
+    let end_content = endnote.find("<w:sdtContent>").unwrap_or(usize::MAX);
+    let end_italic = endnote.find("<w:i/>").unwrap_or(usize::MAX);
+    let end_text = endnote.find("END BOUND CONTROL").unwrap_or(usize::MAX);
+    assert!(
+        end_alias < end_binding
+            && end_binding < end_content
+            && end_content < end_italic
+            && end_italic < end_text,
+        "endnote data-bound control XML missing or out of order: {endnote}"
+    );
+
+    for rejected in [rejected_binding, rejected_tagged] {
+        assert!(!rejected.contains("<w:sdt"), "{rejected}");
+        assert!(!rejected.contains("<w:dataBinding"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains("/root/half"), "{footnotes}");
+    assert!(!endnotes.contains("rejected-tag"), "{endnotes}");
+    assert!(!endnotes.contains("AAAAAAAA-BBBB"), "{endnotes}");
+
+    let reopened = Document::open(&converted).expect("converted content-control notes reopen");
+    assert_eq!(reopened.report().features.content_controls, 2);
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 3] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_binding) = &reopened_model.blocks[2] else {
+        panic!("rejected half-binding fallback paragraph")
+    };
+    assert_eq!(rejected_binding.text(), "REJECTED HALF BINDING FALLBACK");
+    assert!(rejected_binding
+        .runs
+        .iter()
+        .all(|run| run.content_control.is_none()));
+    let Block::Paragraph(rejected_tagged) = &reopened_model.blocks[4] else {
+        panic!("rejected tagged half-binding fallback paragraph")
+    };
+    assert_eq!(rejected_tagged.text(), "REJECTED TAGGED HALF FALLBACK");
+    assert!(rejected_tagged
+        .runs
+        .iter()
+        .all(|run| run.content_control.is_none()));
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);
