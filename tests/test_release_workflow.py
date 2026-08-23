@@ -129,6 +129,19 @@ class ReleaseWorkflowTests(unittest.TestCase):
         ]:
             self.assertIn(artifact, text)
 
+    def test_release_workflow_logs_strict_render_evidence_on_failure(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        step = step_body(text, "Generate strict revision-bound evidence")
+
+        self.assertIn("set +e", step)
+        self.assertIn("render_status=$?", step)
+        self.assertIn("cat dist/render-validation.json", step)
+        self.assertIn('exit "$render_status"', step)
+        self.assertLess(
+            step.index("cat dist/render-validation.json"),
+            step.index('exit "$render_status"'),
+        )
+
     def test_release_workflow_checks_patch_compatible_public_api(self):
         text = WORKFLOW.read_text(encoding="utf-8")
 

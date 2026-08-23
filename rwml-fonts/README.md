@@ -10,7 +10,7 @@ OpenType layout tables required for shaping and mark positioning.
 
 - `noto_sans_kr_subset()` — slim subset: KS X 1001 wansung Hangul (2,350
   syllables), Hangul compatibility jamo, Basic Latin, Latin-1, and common
-  punctuation.
+  punctuation, including rwml's default `•`, `▪`, `○`, and `◦` list markers.
 - `noto_sans_kr_subset_with_hanja()` — the above plus KS X 1001 hanja coverage
   (4,885 of 4,888 characters; 3 compatibility ideographs are absent from
   upstream Noto Sans KR itself).
