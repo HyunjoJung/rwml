@@ -23,6 +23,8 @@ use crate::model::{
     Spacing, Stats, TableCellLineSpacingHints, TableCellPaginationHints, TableRowPaginationHint,
     TextDirection,
 };
+#[cfg(feature = "docx")]
+use crate::model::{RunningBlockPaginationHints, RunningSurfacePaginationHints};
 #[cfg(any(feature = "docx", feature = "render"))]
 use crate::model::{
     RunningSurfaceLineSpacingHints, RunningSurfaceTabStopHints,
@@ -106,6 +108,8 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) render_table_cell_tab_stops: Vec<TableCellTabStopHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
     pub(crate) running_line_spacing_hints: Vec<RunningSurfaceLineSpacingHints>,
+    #[cfg(feature = "docx")]
+    pub(crate) running_pagination_hints: Vec<RunningSurfacePaginationHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
     pub(crate) running_tab_stops: Vec<RunningSurfaceTabStopHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
@@ -153,8 +157,8 @@ pub(crate) fn build_model_with_render_hints(
     let LegacyRegionOutput {
         blocks,
         regions,
-        pagination_hints,
-        line_spacing_hints,
+        mut pagination_hints,
+        mut line_spacing_hints,
         #[cfg(any(feature = "docx", feature = "render"))]
         tab_stops,
         #[cfg(feature = "render")]
@@ -162,9 +166,9 @@ pub(crate) fn build_model_with_render_hints(
         #[cfg(feature = "docx")]
         note_reference_anchors,
         column_break_offsets,
-        table_row_pagination,
-        table_cell_pagination,
-        table_cell_line_spacing,
+        mut table_row_pagination,
+        mut table_cell_pagination,
+        mut table_cell_line_spacing,
         #[cfg(any(feature = "docx", feature = "render"))]
         table_cell_tab_stops,
         #[cfg(feature = "render")]
@@ -179,6 +183,23 @@ pub(crate) fn build_model_with_render_hints(
         &regions,
         &line_spacing_hints,
         &table_cell_line_spacing,
+    );
+    #[cfg(feature = "docx")]
+    let running_pagination_hints = legacy_running_pagination_from_regions(
+        &blocks,
+        &regions,
+        &pagination_hints,
+        &table_row_pagination,
+        &table_cell_pagination,
+    );
+    clear_legacy_running_layout_hints(
+        &blocks,
+        &regions,
+        &mut pagination_hints,
+        &mut line_spacing_hints,
+        &mut table_row_pagination,
+        &mut table_cell_pagination,
+        &mut table_cell_line_spacing,
     );
     #[cfg(any(feature = "docx", feature = "render"))]
     let (running_tab_stops, running_table_cell_tab_stops) =
@@ -239,6 +260,8 @@ pub(crate) fn build_model_with_render_hints(
         render_table_cell_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
         running_line_spacing_hints,
+        #[cfg(feature = "docx")]
+        running_pagination_hints,
         #[cfg(any(feature = "docx", feature = "render"))]
         running_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
@@ -859,6 +882,169 @@ fn legacy_header_footer_section_index(story_index: Option<usize>) -> Option<usiz
     story_index?
         .checked_sub(HEADER_FOOTER_STORY_BASE)
         .map(|index| index / 6)
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_pagination_from_regions(
+    blocks: &[Block],
+    regions: &[SourceRegion],
+    pagination_hints: &[PaginationHint],
+    table_row_pagination: &[Vec<TableRowPaginationHint>],
+    table_cell_pagination: &[TableCellPaginationHints],
+) -> Vec<RunningSurfacePaginationHints> {
+    debug_assert_eq!(blocks.len(), pagination_hints.len());
+    debug_assert_eq!(blocks.len(), table_row_pagination.len());
+    debug_assert_eq!(blocks.len(), table_cell_pagination.len());
+    let section_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count()
+        .saturating_add(1);
+    let mut sections = vec![RunningSurfacePaginationHints::default(); section_count];
+
+    for region in regions.iter().filter(|region| {
+        region.kind == SourceRegionKind::HeaderFooter && region.block_start < region.block_end
+    }) {
+        let start = region.block_start.min(blocks.len());
+        let end = region.block_end.min(blocks.len());
+        let Some(paragraphs) = pagination_hints.get(start..end).map(|hints| hints.to_vec()) else {
+            continue;
+        };
+        let Some(table_rows) = table_row_pagination
+            .get(start..end)
+            .map(|hints| hints.to_vec())
+        else {
+            continue;
+        };
+        let Some(table_cells) = table_cell_pagination
+            .get(start..end)
+            .map(|hints| hints.to_vec())
+        else {
+            continue;
+        };
+        if paragraphs.is_empty() {
+            continue;
+        }
+        let captured = RunningBlockPaginationHints {
+            paragraphs,
+            table_rows,
+            table_cells,
+        };
+
+        if section_count == 1 {
+            let slot = legacy_running_pagination_slot(&mut sections[0], region.source_story_index);
+            if slot.paragraphs.is_empty() {
+                *slot = captured;
+            }
+            continue;
+        }
+        if region.source_story_index.is_none() {
+            for section in &mut sections {
+                if section.header.paragraphs.is_empty() {
+                    section.header = captured.clone();
+                }
+            }
+            continue;
+        }
+        let Some(section_index) = legacy_header_footer_section_index(region.source_story_index)
+        else {
+            continue;
+        };
+        let Some(section) = sections.get_mut(section_index) else {
+            continue;
+        };
+        let Some(slot) = legacy_running_pagination_section_slot(section, region.source_story_index)
+        else {
+            continue;
+        };
+        if slot.paragraphs.is_empty() {
+            *slot = captured;
+        }
+    }
+
+    sections
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_pagination_slot(
+    hints: &mut RunningSurfacePaginationHints,
+    story_index: Option<usize>,
+) -> &mut RunningBlockPaginationHints {
+    match legacy_header_footer_story_position(story_index) {
+        Some(0) => &mut hints.even_header,
+        Some(1) | None => &mut hints.header,
+        Some(2) => &mut hints.even_footer,
+        Some(3) => &mut hints.footer,
+        Some(4) => &mut hints.first_header,
+        _ => &mut hints.first_footer,
+    }
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_pagination_section_slot(
+    hints: &mut RunningSurfacePaginationHints,
+    story_index: Option<usize>,
+) -> Option<&mut RunningBlockPaginationHints> {
+    match legacy_header_footer_story_position(story_index)? {
+        0 => Some(&mut hints.even_header),
+        1 => Some(&mut hints.header),
+        2 => Some(&mut hints.even_footer),
+        3 => Some(&mut hints.footer),
+        4 => Some(&mut hints.first_header),
+        _ => Some(&mut hints.first_footer),
+    }
+}
+
+fn clear_legacy_running_layout_hints(
+    blocks: &[Block],
+    regions: &[SourceRegion],
+    pagination_hints: &mut [PaginationHint],
+    line_spacing_hints: &mut [Option<LineSpacingHint>],
+    table_row_pagination: &mut [Vec<TableRowPaginationHint>],
+    table_cell_pagination: &mut [TableCellPaginationHints],
+    table_cell_line_spacing: &mut [TableCellLineSpacingHints],
+) {
+    for region in regions
+        .iter()
+        .filter(|region| region.kind == SourceRegionKind::HeaderFooter)
+    {
+        let start = region.block_start.min(blocks.len());
+        let end = region.block_end.min(blocks.len());
+        for index in start..end {
+            if let Some(hint) = pagination_hints.get_mut(index) {
+                *hint = PaginationHint {
+                    widow_control: true,
+                    ..PaginationHint::default()
+                };
+            }
+            if let Some(hint) = line_spacing_hints.get_mut(index) {
+                *hint = None;
+            }
+            if let Some(rows) = table_row_pagination.get_mut(index) {
+                for row in rows {
+                    row.cant_split = false;
+                }
+            }
+            if let Some(rows) = table_cell_pagination.get_mut(index) {
+                for cells in rows {
+                    for blocks in cells {
+                        for paragraph in blocks {
+                            *paragraph = None;
+                        }
+                    }
+                }
+            }
+            if let Some(rows) = table_cell_line_spacing.get_mut(index) {
+                for cells in rows {
+                    for blocks in cells {
+                        for paragraph in blocks {
+                            *paragraph = None;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[cfg(any(feature = "docx", feature = "render"))]

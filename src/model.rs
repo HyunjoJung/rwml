@@ -357,6 +357,25 @@ pub(crate) struct TableRowPaginationHint {
 
 pub(crate) type TableCellPaginationHints = Vec<Vec<Vec<Option<PaginationHint>>>>;
 
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningBlockPaginationHints {
+    pub(crate) paragraphs: Vec<PaginationHint>,
+    pub(crate) table_rows: Vec<Vec<TableRowPaginationHint>>,
+    pub(crate) table_cells: Vec<TableCellPaginationHints>,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfacePaginationHints {
+    pub(crate) header: RunningBlockPaginationHints,
+    pub(crate) first_header: RunningBlockPaginationHints,
+    pub(crate) even_header: RunningBlockPaginationHints,
+    pub(crate) footer: RunningBlockPaginationHints,
+    pub(crate) first_footer: RunningBlockPaginationHints,
+    pub(crate) even_footer: RunningBlockPaginationHints,
+}
+
 pub(crate) type TableCellLineSpacingHints = Vec<Vec<Vec<Option<LineSpacingHint>>>>;
 
 #[cfg(any(feature = "docx", feature = "render"))]

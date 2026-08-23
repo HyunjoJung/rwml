@@ -593,6 +593,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
             render_table_cell_tab_stops: _render_table_cell_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
             running_line_spacing_hints: _running_line_spacing_hints,
+        #[cfg(feature = "docx")]
+            running_pagination_hints: _running_pagination_hints,
         #[cfg(any(feature = "docx", feature = "render"))]
             running_tab_stops: _running_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
@@ -1048,15 +1050,18 @@ impl Document {
     /// legacy DOC inputs both
     /// retain reader-resolved exact/minimum line rules on those direct table-cell
     /// paragraphs and on direct top-level running paragraphs through section-
-    /// aligned source-only hints. Opened legacy DOC inputs with exact nonempty
+    /// aligned source-only hints. Those same selected running surfaces retain
+    /// effective `keepNext`, `keepLines`, and widow-off state on direct top-level
+    /// paragraphs and direct paragraphs in surviving cells of top-level tables,
+    /// plus effective no-split state for aligned top-level table rows. Opened
+    /// legacy DOC inputs with exact nonempty
     /// `PlcffndRef`/`PlcfendRef` tables, one-to-one Main-story markers, and
     /// ordinary top-level paragraph anchors promote normalized footnote/endnote
     /// text into real references and note parts. Reopened DOCX inputs retain that
     /// normalized subset through an exact private block/id/offset bridge.
     /// Nested-table descendants and note paragraph layout properties remain
-    /// outside these layout-hint paths, and all running surfaces remain outside
-    /// pagination conversion, while nested running-table descendants remain
-    /// outside both tab and line-rule conversion. Settings-defined default-tab
+    /// outside these layout-hint paths, while nested running-table descendants
+    /// remain outside pagination, tab, and line-rule conversion. Settings-defined default-tab
     /// intervals remain outside the tab path, and table-cell, note, running-
     /// surface, and nested-content manual breaks remain outside the column-break
     /// path. Rich note formatting, tables, media, source IDs and numbering,
@@ -1084,6 +1089,7 @@ impl Document {
                         final_rtl: assembled.final_section_column_rtl,
                         running_surface_distances: &assembled.running_surface_distances,
                         running_line_spacing: &assembled.running_line_spacing_hints,
+                        running_pagination: &assembled.running_pagination_hints,
                         running_tab_stops: &assembled.running_tab_stops,
                         running_table_cell_tab_stops: &assembled.running_table_cell_tab_stops,
                         paragraph_line_spacing: &assembled.line_spacing_hints,
@@ -1117,6 +1123,7 @@ impl Document {
                         final_rtl: state.final_section_column_rtl,
                         running_surface_distances: &state.running_surface_distances,
                         running_line_spacing: &state.running_line_spacing_hints,
+                        running_pagination: &state.running_pagination_hints,
                         running_tab_stops: &state.running_tab_stops,
                         running_table_cell_tab_stops: &state.running_table_cell_tab_stops,
                         paragraph_line_spacing: &state.line_spacing_hints,
@@ -6544,6 +6551,93 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "docx")]
+    fn legacy_running_pagination_doc(
+        story_position: usize,
+        in_table: bool,
+        include_pagination: bool,
+    ) -> Vec<u8> {
+        assert!(story_position < 6);
+        let mut text = "PAGE1\u{c}PAGE2\u{c}PAGE3\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: main_len,
+            grpprl: Vec::new(),
+        }];
+
+        for (index, label) in ["EH", "OH", "EF", "OF", "FH", "FF"].into_iter().enumerate() {
+            if index == story_position && in_table {
+                text.push('T');
+                text.push('\u{7}');
+                let mut cell_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                ];
+                if include_pagination {
+                    cell_grpprl.extend_from_slice(&[
+                        0x05, 0x24, 0x01, // sprmPFKeep
+                        0x06, 0x24, 0x01, // sprmPFKeepFollow
+                        0x31, 0x24, 0x00, // sprmPFWidowControl
+                    ]);
+                }
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: cell_grpprl,
+                });
+
+                text.push('\u{7}');
+                let mut row_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                    0x17, 0x24, 0x01, // sprmPFTtp
+                ];
+                if include_pagination {
+                    row_grpprl.extend_from_slice(&[
+                        0x66, 0x34, 0x01, // sprmTFCantSplit
+                    ]);
+                }
+                row_grpprl.extend_from_slice(&[
+                    0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+                    0x01, // one cell
+                    0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+                ]);
+                row_grpprl.extend_from_slice(&[0u8; 20]);
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: row_grpprl,
+                });
+            } else {
+                text.push_str(label);
+                text.push('\r');
+                let mut grpprl = Vec::new();
+                if index == story_position && include_pagination {
+                    grpprl.extend_from_slice(&[
+                        0x05, 0x24, 0x01, // sprmPFKeep
+                        0x06, 0x24, 0x01, // sprmPFKeepFollow
+                        0x31, 0x24, 0x00, // sprmPFWidowControl
+                    ]);
+                }
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl,
+                });
+            }
+        }
+        let plcf_hdd = [0, 0, 0, 0, 0, 0, 0, 3, 6, 9, 12, 15, 18, 18];
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, 0, 18, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_hdd_cps: Some(&plcf_hdd),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
     #[cfg(feature = "render")]
     fn legacy_note_tabs_doc(kind: SourceRegionKind, in_table: bool, include_tabs: bool) -> Vec<u8> {
         assert!(matches!(
@@ -8217,6 +8311,11 @@ mod tests {
             assert_eq!(exact_converted, exact.to_docx());
             assert_eq!(minimum_converted, minimum.to_docx());
             assert_ne!(exact_converted, minimum_converted);
+            assert!(
+                !docx_part(&exact_converted, "word/document.xml").contains(r#"w:lineRule="exact""#)
+            );
+            assert!(!docx_part(&minimum_converted, "word/document.xml")
+                .contains(r#"w:lineRule="atLeast""#));
             assert_single_running_line_rule(
                 &exact_converted,
                 &format!(">{marker}</w:t>"),
@@ -8257,6 +8356,92 @@ mod tests {
                 .iter()
                 .all(|(_, xml)| !xml.contains(r#"w:lineRule="exact""#)
                     && !xml.contains(r#"w:lineRule="atLeast""#)));
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_surfaces_roundtrip_pagination_to_docx() {
+        let variants = ["EH", "OH", "EF", "OF", "FH", "FF"];
+
+        for in_table in [false, true] {
+            for (story_position, marker) in variants.into_iter().enumerate() {
+                let paginated = Document::open(&legacy_running_pagination_doc(
+                    story_position,
+                    in_table,
+                    true,
+                ))
+                .unwrap();
+                let control = Document::open(&legacy_running_pagination_doc(
+                    story_position,
+                    in_table,
+                    false,
+                ))
+                .unwrap();
+                let model = paginated.model();
+                assert_eq!(model, control.model());
+
+                let converted = paginated.to_docx();
+                let control_converted = control.to_docx();
+                assert_eq!(converted, paginated.to_docx());
+                assert_ne!(converted, control_converted);
+                let document_xml = docx_part(&converted, "word/document.xml");
+                assert!(!document_xml.contains("<w:keep"), "{document_xml}");
+
+                let text = if in_table { "T" } else { marker };
+                let parts = docx_running_parts(&converted);
+                let selected = parts
+                    .iter()
+                    .filter(|(_, xml)| xml.contains(&format!(">{text}</w:t>")))
+                    .collect::<Vec<_>>();
+                assert_eq!(selected.len(), 1, "{story_position} {in_table}: {parts:?}");
+                let paragraph = docx_paragraph_with_text(&selected[0].1, text);
+                assert!(paragraph.contains("<w:keepNext/>"), "{paragraph}");
+                assert!(paragraph.contains("<w:keepLines/>"), "{paragraph}");
+                assert!(
+                    paragraph.contains(r#"<w:widowControl w:val="0"/>"#),
+                    "{paragraph}"
+                );
+                assert_eq!(
+                    parts
+                        .iter()
+                        .map(|(_, xml)| xml.matches("<w:keepNext/>").count())
+                        .sum::<usize>(),
+                    1
+                );
+                assert_eq!(
+                    parts
+                        .iter()
+                        .map(|(_, xml)| xml.matches("<w:keepLines/>").count())
+                        .sum::<usize>(),
+                    1
+                );
+                assert_eq!(
+                    parts
+                        .iter()
+                        .map(|(_, xml)| xml.matches("<w:widowControl").count())
+                        .sum::<usize>(),
+                    1
+                );
+                assert_eq!(
+                    parts
+                        .iter()
+                        .map(|(_, xml)| xml.matches("<w:cantSplit/>").count())
+                        .sum::<usize>(),
+                    usize::from(in_table)
+                );
+
+                assert_eq!(
+                    Document::open(&converted).unwrap().model(),
+                    Document::open(&control_converted).unwrap().model()
+                );
+                assert!(docx_running_parts(&write_docx(&model))
+                    .iter()
+                    .all(|(_, xml)| !xml.contains("<w:keepNext")
+                        && !xml.contains("<w:keepLines")
+                        && !xml.contains("<w:widowControl")
+                        && !xml.contains("<w:cantSplit")));
+            }
         }
     }
 
@@ -8356,6 +8541,11 @@ mod tests {
             assert_eq!(exact_converted, exact.to_docx());
             assert_eq!(minimum_converted, minimum.to_docx());
             assert_ne!(exact_converted, minimum_converted);
+            assert!(
+                !docx_part(&exact_converted, "word/document.xml").contains(r#"w:lineRule="exact""#)
+            );
+            assert!(!docx_part(&minimum_converted, "word/document.xml")
+                .contains(r#"w:lineRule="atLeast""#));
             assert_single_running_line_rule(
                 &exact_converted,
                 ">T</w:t>",

@@ -490,10 +490,14 @@ running surfaces retain explicit tabs through an independently validated
 companion block/row/surviving-cell/paragraph-aligned bridge. For opened DOCX and
 legacy DOC inputs alike, those direct table-cell paragraphs also retain reader-
 resolved exact/minimum line rules, while direct top-level running paragraphs
-retain the same rules through a section-aligned source-only bridge. Nested-table
+retain the same rules through a section-aligned source-only bridge. Those same
+selected running surfaces retain effective `keepNext`, `keepLines`, and widow-off
+state on direct top-level paragraphs and direct paragraphs in surviving cells of
+top-level tables, plus effective no-split state for aligned top-level table rows,
+through an all-or-nothing section/block/tree-aligned bridge. Nested-table
 descendants and note paragraph layout properties remain outside these layout-
-hint paths, and all running surfaces remain outside pagination conversion, while
-nested running-table descendants remain outside both tab and line-rule conversion.
+hint paths, while nested running-table descendants remain outside pagination,
+tab, and line-rule conversion.
 Settings-defined default-tab intervals remain outside the tab path, and table-
 cell, note, running-surface, and nested-content manual breaks remain outside the
 column-break path.
@@ -1009,10 +1013,13 @@ surfaces use a companion
 block/row/surviving-cell/paragraph-aligned bridge for explicit tabs. Opened DOCX
 and legacy DOC inputs both retain reader-resolved exact/minimum line rules on
 those direct table-cell paragraphs and on direct top-level running paragraphs
-through section-aligned source-only hints. Nested-table descendants and note
-paragraph layout properties remain outside these layout-hint paths, and all
-running surfaces remain outside pagination conversion, while nested running-
-table descendants remain outside both tab and line-rule conversion. Settings-
+through section-aligned source-only hints. Those same selected running surfaces
+retain effective `keepNext`, `keepLines`, and widow-off state on direct top-level
+paragraphs and direct paragraphs in surviving cells of top-level tables, plus
+effective no-split state for aligned top-level table rows. Nested-table
+descendants and note paragraph layout properties remain outside these layout-
+hint paths, while nested running-table descendants remain outside pagination,
+tab, and line-rule conversion. Settings-
 defined default-tab intervals remain outside the tab path, and table-cell, note,
 running-surface, and nested-content manual breaks remain outside the column-
 break path.

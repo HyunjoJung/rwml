@@ -97,6 +97,163 @@ fn header_footer_variants_docx() -> Vec<u8> {
     ])
 }
 
+fn running_surface_pagination_docx(include_pagination: bool) -> Vec<u8> {
+    let paragraph_props = if include_pagination {
+        r#"<w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/></w:pPr>"#
+    } else {
+        ""
+    };
+    let table_row_props = if include_pagination {
+        "<w:trPr><w:cantSplit/></w:trPr>"
+    } else {
+        ""
+    };
+    let table_cell_props = paragraph_props;
+    let running_part = |root: &str, marker: &str, table: bool| {
+        let table = if table {
+            format!(
+                concat!(
+                    "<w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w=\"2000\"/></w:tblGrid>",
+                    "<w:tr>{table_row_props}<w:tc><w:tcPr/>",
+                    "<w:p>{table_cell_props}<w:r><w:t>TABLE CELL</w:t></w:r></w:p>",
+                    "</w:tc></w:tr></w:tbl>"
+                ),
+                table_row_props = table_row_props,
+                table_cell_props = table_cell_props,
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            concat!(
+                "<w:{root} xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+                "<w:p>{paragraph_props}<w:r><w:t>{marker}</w:t></w:r></w:p>",
+                "{table}</w:{root}>"
+            ),
+            root = root,
+            paragraph_props = paragraph_props,
+            marker = marker,
+            table = table,
+        )
+    };
+    let default_header = running_part("hdr", "DEFAULT HEAD PAGINATION", true);
+    let first_header = running_part("hdr", "FIRST HEAD PAGINATION", false);
+    let even_header = running_part("hdr", "EVEN HEAD PAGINATION", false);
+    let default_footer = running_part("ftr", "DEFAULT FOOT PAGINATION", false);
+    let first_footer = running_part("ftr", "FIRST FOOT PAGINATION", false);
+    let even_footer = running_part("ftr", "EVEN FOOT PAGINATION", false);
+
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header3.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/footer2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/footer3.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDefaultHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFirstHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/><Relationship Id="rIdEvenHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header3.xml"/><Relationship Id="rIdDefaultFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rIdFirstFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/><Relationship Id="rIdEvenFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer3.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdDefaultHeader"/><w:headerReference w:type="first" r:id="rIdFirstHeader"/><w:headerReference w:type="even" r:id="rIdEvenHeader"/><w:footerReference w:type="default" r:id="rIdDefaultFooter"/><w:footerReference w:type="first" r:id="rIdFirstFooter"/><w:footerReference w:type="even" r:id="rIdEvenFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        ("word/header1.xml", &default_header),
+        ("word/header2.xml", &first_header),
+        ("word/header3.xml", &even_header),
+        ("word/footer1.xml", &default_footer),
+        ("word/footer2.xml", &first_footer),
+        ("word/footer3.xml", &even_footer),
+    ])
+}
+
+fn paragraph_with_marker<'a>(xml: &'a str, marker: &str) -> &'a str {
+    let marker = format!(">{marker}</w:t>");
+    let text_start = xml
+        .find(&marker)
+        .unwrap_or_else(|| panic!("missing paragraph marker {marker:?}: {xml}"));
+    let start = xml[..text_start].rfind("<w:p>").expect("paragraph start");
+    let end = xml[text_start..]
+        .find("</w:p>")
+        .map(|offset| text_start + offset + "</w:p>".len())
+        .expect("paragraph end");
+    &xml[start..end]
+}
+
+#[test]
+fn opened_docx_running_surface_pagination_roundtrips_through_fresh_conversion() {
+    let paginated = Document::open(&running_surface_pagination_docx(true)).unwrap();
+    let control = Document::open(&running_surface_pagination_docx(false)).unwrap();
+    let model = paginated.model();
+    assert_eq!(model, control.model());
+
+    let converted = paginated.to_docx();
+    let control_converted = control.to_docx();
+    assert_eq!(converted, paginated.to_docx());
+    assert_ne!(converted, control_converted);
+
+    let parts = unzip_parts(&converted);
+    for marker in [
+        "DEFAULT HEAD PAGINATION",
+        "FIRST HEAD PAGINATION",
+        "EVEN HEAD PAGINATION",
+        "DEFAULT FOOT PAGINATION",
+        "FIRST FOOT PAGINATION",
+        "EVEN FOOT PAGINATION",
+    ] {
+        let xml = parts
+            .iter()
+            .find_map(|(name, body)| {
+                ((name.starts_with("word/header") || name.starts_with("word/footer"))
+                    && std::str::from_utf8(body).is_ok_and(|xml| xml.contains(marker)))
+                .then(|| std::str::from_utf8(body).unwrap())
+            })
+            .unwrap_or_else(|| panic!("missing generated running part for {marker}"));
+        let paragraph = paragraph_with_marker(xml, marker);
+        assert!(paragraph.contains("<w:keepNext/>"), "{marker}: {xml}");
+        assert!(paragraph.contains("<w:keepLines/>"), "{marker}: {xml}");
+        assert!(
+            paragraph.contains(r#"<w:widowControl w:val="0"/>"#),
+            "{marker}: {xml}"
+        );
+    }
+
+    let default_header = parts
+        .iter()
+        .find_map(|(name, body)| {
+            (name.starts_with("word/header")
+                && std::str::from_utf8(body)
+                    .is_ok_and(|xml| xml.contains("DEFAULT HEAD PAGINATION")))
+            .then(|| std::str::from_utf8(body).unwrap())
+        })
+        .expect("generated default header");
+    assert!(
+        default_header.contains("<w:cantSplit/>"),
+        "{default_header}"
+    );
+    let cell = paragraph_with_marker(default_header, "TABLE CELL");
+    assert!(cell.contains("<w:keepNext/>"), "{cell}");
+    assert!(cell.contains("<w:keepLines/>"), "{cell}");
+    assert!(cell.contains(r#"<w:widowControl w:val="0"/>"#), "{cell}");
+
+    assert_eq!(
+        Document::open(&converted).unwrap().model(),
+        Document::open(&control_converted).unwrap().model()
+    );
+    let standalone = unzip_parts(&rwml::write_docx(&model));
+    assert!(standalone.iter().all(|(name, body)| {
+        !(name.starts_with("word/header") || name.starts_with("word/footer"))
+            || std::str::from_utf8(body).is_ok_and(|xml| {
+                !xml.contains("<w:keepNext")
+                    && !xml.contains("<w:keepLines")
+                    && !xml.contains("<w:widowControl")
+                    && !xml.contains("<w:cantSplit")
+            })
+    }));
+}
+
 fn header_footer_alternate_content_refs_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -191,11 +348,11 @@ fn multi_section_inherited_header_footer_docx() -> Vec<u8> {
         ),
         (
             "word/header1.xml",
-            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>INHERITED HEAD</w:t></w:r></w:p></w:hdr>"#,
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/></w:pPr><w:r><w:t>INHERITED HEAD</w:t></w:r></w:p></w:hdr>"#,
         ),
         (
             "word/footer1.xml",
-            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>INHERITED FOOT</w:t></w:r></w:p></w:ftr>"#,
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/></w:pPr><w:r><w:t>INHERITED FOOT</w:t></w:r></w:p></w:ftr>"#,
         ),
     ])
 }
@@ -635,6 +792,28 @@ fn docx_section_defaults_inherit_from_previous_section_when_omitted() {
         2,
         "inherited section surfaces should not duplicate side-table part records"
     );
+
+    let parts = unzip_parts(&doc.to_docx());
+    for marker in ["INHERITED HEAD", "INHERITED FOOT"] {
+        let selected = parts
+            .iter()
+            .filter_map(|(name, body)| {
+                (name.starts_with("word/header") || name.starts_with("word/footer"))
+                    .then(|| std::str::from_utf8(body).unwrap())
+                    .filter(|xml| xml.contains(marker))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(selected.len(), 2, "{marker}: {selected:?}");
+        for xml in selected {
+            let paragraph = paragraph_with_marker(xml, marker);
+            assert!(paragraph.contains("<w:keepNext/>"), "{paragraph}");
+            assert!(paragraph.contains("<w:keepLines/>"), "{paragraph}");
+            assert!(
+                paragraph.contains(r#"<w:widowControl w:val="0"/>"#),
+                "{paragraph}"
+            );
+        }
+    }
 }
 
 #[test]

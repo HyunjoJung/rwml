@@ -19,12 +19,12 @@ use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
     ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, LineSpacingHint,
-    PaginationHint, ParaProps, Paragraph, ParagraphStyle, RunningSurfaceDistanceHints,
-    RunningSurfaceLineSpacingHints, RunningSurfaceTabStopHints,
-    RunningSurfaceTableCellTabStopHints, SectionBreakKind, SectionColumnLayoutHints, SectionSetup,
-    Spacing, TabAlignment, TabLeader, TabStop, Table, TableBorderSide, TableBorderStyle,
-    TableCellLineSpacingHints, TableCellPaginationHints, TableCellTabStopHints,
-    TableRowPaginationHint, VertAlign, WebExtensionTaskPane, MAX_TAB_STOPS,
+    PaginationHint, ParaProps, Paragraph, ParagraphStyle, RunningBlockPaginationHints,
+    RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints,
+    RunningSurfaceTabStopHints, RunningSurfaceTableCellTabStopHints, SectionBreakKind,
+    SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
+    TableBorderSide, TableBorderStyle, TableCellLineSpacingHints, TableCellPaginationHints,
+    TableCellTabStopHints, TableRowPaginationHint, VertAlign, WebExtensionTaskPane, MAX_TAB_STOPS,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -77,13 +77,24 @@ struct SectionWriteHint<'a> {
     columns: SectionColumnWriteHint<'a>,
     running_surface_distances: RunningSurfaceDistanceHints,
     running_line_spacing: Option<&'a RunningSurfaceLineSpacingHints>,
+    running_pagination: Option<&'a RunningSurfacePaginationHints>,
     running_tab_stops: Option<&'a RunningSurfaceTabStopHints>,
     running_table_cell_tab_stops: Option<&'a RunningSurfaceTableCellTabStopHints>,
 }
 
 #[derive(Clone, Copy, Default)]
+struct AlignedRunningSectionHints<'a> {
+    distances: Option<&'a [RunningSurfaceDistanceHints]>,
+    line_spacing: Option<&'a [RunningSurfaceLineSpacingHints]>,
+    pagination: Option<&'a [RunningSurfacePaginationHints]>,
+    tab_stops: Option<&'a [RunningSurfaceTabStopHints]>,
+    table_cell_tab_stops: Option<&'a [RunningSurfaceTableCellTabStopHints]>,
+}
+
+#[derive(Clone, Copy, Default)]
 struct RunningBlockWriteHints<'a> {
     line_spacing: Option<&'a [Option<LineSpacingHint>]>,
+    pagination: Option<&'a RunningBlockPaginationHints>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
     table_cell_line_spacing: Option<&'a [TableCellLineSpacingHints]>,
     table_cell_tab_stops: Option<&'a [TableCellTabStopHints]>,
@@ -92,7 +103,10 @@ struct RunningBlockWriteHints<'a> {
 #[derive(Clone, Copy, Default)]
 struct RunningBlockSlotWriteHints<'a> {
     line_spacing: Option<LineSpacingHint>,
+    pagination: Option<PaginationHint>,
     tab_stops: Option<&'a [TabStop]>,
+    table_row_pagination: Option<&'a [TableRowPaginationHint]>,
+    table_cell_pagination: Option<&'a TableCellPaginationHints>,
     table_cell_line_spacing: Option<&'a TableCellLineSpacingHints>,
     table_cell_tab_stops: Option<&'a TableCellTabStopHints>,
 }
@@ -132,6 +146,7 @@ pub(crate) struct SourceWriteHints<'a> {
     pub(crate) final_rtl: bool,
     pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
     pub(crate) running_line_spacing: &'a [RunningSurfaceLineSpacingHints],
+    pub(crate) running_pagination: &'a [RunningSurfacePaginationHints],
     pub(crate) running_tab_stops: &'a [RunningSurfaceTabStopHints],
     pub(crate) running_table_cell_tab_stops: &'a [RunningSurfaceTableCellTabStopHints],
     pub(crate) paragraph_line_spacing: &'a [Option<LineSpacingHint>],
@@ -155,6 +170,13 @@ impl<'a> SourceWriteHints<'a> {
         section_count: usize,
     ) -> Option<&'a [RunningSurfaceLineSpacingHints]> {
         (self.running_line_spacing.len() == section_count).then_some(self.running_line_spacing)
+    }
+
+    fn aligned_running_pagination(
+        self,
+        section_count: usize,
+    ) -> Option<&'a [RunningSurfacePaginationHints]> {
+        (self.running_pagination.len() == section_count).then_some(self.running_pagination)
     }
 
     fn aligned_running_tab_stops(
@@ -223,10 +245,7 @@ impl<'a> SourceWriteHints<'a> {
         &self,
         block_index: usize,
         section_index: usize,
-        distances: Option<&[RunningSurfaceDistanceHints]>,
-        running_line_spacing: Option<&'a [RunningSurfaceLineSpacingHints]>,
-        running_tab_stops: Option<&'a [RunningSurfaceTabStopHints]>,
-        running_table_cell_tab_stops: Option<&'a [RunningSurfaceTableCellTabStopHints]>,
+        running: AlignedRunningSectionHints<'a>,
     ) -> SectionWriteHint<'a> {
         SectionWriteHint {
             columns: SectionColumnWriteHint {
@@ -235,24 +254,27 @@ impl<'a> SourceWriteHints<'a> {
                 separator: self.separators.get(block_index).copied().unwrap_or(false),
                 rtl: self.rtl.get(block_index).copied().unwrap_or(false),
             },
-            running_surface_distances: distances
+            running_surface_distances: running
+                .distances
                 .and_then(|values| values.get(section_index))
                 .copied()
                 .unwrap_or_default(),
-            running_line_spacing: running_line_spacing.and_then(|values| values.get(section_index)),
-            running_tab_stops: running_tab_stops.and_then(|values| values.get(section_index)),
-            running_table_cell_tab_stops: running_table_cell_tab_stops
+            running_line_spacing: running
+                .line_spacing
+                .and_then(|values| values.get(section_index)),
+            running_pagination: running
+                .pagination
+                .and_then(|values| values.get(section_index)),
+            running_tab_stops: running
+                .tab_stops
+                .and_then(|values| values.get(section_index)),
+            running_table_cell_tab_stops: running
+                .table_cell_tab_stops
                 .and_then(|values| values.get(section_index)),
         }
     }
 
-    fn final_section(
-        self,
-        distances: Option<&[RunningSurfaceDistanceHints]>,
-        running_line_spacing: Option<&'a [RunningSurfaceLineSpacingHints]>,
-        running_tab_stops: Option<&'a [RunningSurfaceTabStopHints]>,
-        running_table_cell_tab_stops: Option<&'a [RunningSurfaceTableCellTabStopHints]>,
-    ) -> SectionWriteHint<'a> {
+    fn final_section(self, running: AlignedRunningSectionHints<'a>) -> SectionWriteHint<'a> {
         SectionWriteHint {
             columns: SectionColumnWriteHint {
                 gap_pt: self.final_gap,
@@ -260,13 +282,16 @@ impl<'a> SourceWriteHints<'a> {
                 separator: self.final_separator,
                 rtl: self.final_rtl,
             },
-            running_surface_distances: distances
+            running_surface_distances: running
+                .distances
                 .and_then(|values| values.last())
                 .copied()
                 .unwrap_or_default(),
-            running_line_spacing: running_line_spacing.and_then(|values| values.last()),
-            running_tab_stops: running_tab_stops.and_then(|values| values.last()),
-            running_table_cell_tab_stops: running_table_cell_tab_stops
+            running_line_spacing: running.line_spacing.and_then(|values| values.last()),
+            running_pagination: running.pagination.and_then(|values| values.last()),
+            running_tab_stops: running.tab_stops.and_then(|values| values.last()),
+            running_table_cell_tab_stops: running
+                .table_cell_tab_stops
                 .and_then(|values| values.last()),
         }
     }
@@ -549,6 +574,9 @@ fn render_hf_body(
     let line_spacing = hints
         .line_spacing
         .filter(|hints| hints.len() == blocks.len());
+    let pagination = hints
+        .pagination
+        .filter(|hints| running_pagination_hints_align(blocks, hints));
     let tab_stops = hints.tab_stops.filter(|hints| hints.len() == blocks.len());
     let table_cell_line_spacing = hints
         .table_cell_line_spacing
@@ -566,9 +594,16 @@ fn render_hf_body(
                     .and_then(|hints| hints.get(index))
                     .copied()
                     .flatten(),
+                pagination: pagination
+                    .and_then(|hints| hints.paragraphs.get(index))
+                    .copied(),
                 tab_stops: tab_stops
                     .and_then(|hints| hints.get(index))
                     .map(Vec::as_slice),
+                table_row_pagination: pagination
+                    .and_then(|hints| hints.table_rows.get(index))
+                    .map(Vec::as_slice),
+                table_cell_pagination: pagination.and_then(|hints| hints.table_cells.get(index)),
                 table_cell_line_spacing: table_cell_line_spacing.and_then(|hints| hints.get(index)),
                 table_cell_tab_stops: table_cell_tab_stops.and_then(|hints| hints.get(index)),
             },
@@ -583,6 +618,26 @@ fn render_hf_body(
         out.push_str("<w:p/>");
     }
     out
+}
+
+fn running_pagination_hints_align(blocks: &[Block], hints: &RunningBlockPaginationHints) -> bool {
+    if hints.paragraphs.len() != blocks.len()
+        || hints.table_rows.len() != blocks.len()
+        || hints.table_cells.len() != blocks.len()
+    {
+        return false;
+    }
+    blocks.iter().enumerate().all(|(index, block)| {
+        let rows = &hints.table_rows[index];
+        let cells = &hints.table_cells[index];
+        match block {
+            Block::Table(table) => {
+                rows.len() == table.rows.len()
+                    && Ctx::table_cell_paragraph_hints_align(table, cells)
+            }
+            _ => rows.is_empty() && cells.is_empty(),
+        }
+    })
 }
 
 fn write_hf_run(ctx: &mut Ctx, rels: &mut Vec<Rel>, out: &mut String, r: &crate::model::Run) {
@@ -1123,13 +1178,25 @@ impl Ctx {
         match block {
             Block::Paragraph(p) => {
                 out.push_str("<w:p>");
-                self.write_ppr(out, &p.props, hints.line_spacing, None, hints.tab_stops);
+                self.write_ppr(
+                    out,
+                    &p.props,
+                    hints.line_spacing,
+                    hints.pagination,
+                    hints.tab_stops,
+                );
                 for r in &p.runs {
                     write_hf_run(self, rels, out, r);
                 }
                 out.push_str("</w:p>");
             }
             Block::Table(t) => {
+                let row_pagination = hints
+                    .table_row_pagination
+                    .filter(|hints| hints.len() == t.rows.len());
+                let cell_pagination = hints
+                    .table_cell_pagination
+                    .filter(|hints| Self::table_cell_paragraph_hints_align(t, hints));
                 let cell_line_spacing = hints
                     .table_cell_line_spacing
                     .filter(|hints| Self::table_cell_paragraph_hints_align(t, hints));
@@ -1141,9 +1208,10 @@ impl Ctx {
                     t,
                     Some(rels),
                     TableWriteHints {
+                        row_pagination,
+                        cell_pagination,
                         cell_line_spacing,
                         cell_tab_stops,
-                        ..TableWriteHints::default()
                     },
                 )
             }
@@ -1237,6 +1305,7 @@ impl Ctx {
     ) {
         let mut refs = String::new();
         let running_spacing = section_hints.running_line_spacing;
+        let running_pagination = section_hints.running_pagination;
         let running_tabs = section_hints.running_tab_stops;
         let running_table_tabs = section_hints.running_table_cell_tab_stops;
         self.write_header_ref(
@@ -1245,6 +1314,7 @@ impl Ctx {
             &setup.header,
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.header.as_slice()),
+                pagination: running_pagination.map(|hints| &hints.header),
                 tab_stops: running_tabs.map(|hints| hints.header.as_slice()),
                 table_cell_line_spacing: running_spacing
                     .map(|hints| hints.header_table_cells.as_slice()),
@@ -1257,6 +1327,7 @@ impl Ctx {
             &setup.first_header,
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.first_header.as_slice()),
+                pagination: running_pagination.map(|hints| &hints.first_header),
                 tab_stops: running_tabs.map(|hints| hints.first_header.as_slice()),
                 table_cell_line_spacing: running_spacing
                     .map(|hints| hints.first_header_table_cells.as_slice()),
@@ -1269,6 +1340,7 @@ impl Ctx {
             &setup.even_header,
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.even_header.as_slice()),
+                pagination: running_pagination.map(|hints| &hints.even_header),
                 tab_stops: running_tabs.map(|hints| hints.even_header.as_slice()),
                 table_cell_line_spacing: running_spacing
                     .map(|hints| hints.even_header_table_cells.as_slice()),
@@ -1281,6 +1353,7 @@ impl Ctx {
             &setup.footer,
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.footer.as_slice()),
+                pagination: running_pagination.map(|hints| &hints.footer),
                 tab_stops: running_tabs.map(|hints| hints.footer.as_slice()),
                 table_cell_line_spacing: running_spacing
                     .map(|hints| hints.footer_table_cells.as_slice()),
@@ -1294,6 +1367,7 @@ impl Ctx {
             &setup.first_footer,
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.first_footer.as_slice()),
+                pagination: running_pagination.map(|hints| &hints.first_footer),
                 tab_stops: running_tabs.map(|hints| hints.first_footer.as_slice()),
                 table_cell_line_spacing: running_spacing
                     .map(|hints| hints.first_footer_table_cells.as_slice()),
@@ -1307,6 +1381,7 @@ impl Ctx {
             &setup.even_footer,
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.even_footer.as_slice()),
+                pagination: running_pagination.map(|hints| &hints.even_footer),
                 tab_stops: running_tabs.map(|hints| hints.even_footer.as_slice()),
                 table_cell_line_spacing: running_spacing
                     .map(|hints| hints.even_footer_table_cells.as_slice()),
@@ -1896,6 +1971,7 @@ impl Ctx {
         out: &mut String,
         blocks: &[Block],
         rels: &mut Vec<Rel>,
+        pagination: Option<&[Option<PaginationHint>]>,
         line_spacing: Option<&[Option<LineSpacingHint>]>,
         tab_stops: Option<&[Vec<TabStop>]>,
     ) {
@@ -1910,6 +1986,10 @@ impl Ctx {
                 rels,
                 RunningBlockSlotWriteHints {
                     line_spacing: line_spacing
+                        .and_then(|hints| hints.get(index))
+                        .copied()
+                        .flatten(),
+                    pagination: pagination
                         .and_then(|hints| hints.get(index))
                         .copied()
                         .flatten(),
@@ -2124,6 +2204,7 @@ impl Ctx {
                             &mut row_xml,
                             &c.blocks,
                             rels,
+                            source_pagination,
                             source_line_spacing,
                             source_tab_stops,
                         );
@@ -4262,10 +4343,19 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         source_hints.and_then(|hints| hints.aligned_distances(section_count));
     let running_line_spacing =
         source_hints.and_then(|hints| hints.aligned_running_line_spacing(section_count));
+    let running_pagination =
+        source_hints.and_then(|hints| hints.aligned_running_pagination(section_count));
     let running_tab_stops =
         source_hints.and_then(|hints| hints.aligned_running_tab_stops(section_count));
     let running_table_cell_tab_stops =
         source_hints.and_then(|hints| hints.aligned_running_table_cell_tab_stops(section_count));
+    let running_section_hints = AlignedRunningSectionHints {
+        distances: running_surface_distances,
+        line_spacing: running_line_spacing,
+        pagination: running_pagination,
+        tab_stops: running_tab_stops,
+        table_cell_tab_stops: running_table_cell_tab_stops,
+    };
     let paragraph_line_spacing =
         source_hints.and_then(|hints| hints.aligned_paragraph_line_spacing(model.blocks.len()));
     let paragraph_pagination =
@@ -4288,16 +4378,7 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
             &mut body,
             block,
             source_hints
-                .map(|hints| {
-                    hints.for_block(
-                        index,
-                        section_index,
-                        running_surface_distances,
-                        running_line_spacing,
-                        running_tab_stops,
-                        running_table_cell_tab_stops,
-                    )
-                })
+                .map(|hints| hints.for_block(index, section_index, running_section_hints))
                 .unwrap_or_default(),
             ParagraphWriteHints {
                 line_spacing: paragraph_line_spacing
@@ -4343,14 +4424,7 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         &SectionSetup::from(&model.setup),
         None,
         source_hints
-            .map(|hints| {
-                hints.final_section(
-                    running_surface_distances,
-                    running_line_spacing,
-                    running_tab_stops,
-                    running_table_cell_tab_stops,
-                )
-            })
+            .map(|hints| hints.final_section(running_section_hints))
             .unwrap_or_default(),
     );
     let comments_xml = if ctx.comments.is_empty() {
@@ -4474,11 +4548,11 @@ mod tests {
     use crate::model::{
         Align, AuthoredComment, AuthoredContentControl, AuthoredRevision, Block, Cell, CharProps,
         DocModel, DocSetup, FieldRole, Image, LineSpacingHint, ListInfo, PaginationHint, ParaProps,
-        Paragraph, Row, Run, RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints,
-        RunningSurfaceTabStopHints, RunningSurfaceTableCellTabStopHints, SectionColumnHint,
-        SectionColumnLayoutHints, SectionSetup, TabAlignment, TabLeader, TabStop, Table,
-        TableCellLineSpacingHints, TableCellPaginationHints, TableCellTabStopHints,
-        TableRowPaginationHint, MAX_TAB_STOPS,
+        Paragraph, Row, Run, RunningBlockPaginationHints, RunningSurfaceDistanceHints,
+        RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints, RunningSurfaceTabStopHints,
+        RunningSurfaceTableCellTabStopHints, SectionColumnHint, SectionColumnLayoutHints,
+        SectionSetup, TabAlignment, TabLeader, TabStop, Table, TableCellLineSpacingHints,
+        TableCellPaginationHints, TableCellTabStopHints, TableRowPaginationHint, MAX_TAB_STOPS,
     };
     use crate::Document;
 
@@ -4604,6 +4678,7 @@ mod tests {
                 final_rtl: false,
                 running_surface_distances: &distances,
                 running_line_spacing: &[],
+                running_pagination: &[],
                 running_tab_stops: &[],
                 running_table_cell_tab_stops: &[],
                 paragraph_line_spacing: &[],
@@ -4655,6 +4730,7 @@ mod tests {
                 final_rtl: false,
                 running_surface_distances: &distances,
                 running_line_spacing: &[],
+                running_pagination: &[],
                 running_tab_stops: &[],
                 running_table_cell_tab_stops: &[],
                 paragraph_line_spacing: &line_spacing,
@@ -4767,6 +4843,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                         running_line_spacing: &[],
+                        running_pagination: &[],
                         running_tab_stops: &[],
                         running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &line_spacing,
@@ -4916,6 +4993,7 @@ mod tests {
                     final_rtl: false,
                     running_surface_distances: &distances,
                     running_line_spacing: running_spacing,
+                    running_pagination: &[],
                     running_tab_stops: &running_tabs,
                     running_table_cell_tab_stops: &running_table_tabs,
                     paragraph_line_spacing: &[],
@@ -5000,6 +5078,112 @@ mod tests {
     }
 
     #[test]
+    fn source_running_pagination_writer_rejects_misaligned_aggregate() {
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(para("BODY"))],
+            setup: DocSetup {
+                header: vec![
+                    Block::Paragraph(para("RUNNING DIRECT")),
+                    Block::Table(Table {
+                        rows: vec![Row {
+                            cells: vec![cell("RUNNING CELL")],
+                        }],
+                        ..Table::default()
+                    }),
+                ],
+                ..DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let enabled = PaginationHint {
+            keep_next: true,
+            keep_lines: true,
+            widow_control: false,
+        };
+        let neutral = PaginationHint {
+            widow_control: true,
+            ..PaginationHint::default()
+        };
+        let running_pagination = [RunningSurfacePaginationHints {
+            header: RunningBlockPaginationHints {
+                paragraphs: vec![enabled, neutral],
+                table_rows: vec![
+                    Vec::new(),
+                    vec![TableRowPaginationHint { cant_split: true }],
+                ],
+                table_cells: vec![
+                    Vec::new(),
+                    vec![vec![vec![Some(PaginationHint {
+                        keep_lines: true,
+                        widow_control: false,
+                        ..PaginationHint::default()
+                    })]]],
+                ],
+            },
+            ..RunningSurfacePaginationHints::default()
+        }];
+        let render = |hints: &[RunningSurfacePaginationHints]| {
+            render_body(
+                &model,
+                Some(SourceWriteHints {
+                    gaps: &[],
+                    layouts: &[],
+                    separators: &[],
+                    rtl: &[],
+                    final_gap: None,
+                    final_layout: None,
+                    final_separator: false,
+                    final_rtl: false,
+                    running_surface_distances: &[RunningSurfaceDistanceHints::default()],
+                    running_line_spacing: &[],
+                    running_pagination: hints,
+                    running_tab_stops: &[],
+                    running_table_cell_tab_stops: &[],
+                    paragraph_line_spacing: &[],
+                    paragraph_pagination: &[],
+                    paragraph_tab_stops: &[],
+                    column_break_offsets: &[],
+                    table_row_pagination: &[],
+                    table_cell_pagination: &[],
+                    table_cell_line_spacing: &[],
+                    table_cell_tab_stops: &[],
+                }),
+            )
+        };
+
+        let aligned = render(&running_pagination);
+        let (_, xml) = generated_running_part(&aligned, "RUNNING DIRECT");
+        let direct = written_paragraph_with_text(xml, "RUNNING DIRECT");
+        assert!(direct.contains("<w:keepNext/>"), "{direct}");
+        assert!(direct.contains("<w:keepLines/>"), "{direct}");
+        assert!(
+            direct.contains(r#"<w:widowControl w:val="0"/>"#),
+            "{direct}"
+        );
+        assert!(xml.contains("<w:cantSplit/>"), "{xml}");
+        let cell = written_paragraph_with_text(xml, "RUNNING CELL");
+        assert!(!cell.contains("<w:keepNext/>"), "{cell}");
+        assert!(cell.contains("<w:keepLines/>"), "{cell}");
+        assert!(cell.contains(r#"<w:widowControl w:val="0"/>"#), "{cell}");
+
+        let mut block_misaligned = running_pagination.clone();
+        block_misaligned[0].header.table_cells.pop();
+        let mut table_misaligned = running_pagination.clone();
+        table_misaligned[0].header.table_rows[1].clear();
+        for rejected in [
+            render(&block_misaligned),
+            render(&table_misaligned),
+            render(&[]),
+        ] {
+            let (_, xml) = generated_running_part(&rejected, "RUNNING DIRECT");
+            assert!(!xml.contains("<w:keepNext"), "{xml}");
+            assert!(!xml.contains("<w:keepLines"), "{xml}");
+            assert!(!xml.contains("<w:widowControl"), "{xml}");
+            assert!(!xml.contains("<w:cantSplit"), "{xml}");
+        }
+    }
+
+    #[test]
     fn source_running_tab_writer_aligns_sections_and_isolates_variants() {
         let running_blocks = |label: &str, hyperlink: bool| {
             let mut paragraph = para(label);
@@ -5077,6 +5261,7 @@ mod tests {
                     final_rtl: false,
                     running_surface_distances: &distances,
                     running_line_spacing: &[],
+                    running_pagination: &[],
                     running_tab_stops: running_tabs,
                     running_table_cell_tab_stops: &[],
                     paragraph_line_spacing: &[],
@@ -5398,6 +5583,7 @@ mod tests {
                     final_rtl: false,
                     running_surface_distances: &distances,
                     running_line_spacing: running_spacing,
+                    running_pagination: &[],
                     running_tab_stops: &running_tabs,
                     running_table_cell_tab_stops: table_tabs,
                     paragraph_line_spacing: &[],
@@ -5729,6 +5915,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                         running_line_spacing: &[],
+                        running_pagination: &[],
                         running_tab_stops: &[],
                         running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &line_spacing,
@@ -5851,6 +6038,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &distances,
                         running_line_spacing: &[],
+                        running_pagination: &[],
                         running_tab_stops: &[],
                         running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &[],
@@ -5909,6 +6097,7 @@ mod tests {
                 final_rtl: false,
                 running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                 running_line_spacing: &[],
+                running_pagination: &[],
                 running_tab_stops: &[],
                 running_table_cell_tab_stops: &[],
                 paragraph_line_spacing: &[Some(LineSpacingHint::Exact(12.0))],
@@ -5985,6 +6174,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &distances,
                         running_line_spacing: &[],
+                        running_pagination: &[],
                         running_tab_stops: &[],
                         running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &[],
@@ -6059,6 +6249,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &distances,
                         running_line_spacing: &[],
+                        running_pagination: &[],
                         running_tab_stops: &[],
                         running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &[],
@@ -6144,6 +6335,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                         running_line_spacing: &[],
+                        running_pagination: &[],
                         running_tab_stops: &[],
                         running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &[],
@@ -6264,6 +6456,7 @@ mod tests {
                         final_rtl: false,
                         running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                         running_line_spacing: &[],
+                        running_pagination: &[],
                         running_tab_stops: &[],
                         running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &[],
@@ -6373,6 +6566,7 @@ mod tests {
                     final_rtl: false,
                     running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                     running_line_spacing: &[],
+                    running_pagination: &[],
                     running_tab_stops: &[],
                     running_table_cell_tab_stops: &[],
                     paragraph_line_spacing: &[],
@@ -6451,6 +6645,7 @@ mod tests {
                     final_rtl: false,
                     running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                     running_line_spacing: &[],
+                    running_pagination: &[],
                     running_tab_stops: &[],
                     running_table_cell_tab_stops: &[],
                     paragraph_line_spacing: &[],
@@ -6531,6 +6726,7 @@ mod tests {
                     final_rtl: false,
                     running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                     running_line_spacing: &[],
+                    running_pagination: &[],
                     running_tab_stops: &[],
                     running_table_cell_tab_stops: &[],
                     paragraph_line_spacing: &[],
@@ -6633,6 +6829,7 @@ mod tests {
                 final_rtl: false,
                 running_surface_distances: &[RunningSurfaceDistanceHints::default()],
                 running_line_spacing: &[],
+                running_pagination: &[],
                 running_tab_stops: &[],
                 running_table_cell_tab_stops: &[],
                 paragraph_line_spacing: &[],

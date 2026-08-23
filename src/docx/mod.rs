@@ -221,6 +221,8 @@ pub(crate) struct DocxState {
     pub note_table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
     /// Source-only exact/minimum line spacing for section running surfaces.
     pub running_line_spacing_hints: Vec<crate::model::RunningSurfaceLineSpacingHints>,
+    /// Source-only pagination controls for section running surfaces.
+    pub running_pagination_hints: Vec<crate::model::RunningSurfacePaginationHints>,
     /// Source-only explicit paragraph tab stops for section running surfaces.
     pub running_tab_stops: Vec<crate::model::RunningSurfaceTabStopHints>,
     /// Source-only table-cell tab stops for section running surfaces.
@@ -585,6 +587,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     text_boxes.extend(header_footer_text_boxes);
     let running_line_spacing_hints =
         running_line_spacing_by_model_section(&blocks, &section_header_footers);
+    let running_pagination_hints =
+        running_pagination_by_model_section(&blocks, &section_header_footers);
     let running_tab_stops = running_tab_stops_by_model_section(&blocks, &section_header_footers);
     let running_table_cell_tab_stops =
         running_table_cell_tab_stops_by_model_section(&blocks, &section_header_footers);
@@ -749,6 +753,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         #[cfg(feature = "render")]
         note_table_cell_tab_stops: note_part.table_cell_tab_stops,
         running_line_spacing_hints,
+        running_pagination_hints,
         running_tab_stops,
         running_table_cell_tab_stops,
         running_surface_distances,
@@ -802,6 +807,7 @@ struct SectionHeaderFooter {
     first_footer: Vec<Block>,
     even_footer: Vec<Block>,
     line_spacing: crate::model::RunningSurfaceLineSpacingHints,
+    pagination: crate::model::RunningSurfacePaginationHints,
     tab_stops: crate::model::RunningSurfaceTabStopHints,
     table_cell_tab_stops: crate::model::RunningSurfaceTableCellTabStopHints,
     distances: crate::model::RunningSurfaceDistanceHints,
@@ -822,6 +828,13 @@ struct HeaderFooterLineSpacing {
     first_table_cells: Vec<crate::model::TableCellLineSpacingHints>,
     even: Vec<Option<crate::model::LineSpacingHint>>,
     even_table_cells: Vec<crate::model::TableCellLineSpacingHints>,
+}
+
+#[derive(Default)]
+struct HeaderFooterPagination {
+    default: crate::model::RunningBlockPaginationHints,
+    first: crate::model::RunningBlockPaginationHints,
+    even: crate::model::RunningBlockPaginationHints,
 }
 
 #[derive(Default)]
@@ -852,6 +865,7 @@ struct HeaderFooterRead {
 struct HeaderFooterPartRead {
     blocks: HeaderFooterBlocks,
     line_spacing: HeaderFooterLineSpacing,
+    pagination: HeaderFooterPagination,
     tab_stops: HeaderFooterTabStops,
     table_cell_tab_stops: HeaderFooterTableCellTabStops,
     records: Vec<HeaderFooter>,
@@ -911,10 +925,12 @@ fn read_headers_footers(
     let mut inherited_header = Vec::new();
     let mut inherited_footer = Vec::new();
     let mut inherited_header_line_spacing = Vec::new();
+    let mut inherited_header_pagination = crate::model::RunningBlockPaginationHints::default();
     let mut inherited_header_tab_stops = Vec::new();
     let mut inherited_header_table_cell_line_spacing = Vec::new();
     let mut inherited_header_table_cell_tab_stops = Vec::new();
     let mut inherited_footer_line_spacing = Vec::new();
+    let mut inherited_footer_pagination = crate::model::RunningBlockPaginationHints::default();
     let mut inherited_footer_tab_stops = Vec::new();
     let mut inherited_footer_table_cell_line_spacing = Vec::new();
     let mut inherited_footer_table_cell_tab_stops = Vec::new();
@@ -933,6 +949,7 @@ fn read_headers_footers(
         let HeaderFooterPartRead {
             blocks: header_blocks,
             line_spacing: header_line_spacing,
+            pagination: header_pagination_parts,
             tab_stops: header_tab_stops,
             table_cell_tab_stops: header_table_cell_tab_stops,
             records: header_records,
@@ -956,6 +973,7 @@ fn read_headers_footers(
         field_entries.extend(header_fields);
         let mut header = header_blocks.default;
         let mut header_spacing = header_line_spacing.default;
+        let mut header_pagination = header_pagination_parts.default;
         let mut header_tabs = header_tab_stops.default;
         let mut header_table_cell_spacing = header_line_spacing.default_table_cells;
         let mut header_table_cell_tabs = header_table_cell_tab_stops.default;
@@ -964,6 +982,7 @@ fn read_headers_footers(
         if !header_has_default && !inherited_header.is_empty() {
             header = inherited_header.clone();
             header_spacing = inherited_header_line_spacing.clone();
+            header_pagination = inherited_header_pagination.clone();
             header_tabs = inherited_header_tab_stops.clone();
             header_table_cell_spacing = inherited_header_table_cell_line_spacing.clone();
             header_table_cell_tabs = inherited_header_table_cell_tab_stops.clone();
@@ -971,6 +990,7 @@ fn read_headers_footers(
         if header_has_default || !header.is_empty() {
             inherited_header = header.clone();
             inherited_header_line_spacing = header_spacing.clone();
+            inherited_header_pagination = header_pagination.clone();
             inherited_header_tab_stops = header_tabs.clone();
             inherited_header_table_cell_line_spacing = header_table_cell_spacing.clone();
             inherited_header_table_cell_tab_stops = header_table_cell_tabs.clone();
@@ -979,6 +999,7 @@ fn read_headers_footers(
         let HeaderFooterPartRead {
             blocks: footer_blocks,
             line_spacing: footer_line_spacing,
+            pagination: footer_pagination_parts,
             tab_stops: footer_tab_stops,
             table_cell_tab_stops: footer_table_cell_tab_stops,
             records: footer_records,
@@ -1002,6 +1023,7 @@ fn read_headers_footers(
         field_entries.extend(footer_fields);
         let mut footer = footer_blocks.default;
         let mut footer_spacing = footer_line_spacing.default;
+        let mut footer_pagination = footer_pagination_parts.default;
         let mut footer_tabs = footer_tab_stops.default;
         let mut footer_table_cell_spacing = footer_line_spacing.default_table_cells;
         let mut footer_table_cell_tabs = footer_table_cell_tab_stops.default;
@@ -1009,6 +1031,7 @@ fn read_headers_footers(
         if !footer_has_default && !inherited_footer.is_empty() {
             footer = inherited_footer.clone();
             footer_spacing = inherited_footer_line_spacing.clone();
+            footer_pagination = inherited_footer_pagination.clone();
             footer_tabs = inherited_footer_tab_stops.clone();
             footer_table_cell_spacing = inherited_footer_table_cell_line_spacing.clone();
             footer_table_cell_tabs = inherited_footer_table_cell_tab_stops.clone();
@@ -1016,6 +1039,7 @@ fn read_headers_footers(
         if footer_has_default || !footer.is_empty() {
             inherited_footer = footer.clone();
             inherited_footer_line_spacing = footer_spacing.clone();
+            inherited_footer_pagination = footer_pagination.clone();
             inherited_footer_tab_stops = footer_tabs.clone();
             inherited_footer_table_cell_line_spacing = footer_table_cell_spacing.clone();
             inherited_footer_table_cell_tab_stops = footer_table_cell_tabs.clone();
@@ -1040,6 +1064,14 @@ fn read_headers_footers(
                 first_footer_table_cells: footer_line_spacing.first_table_cells,
                 even_footer: footer_line_spacing.even,
                 even_footer_table_cells: footer_line_spacing.even_table_cells,
+            },
+            pagination: crate::model::RunningSurfacePaginationHints {
+                header: header_pagination,
+                first_header: header_pagination_parts.first,
+                even_header: header_pagination_parts.even,
+                footer: footer_pagination,
+                first_footer: footer_pagination_parts.first,
+                even_footer: footer_pagination_parts.even,
             },
             tab_stops: crate::model::RunningSurfaceTabStopHints {
                 header: header_tabs,
@@ -1169,6 +1201,29 @@ fn running_line_spacing_by_model_section(
     aligned
 }
 
+fn running_pagination_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::model::RunningSurfacePaginationHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::model::RunningSurfacePaginationHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.pagination.clone();
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.pagination.clone();
+    }
+    aligned
+}
+
 fn running_tab_stops_by_model_section(
     blocks: &[Block],
     sections: &[SectionHeaderFooter],
@@ -1271,6 +1326,7 @@ fn read_hf_parts(
     let mut seen_floating_shapes = std::collections::HashSet::new();
     let mut blocks = HeaderFooterBlocks::default();
     let mut line_spacing = HeaderFooterLineSpacing::default();
+    let mut pagination = HeaderFooterPagination::default();
     let mut tab_stops = HeaderFooterTabStops::default();
     let mut table_cell_tab_stops = HeaderFooterTableCellTabStops::default();
     let mut records = Vec::new();
@@ -1475,6 +1531,18 @@ fn read_hf_parts(
             match type_name {
                 "first" => {
                     blocks.first.extend(part_blocks.clone());
+                    pagination
+                        .first
+                        .paragraphs
+                        .extend(part_layout_hints.pagination);
+                    pagination
+                        .first
+                        .table_rows
+                        .extend(part_layout_hints.table_rows);
+                    pagination
+                        .first
+                        .table_cells
+                        .extend(part_layout_hints.table_cells);
                     line_spacing.first.extend(part_layout_hints.line_spacing);
                     line_spacing
                         .first_table_cells
@@ -1486,6 +1554,18 @@ fn read_hf_parts(
                 }
                 "even" => {
                     blocks.even.extend(part_blocks.clone());
+                    pagination
+                        .even
+                        .paragraphs
+                        .extend(part_layout_hints.pagination);
+                    pagination
+                        .even
+                        .table_rows
+                        .extend(part_layout_hints.table_rows);
+                    pagination
+                        .even
+                        .table_cells
+                        .extend(part_layout_hints.table_cells);
                     line_spacing.even.extend(part_layout_hints.line_spacing);
                     line_spacing
                         .even_table_cells
@@ -1497,6 +1577,18 @@ fn read_hf_parts(
                 }
                 _ => {
                     blocks.default.extend(part_blocks.clone());
+                    pagination
+                        .default
+                        .paragraphs
+                        .extend(part_layout_hints.pagination);
+                    pagination
+                        .default
+                        .table_rows
+                        .extend(part_layout_hints.table_rows);
+                    pagination
+                        .default
+                        .table_cells
+                        .extend(part_layout_hints.table_cells);
                     line_spacing.default.extend(part_layout_hints.line_spacing);
                     line_spacing
                         .default_table_cells
@@ -1523,6 +1615,7 @@ fn read_hf_parts(
     HeaderFooterPartRead {
         blocks,
         line_spacing,
+        pagination,
         tab_stops,
         table_cell_tab_stops,
         records,
