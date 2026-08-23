@@ -82,15 +82,15 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/rwml-release-tools"
           "$RUNNER_TEMP/rwml-release-tools/bin/pip" install --disable-pip-version-check --no-cache-dir PyMuPDF Pillow
-          mkdir -p dist
+          mkdir -p target/release-evidence
           set +e
           "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/render_validate.py \
             --json --soffice local --manifest corpus/public/RENDER_MANIFEST.tsv \
             --recall-min 0.97 --min-mean-recall 0.90 --max-skipped 0 --verify-oracle \
-            > dist/render-validation.json
+            > target/release-evidence/render-validation.json
           render_status=$?
           set -e
-          cat dist/render-validation.json
+          cat target/release-evidence/render-validation.json
           if [[ "$render_status" -ne 0 ]]; then
             exit "$render_status"
           fi
@@ -99,7 +99,7 @@ jobs:
             --corpus corpus/public/benchmark --json \
             --version "$RWML_VERSION" --git-rev "$GITHUB_SHA" \
             --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 --min-scored 1 \
-            --output dist/extract-benchmark.json
+            --output target/release-evidence/extract-benchmark.json
 
       - name: Publish bundled font crate dependency
         env:
@@ -144,19 +144,19 @@ jobs:
 
       - name: Generate release manifest
         run: |
-          mkdir -p dist
-          python3 scripts/public_hygiene_audit.py --json > dist/public-hygiene.json
+          mkdir -p target/release-evidence
+          python3 scripts/public_hygiene_audit.py --json > target/release-evidence/public-hygiene.json
           python3 scripts/release_manifest.py \
             --version "$RWML_VERSION" \
             --git-rev "$GITHUB_SHA" \
             --release-policy public-release \
             --enforce-policy-inputs \
-            --hygiene-report dist/public-hygiene.json \
-            --validation-report dist/render-validation.json \
-            --benchmark-report dist/extract-benchmark.json \
+            --hygiene-report target/release-evidence/public-hygiene.json \
+            --validation-report target/release-evidence/render-validation.json \
+            --benchmark-report target/release-evidence/extract-benchmark.json \
             --corpus-manifest corpus/public/MANIFEST.tsv \
             --corpus-manifest corpus/public/RENDER_MANIFEST.tsv \
-            --output dist/rwml-release-manifest.json \
+            --output target/release-evidence/rwml-release-manifest.json \
             target/package/rwml-${RWML_VERSION}.crate \
             rwml-fonts/target/package/rwml-fonts-${RWML_VERSION}.crate
 
@@ -165,10 +165,10 @@ jobs:
         with:
           name: rwml-release-manifest
           path: |
-            dist/public-hygiene.json
-            dist/rwml-release-manifest.json
-            dist/render-validation.json
-            dist/extract-benchmark.json
+            target/release-evidence/public-hygiene.json
+            target/release-evidence/rwml-release-manifest.json
+            target/release-evidence/render-validation.json
+            target/release-evidence/extract-benchmark.json
             target/package/rwml-${{ env.RWML_VERSION }}.crate
             rwml-fonts/target/package/rwml-fonts-${{ env.RWML_VERSION }}.crate
 
@@ -190,10 +190,10 @@ jobs:
           assets=(
             "target/package/rwml-${RWML_VERSION}.crate"
             "rwml-fonts/target/package/rwml-fonts-${RWML_VERSION}.crate"
-            "dist/public-hygiene.json"
-            "dist/render-validation.json"
-            "dist/extract-benchmark.json"
-            "dist/rwml-release-manifest.json"
+            "target/release-evidence/public-hygiene.json"
+            "target/release-evidence/render-validation.json"
+            "target/release-evidence/extract-benchmark.json"
+            "target/release-evidence/rwml-release-manifest.json"
           )
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber

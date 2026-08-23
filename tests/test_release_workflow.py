@@ -90,7 +90,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn('VERSION="${GITHUB_REF_NAME#v}"', text)
         self.assertIn("--release-policy public-release", text)
         self.assertIn("--enforce-policy-inputs", text)
-        self.assertIn("--hygiene-report dist/public-hygiene.json", text)
+        self.assertIn(
+            "--hygiene-report target/release-evidence/public-hygiene.json", text
+        )
         self.assertIn("--corpus-manifest corpus/public/MANIFEST.tsv", text)
         self.assertIn("--corpus-manifest corpus/public/RENDER_MANIFEST.tsv", text)
         self.assertIn("cargo test --all-targets --features render", text)
@@ -114,8 +116,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
             text,
         )
         self.assertIn("python3 scripts/gen_public_corpus.py --check", text)
-        self.assertIn("dist/public-hygiene.json", text)
-        self.assertIn("dist/rwml-release-manifest.json", text)
+        self.assertIn("target/release-evidence/public-hygiene.json", text)
+        self.assertIn("target/release-evidence/rwml-release-manifest.json", text)
         self.assertIn("target/package/rwml-${RWML_VERSION}.crate", text)
         self.assertIn("target/package/rwml-${{ env.RWML_VERSION }}.crate", text)
         self.assertIn("actions/upload-artifact@v7", text)
@@ -135,12 +137,20 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
         self.assertIn("set +e", step)
         self.assertIn("render_status=$?", step)
-        self.assertIn("cat dist/render-validation.json", step)
+        self.assertIn("cat target/release-evidence/render-validation.json", step)
         self.assertIn('exit "$render_status"', step)
         self.assertLess(
-            step.index("cat dist/render-validation.json"),
+            step.index("cat target/release-evidence/render-validation.json"),
             step.index('exit "$render_status"'),
         )
+
+    def test_generated_release_evidence_stays_outside_the_package_source(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        gitignore = (WORKFLOW.parents[2] / ".gitignore").read_text(encoding="utf-8")
+
+        self.assertIn("target/release-evidence", text)
+        self.assertNotIn("dist/", text)
+        self.assertIn("/target", gitignore.splitlines())
 
     def test_release_workflow_checks_patch_compatible_public_api(self):
         text = WORKFLOW.read_text(encoding="utf-8")
