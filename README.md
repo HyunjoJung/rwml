@@ -1187,6 +1187,14 @@ numbering, sequence-separator, cross-note, missing, empty, multi-run, field-back
 malformed, dirty, mismatched-result, or split-result cases remain excluded. This
 does not add global bookmark lookup, field updates, relationships, or layout
 behavior.
+Parser-validated, non-dirty `SEQ` fields with an explicit nonnegative `\r` reset
+and one visible modeled result run likewise survive when the result matches a
+fresh empty-state evaluation. Supported number and text formats, normalized
+instructions, deterministic counter assignment, and modeled formatting are
+retained. Ordinary increment/current fields, heading resets, hidden output,
+cross-note sequence state, malformed, dirty, mismatched-result, or split-result
+cases remain excluded. This does not add field updates, AUTONUM/LISTNUM transport,
+relationships, or layout behavior.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names

@@ -3160,6 +3160,8 @@ fn preserves_computed_field_instruction(instruction: &str, ctx: &Ctx<'_>) -> boo
             )
             .is_some())
         || (ctx.preserve_note_local_fields
+            && super::fields::computed_preserved_sequence_reset_result(instruction).is_some())
+        || (ctx.preserve_note_local_fields
             && ctx.last_formula_field_used_table_context.get()
             && matches!(
                 FieldKind::from_instruction(instruction),

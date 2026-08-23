@@ -2579,6 +2579,17 @@ pub(crate) fn computed_sequence_result(
     computed_sequence_instruction_result(instruction, counters)
 }
 
+pub(crate) fn computed_preserved_sequence_reset_result(instruction: &str) -> Option<String> {
+    let instruction = sequence_instruction(instruction)?;
+    if instruction.heading_reset.is_some()
+        || instruction.hidden
+        || !matches!(instruction.action, SequenceAction::Reset(_))
+    {
+        return None;
+    }
+    computed_sequence_instruction_result(instruction, &mut HashMap::new())
+}
+
 pub(crate) fn computed_sequence_result_with_heading_scope(
     instruction: &str,
     counters: &mut HashMap<String, i64>,
@@ -2831,10 +2842,11 @@ mod tests {
         computed_display_result, computed_dynamic_result, computed_listnum_result,
         computed_numbering_result, computed_preserved_document_info_result,
         computed_preserved_note_local_ref_result, computed_preserved_revision_number_result,
-        computed_reference_index_result, computed_sequence_result, computed_set_result,
-        computed_toc_entry_result, direct_bookmark_ref_instruction, document_info_instruction,
-        format_page_number, note_ref_context, note_ref_instruction, ordinal_page_number_text,
-        page_ref_context, page_ref_instruction, preserved_note_local_ref_target, ref_instruction,
+        computed_preserved_sequence_reset_result, computed_reference_index_result,
+        computed_sequence_result, computed_set_result, computed_toc_entry_result,
+        direct_bookmark_ref_instruction, document_info_instruction, format_page_number,
+        note_ref_context, note_ref_instruction, ordinal_page_number_text, page_ref_context,
+        page_ref_instruction, preserved_note_local_ref_target, ref_instruction,
         ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
         supports_action_field_syntax, supports_compare_field_syntax,
         supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
@@ -3764,6 +3776,42 @@ mod tests {
             None
         );
         assert!(counters.is_empty());
+    }
+
+    #[test]
+    fn preserved_sequence_resets_are_visible_and_context_free() {
+        for (instruction, result) in [
+            (r#"SEQ Figure \r 7"#, "7"),
+            (r#"SEQ Appendix \r31 \* Hex"#, "1F"),
+            (
+                r#"SEQ Invoice \r "21" \* DollarText \* Upper"#,
+                "TWENTY-ONE AND 00/100",
+            ),
+        ] {
+            assert_eq!(
+                computed_preserved_sequence_reset_result(instruction).as_deref(),
+                Some(result),
+                "{instruction}"
+            );
+        }
+
+        for instruction in [
+            "SEQ Figure",
+            r#"SEQ Figure \n"#,
+            r#"SEQ Figure \c"#,
+            r#"SEQ Figure \s 1"#,
+            r#"SEQ Figure \r 7 \s 1"#,
+            r#"SEQ Figure \r 7 \h"#,
+            r#"SEQ Figure \r -1"#,
+            r#"SEQ Figure \r"#,
+            r#"SEQ Figure \r 7 \x"#,
+        ] {
+            assert_eq!(
+                computed_preserved_sequence_reset_result(instruction),
+                None,
+                "{instruction}"
+            );
+        }
     }
 
     #[test]

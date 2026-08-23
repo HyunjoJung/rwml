@@ -214,6 +214,10 @@ pub(crate) fn supports_sequence_field_syntax(instruction: &str) -> bool {
     fields::supports_sequence_field_syntax(instruction)
 }
 
+pub(crate) fn computed_preserved_sequence_reset_result(instruction: &str) -> Option<String> {
+    fields::computed_preserved_sequence_reset_result(instruction)
+}
+
 pub(crate) fn supports_style_ref_field_syntax(instruction: &str) -> bool {
     fields::supports_style_ref_field_syntax(instruction)
 }

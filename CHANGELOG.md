@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty visible `SEQ` fields with an explicit nonnegative
+  `\r` reset and one modeled result run in exact real footnote and endnote
+  payloads. Supported number/text formats, normalized instructions,
+  deterministic counter assignment, source order, and modeled formatting survive
+  at the top level and through recursively nested table cells; one-result-run
+  complex source fields normalize to non-dirty `w:fldSimple`. Ordinary increment/
+  current fields, heading resets, hidden output, cross-note sequence state,
+  malformed, dirty, mismatched-result, or split-result cases still trigger note-
+  local plain-text fallback. This does not add field updates, AUTONUM/LISTNUM
+  transport, relationships, or layout behavior.
 - Opened DOCX models and fresh `Document::to_docx()` conversion now retain all 13
   supported nonempty `docProps/core.xml` values. Subject, description, keywords,
   category, content status, last-modified-by, created/modified/last-printed

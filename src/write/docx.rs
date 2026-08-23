@@ -20,13 +20,14 @@ use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::annotation::{filename_field_syntax, merge_field_syntax};
 use crate::docx::{
-    computed_preserved_note_local_ref_result, computed_span_free_table_formula_result,
-    preserved_note_local_ref_target, supports_computed_symbol_field_syntax,
-    supports_context_free_display_field_syntax, supports_context_free_fill_in_field_syntax,
-    supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
-    supports_formula_field_syntax, supports_preserved_document_info_field_syntax,
-    supports_quote_field_syntax, supports_reference_index_marker_syntax,
-    supports_revision_number_field_syntax, supports_toc_entry_field_syntax,
+    computed_preserved_note_local_ref_result, computed_preserved_sequence_reset_result,
+    computed_span_free_table_formula_result, preserved_note_local_ref_target,
+    supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
+    supports_context_free_fill_in_field_syntax, supports_context_free_formula_field_syntax,
+    supports_context_free_if_compare_field_syntax, supports_formula_field_syntax,
+    supports_preserved_document_info_field_syntax, supports_quote_field_syntax,
+    supports_reference_index_marker_syntax, supports_revision_number_field_syntax,
+    supports_toc_entry_field_syntax,
 };
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
@@ -3219,6 +3220,11 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                     run.field_unsupported_reason.is_none()
                         && preserved_note_local_ref_target(instruction).is_some()
                 }
+                FieldKind::Sequence => {
+                    run.field_unsupported_reason.is_none()
+                        && computed_preserved_sequence_reset_result(instruction).as_deref()
+                            == Some(run.text.as_str())
+                }
                 FieldKind::Compatibility(_)
                 | FieldKind::InsertedContent(_)
                 | FieldKind::MailMerge(_)
@@ -5525,6 +5531,21 @@ mod tests {
         dirty_revision_number.field_dirty = true;
         let mut dirty_local_ref = marker("REF LocalTarget");
         dirty_local_ref.field_dirty = true;
+        let sequence_reset = Run {
+            text: "1F".to_string(),
+            field: FieldRole::Simple {
+                instruction: r#"SEQ Appendix \r31 \* Hex"#.to_string(),
+            },
+            ..Run::default()
+        };
+        assert!(source_note_field_is_supported(&sequence_reset));
+        let mut dirty_sequence_reset = sequence_reset.clone();
+        dirty_sequence_reset.field_dirty = true;
+        let mut reasoned_sequence_reset = sequence_reset.clone();
+        reasoned_sequence_reset.field_unsupported_reason =
+            Some(FieldUnsupportedReason::NoComputedResult);
+        let mut mismatched_sequence_reset = sequence_reset.clone();
+        mismatched_sequence_reset.text = "1E".to_string();
 
         let mut dirty = cached("PRIVATE legacy-data");
         dirty.field_dirty = true;
@@ -5555,6 +5576,9 @@ mod tests {
             dirty_document_info,
             dirty_revision_number,
             dirty_local_ref,
+            dirty_sequence_reset,
+            reasoned_sequence_reset,
+            mismatched_sequence_reset,
             malformed,
             malformed_merge,
             malformed_filename,
@@ -5585,6 +5609,11 @@ mod tests {
             marker(r#"REF LocalTarget \f"#),
             marker(r#"REF LocalTarget \d ".""#),
             marker(r#"REF LocalTarget \x"#),
+            marker("SEQ Figure"),
+            marker(r#"SEQ Figure \c"#),
+            marker(r#"SEQ Figure \s 1"#),
+            marker(r#"SEQ Figure \r 7 \h"#),
+            marker(r#"SEQ Figure \r -1"#),
             marker(r#"DOCPROPERTY "Broken Name"#),
             marker(r#"MACROBUTTON RunReport "Run""#),
             marker(r#"INDEX \e " - ""#),

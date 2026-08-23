@@ -623,6 +623,23 @@ fn table_formula_field_note_docx() -> Vec<u8> {
     )
 }
 
+fn explicit_reset_sequence_field_note_docx() -> Vec<u8> {
+    note_table_docx(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="371"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="381"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="372"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="382"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:footnoteReference w:id="373"/></w:r><w:r><w:t> BODY F</w:t></w:r><w:r><w:endnoteReference w:id="383"/></w:r><w:r><w:t> BODY G</w:t></w:r><w:r><w:footnoteReference w:id="374"/></w:r><w:r><w:t> BODY H</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:footnote w:id="371"><w:p><w:r><w:t xml:space="preserve">FOOT RESET BEFORE </w:t></w:r><w:fldSimple w:instr=" SEQ Invoice \r 21 \* DollarText \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT RESET</w:t></w:r></w:fldSimple><w:r><w:t> FOOT RESET AFTER</w:t></w:r></w:p></w:footnote>
+            <w:footnote w:id="372"><w:p><w:r><w:t xml:space="preserve">ORDINARY SEQ BEFORE </w:t></w:r><w:fldSimple w:instr=" SEQ Invoice "><w:r><w:t>STALE ORDINARY SEQ</w:t></w:r></w:fldSimple><w:r><w:t> ORDINARY SEQ AFTER</w:t></w:r></w:p></w:footnote>
+            <w:footnote w:id="373"><w:p><w:r><w:t>HIDDEN RESET BEFORE[</w:t></w:r><w:fldSimple w:instr=" SEQ Hidden \r 4 \h "><w:r><w:t>STALE HIDDEN RESET</w:t></w:r></w:fldSimple><w:r><w:t>]HIDDEN RESET AFTER</w:t></w:r></w:p></w:footnote>
+            <w:footnote w:id="374"><w:p><w:r><w:t xml:space="preserve">SPLIT RESET BEFORE </w:t></w:r><w:fldSimple w:instr=" SEQ Split \r 9 "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE SPLIT RESET A</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE SPLIT RESET B</w:t></w:r></w:fldSimple><w:r><w:t> SPLIT RESET AFTER</w:t></w:r></w:p></w:footnote>
+        </w:footnotes>"#,
+        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:endnote w:id="381"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END RESET BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> SEQ Appendix \r31 \* Hex </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END RESET</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END RESET AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote>
+            <w:endnote w:id="382"><w:p><w:pPr><w:outlineLvl w:val="0"/></w:pPr><w:r><w:t xml:space="preserve">HEADING RESET BEFORE </w:t></w:r><w:fldSimple w:instr=" SEQ Figure \s 1 "><w:r><w:t>STALE HEADING RESET</w:t></w:r></w:fldSimple><w:r><w:t> HEADING RESET AFTER</w:t></w:r></w:p></w:endnote>
+            <w:endnote w:id="383"><w:p><w:r><w:t xml:space="preserve">MALFORMED RESET BEFORE </w:t></w:r><w:fldSimple w:instr=" SEQ Broken \r -1 "><w:r><w:t>CACHED MALFORMED RESET</w:t></w:r></w:fldSimple><w:r><w:t> MALFORMED RESET AFTER</w:t></w:r></w:p></w:endnote>
+        </w:endnotes>"#,
+    )
+}
+
 fn fill_in_field_note_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2670,6 +2687,173 @@ fn opened_docx_note_span_free_table_formulas_keep_results_and_instructions() {
         panic!("spanned-formula fallback paragraph")
     };
     assert_eq!(rejected_span.text(), "SPAN TABLE FORMULA\n9\t1\n2\t3\t5");
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_explicit_reset_sequence_fields_keep_results_and_instructions() {
+    let document = Document::open(&explicit_reset_sequence_field_note_docx())
+        .expect("explicit-reset SEQ notes open");
+    assert_eq!(document.notes().len(), 7, "source note records missing");
+    assert_eq!(document.report().features.fields, 7);
+    assert_eq!(
+        document.report().features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
+    let source_fields = document.fields();
+    for (instruction, result) in [
+        (
+            "SEQ Invoice \\r 21 \\* DollarText \\* Upper",
+            "TWENTY-ONE AND 00/100",
+        ),
+        ("SEQ Appendix \\r31 \\* Hex", "1F"),
+    ] {
+        let field = source_fields
+            .iter()
+            .find(|field| field.instruction == instruction)
+            .unwrap_or_else(|| panic!("missing source field {instruction:?}"));
+        assert_eq!(field.kind, FieldKind::Sequence);
+        assert_eq!(field.computed_result.as_deref(), Some(result));
+    }
+    for (instruction, result) in [
+        ("SEQ Invoice", Some("22")),
+        ("SEQ Hidden \\r 4 \\h", Some("")),
+        ("SEQ Split \\r 9", Some("9")),
+        ("SEQ Figure \\s 1", Some("1")),
+        ("SEQ Broken \\r -1", None),
+    ] {
+        let field = source_fields
+            .iter()
+            .find(|field| field.instruction == instruction)
+            .unwrap_or_else(|| panic!("missing source field {instruction:?}"));
+        assert_eq!(field.kind, FieldKind::Sequence);
+        assert_eq!(field.computed_result.as_deref(), result, "{instruction}");
+    }
+
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone explicit-reset SEQ normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT RESET BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END RESET BEFORE");
+    let rejected_ordinary = note_with_marker(footnotes, "footnote", "ORDINARY SEQ BEFORE");
+    let rejected_hidden = note_with_marker(footnotes, "footnote", "HIDDEN RESET BEFORE[");
+    let rejected_split = note_with_marker(footnotes, "footnote", "SPLIT RESET BEFORE");
+    let rejected_heading = note_with_marker(endnotes, "endnote", "HEADING RESET BEFORE");
+    let rejected_malformed = note_with_marker(endnotes, "endnote", "MALFORMED RESET BEFORE");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(r#"<w:fldSimple w:instr=" SEQ Invoice \r 21 \* DollarText \* Upper ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains(">TWENTY-ONE AND 00/100</w:t>")
+            && footnote.contains("FOOT RESET BEFORE ")
+            && footnote.contains(" FOOT RESET AFTER"),
+        "top-level explicit reset missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT RESET"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:fldSimple w:instr=" SEQ Appendix \r31 \* Hex ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains(">1F</w:t>")
+            && endnote.contains("END RESET BEFORE ")
+            && endnote.contains(" END RESET AFTER"),
+        "nested explicit reset missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END RESET"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [
+        rejected_ordinary,
+        rejected_hidden,
+        rejected_split,
+        rejected_heading,
+        rejected_malformed,
+    ] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains("STALE ORDINARY SEQ"), "{footnotes}");
+    assert!(!footnotes.contains("STALE HIDDEN RESET"), "{footnotes}");
+    assert!(!footnotes.contains("STALE SPLIT RESET"), "{footnotes}");
+    assert!(!endnotes.contains("STALE HEADING RESET"), "{endnotes}");
+    assert!(endnotes.contains("CACHED MALFORMED RESET"), "{endnotes}");
+
+    let reopened = Document::open(&converted).expect("converted explicit-reset SEQ notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    for (field, instruction, result) in [
+        (
+            &fields[0],
+            "SEQ Invoice \\r 21 \\* DollarText \\* Upper",
+            "TWENTY-ONE AND 00/100",
+        ),
+        (&fields[1], "SEQ Appendix \\r31 \\* Hex", "1F"),
+    ] {
+        assert_eq!(field.kind, FieldKind::Sequence);
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, result);
+        assert_eq!(field.computed_result.as_deref(), Some(result));
+    }
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), 8);
+    assert_eq!(normalized_model.blocks.len(), 8);
+    assert_eq!(reopened_model.blocks[0], normalized_model.blocks[0]);
+    for index in [1, 5] {
+        let mut normalized_ownership = reopened_model.blocks[index].clone();
+        clear_simple_field_ownership(&mut normalized_ownership);
+        assert_eq!(normalized_ownership, normalized_model.blocks[index]);
+    }
+    for (index, expected) in [
+        (2, "ORDINARY SEQ BEFORE 22 ORDINARY SEQ AFTER"),
+        (3, "HIDDEN RESET BEFORE[]HIDDEN RESET AFTER"),
+        (4, "SPLIT RESET BEFORE 9 SPLIT RESET AFTER"),
+        (6, "HEADING RESET BEFORE 1 HEADING RESET AFTER"),
+        (
+            7,
+            "MALFORMED RESET BEFORE CACHED MALFORMED RESET MALFORMED RESET AFTER",
+        ),
+    ] {
+        let Block::Paragraph(rejected) = &reopened_model.blocks[index] else {
+            panic!("SEQ fallback block {index} was not a paragraph")
+        };
+        assert_eq!(rejected.text(), expected, "fallback block {index}");
+    }
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);
