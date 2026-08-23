@@ -3130,10 +3130,13 @@ fn computed_simple_field_run(instruction: String, text: String) -> Run {
 }
 
 fn preserves_computed_empty_field_instruction(instruction: &str) -> bool {
-    matches!(
-        FieldKind::from_instruction(instruction),
-        FieldKind::ReferenceIndex(ref kind) if is_reference_index_marker_kind(kind)
-    )
+    match FieldKind::from_instruction(instruction) {
+        FieldKind::TocEntry => super::fields::supports_toc_entry_field_syntax(instruction),
+        FieldKind::ReferenceIndex(_) => {
+            super::fields::supports_reference_index_marker_syntax(instruction)
+        }
+        _ => false,
+    }
 }
 
 fn empty_simple_field_run(
@@ -5075,7 +5078,7 @@ fn read_fldsimple(
         paragraph_style_id,
         url.as_deref(),
         depth + 1,
-        url.is_none() && super::fields::supports_reference_index_marker_syntax(&instruction),
+        url.is_none() && preserves_computed_empty_field_instruction(&instruction),
     );
     if url.is_none() {
         let instruction = normalized_field_instruction(&instruction);

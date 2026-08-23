@@ -1113,13 +1113,14 @@ also survive as normalized simple fields; no external merge data source is copie
 or evaluated. Parser-validated, non-dirty `FILENAME` cached results with bounded
 path-display and text-format switches likewise survive as normalized simple
 fields; no filesystem path is read and no destination filename is inferred.
-Parser-validated, non-dirty `RD`, `TA`, and `XE` marker instructions also survive
-in source order as empty simple fields with modeled formatting while stale marker
-cache text stays hidden. This path does not generate or update indexes, tables of
-authorities, or master-document references; marker-only notes, `TC`, and generated
-`BIBLIOGRAPHY`/`CITATION`/`INDEX`/`TOA` fields remain excluded. Dirty modeled
-runs, malformed field syntax, and unknown or other context-sensitive/generated
-fields reject that note atomically.
+Parser-validated, non-dirty `RD`, `TA`, `XE`, and `TC` marker instructions also
+survive in source order as empty simple fields with modeled formatting while stale
+marker cache text stays hidden. This path transports markers only; it does not
+generate or update indexes, tables of authorities, tables of contents, or master-
+document references. Marker-only notes and generated `BIBLIOGRAPHY`/`CITATION`/
+`INDEX`/`TOA`/`TOC` fields remain excluded. Dirty modeled runs, malformed field
+syntax, and unknown or other context-sensitive/generated fields reject that note
+atomically.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names

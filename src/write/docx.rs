@@ -17,7 +17,7 @@
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::annotation::{filename_field_syntax, merge_field_syntax};
-use crate::docx::supports_reference_index_marker_syntax;
+use crate::docx::{supports_reference_index_marker_syntax, supports_toc_entry_field_syntax};
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
@@ -3120,6 +3120,10 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                     run.field_unsupported_reason.is_none()
                         && supports_reference_index_marker_syntax(instruction)
                 }
+                FieldKind::TocEntry => {
+                    run.field_unsupported_reason.is_none()
+                        && supports_toc_entry_field_syntax(instruction)
+                }
                 FieldKind::Compatibility(_)
                 | FieldKind::InsertedContent(_)
                 | FieldKind::MailMerge(_)
@@ -5279,6 +5283,7 @@ mod tests {
             r#"XE "Mercury" \t "See planets" \* FirstCap"#,
             r#"TA \l "Case v. Example" \c 1 \* CHARFORMAT"#,
             r#"rd "appendix.docx" \* MERGEFORMAT"#,
+            r#"TC "Manual entry" \f m \l 2 \* Caps"#,
         ] {
             assert!(source_note_field_is_supported(&marker(instruction)));
         }
@@ -5309,10 +5314,13 @@ mod tests {
             malformed_merge,
             malformed_filename,
             marker(r#"TA \l "Broken Case" \c"#),
+            marker(r#"TC \f m \l 2"#),
             marker(r#"INDEX \e " - ""#),
+            marker(r#"TOC \f m"#),
             cached("MERGEFIELD Client"),
             cached("FILENAME \\p"),
             cached(r#"XE "Wrong reason""#),
+            cached(r#"TC "Wrong reason""#),
             Run {
                 field: FieldRole::Simple {
                     instruction: "CUSTOM literal payload".to_string(),

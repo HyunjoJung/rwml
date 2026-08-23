@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty `TC` hidden table-of-contents entry markers in
+  exact real footnote and endnote payloads with nonempty visible text. Normalized
+  instructions, empty computed results, source order, and modeled formatting
+  survive at the top level and through recursively nested table cells; one-
+  result-run complex source fields normalize to non-dirty `w:fldSimple`. Stale
+  marker caches stay hidden, and malformed `TC` or generated `TOC` siblings still
+  trigger note-local plain-text fallback. This transports marker instructions
+  only: it does not generate or update a TOC, aggregate markers across package
+  parts, or cover marker-only notes, comments, tracked revisions, nested notes,
+  floating placement, page-bottom composition, or Word-exact pagination.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-validated, non-dirty `RD`, `TA`, and `XE` hidden marker fields in exact
   real footnote and endnote payloads with nonempty visible text. Normalized
   instructions, empty computed results, source order, and modeled formatting
