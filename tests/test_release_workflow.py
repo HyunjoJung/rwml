@@ -46,6 +46,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             "cargo package",
         ]:
             self.assertIn(command, text)
+        self.assertIn('"fuzz/Cargo.toml"', text)
         for artifact in [
             "rwml-{version}.crate",
             "rwml-fonts-{version}.crate",

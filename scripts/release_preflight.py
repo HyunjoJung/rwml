@@ -183,6 +183,16 @@ def build_preflight(output_dir: pathlib.Path) -> dict[str, object]:
     run(
         [
             CARGO,
+            "check",
+            "--manifest-path",
+            "fuzz/Cargo.toml",
+            "--all-targets",
+            "--locked",
+        ]
+    )
+    run(
+        [
+            CARGO,
             "package",
             "--manifest-path",
             "rwml-fonts/Cargo.toml",
