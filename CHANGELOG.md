@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Preserves visible manual column breaks when `Document::to_docx()` freshly
+  converts aligned top-level body paragraphs from opened DOCX and legacy DOC
+  inputs. The source-only bridge validates strict block and character-offset
+  alignment, emits only newline-backed positions as `w:br w:type="column"`, and
+  keeps each break inside its existing run formatting and semantic wrappers.
+  Ordinary and hidden-source line breaks remain ordinary, malformed hints fail
+  independently, deterministic bytes and native reopen are covered, and
+  standalone model writing remains unchanged. Table-cell, note, running-surface,
+  and nested-content manual breaks remain outside this bounded path.
 - Applies opened-DOCX table-cell tab stops in top-level real footnote and endnote
   tables through the existing table shaper. A private block/row/surviving-cell/
   paragraph tree follows visible note blocks in footnote-then-endnote order,
@@ -44,8 +53,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   256-stop and 31,680-twip limits, vertical-merge ownership, deterministic
   bytes, and native reopen are covered. Standalone model writing remains
   unchanged; nested-table descendants, notes, running surfaces,
-  settings-defined default-tab intervals, and manual column breaks remain
-  outside this fresh-conversion bridge.
+  and settings-defined default-tab intervals remain outside this tab bridge.
 - Extends source-aware body layout conversion to DOCX-backed
   `Document::to_docx()`. Default builds now retain the reader-resolved
   exact/minimum line rules and effective `keepNext`, `keepLines`, and widow-off
@@ -54,8 +62,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   top-level table rows. The existing validated writer bridge preserves those
   five source-only families deterministically through native reopen while
   standalone model writing remains unchanged. Nested-table descendants, notes,
-  running surfaces, manual column breaks, package-preserving
-  `save()`, and the public model remain outside this bounded bridge.
+  running surfaces, package-preserving `save()`, and the public model remain
+  outside those layout families; top-level body manual column breaks use the
+  separate bounded bridge above.
 - Preserves resolved legacy-DOC `keepNext`, `keepLines`, and widow-off semantics
   when `Document::to_docx()` freshly converts aligned direct paragraph blocks in
   surviving cells of top-level tables. The source-only bridge validates block,

@@ -468,9 +468,13 @@ DOCX document serializes the effective keep controls and widow-off state for
 aligned top-level body paragraphs and aligned direct paragraph blocks in
 surviving cells of top-level tables, plus effective no-split state for aligned
 top-level table rows. The same direct body subset carries resolved exact/minimum
-line rules and explicit tab stops into fresh DOCX conversion. Nested-table
-descendants, notes, running surfaces, settings-defined default-tab intervals,
-and manual column breaks remain outside fresh conversion.
+line rules and explicit tab stops into fresh DOCX conversion. Visible manual
+column breaks in aligned top-level body paragraphs also survive through a
+strictly validated source-offset bridge. Nested-table descendants, notes, and
+running surfaces remain outside these fresh-conversion paths;
+settings-defined default-tab intervals remain outside the tab path, and
+table-cell, note, running-surface, and nested-content manual breaks remain
+outside the column-break path.
 Ordinary top-level paragraphs in selected default/first/even running headers
 and footers from an opened DOCX also consume reader-resolved explicit tab stops
 and supported leaders through section-aligned render hints. Default-surface
@@ -961,10 +965,13 @@ exact/minimum line rules plus effective `keepNext`, `keepLines`, and widow-off
 state for aligned top-level body paragraphs and aligned direct paragraph blocks
 in surviving cells of top-level tables, plus effective no-split state for
 aligned top-level table rows. The same direct body subset retains resolved
-explicit paragraph tab stops. Standalone model writing remains
-proportional-only and consumes no private layout hints. Nested-table
-descendants, notes, running surfaces, settings-defined default-tab intervals,
-and manual column breaks remain outside this fresh-conversion bridge.
+explicit paragraph tab stops, while aligned top-level body paragraphs retain
+visible manual column breaks through validated source character offsets.
+Standalone model writing remains proportional-only and consumes no private
+layout hints. Nested-table descendants, notes, and running surfaces remain
+outside these fresh-conversion paths; settings-defined default-tab intervals
+remain outside the tab path, and table-cell, note, running-surface, and nested-
+content manual breaks remain outside the column-break path.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the

@@ -81,7 +81,6 @@ pub(super) struct PaginationCapture {
     hints: Vec<PaginationHint>,
     line_spacing: Vec<Option<LineSpacingHint>>,
     tab_stops: Vec<Vec<TabStop>>,
-    #[cfg(any(test, feature = "render"))]
     column_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
@@ -114,7 +113,6 @@ pub(super) struct BodyLayoutHints {
     pub(super) pagination: Vec<PaginationHint>,
     pub(super) line_spacing: Vec<Option<LineSpacingHint>>,
     pub(super) tab_stops: Vec<Vec<TabStop>>,
-    #[cfg(feature = "render")]
     pub(super) column_break_offsets: Vec<Vec<usize>>,
     pub(super) table_rows: Vec<Vec<TableRowPaginationHint>>,
     pub(super) table_cells: Vec<TableCellPaginationHints>,
@@ -223,7 +221,6 @@ impl Ctx<'_> {
                 pagination: capture.hints,
                 line_spacing: capture.line_spacing,
                 tab_stops: capture.tab_stops,
-                #[cfg(feature = "render")]
                 column_break_offsets: capture.column_break_offsets,
                 table_rows: capture.table_row_pagination,
                 table_cells: capture.table_cell_pagination,
@@ -278,13 +275,11 @@ impl Ctx<'_> {
                 capture.table_cell_line_spacing.push(Vec::new());
                 capture.tab_stops.push(_tab_stops.to_vec());
                 capture.table_cell_tab_stops.push(Vec::new());
+                capture
+                    .column_break_offsets
+                    .push(_column_break_offsets.to_vec());
                 #[cfg(any(test, feature = "render"))]
-                {
-                    capture
-                        .column_break_offsets
-                        .push(_column_break_offsets.to_vec());
-                    capture.table_nested_pagination.push(Vec::new());
-                }
+                capture.table_nested_pagination.push(Vec::new());
             }
         }
     }
@@ -309,11 +304,9 @@ impl Ctx<'_> {
                     .push(table.cell_line_spacing.clone());
                 capture.tab_stops.push(Vec::new());
                 capture.table_cell_tab_stops.push(table.cell_tabs.clone());
+                capture.column_break_offsets.push(Vec::new());
                 #[cfg(any(test, feature = "render"))]
-                {
-                    capture.column_break_offsets.push(Vec::new());
-                    capture.table_nested_pagination.push(table.nested.clone());
-                }
+                capture.table_nested_pagination.push(table.nested.clone());
             }
         }
     }

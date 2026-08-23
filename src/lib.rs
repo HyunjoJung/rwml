@@ -1023,10 +1023,13 @@ impl Document {
     /// aligned top-level body paragraphs and direct paragraph blocks in surviving
     /// cells of aligned top-level tables, plus effective no-split state for
     /// aligned top-level table rows. That direct body subset also carries
-    /// reader-resolved explicit paragraph tab stops. Nested-table descendants,
-    /// notes, running surfaces, settings-defined default-tab intervals, and
-    /// manual column breaks remain outside this fresh-conversion bridge;
-    /// standalone [`write_docx`] remains model-only for all of these private
+    /// reader-resolved explicit paragraph tab stops, while aligned top-level body
+    /// paragraphs carry visible manual column breaks through validated source
+    /// character offsets. Nested-table descendants, notes, and running surfaces
+    /// remain outside these fresh-conversion paths; settings-defined default-tab
+    /// intervals remain outside the tab path, and table-cell, note, running-
+    /// surface, and nested-content manual breaks remain outside the column-break
+    /// path. Standalone [`write_docx`] remains model-only for all of these private
     /// hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
@@ -1049,6 +1052,7 @@ impl Document {
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
                         paragraph_tab_stops: &[],
+                        column_break_offsets: &assembled.column_break_offsets,
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
@@ -1074,6 +1078,7 @@ impl Document {
                         paragraph_line_spacing: &state.line_spacing_hints,
                         paragraph_pagination: &state.pagination_hints,
                         paragraph_tab_stops: &state.tab_stops,
+                        column_break_offsets: &state.column_break_offsets,
                         table_row_pagination: &state.table_row_pagination,
                         table_cell_pagination: &state.table_cell_pagination,
                         table_cell_line_spacing: &state.table_cell_line_spacing,
@@ -14303,6 +14308,66 @@ mod tests {
                 alignment: crate::model::TabAlignment::Center,
                 leader: crate::model::TabLeader::None,
             }]
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_document_manual_column_breaks_roundtrip_through_fresh_conversion() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:r><w:t>A</w:t><w:br w:type="column"/><w:t>B</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:br w:type=" column "/><w:t>C</w:t><w:br/><w:t>D</w:t></w:r><w:r><w:rPr><w:vanish/></w:rPr><w:br w:type="column"/><w:t>hidden</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let source_blocks = opened.model().blocks;
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            2,
+            "{document_xml}"
+        );
+        assert_eq!(document_xml.matches("<w:br/>").count(), 2, "{document_xml}");
+        assert_eq!(converted, opened.to_docx());
+
+        let model_only = write_docx(&opened.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(reopened.model().blocks, source_blocks);
+        #[cfg(feature = "render")]
+        {
+            let Backend::Docx(state) = reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(state.column_break_offsets[0], vec![1, 3]);
+        }
+
+        let legacy_text = "L\u{000e}M\u{000e}N\r";
+        let legacy_end = legacy_text.encode_utf16().count() as u32;
+        let mut legacy_section = Vec::new();
+        push_section_column_count(&mut legacy_section, 1);
+        let legacy_bytes = legacy_doc_with_section_page_grpprls(
+            legacy_text,
+            &[0, legacy_end],
+            &[legacy_section.as_slice()],
+        );
+        let legacy = Document::open(&legacy_bytes).unwrap();
+        let legacy_blocks = legacy.model().blocks;
+        let legacy_converted = legacy.to_docx();
+        let legacy_xml = docx_part(&legacy_converted, "word/document.xml");
+        assert_eq!(
+            legacy_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            2,
+            "{legacy_xml}"
+        );
+        assert_eq!(legacy_converted, legacy.to_docx());
+        assert_eq!(
+            Document::open(&legacy_converted).unwrap().model().blocks,
+            legacy_blocks
         );
     }
 
