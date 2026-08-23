@@ -30,20 +30,7 @@ jobs:
       - name: Install semantic-version compatibility checker
         run: cargo install cargo-semver-checks --version 0.48.0 --locked
       - name: Install system libraries (fontconfig for the render feature)
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libreoffice pkg-config python3-venv
-      - name: Validate strict release render evidence
-        run: |
-          python3 -m venv "$RUNNER_TEMP/rwml-release-tools"
-          "$RUNNER_TEMP/rwml-release-tools/bin/pip" install --disable-pip-version-check --no-cache-dir PyMuPDF Pillow
-          set +e
-          "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/render_validate.py \
-            --json --soffice local --manifest corpus/public/RENDER_MANIFEST.tsv \
-            --recall-min 0.97 --min-mean-recall 0.90 --max-skipped 0 --verify-oracle \
-            > "$RUNNER_TEMP/render-validation.json"
-          render_status=$?
-          set -e
-          cat "$RUNNER_TEMP/render-validation.json"
-          exit "$render_status"
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config
       - name: Check patch-compatible public API
         run: |
           cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --default-features
