@@ -1019,10 +1019,11 @@ impl Document {
     /// column gaps, complete unequal geometry, separator flags, right-to-left
     /// population, and running header/footer distances into the generated
     /// package. Opened legacy documents additionally carry exact/minimum line
-    /// rules and effective keep/widow pagination controls for aligned top-level
-    /// paragraphs, plus effective no-split state for aligned top-level table
-    /// rows; standalone [`write_docx`] remains model-only for those private
-    /// hints.
+    /// rules for aligned top-level paragraphs and direct paragraph blocks in
+    /// surviving cells of aligned top-level tables, effective keep/widow
+    /// pagination controls for aligned top-level paragraphs, and effective
+    /// no-split state for aligned top-level table rows; standalone [`write_docx`]
+    /// remains model-only for those private hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
@@ -1044,6 +1045,7 @@ impl Document {
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
                         table_row_pagination: &assembled.table_row_pagination,
+                        table_cell_line_spacing: &assembled.table_cell_line_spacing,
                     },
                 )
             }
@@ -1065,6 +1067,7 @@ impl Document {
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         table_row_pagination: &[],
+                        table_cell_line_spacing: &[],
                     },
                 )
             }
@@ -11554,7 +11557,7 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn legacy_absolute_table_cell_spacing_doc(
         paragraph_count: usize,
         line_spacing: (u16, u16),
@@ -11715,6 +11718,78 @@ mod tests {
         assert_ne!(exact_pdf, minimum_pdf);
         assert_eq!(exact_pdf, exact.to_pdf_with_fonts(&fonts));
         assert_eq!(minimum_pdf, minimum.to_pdf_with_fonts(&fonts));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_table_cell_absolute_line_spacing_roundtrips_to_docx() {
+        let convert = |line_spacing| {
+            let legacy =
+                Document::open(&legacy_absolute_table_cell_spacing_doc(2, line_spacing)).unwrap();
+            let converted = legacy.to_docx();
+            let document_xml = docx_part(&converted, "word/document.xml");
+            (legacy, converted, document_xml)
+        };
+
+        let (exact, exact_docx, exact_xml) = convert((0xFF9C, 0));
+        assert_eq!(
+            exact_xml
+                .matches(r#"w:line="100" w:lineRule="exact""#)
+                .count(),
+            2,
+            "{exact_xml}"
+        );
+        assert_eq!(exact_docx, exact.to_docx());
+
+        let (minimum, minimum_docx, minimum_xml) = convert((800, 0));
+        assert_eq!(
+            minimum_xml
+                .matches(r#"w:line="800" w:lineRule="atLeast""#)
+                .count(),
+            2,
+            "{minimum_xml}"
+        );
+        assert_eq!(minimum_docx, minimum.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&exact.model()), "word/document.xml");
+        assert!(!model_only_xml.contains(r#"w:lineRule="exact""#));
+        assert!(!model_only_xml.contains(r#"w:lineRule="atLeast""#));
+
+        let docx_backed = Document::open(&exact_docx).unwrap();
+        let docx_backed_xml = docx_part(&docx_backed.to_docx(), "word/document.xml");
+        assert!(!docx_backed_xml.contains(r#"w:lineRule="exact""#));
+        assert!(!docx_backed_xml.contains(r#"w:lineRule="atLeast""#));
+
+        #[cfg(feature = "render")]
+        {
+            let reopened_hints = |bytes: &[u8]| {
+                let reopened = Document::open(bytes).unwrap();
+                let Backend::Docx(state) = reopened.backend else {
+                    panic!("converted document must use the DOCX backend");
+                };
+                state
+                    .table_cell_line_spacing
+                    .into_iter()
+                    .find(|table| !table.is_empty())
+                    .and_then(|table| table.first().cloned())
+                    .and_then(|row| row.first().cloned())
+                    .expect("converted table-cell line-spacing hints")
+            };
+            assert_eq!(
+                reopened_hints(&exact_docx),
+                vec![
+                    Some(crate::model::LineSpacingHint::Exact(5.0)),
+                    Some(crate::model::LineSpacingHint::Exact(5.0)),
+                ]
+            );
+            assert_eq!(
+                reopened_hints(&minimum_docx),
+                vec![
+                    Some(crate::model::LineSpacingHint::AtLeast(40.0)),
+                    Some(crate::model::LineSpacingHint::AtLeast(40.0)),
+                ]
+            );
+        }
     }
 
     fn legacy_table_bidi_doc() -> Vec<u8> {

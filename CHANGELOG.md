@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Preserves resolved legacy-DOC exact and minimum line spacing when
+  `Document::to_docx()` freshly converts aligned direct paragraph blocks in
+  surviving cells of top-level tables. The source-only writer bridge validates
+  block, row, cell, and cell-block alignment as a table-local unit, rejects a
+  non-paragraph hint, and reuses the bounded positive `exact`/`atLeast` formatter
+  while preserving modeled before/after spacing and proportional fallback.
+  Deterministic bytes, native reopen, merge-owner alignment, and unchanged
+  standalone, DOCX-backed, nested-table, and non-body writing are covered.
 - Preserves resolved legacy-DOC table-row no-split semantics when
   `Document::to_docx()` freshly converts aligned top-level tables. Modern
   `sprmTFCantSplit` values override compatibility `sprmTFCantSplit90` values in

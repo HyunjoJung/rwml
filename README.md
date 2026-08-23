@@ -467,7 +467,9 @@ render hints to the public `DocModel`. Legacy-backed fresh conversion now
 serializes the effective keep controls and widow-off state for aligned top-level
 paragraphs plus effective no-split state for aligned top-level table rows;
 table-cell paragraph pagination, nested-table rows, and non-body controls remain
-source-render-only. Resolved LTR tab stops in ordinary and
+source-render-only. Aligned direct paragraph blocks in surviving cells of legacy
+top-level tables also carry resolved exact/minimum line rules into fresh DOCX
+conversion. Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
 justified-aligned paragraphs use that path when the resolved stop is reachable.
@@ -485,8 +487,8 @@ non-table block positions before a running table. Exact running-surface content
 is clipped to its margin-band line or visible row fragment. Notes retain the
 preview renderer's flattened end-of-flow placement; page-bottom note
 composition, model-authored exact/minimum paragraph rules, and DOCX-backed,
-note, table-cell, or running-surface fresh conversion remain outside this
-absolute-spacing path.
+note, nested-table-descendant, or running-surface fresh conversion remain
+outside this absolute-spacing path.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
 center/end/decimal stops. Supported LTR and RTL dot, hyphen, underscore,
 heavy, and middle-dot leaders plus bar tabs now paint through the same bounded
@@ -576,7 +578,8 @@ line spacing; supported values survive shared-model use, `.docx`
 conversion/reopen, and top-level or table-cell PDF preview layout.
 Opened legacy documents additionally retain positive non-multiple LSPD as a
 minimum line box and negative encoded LSPD as an exact line box through private
-hints. Aligned top-level paragraphs carry those rules into fresh `.docx`
+hints. Aligned top-level paragraphs and direct paragraph blocks in surviving
+cells of aligned top-level tables carry those rules into fresh `.docx`
 conversion/reopen, while PDF previews also apply them to ordinary main-story
 table-cell paragraphs and ordinary top-level or table-cell paragraphs in
 section-linked even/default/first headers and footers. Exact boxes use the same
@@ -601,8 +604,8 @@ direct shading.
 At-least/exact and explicit zero proportional LSPD values clear an inherited
 multiplier but remain unset in the shared model because it has no corresponding
 line-rule representation. The absolute line-rule sidecar does not enter the
-shared model; table-cell and running-surface rules are not yet carried through
-fresh `.docx` conversion.
+shared model; nested-table-descendant, note, and running-surface rules are not
+yet carried through fresh `.docx` conversion.
 Paragraph direction does not imply table mirroring. Opened
 legacy tables preserve strict direct row-mark
 `sprmTFBiDi` and compatibility
@@ -936,9 +939,11 @@ separator flags, and right-to-left population without exposing them in the
 public model. Legacy-backed conversion also retains validated exact/minimum line
 rules plus effective `keepNext`, `keepLines`, and widow-off state for aligned
 top-level paragraphs, and effective no-split state for aligned top-level table
-rows. Standalone model writing remains proportional-only and does not consume
-private pagination hints; DOCX-backed conversion and nested-table rows do not
-consume the legacy row sidecar.
+rows. Resolved exact/minimum rules also survive for aligned direct paragraph
+blocks in surviving cells of top-level legacy tables. Standalone model writing
+remains proportional-only and does not consume private pagination hints;
+DOCX-backed conversion and nested-table descendants do not consume the legacy
+cell line-rule sidecar.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the
