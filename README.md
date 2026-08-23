@@ -1023,7 +1023,10 @@ file and a structurally-broken original. To author/convert from a `DocModel`, us
 Converting an opened `.doc` or `.docx` through `Document::to_docx()` additionally
 retains validated source-only section column gaps, complete unequal geometry,
 separator flags, and right-to-left population without exposing them in the
-public model. Legacy- and DOCX-backed conversion also retain validated
+public model. Opened DOCX conversion also projects every supported nonempty core
+property into `DocModel::setup` and regenerates the complete supported
+`docProps/core.xml` set: descriptive metadata, package timestamps, last editor,
+revision, and version. Legacy- and DOCX-backed conversion also retain validated
 exact/minimum line rules plus effective `keepNext`, `keepLines`, and widow-off
 state for aligned top-level body paragraphs and aligned direct paragraph blocks
 in surviving cells of top-level tables, plus effective no-split state for
@@ -1491,8 +1494,9 @@ code points.
   anchor text;
   `text()` includes headers/footers, `main_text()` is
   body-only; `core_properties()` exposes supported `docProps/core.xml` metadata
-  fields including descriptive, package, timestamp, revision, and version values,
-  while `report().custom_properties` exposes parsed string custom document
+  fields including descriptive, package, timestamp, revision, and version values.
+  Opened DOCX models and fresh conversion retain that complete supported nonempty
+  set, while `report().custom_properties` exposes parsed string custom document
   properties.
 - *Write/edit:* editing an opened `.docx` preserves arbitrary OOXML parts
   verbatim and the writer/edit surfaces are broad (see **Write** and **Edit**

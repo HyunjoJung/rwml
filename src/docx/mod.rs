@@ -751,7 +751,18 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             document_id,
             title_page: body::scan_section_title_page(&doc_xml),
             title: core_properties.title.clone(),
+            subject: core_properties.subject.clone(),
             creator: core_properties.creator.clone(),
+            description: core_properties.description.clone(),
+            keywords: core_properties.keywords.clone(),
+            category: core_properties.category.clone(),
+            content_status: core_properties.content_status.clone(),
+            last_modified_by: core_properties.last_modified_by.clone(),
+            created: core_properties.created.clone(),
+            modified: core_properties.modified.clone(),
+            last_printed: core_properties.last_printed.clone(),
+            revision: core_properties.revision.clone(),
+            version: core_properties.version.clone(),
             ..crate::model::DocSetup::default()
         },
     };

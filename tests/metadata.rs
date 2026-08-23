@@ -40,28 +40,66 @@ fn core_properties_docx() -> Vec<u8> {
     ])
 }
 
+fn expected_core_properties() -> CoreProperties {
+    CoreProperties {
+        title: Some("Quarter <One> & Co".to_string()),
+        subject: Some("Pipeline".to_string()),
+        creator: Some("Analyst".to_string()),
+        description: Some("A document summary".to_string()),
+        keywords: Some("rwml,metadata".to_string()),
+        category: Some("Operations".to_string()),
+        content_status: Some("Draft".to_string()),
+        last_modified_by: Some("Reviewer".to_string()),
+        created: Some("2026-06-01T02:03:04Z".to_string()),
+        modified: Some("2026-06-02T03:04:05Z".to_string()),
+        last_printed: Some("2026-06-03T04:05:06Z".to_string()),
+        revision: Some("12".to_string()),
+        version: Some("1.2".to_string()),
+    }
+}
+
+fn model_core_properties(document: &Document) -> CoreProperties {
+    let model = document.model();
+    let setup = &model.setup;
+    CoreProperties {
+        title: setup.title.clone(),
+        subject: setup.subject.clone(),
+        creator: setup.creator.clone(),
+        description: setup.description.clone(),
+        keywords: setup.keywords.clone(),
+        category: setup.category.clone(),
+        content_status: setup.content_status.clone(),
+        last_modified_by: setup.last_modified_by.clone(),
+        created: setup.created.clone(),
+        modified: setup.modified.clone(),
+        last_printed: setup.last_printed.clone(),
+        revision: setup.revision.clone(),
+        version: setup.version.clone(),
+    }
+}
+
 #[test]
 fn docx_core_properties_are_extracted() {
     let doc = Document::open(&core_properties_docx()).expect("fixture opens");
 
-    assert_eq!(
-        doc.core_properties(),
-        CoreProperties {
-            title: Some("Quarter <One> & Co".to_string()),
-            subject: Some("Pipeline".to_string()),
-            creator: Some("Analyst".to_string()),
-            description: Some("A document summary".to_string()),
-            keywords: Some("rwml,metadata".to_string()),
-            category: Some("Operations".to_string()),
-            content_status: Some("Draft".to_string()),
-            last_modified_by: Some("Reviewer".to_string()),
-            created: Some("2026-06-01T02:03:04Z".to_string()),
-            modified: Some("2026-06-02T03:04:05Z".to_string()),
-            last_printed: Some("2026-06-03T04:05:06Z".to_string()),
-            revision: Some("12".to_string()),
-            version: Some("1.2".to_string()),
-        }
-    );
+    assert_eq!(doc.core_properties(), expected_core_properties());
+}
+
+#[test]
+fn opened_docx_fresh_conversion_preserves_all_core_properties() {
+    let document = Document::open(&core_properties_docx()).expect("fixture opens");
+    let expected = expected_core_properties();
+    let source_model = document.model();
+
+    assert_eq!(model_core_properties(&document), expected);
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model, "source model was mutated");
+
+    let reopened = Document::open(&converted).expect("converted metadata reopens");
+    assert_eq!(reopened.core_properties(), expected);
+    assert_eq!(model_core_properties(&reopened), expected);
+    assert_eq!(reopened.to_docx(), converted, "reconversion changed bytes");
 }
 
 #[test]

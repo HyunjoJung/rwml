@@ -1041,6 +1041,11 @@ impl Document {
     /// preserves the structure (text, character runs, headings, alignment, lists,
     /// tables with colspan/rowspan, images, hyperlinks), so a legacy `.doc` can be
     /// converted to a clean, Office-openable `.docx` through the shared model.
+    /// Opened DOCX inputs also retain every supported nonempty core property in
+    /// the public model and regenerated `docProps/core.xml`: title, subject,
+    /// creator, description, keywords, category, content status,
+    /// last-modified-by, created/modified/last-printed timestamps, revision, and
+    /// version.
     /// Opened legacy and DOCX documents also carry validated source-only section
     /// column gaps, complete unequal geometry, separator flags, right-to-left
     /// population, and running header/footer distances into the generated
