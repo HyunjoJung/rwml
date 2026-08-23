@@ -476,10 +476,17 @@ and footers from an opened DOCX also consume reader-resolved explicit tab stops
 and supported leaders through section-aligned render hints. Default-surface
 inheritance, page-variant selection, and a positive settings-defined default-tab
 interval use the same bounded paragraph shaper without changing the public
-model; running-table-cell tabs remain independently aligned. Real-note
-paragraphs, legacy-DOC running stories, fresh conversion of running surfaces,
-post-tab field containment, and Word-exact tab reflow and pagination remain
-outside this path.
+model; running-table-cell tabs remain independently aligned. Legacy-DOC running
+stories, fresh conversion of running surfaces, post-tab field containment, and
+Word-exact tab reflow and pagination remain outside this path.
+Ordinary top-level real footnote and endnote paragraphs from an opened DOCX
+likewise consume reader-resolved explicit tab stops, supported leaders, and a
+positive settings-defined default-tab interval. Their private hints retain
+footnote-then-endnote block order across skipped separator records and preceding
+non-paragraph blocks without changing the public model. Note-table-cell tabs,
+legacy-note tabs, fresh note conversion, post-tab field containment, page-bottom
+note composition, and Word-exact tab reflow and pagination remain outside this
+path.
 Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and

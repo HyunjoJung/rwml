@@ -3024,12 +3024,14 @@ impl Document {
                 model.blocks.extend(d.notes.iter().cloned());
                 let mut line_spacing = d.line_spacing_hints.clone();
                 line_spacing.extend_from_slice(&d.note_line_spacing_hints);
+                let mut tab_stops = d.tab_stops.clone();
+                tab_stops.extend_from_slice(&d.note_tab_stops);
                 render_document(
                     &model,
                     render::SourceRenderHints {
                         pagination: &d.pagination_hints,
                         line_spacing: &line_spacing,
-                        tab_stops: &d.tab_stops,
+                        tab_stops: &tab_stops,
                         column_break_offsets: &d.column_break_offsets,
                         section_column_gap_pt: &d.section_column_gap_pt,
                         section_column_layouts: &d.section_column_layouts,

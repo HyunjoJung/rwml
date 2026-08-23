@@ -9,14 +9,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Applies reader-resolved explicit paragraph tab stops to ordinary top-level
+  real footnote and endnote paragraphs when an opened DOCX is rendered to PDF.
+  A private block-aligned vector is concatenated in the same footnote-then-endnote
+  order as the visible note blocks, skips boilerplate note records before
+  capture, and preserves empty slots for non-paragraph blocks. Supported leaders
+  and a positive `w:defaultTabStop` interval reuse the established paragraph
+  shaper without changing the public model. Note table-cell tabs, legacy-note
+  tabs, fresh note conversion, post-tab field containment, page-bottom note
+  composition, and Word-exact tab reflow and pagination remain outside this path.
+- Applies reader-resolved explicit paragraph tab stops to ordinary top-level
   paragraphs in selected default/first/even running headers and footers when an
   opened DOCX is rendered to PDF. A private six-story sidecar follows
   section-local default-surface inheritance and page-variant selection while
   preserving the public model; supported leaders and a positive
   `w:defaultTabStop` interval use the established paragraph shaper. Running
-  table-cell tab hints remain independently aligned. Real-note paragraphs,
-  legacy-DOC running stories, fresh conversion, post-tab field containment,
-  and Word-exact tab reflow and pagination remain outside this bounded path.
+  table-cell tab hints remain independently aligned. Legacy-DOC running stories,
+  fresh conversion, post-tab field containment, and Word-exact tab reflow and
+  pagination remain outside this bounded path.
 - Preserves reader-resolved explicit DOCX paragraph tab stops when
   `Document::to_docx()` freshly converts aligned top-level body paragraphs and
   direct paragraph blocks in surviving cells of top-level tables. The bounded
