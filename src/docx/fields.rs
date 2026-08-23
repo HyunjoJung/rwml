@@ -1955,6 +1955,10 @@ pub(crate) fn supports_prompt_field_syntax(instruction: &str) -> bool {
     fill_in_instruction(instruction).is_some() || ask_instruction(instruction).is_some()
 }
 
+pub(crate) fn supports_context_free_fill_in_field_syntax(instruction: &str) -> bool {
+    computed_fill_in_result(instruction).is_some()
+}
+
 pub(crate) fn computed_ask_result(
     instruction: &str,
     field_bookmarks: &mut HashMap<String, String>,
@@ -2826,12 +2830,13 @@ mod tests {
         ordinal_page_number_text, page_ref_context, page_ref_instruction, ref_instruction,
         ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
         supports_action_field_syntax, supports_compare_field_syntax,
-        supports_computed_symbol_field_syntax, supports_context_free_formula_field_syntax,
-        supports_context_free_if_compare_field_syntax, supports_formula_field_syntax,
-        supports_if_field_syntax, supports_merge_control_field_syntax,
-        supports_prompt_field_syntax, supports_reference_index_marker_syntax,
-        supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
-        toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
+        supports_computed_symbol_field_syntax, supports_context_free_fill_in_field_syntax,
+        supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
+        supports_formula_field_syntax, supports_if_field_syntax,
+        supports_merge_control_field_syntax, supports_prompt_field_syntax,
+        supports_reference_index_marker_syntax, supports_sequence_field_syntax,
+        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
+        PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
@@ -3023,6 +3028,26 @@ mod tests {
             field_bookmarks.get("ClientName").map(String::as_str),
             Some("Client 42")
         );
+    }
+
+    #[test]
+    fn context_free_fill_in_ownership_requires_an_explicit_literal_default() {
+        for instruction in [
+            r#"FILLIN "Client?" \d "Acme""#,
+            r#"FILLIN "Department?" \dops \* Upper"#,
+            r#"FILLIN Project display prompt \d Client 42 \o \* Caps"#,
+        ] {
+            assert!(supports_context_free_fill_in_field_syntax(instruction));
+        }
+        for instruction in [
+            r#"FILLIN "Client?""#,
+            r#"FILLIN "Client?" \d \o"#,
+            r#"FILLIN "broken prompt \d Acme"#,
+            r#"ASK ClientCode "Client code?" \d "ac-42""#,
+            r#"QUOTE "not a prompt""#,
+        ] {
+            assert!(!supports_context_free_fill_in_field_syntax(instruction));
+        }
     }
 
     #[test]

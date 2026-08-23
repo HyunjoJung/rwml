@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty `FILLIN` fields with an explicit literal default and
+  one modeled result run in exact real footnote and endnote payloads. Quoted and
+  bounded multi-token defaults, neutral `\o`, supported text-format switches,
+  normalized instructions, deterministic current results, source order, and
+  modeled formatting survive at the top level and through recursively nested
+  table cells; one-result-run complex source fields normalize to non-dirty
+  `w:fldSimple`. Default-less or malformed prompts, split results, and stateful
+  `ASK`, `SET`, or merge-control fields still trigger note-local plain-text
+  fallback. This transports the current result and instruction without adding
+  interactive prompting, field-update, relationship, or layout behavior.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   context-free, non-dirty formula (`=`) fields with one modeled result run in
   exact real footnote and endnote payloads. Finite literal arithmetic and scalar-
   function expressions, supported numeric pictures, normalized instructions,

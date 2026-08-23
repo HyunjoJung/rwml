@@ -581,6 +581,35 @@ fn formula_field_note_docx() -> Vec<u8> {
     ])
 }
 
+fn fill_in_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="271"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="281"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="272"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="282"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:footnoteReference w:id="273"/></w:r><w:r><w:t> BODY F</w:t></w:r><w:r><w:endnoteReference w:id="283"/></w:r><w:r><w:t> BODY G</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="271"><w:p><w:r><w:t xml:space="preserve">FOOT FILLIN BEFORE </w:t></w:r><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; \d &quot;fresh foot words&quot; \o \* Caps "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT FILLIN</w:t></w:r></w:fldSimple><w:r><w:t> FOOT FILLIN AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="272"><w:p><w:r><w:t xml:space="preserve">NO DEFAULT BEFORE </w:t></w:r><w:fldSimple w:instr=" FILLIN &quot;No default?&quot; "><w:r><w:t>CACHED NO DEFAULT FILLIN</w:t></w:r></w:fldSimple><w:r><w:t> NO DEFAULT AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="273"><w:p><w:r><w:t xml:space="preserve">SPLIT FILLIN BEFORE </w:t></w:r><w:fldSimple w:instr=" FILLIN &quot;Split?&quot; \d &quot;split answer&quot; \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE SPLIT FILLIN A</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE SPLIT FILLIN B</w:t></w:r></w:fldSimple><w:r><w:t> SPLIT FILLIN AFTER</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="281"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END FILLIN BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> FILLIN Project display prompt \d Client 42 \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END FILLIN</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END FILLIN AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="282"><w:p><w:r><w:t xml:space="preserve">MALFORMED FILLIN BEFORE </w:t></w:r><w:fldSimple w:instr=" FILLIN &quot;broken prompt "><w:r><w:t>CACHED MALFORMED FILLIN</w:t></w:r></w:fldSimple><w:r><w:t> MALFORMED FILLIN AFTER</w:t></w:r></w:p></w:endnote><w:endnote w:id="283"><w:p><w:r><w:t>ASK BEFORE[</w:t></w:r><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; \d &quot;ac-42&quot; \o "><w:r><w:t>STALE ASK</w:t></w:r></w:fldSimple><w:r><w:t>]ASK AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -2294,6 +2323,149 @@ fn opened_docx_note_context_free_formula_fields_keep_results_and_instructions() 
         rejected_nonfinite.text(),
         "NONFINITE FORMULA BEFORE CACHED NONFINITE FORMULA NONFINITE FORMULA AFTER"
     );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_explicit_default_fill_in_fields_keep_results_and_instructions() {
+    let document = Document::open(&fill_in_field_note_docx()).expect("FILLIN field notes open");
+    assert_eq!(document.notes().len(), 6, "source note records missing");
+    assert_eq!(document.report().features.fields, 6);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone FILLIN normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT FILLIN BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END FILLIN BEFORE");
+    let rejected_no_default = note_with_marker(footnotes, "footnote", "NO DEFAULT BEFORE");
+    let rejected_split = note_with_marker(footnotes, "footnote", "SPLIT FILLIN BEFORE");
+    let rejected_malformed = note_with_marker(endnotes, "endnote", "MALFORMED FILLIN BEFORE");
+    let rejected_ask = note_with_marker(endnotes, "endnote", "ASK BEFORE[");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(
+            r#"<w:fldSimple w:instr=" FILLIN &quot;Client?&quot; \d &quot;fresh foot words&quot; \o \* Caps ">"#
+        ) && footnote.contains("<w:b/>")
+            && footnote.contains("Fresh Foot Words")
+            && footnote.contains("FOOT FILLIN BEFORE ")
+            && footnote.contains(" FOOT FILLIN AFTER"),
+        "top-level explicit-default FILLIN field missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT FILLIN"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(
+            r#"<w:fldSimple w:instr=" FILLIN Project display prompt \d Client 42 \* Upper ">"#
+        ) && endnote.contains("<w:i/>")
+            && endnote.contains("CLIENT 42")
+            && endnote.contains("END FILLIN BEFORE ")
+            && endnote.contains(" END FILLIN AFTER"),
+        "nested explicit-default FILLIN field missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END FILLIN"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [
+        rejected_no_default,
+        rejected_split,
+        rejected_malformed,
+        rejected_ask,
+    ] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains(r#"FILLIN &quot;No default?&quot;"#));
+    assert!(!footnotes.contains(r#"FILLIN &quot;Split?&quot;"#));
+    assert!(!endnotes.contains(r#"FILLIN &quot;broken prompt"#));
+    assert!(!endnotes.contains("ASK ClientCode"));
+    assert!(!footnotes.contains("STALE SPLIT FILLIN A"));
+    assert!(!footnotes.contains("STALE SPLIT FILLIN B"));
+    assert!(!endnotes.contains("STALE ASK"));
+    assert!(footnotes.contains("CACHED NO DEFAULT FILLIN"));
+    assert!(endnotes.contains("CACHED MALFORMED FILLIN"));
+
+    let reopened = Document::open(&converted).expect("converted FILLIN field notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("FILLIN".to_string()));
+    assert_eq!(
+        fields[0].instruction,
+        r#"FILLIN "Client?" \d "fresh foot words" \o \* Caps"#
+    );
+    assert_eq!(fields[0].result, "Fresh Foot Words");
+    assert_eq!(
+        fields[0].computed_result.as_deref(),
+        Some("Fresh Foot Words")
+    );
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("FILLIN".to_string()));
+    assert_eq!(
+        fields[1].instruction,
+        r#"FILLIN Project display prompt \d Client 42 \* Upper"#
+    );
+    assert_eq!(fields[1].result, "CLIENT 42");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("CLIENT 42"));
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 4] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_no_default) = &reopened_model.blocks[2] else {
+        panic!("default-less FILLIN fallback paragraph")
+    };
+    assert_eq!(
+        rejected_no_default.text(),
+        "NO DEFAULT BEFORE CACHED NO DEFAULT FILLIN NO DEFAULT AFTER"
+    );
+    let Block::Paragraph(rejected_split) = &reopened_model.blocks[3] else {
+        panic!("split-result FILLIN fallback paragraph")
+    };
+    assert_eq!(
+        rejected_split.text(),
+        "SPLIT FILLIN BEFORE SPLIT ANSWER SPLIT FILLIN AFTER"
+    );
+    let Block::Paragraph(rejected_malformed) = &reopened_model.blocks[5] else {
+        panic!("malformed FILLIN fallback paragraph")
+    };
+    assert_eq!(
+        rejected_malformed.text(),
+        "MALFORMED FILLIN BEFORE CACHED MALFORMED FILLIN MALFORMED FILLIN AFTER"
+    );
+    let Block::Paragraph(rejected_ask) = &reopened_model.blocks[6] else {
+        panic!("ASK fallback paragraph")
+    };
+    assert_eq!(rejected_ask.text(), "ASK BEFORE[]ASK AFTER");
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);

@@ -18,9 +18,10 @@ use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::annotation::{filename_field_syntax, merge_field_syntax};
 use crate::docx::{
-    supports_computed_symbol_field_syntax, supports_context_free_formula_field_syntax,
-    supports_context_free_if_compare_field_syntax, supports_quote_field_syntax,
-    supports_reference_index_marker_syntax, supports_toc_entry_field_syntax,
+    supports_computed_symbol_field_syntax, supports_context_free_fill_in_field_syntax,
+    supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
+    supports_quote_field_syntax, supports_reference_index_marker_syntax,
+    supports_toc_entry_field_syntax,
 };
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
@@ -3144,6 +3145,10 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                     run.field_unsupported_reason.is_none()
                         && supports_context_free_formula_field_syntax(instruction)
                 }
+                FieldKind::Dynamic(kind) if kind == "FILLIN" => {
+                    run.field_unsupported_reason.is_none()
+                        && supports_context_free_fill_in_field_syntax(instruction)
+                }
                 FieldKind::Compatibility(_)
                 | FieldKind::InsertedContent(_)
                 | FieldKind::MailMerge(_)
@@ -5310,6 +5315,8 @@ mod tests {
             r#"COMPARE "Alpha-42" = "Alpha-*""#,
             r#"= 10 / 4 \# "0.00""#,
             r#"= ROUND(AVERAGE(2; 4; 7); 1) \# "0.0""#,
+            r#"FILLIN "Client?" \d "Acme" \o \* Caps"#,
+            r#"FILLIN Project display prompt \d Client 42 \* Upper"#,
         ] {
             assert!(source_note_field_is_supported(&marker(instruction)));
         }
@@ -5323,6 +5330,8 @@ mod tests {
         dirty_if.field_dirty = true;
         let mut dirty_formula = marker("= 2 + 3");
         dirty_formula.field_dirty = true;
+        let mut dirty_fill_in = marker(r#"FILLIN "Client?" \d "Acme""#);
+        dirty_fill_in.field_dirty = true;
 
         let mut dirty = cached("PRIVATE legacy-data");
         dirty.field_dirty = true;
@@ -5348,6 +5357,7 @@ mod tests {
             dirty_quote,
             dirty_if,
             dirty_formula,
+            dirty_fill_in,
             malformed,
             malformed_merge,
             malformed_filename,
@@ -5365,6 +5375,10 @@ mod tests {
             marker("= DEFINED(Known)"),
             marker("= 1e309 + 1"),
             marker("= 1 +"),
+            marker(r#"FILLIN "Client?""#),
+            marker(r#"FILLIN "Client?" \d \o"#),
+            marker(r#"FILLIN "broken prompt \d Acme"#),
+            marker(r#"ASK ClientCode "Client code?" \d "ac-42""#),
             marker(r#"INDEX \e " - ""#),
             marker(r#"TOC \f m"#),
             cached("MERGEFIELD Client"),
@@ -5375,6 +5389,7 @@ mod tests {
             cached(r#"QUOTE "wrong reason""#),
             cached(r#"IF 2 > 1 "wrong reason" "no""#),
             cached("= 2 + 3"),
+            cached(r#"FILLIN "Client?" \d "wrong reason""#),
             Run {
                 field: FieldRole::Simple {
                     instruction: "CUSTOM literal payload".to_string(),

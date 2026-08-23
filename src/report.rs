@@ -665,6 +665,9 @@ fn supports_owned_computed_field_evaluation(field: &Field) -> bool {
             FieldKind::Dynamic(kind) if kind == "=" => {
                 crate::docx::supports_context_free_formula_field_syntax(&field.instruction)
             }
+            FieldKind::Dynamic(kind) if kind == "FILLIN" => {
+                crate::docx::supports_context_free_fill_in_field_syntax(&field.instruction)
+            }
             FieldKind::Display(kind) if kind == "SYMBOL" => {
                 crate::docx::supports_computed_symbol_field_syntax(&field.instruction)
             }
@@ -5121,6 +5124,13 @@ mod tests {
                     ..Run::default()
                 },
                 Run {
+                    text: "Acme".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"FILLIN "Client?" \d "Acme""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
                     text: "cached quote".to_string(),
                     field: FieldRole::Simple {
                         instruction: r#"QUOTE "broken"#.to_string(),
@@ -5168,13 +5178,29 @@ mod tests {
                     field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
                     ..Run::default()
                 },
+                Run {
+                    text: "cached default-less FILLIN".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"FILLIN "Client?""#.to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached stateful ASK".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"ASK ClientCode "Client code?" \d "ac-42""#.to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                    ..Run::default()
+                },
             ],
             ..Paragraph::default()
         })];
 
         let inventory = super::feature_inventory_for_model(&blocks);
 
-        assert_eq!(inventory.fields, 11);
+        assert_eq!(inventory.fields, 14);
         assert_eq!(
             inventory.unsupported_field_kinds,
             vec![
@@ -5198,6 +5224,14 @@ mod tests {
                     kind: FieldKind::Dynamic("=".to_string()),
                     count: 2,
                 },
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("FILLIN".to_string()),
+                    count: 1,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("ASK".to_string()),
+                    count: 1,
+                },
             ]
         );
         assert_eq!(
@@ -5209,7 +5243,7 @@ mod tests {
                 },
                 super::FieldEvaluationReasonCount {
                     reason: super::FieldEvaluationReason::NoComputedResult,
-                    count: 3,
+                    count: 5,
                 },
             ]
         );
