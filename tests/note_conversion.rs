@@ -618,6 +618,51 @@ fn display_field_note_docx() -> Vec<u8> {
     )
 }
 
+fn document_info_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rIdCustom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/><Relationship Id="rIdApp" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/><Relationship Id="rIdSettings" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="311"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="321"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="312"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="322"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:footnoteReference w:id="313"/></w:r><w:r><w:t> BODY F</w:t></w:r><w:r><w:endnoteReference w:id="323"/></w:r><w:r><w:t> BODY G</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="311"><w:p><w:r><w:t xml:space="preserve">FOOT CORE BEFORE </w:t></w:r><w:fldSimple w:instr=" DOCPROPERTY Subject \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT CORE</w:t></w:r></w:fldSimple><w:r><w:t> FOOT CORE AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="312"><w:p><w:r><w:t xml:space="preserve">EXTENDED BEFORE </w:t></w:r><w:fldSimple w:instr=" NUMPAGES \* ROMAN "><w:r><w:t>STALE EXTENDED</w:t></w:r></w:fldSimple><w:r><w:t> EXTENDED AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="313"><w:p><w:r><w:t xml:space="preserve">MALFORMED PROPERTY BEFORE </w:t></w:r><w:fldSimple w:instr=" DOCPROPERTY &quot;Broken Name "><w:r><w:t>CACHED MALFORMED PROPERTY</w:t></w:r></w:fldSimple><w:r><w:t> MALFORMED PROPERTY AFTER</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="321"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END CUSTOM BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> DOCPROPERTY &quot;Client Name&quot; \* Caps </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END CUSTOM</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END CUSTOM AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="322"><w:p><w:r><w:t xml:space="preserve">VARIABLE BEFORE </w:t></w:r><w:fldSimple w:instr=" DOCVARIABLE ClientCode \* Upper "><w:r><w:t>STALE VARIABLE</w:t></w:r></w:fldSimple><w:r><w:t> VARIABLE AFTER</w:t></w:r></w:p></w:endnote><w:endnote w:id="323"><w:p><w:r><w:t xml:space="preserve">SPLIT CORE BEFORE </w:t></w:r><w:fldSimple w:instr=" TITLE \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE SPLIT CORE A</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE SPLIT CORE B</w:t></w:r></w:fldSimple><w:r><w:t> SPLIT CORE AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Quarter Plan</dc:title><dc:subject>Pipeline</dc:subject></cp:coreProperties>"#,
+        ),
+        (
+            "docProps/custom.xml",
+            r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="Client Name"><vt:lpwstr>acme launch</vt:lpwstr></property></Properties>"#,
+        ),
+        (
+            "docProps/app.xml",
+            r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Pages>12</Pages></Properties>"#,
+        ),
+        (
+            "word/settings.xml",
+            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docVars><w:docVar w:name="ClientCode" w:val="alpha-42"/></w:docVars></w:settings>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -2613,6 +2658,199 @@ fn opened_docx_note_context_free_display_fields_keep_results_and_instructions() 
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_core_and_custom_property_fields_keep_results_and_instructions() {
+    let document =
+        Document::open(&document_info_field_note_docx()).expect("document-info field notes open");
+    assert_eq!(document.notes().len(), 6, "source note records missing");
+    assert_eq!(document.report().features.fields, 6);
+    assert_eq!(
+        document.core_properties().title.as_deref(),
+        Some("Quarter Plan")
+    );
+    assert_eq!(
+        document.core_properties().subject.as_deref(),
+        Some("Pipeline")
+    );
+    let source_model = document.model();
+    assert_eq!(
+        source_model
+            .custom_properties
+            .get("Client Name")
+            .map(String::as_str),
+        Some("acme launch")
+    );
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone document-info normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    let core = std::str::from_utf8(&parts["docProps/core.xml"]).unwrap();
+    let custom = std::str::from_utf8(&parts["docProps/custom.xml"]).unwrap();
+    assert!(core.contains("<dc:title>Quarter Plan</dc:title>"), "{core}");
+    assert!(core.contains("<dc:subject>Pipeline</dc:subject>"), "{core}");
+    assert!(custom.contains(r#"name="Client Name""#), "{custom}");
+    assert!(
+        custom.contains("<vt:lpwstr>acme launch</vt:lpwstr>"),
+        "{custom}"
+    );
+    assert!(!parts.contains_key("docProps/app.xml"));
+    assert!(!parts.contains_key("word/settings.xml"));
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT CORE BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END CUSTOM BEFORE");
+    let rejected_extended = note_with_marker(footnotes, "footnote", "EXTENDED BEFORE");
+    let rejected_malformed = note_with_marker(footnotes, "footnote", "MALFORMED PROPERTY BEFORE");
+    let rejected_variable = note_with_marker(endnotes, "endnote", "VARIABLE BEFORE");
+    let rejected_split = note_with_marker(endnotes, "endnote", "SPLIT CORE BEFORE");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(r#"<w:fldSimple w:instr=" DOCPROPERTY Subject \* Upper ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains("PIPELINE")
+            && footnote.contains("FOOT CORE BEFORE ")
+            && footnote.contains(" FOOT CORE AFTER"),
+        "top-level core-property field missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT CORE"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote
+            .contains(r#"<w:fldSimple w:instr=" DOCPROPERTY &quot;Client Name&quot; \* Caps ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains("Acme Launch")
+            && endnote.contains("END CUSTOM BEFORE ")
+            && endnote.contains(" END CUSTOM AFTER"),
+        "nested custom-property field missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END CUSTOM"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [
+        rejected_extended,
+        rejected_malformed,
+        rejected_variable,
+        rejected_split,
+    ] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains("NUMPAGES"));
+    assert!(!footnotes.contains(r#"DOCPROPERTY &quot;Broken Name"#));
+    assert!(!endnotes.contains("DOCVARIABLE"));
+    assert!(!endnotes.contains(r#"TITLE \* Upper"#));
+    assert!(!footnotes.contains("STALE EXTENDED"));
+    assert!(!endnotes.contains("STALE VARIABLE"));
+    assert!(!endnotes.contains("STALE SPLIT CORE A"));
+    assert!(!endnotes.contains("STALE SPLIT CORE B"));
+    assert!(footnotes.contains("XII"));
+    assert!(footnotes.contains("CACHED MALFORMED PROPERTY"));
+    assert!(endnotes.contains("ALPHA-42"));
+    assert!(endnotes.contains("QUARTER PLAN"));
+
+    let reopened = Document::open(&converted).expect("converted document-info notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentInfo("DOCPROPERTY".to_string())
+    );
+    assert_eq!(fields[0].instruction, r#"DOCPROPERTY Subject \* Upper"#);
+    assert_eq!(fields[0].result, "PIPELINE");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("PIPELINE"));
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::DocumentInfo("DOCPROPERTY".to_string())
+    );
+    assert_eq!(
+        fields[1].instruction,
+        r#"DOCPROPERTY "Client Name" \* Caps"#
+    );
+    assert_eq!(fields[1].result, "Acme Launch");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("Acme Launch"));
+    assert_eq!(
+        reopened.core_properties().title.as_deref(),
+        Some("Quarter Plan")
+    );
+    assert_eq!(
+        reopened.core_properties().subject.as_deref(),
+        Some("Pipeline")
+    );
+    assert_eq!(
+        reopened
+            .model()
+            .custom_properties
+            .get("Client Name")
+            .map(String::as_str),
+        Some("acme launch")
+    );
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 4] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_extended) = &reopened_model.blocks[2] else {
+        panic!("extended-property fallback paragraph")
+    };
+    assert_eq!(
+        rejected_extended.text(),
+        "EXTENDED BEFORE XII EXTENDED AFTER"
+    );
+    let Block::Paragraph(rejected_malformed) = &reopened_model.blocks[3] else {
+        panic!("malformed-property fallback paragraph")
+    };
+    assert_eq!(
+        rejected_malformed.text(),
+        "MALFORMED PROPERTY BEFORE CACHED MALFORMED PROPERTY MALFORMED PROPERTY AFTER"
+    );
+    let Block::Paragraph(rejected_variable) = &reopened_model.blocks[5] else {
+        panic!("document-variable fallback paragraph")
+    };
+    assert_eq!(
+        rejected_variable.text(),
+        "VARIABLE BEFORE ALPHA-42 VARIABLE AFTER"
+    );
+    let Block::Paragraph(rejected_split) = &reopened_model.blocks[6] else {
+        panic!("split core-property fallback paragraph")
+    };
+    assert_eq!(
+        rejected_split.text(),
+        "SPLIT CORE BEFORE QUARTER PLAN SPLIT CORE AFTER"
+    );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(standalone.contains_key("docProps/core.xml"));
+    assert!(standalone.contains_key("docProps/custom.xml"));
     assert!(!standalone.contains_key("word/footnotes.xml"));
     assert!(!standalone.contains_key("word/endnotes.xml"));
     assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));

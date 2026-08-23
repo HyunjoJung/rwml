@@ -15,6 +15,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   survive deterministic native reopen and reconversion without changing the
   public model or generated-core-property writer contract.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty core-property and custom-string `DOCPROPERTY`
+  fields with one modeled result run in exact real footnote and endnote payloads.
+  Direct core-property and `INFO` aliases, supported text/date pictures,
+  normalized instructions, deterministic computed text, source order, and
+  modeled formatting survive at the top level and through recursively nested
+  table cells; one-result-run complex source fields normalize to non-dirty
+  `w:fldSimple`. Referenced properties must exist, and core values must already
+  match the fresh writer's nonempty trim normalization. Extended application
+  properties, document variables, `FILESIZE`, volatile date/user fields,
+  `REVNUM`, malformed or dirty instructions, and split results still trigger
+  note-local plain-text fallback. This does not copy app/settings parts or add
+  field updates, user context, relationships, or layout behavior.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   context-free, non-dirty `EQ` and `ADVANCE` fields with one modeled result run in
   exact real footnote and endnote payloads. Supported EQ expressions retain their
   normalized instructions, deterministic plain-text approximations, source order,

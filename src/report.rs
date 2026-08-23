@@ -674,6 +674,9 @@ fn supports_owned_computed_field_evaluation(field: &Field) -> bool {
             FieldKind::Display(kind) if kind == "SYMBOL" => {
                 crate::docx::supports_computed_symbol_field_syntax(&field.instruction)
             }
+            FieldKind::DocumentInfo(_) => {
+                crate::docx::supports_preserved_document_info_field_syntax(&field.instruction)
+            }
             _ => false,
         }
     }
@@ -5299,6 +5302,43 @@ mod tests {
             assert_eq!(
                 render_inventory.unsupported_field_reasons,
                 inventory.unsupported_field_reasons
+            );
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn owned_document_info_fields_use_the_note_writer_syntax_boundary() {
+        let field = |instruction: &str| Field {
+            kind: FieldKind::DocumentInfo("DOCPROPERTY".to_string()),
+            instruction: instruction.to_string(),
+            ..Field::default()
+        };
+
+        for instruction in [
+            r#"DOCPROPERTY Subject \* Upper"#,
+            r#"DOCPROPERTY "Client Name" \* Caps"#,
+            r#"TITLE \* Upper"#,
+            r#"CREATEDATE \@ "yyyy-MM-dd""#,
+        ] {
+            assert!(
+                super::supports_owned_computed_field_evaluation(&field(instruction)),
+                "{instruction}"
+            );
+        }
+        for instruction in [
+            r#"NUMPAGES \* ROMAN"#,
+            "DOCPROPERTY Pages",
+            r#"DOCVARIABLE ClientCode \* Upper"#,
+            "FILESIZE",
+            r#"DATE \@ "yyyy-MM-dd""#,
+            "USERNAME",
+            "REVNUM",
+            r#"DOCPROPERTY "Broken Name"#,
+        ] {
+            assert!(
+                !super::supports_owned_computed_field_evaluation(&field(instruction)),
+                "{instruction}"
             );
         }
     }

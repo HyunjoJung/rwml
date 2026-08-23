@@ -178,6 +178,10 @@ pub(crate) fn supports_document_info_field_syntax(instruction: &str) -> bool {
     fields::supports_document_info_field_syntax(instruction)
 }
 
+pub(crate) fn supports_preserved_document_info_field_syntax(instruction: &str) -> bool {
+    fields::supports_preserved_document_info_field_syntax(instruction)
+}
+
 pub(crate) fn supports_revision_number_field_syntax(instruction: &str) -> bool {
     fields::supports_revision_number_field_syntax(instruction)
 }

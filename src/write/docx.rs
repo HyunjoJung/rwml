@@ -20,8 +20,9 @@ use crate::annotation::{filename_field_syntax, merge_field_syntax};
 use crate::docx::{
     supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
     supports_context_free_fill_in_field_syntax, supports_context_free_formula_field_syntax,
-    supports_context_free_if_compare_field_syntax, supports_quote_field_syntax,
-    supports_reference_index_marker_syntax, supports_toc_entry_field_syntax,
+    supports_context_free_if_compare_field_syntax, supports_preserved_document_info_field_syntax,
+    supports_quote_field_syntax, supports_reference_index_marker_syntax,
+    supports_toc_entry_field_syntax,
 };
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
@@ -3153,6 +3154,10 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                     run.field_unsupported_reason.is_none()
                         && supports_context_free_display_field_syntax(instruction)
                 }
+                FieldKind::DocumentInfo(_) => {
+                    run.field_unsupported_reason.is_none()
+                        && supports_preserved_document_info_field_syntax(instruction)
+                }
                 FieldKind::Compatibility(_)
                 | FieldKind::InsertedContent(_)
                 | FieldKind::MailMerge(_)
@@ -5323,6 +5328,9 @@ mod tests {
             r#"FILLIN Project display prompt \d Client 42 \* Upper"#,
             r#"EQ \f( "Alpha, One" , "Beta Two" ) \* Upper"#,
             r#"ADVANCE \r"2" \d4 \* MERGEFORMAT"#,
+            r#"DOCPROPERTY Subject \* Upper"#,
+            r#"DOCPROPERTY "Client Name" \* Caps"#,
+            r#"TITLE \* Upper"#,
         ] {
             assert!(source_note_field_is_supported(&marker(instruction)));
         }
@@ -5340,6 +5348,8 @@ mod tests {
         dirty_fill_in.field_dirty = true;
         let mut dirty_display = marker(r#"EQ \f(1,2)"#);
         dirty_display.field_dirty = true;
+        let mut dirty_document_info = marker("DOCPROPERTY Subject");
+        dirty_document_info.field_dirty = true;
 
         let mut dirty = cached("PRIVATE legacy-data");
         dirty.field_dirty = true;
@@ -5367,6 +5377,7 @@ mod tests {
             dirty_formula,
             dirty_fill_in,
             dirty_display,
+            dirty_document_info,
             malformed,
             malformed_merge,
             malformed_filename,
@@ -5389,6 +5400,14 @@ mod tests {
             marker(r#"ASK ClientCode "Client code?" \d "ac-42""#),
             marker(r#"EQ \f(1,"#),
             marker(r#"ADVANCE \z 2"#),
+            marker(r#"NUMPAGES \* ROMAN"#),
+            marker("DOCPROPERTY Pages"),
+            marker(r#"DOCVARIABLE ClientCode \* Upper"#),
+            marker("FILESIZE"),
+            marker(r#"DATE \@ "yyyy-MM-dd""#),
+            marker("USERNAME"),
+            marker("REVNUM"),
+            marker(r#"DOCPROPERTY "Broken Name"#),
             marker(r#"MACROBUTTON RunReport "Run""#),
             marker(r#"INDEX \e " - ""#),
             marker(r#"TOC \f m"#),
@@ -5403,6 +5422,7 @@ mod tests {
             cached(r#"FILLIN "Client?" \d "wrong reason""#),
             cached(r#"EQ \f(1,2)"#),
             cached(r#"ADVANCE \r2"#),
+            cached("DOCPROPERTY Subject"),
             Run {
                 field: FieldRole::Simple {
                     instruction: "CUSTOM literal payload".to_string(),

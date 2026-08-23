@@ -2975,6 +2975,7 @@ enum ComplexFieldPhase {
 struct PendingComplexField {
     instruction: String,
     text: Option<String>,
+    preserve_instruction: bool,
     unsupported_reason: Option<FieldUnsupportedReason>,
     result_runs: Vec<ComplexFieldResultRun>,
     insert_at: usize,
@@ -3009,6 +3010,8 @@ impl ComplexFieldTracker {
             if !instruction.is_empty() {
                 let current_result = self.result_text.as_str();
                 let text = computed_simple_field_result(&instruction, ctx, current_result);
+                let preserve_instruction =
+                    text.is_some() && preserves_computed_field_instruction(&instruction, ctx);
                 let unsupported_reason = text
                     .is_none()
                     .then(|| unsupported_simple_field_reason_hint(&instruction, ctx))
@@ -3017,6 +3020,7 @@ impl ComplexFieldTracker {
                 self.pending = Some(PendingComplexField {
                     text,
                     instruction,
+                    preserve_instruction,
                     unsupported_reason,
                     result_runs: std::mem::take(&mut self.result_runs),
                     insert_at,
@@ -3058,7 +3062,11 @@ impl ComplexFieldTracker {
             if let Some(text) = computed.text {
                 runs.insert(
                     computed.insert_at.min(runs.len()),
-                    computed_simple_field_run(computed.instruction, text),
+                    computed_simple_field_run(
+                        computed.instruction,
+                        text,
+                        computed.preserve_instruction,
+                    ),
                 );
             } else {
                 runs.insert(
@@ -3077,8 +3085,7 @@ impl ComplexFieldTracker {
                     && matches!(run.field, FieldRole::Hyperlink { .. })
                 {
                     run.field.clone()
-                } else if offset == 0 && preserves_computed_field_instruction(&computed.instruction)
-                {
+                } else if offset == 0 && computed.preserve_instruction {
                     FieldRole::Simple {
                         instruction: computed.instruction.clone(),
                     }
@@ -3119,8 +3126,8 @@ fn computed_field_run(text: String) -> Run {
     }
 }
 
-fn computed_simple_field_run(instruction: String, text: String) -> Run {
-    if preserves_computed_field_instruction(&instruction) {
+fn computed_simple_field_run(instruction: String, text: String, preserve_instruction: bool) -> Run {
+    if preserve_instruction {
         Run {
             text,
             field: FieldRole::Simple { instruction },
@@ -3131,7 +3138,17 @@ fn computed_simple_field_run(instruction: String, text: String) -> Run {
     }
 }
 
-fn preserves_computed_field_instruction(instruction: &str) -> bool {
+fn preserves_computed_field_instruction(instruction: &str, ctx: &Ctx<'_>) -> bool {
+    preserves_context_free_computed_field_instruction(instruction)
+        || super::fields::computed_preserved_document_info_result(
+            instruction,
+            ctx.core_properties,
+            ctx.custom_properties,
+        )
+        .is_some()
+}
+
+fn preserves_context_free_computed_field_instruction(instruction: &str) -> bool {
     preserves_computed_empty_field_instruction(instruction)
         || super::fields::supports_computed_symbol_field_syntax(instruction)
         || super::fields::supports_quote_field_syntax(instruction)
@@ -5082,55 +5099,59 @@ fn read_fldsimple(
     paragraph_style_id: Option<&str>,
     depth: u32,
 ) -> Vec<Run> {
-    let instruction = attr_local(start, b"instr").unwrap_or_default();
-    let url = hyperlink_instr_url(&instruction);
+    let source_instruction = attr_local(start, b"instr").unwrap_or_default();
+    let url = hyperlink_instr_url(&source_instruction);
+    let instruction = normalized_field_instruction(&source_instruction);
+    let preserve_instruction = url.is_none()
+        && !instruction.is_empty()
+        && preserves_computed_field_instruction(&instruction, ctx);
     let mut runs = read_runs_container_with_complex(
         r,
         ctx,
         paragraph_style_id,
         url.as_deref(),
         depth + 1,
-        url.is_none() && preserves_computed_field_instruction(&instruction),
+        preserve_instruction,
     );
-    if url.is_none() {
-        let instruction = normalized_field_instruction(&instruction);
-        if !instruction.is_empty() {
-            let current_result = runs.iter().map(|run| run.text.as_str()).collect::<String>();
-            let computed = computed_simple_field_result(&instruction, ctx, &current_result);
-            if runs.is_empty() {
-                if let Some(text) = computed {
-                    runs.push(computed_simple_field_run(instruction.clone(), text));
-                } else {
-                    runs.push(empty_simple_field_run(
-                        instruction.clone(),
-                        unsupported_simple_field_reason_hint(&instruction, ctx),
-                    ));
-                }
-                return runs;
+    if url.is_none() && !instruction.is_empty() {
+        let current_result = runs.iter().map(|run| run.text.as_str()).collect::<String>();
+        let computed = computed_simple_field_result(&instruction, ctx, &current_result);
+        if runs.is_empty() {
+            if let Some(text) = computed {
+                runs.push(computed_simple_field_run(
+                    instruction.clone(),
+                    text,
+                    preserve_instruction,
+                ));
+            } else {
+                runs.push(empty_simple_field_run(
+                    instruction.clone(),
+                    unsupported_simple_field_reason_hint(&instruction, ctx),
+                ));
             }
-            for (index, run) in runs.iter_mut().enumerate() {
-                if let Some(text) = computed.as_deref() {
-                    run.field = if index == 0 && preserves_computed_field_instruction(&instruction)
-                    {
-                        FieldRole::Simple {
-                            instruction: instruction.clone(),
-                        }
-                    } else {
-                        FieldRole::Other
-                    };
-                    run.field_unsupported_reason = None;
-                    run.text = if index == 0 {
-                        text.to_string()
-                    } else {
-                        String::new()
-                    };
-                } else {
-                    run.field = FieldRole::Simple {
+            return runs;
+        }
+        for (index, run) in runs.iter_mut().enumerate() {
+            if let Some(text) = computed.as_deref() {
+                run.field = if index == 0 && preserve_instruction {
+                    FieldRole::Simple {
                         instruction: instruction.clone(),
-                    };
-                    run.field_unsupported_reason =
-                        unsupported_simple_field_reason_hint(&instruction, ctx);
-                }
+                    }
+                } else {
+                    FieldRole::Other
+                };
+                run.field_unsupported_reason = None;
+                run.text = if index == 0 {
+                    text.to_string()
+                } else {
+                    String::new()
+                };
+            } else {
+                run.field = FieldRole::Simple {
+                    instruction: instruction.clone(),
+                };
+                run.field_unsupported_reason =
+                    unsupported_simple_field_reason_hint(&instruction, ctx);
             }
         }
     }
@@ -5143,8 +5164,9 @@ fn read_empty_fldsimple(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<Run> {
     if instruction.is_empty() {
         return None;
     }
+    let preserve_instruction = preserves_computed_field_instruction(&instruction, ctx);
     computed_simple_field_result(&instruction, ctx, "")
-        .map(|text| computed_simple_field_run(instruction.clone(), text))
+        .map(|text| computed_simple_field_run(instruction.clone(), text, preserve_instruction))
         .or_else(|| {
             Some(empty_simple_field_run(
                 instruction.clone(),

@@ -61,7 +61,8 @@ pub(crate) use self::display::{
 use self::document_info::document_info_instruction;
 pub(crate) use self::document_info::{
     computed_context_document_info_result, computed_document_info_result,
-    computed_revision_number_result, supports_document_info_field_syntax,
+    computed_preserved_document_info_result, computed_revision_number_result,
+    supports_document_info_field_syntax, supports_preserved_document_info_field_syntax,
     supports_revision_number_field_syntax,
 };
 #[cfg(test)]
@@ -2825,22 +2826,24 @@ mod tests {
     use super::{
         cardinal_page_number_text, computed_action_result, computed_ask_result,
         computed_display_result, computed_dynamic_result, computed_listnum_result,
-        computed_numbering_result, computed_reference_index_result, computed_sequence_result,
-        computed_set_result, computed_toc_entry_result, direct_bookmark_ref_instruction,
-        document_info_instruction, format_page_number, note_ref_context, note_ref_instruction,
-        ordinal_page_number_text, page_ref_context, page_ref_instruction, ref_instruction,
-        ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
-        supports_action_field_syntax, supports_compare_field_syntax,
-        supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
-        supports_context_free_fill_in_field_syntax, supports_context_free_formula_field_syntax,
-        supports_context_free_if_compare_field_syntax, supports_formula_field_syntax,
-        supports_if_field_syntax, supports_merge_control_field_syntax,
+        computed_numbering_result, computed_preserved_document_info_result,
+        computed_reference_index_result, computed_sequence_result, computed_set_result,
+        computed_toc_entry_result, direct_bookmark_ref_instruction, document_info_instruction,
+        format_page_number, note_ref_context, note_ref_instruction, ordinal_page_number_text,
+        page_ref_context, page_ref_instruction, ref_instruction, ref_position_context, ref_targets,
+        seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
+        supports_compare_field_syntax, supports_computed_symbol_field_syntax,
+        supports_context_free_display_field_syntax, supports_context_free_fill_in_field_syntax,
+        supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
+        supports_formula_field_syntax, supports_if_field_syntax,
+        supports_merge_control_field_syntax, supports_preserved_document_info_field_syntax,
         supports_prompt_field_syntax, supports_reference_index_marker_syntax,
         supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
         toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
+    use crate::CoreProperties;
     use std::collections::HashMap;
 
     #[test]
@@ -3270,6 +3273,80 @@ mod tests {
         assert!(document_info_instruction(r#"CREATEDATE \@ "yyyy-MM-dd"#).is_none());
         assert!(document_info_instruction(r#"CREATEDATE \@ yyyy-MM-dd""#).is_none());
         assert!(document_info_instruction(r#"CREATEDATE \@"yyyy-MM-dd"#).is_none());
+    }
+
+    #[test]
+    fn preserved_document_info_fields_require_fresh_writer_stable_sources() {
+        let core = CoreProperties {
+            title: Some("Quarter Plan".to_string()),
+            subject: Some("release train".to_string()),
+            created: Some("2026-08-24T13:45:00Z".to_string()),
+            revision: Some("12".to_string()),
+            ..CoreProperties::default()
+        };
+        let custom = HashMap::from([
+            ("CLIENTNAME".to_string(), "acme launch".to_string()),
+            ("EMPTYVALUE".to_string(), String::new()),
+        ]);
+
+        for (instruction, expected) in [
+            (r#"TITLE \* Upper"#, "QUARTER PLAN"),
+            (r#"DOCPROPERTY Subject \* Caps"#, "Release Train"),
+            (r#"INFO Title"#, "Quarter Plan"),
+            (r#"CREATEDATE \@ "yyyy-MM-dd""#, "2026-08-24"),
+            (r#"DOCPROPERTY RevisionNumber"#, "12"),
+            (r#"DOCPROPERTY "Client Name" \* Caps"#, "Acme Launch"),
+            (r#"DOCPROPERTY "Empty Value""#, ""),
+        ] {
+            assert!(
+                supports_preserved_document_info_field_syntax(instruction),
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_document_info_result(instruction, &core, &custom).as_deref(),
+                Some(expected),
+                "{instruction}"
+            );
+        }
+
+        for instruction in [
+            r#"NUMPAGES \* ROMAN"#,
+            "DOCPROPERTY Pages",
+            r#"DOCVARIABLE ClientCode \* Upper"#,
+            "FILESIZE",
+            r#"DATE \@ "yyyy-MM-dd""#,
+            "USERNAME",
+            "REVNUM",
+            r#"DOCPROPERTY "Broken Name"#,
+        ] {
+            assert!(
+                !supports_preserved_document_info_field_syntax(instruction),
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_document_info_result(instruction, &core, &custom),
+                None,
+                "{instruction}"
+            );
+        }
+
+        let normalized_by_writer = CoreProperties {
+            title: Some(" Quarter Plan ".to_string()),
+            ..CoreProperties::default()
+        };
+        assert!(supports_preserved_document_info_field_syntax("TITLE"));
+        assert_eq!(
+            computed_preserved_document_info_result("TITLE", &normalized_by_writer, &custom),
+            None
+        );
+        assert_eq!(
+            computed_preserved_document_info_result(
+                "DOCPROPERTY Subject",
+                &CoreProperties::default(),
+                &custom,
+            ),
+            None
+        );
     }
 
     #[test]

@@ -1154,6 +1154,16 @@ neutral `\o`, supported text formatting, and deterministic current results. This
 does not add interactive prompting or field updates; default-less or malformed
 prompts, split results, and stateful `ASK`, `SET`, and merge-control fields remain
 excluded.
+Parser-validated, non-dirty core-property and custom-string `DOCPROPERTY` fields
+with one modeled result run likewise survive when the referenced property exists
+and each core value already matches the fresh writer's nonempty trim
+normalization. Direct core-property and `INFO` aliases, supported text/date
+pictures, deterministic current results, and modeled formatting are retained.
+Extended application properties, document variables, `FILESIZE`, volatile date/
+user fields, `REVNUM`, malformed or dirty instructions, and split results remain
+excluded. This path uses the core/custom properties already carried by the fresh
+model; it does not copy app/settings parts or add field updates, user context,
+relationships, or layout behavior.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names
