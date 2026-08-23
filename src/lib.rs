@@ -1063,8 +1063,12 @@ impl Document {
     /// effective `keepNext`, `keepLines`, and widow-off state on direct top-level
     /// paragraphs and direct paragraphs in surviving cells of top-level tables,
     /// plus effective no-split state for aligned top-level table rows. Opened DOCX
-    /// inputs also carry visible manual column breaks in direct paragraphs of
-    /// top-level running-table cells and recursively carry row no-split state,
+    /// inputs also carry visible manual column breaks in ordinary top-level
+    /// paragraphs across those six running variants through a separately
+    /// validated section/variant/paragraph-aligned bridge that follows default-
+    /// surface inheritance and keeps local relationships. They carry visible
+    /// manual column breaks in direct paragraphs of top-level running-table cells
+    /// and recursively carry row no-split state,
     /// cell-paragraph keep/widow controls, exact/minimum line rules, explicit
     /// tabs, and visible column breaks through nested running-table descendants
     /// across all six variants. The private tree follows default-surface
@@ -1081,8 +1085,7 @@ impl Document {
     /// normalized subset through an exact private block/id/offset bridge.
     /// Legacy nested-table descendants and note paragraph layout properties
     /// remain outside these layout-hint paths. Legacy nested running tables and
-    /// legacy running-story manual breaks remain unsupported; ordinary top-level
-    /// running-paragraph manual breaks remain outside both fresh-conversion paths.
+    /// legacy running-story manual breaks remain unsupported.
     /// Settings-defined default-tab intervals, table-cell page breaks, and note
     /// manual breaks also remain outside the bounded paths. Rich note formatting,
     /// tables, media, source IDs and numbering,
@@ -1115,6 +1118,7 @@ impl Document {
                         running_tab_stops: &assembled.running_tab_stops,
                         running_table_cell_tab_stops: &assembled.running_table_cell_tab_stops,
                         running_table_layout: &[],
+                        running_column_break_offsets: &[],
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
                         paragraph_tab_stops: &assembled.tab_stops,
@@ -1152,6 +1156,7 @@ impl Document {
                         running_tab_stops: &state.running_tab_stops,
                         running_table_cell_tab_stops: &state.running_table_cell_tab_stops,
                         running_table_layout: &state.running_table_layout_hints,
+                        running_column_break_offsets: &state.running_column_break_offsets,
                         paragraph_line_spacing: &state.line_spacing_hints,
                         paragraph_pagination: &state.pagination_hints,
                         paragraph_tab_stops: &state.tab_stops,

@@ -9,6 +9,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
+  visible manual column breaks in ordinary top-level paragraphs across all
+  default/first/even headers and footers. The private section-aligned six-variant
+  offsets follow default-surface inheritance, retain header/footer-local
+  relationships across run wrappers, and validate section, variant, and paragraph
+  leaves independently through the existing run-aware writer. Two sections,
+  inherited defaults, multiple runs, accepted-current wrappers, a local
+  hyperlink, malformed outer/variant/leaf data, coexistence with running-table
+  breaks, deterministic bytes, native reopen, and standalone-writer exclusion are
+  covered. Legacy running-story manual breaks, note paragraph properties and
+  breaks, table-cell page breaks, and PDF distinction between running line and
+  column breaks remain outside this bounded conversion path.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   visible manual column breaks in direct paragraphs of top-level running-table
   cells and recursively preserves row no-split state, cell-paragraph keep/widow
   controls, exact/minimum line rules, explicit tabs, and visible column breaks in
@@ -19,7 +31,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wrappers, vertical-merge continuation exclusion, all six variants, inherited
   defaults, malformed outer/slot/child data, malformed break leaves,
   deterministic bytes, native reopen, parser depth limits, and standalone-writer
-  exclusion are covered. Legacy nested running tables, ordinary running-paragraph
+  exclusion are covered. Legacy nested running tables, legacy running-story
   manual breaks, note paragraph properties, table-cell page breaks, and PDF
   consumption of nested running-table layout hints remain outside this bounded
   conversion path.

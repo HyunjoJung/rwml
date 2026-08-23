@@ -229,6 +229,8 @@ pub(crate) struct DocxState {
     pub running_table_cell_tab_stops: Vec<crate::model::RunningSurfaceTableCellTabStopHints>,
     /// Source-only table-cell breaks and recursive table layout for section running surfaces.
     pub running_table_layout_hints: Vec<crate::model::RunningSurfaceTableLayoutHints>,
+    /// Source-only manual column breaks in ordinary section running-surface paragraphs.
+    pub running_column_break_offsets: Vec<crate::model::RunningSurfaceColumnBreakHints>,
     /// Source-only header/footer edge distances by section.
     pub running_surface_distances: Vec<crate::model::RunningSurfaceDistanceHints>,
     /// Source-only resolved explicit tab stops aligned to body model blocks.
@@ -597,6 +599,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         running_table_cell_tab_stops_by_model_section(&blocks, &section_header_footers);
     let running_table_layout_hints =
         running_table_layout_by_model_section(&blocks, &section_header_footers);
+    let running_column_break_offsets =
+        running_column_breaks_by_model_section(&blocks, &section_header_footers);
     let running_surface_distances =
         running_surface_distances_by_model_section(&blocks, &section_header_footers);
     apply_section_header_footers(&mut blocks, &section_header_footers);
@@ -762,6 +766,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         running_tab_stops,
         running_table_cell_tab_stops,
         running_table_layout_hints,
+        running_column_break_offsets,
         running_surface_distances,
         tab_stops,
         column_break_offsets,
@@ -817,6 +822,7 @@ struct SectionHeaderFooter {
     tab_stops: crate::model::RunningSurfaceTabStopHints,
     table_cell_tab_stops: crate::model::RunningSurfaceTableCellTabStopHints,
     table_layout: crate::model::RunningSurfaceTableLayoutHints,
+    column_breaks: crate::model::RunningSurfaceColumnBreakHints,
     distances: crate::model::RunningSurfaceDistanceHints,
 }
 
@@ -859,6 +865,13 @@ struct HeaderFooterTableLayout {
 }
 
 #[derive(Default)]
+struct HeaderFooterColumnBreaks {
+    default: Vec<Vec<usize>>,
+    first: Vec<Vec<usize>>,
+    even: Vec<Vec<usize>>,
+}
+
+#[derive(Default)]
 struct HeaderFooterTabStops {
     default: Vec<Vec<crate::model::TabStop>>,
     first: Vec<Vec<crate::model::TabStop>>,
@@ -883,6 +896,7 @@ struct HeaderFooterPartRead {
     tab_stops: HeaderFooterTabStops,
     table_cell_tab_stops: HeaderFooterTableCellTabStops,
     table_layout: HeaderFooterTableLayout,
+    column_breaks: HeaderFooterColumnBreaks,
     records: Vec<HeaderFooter>,
     comment_anchors: HashMap<String, TextAnchor>,
     text_boxes: Vec<TextBox>,
@@ -945,12 +959,14 @@ fn read_headers_footers(
     let mut inherited_header_table_cell_line_spacing = Vec::new();
     let mut inherited_header_table_cell_tab_stops = Vec::new();
     let mut inherited_header_table_layout = crate::model::RunningTableLayoutHints::default();
+    let mut inherited_header_column_breaks = Vec::new();
     let mut inherited_footer_line_spacing = Vec::new();
     let mut inherited_footer_pagination = crate::model::RunningBlockPaginationHints::default();
     let mut inherited_footer_tab_stops = Vec::new();
     let mut inherited_footer_table_cell_line_spacing = Vec::new();
     let mut inherited_footer_table_cell_tab_stops = Vec::new();
     let mut inherited_footer_table_layout = crate::model::RunningTableLayoutHints::default();
+    let mut inherited_footer_column_breaks = Vec::new();
 
     for refs in section_refs {
         let distances = crate::model::RunningSurfaceDistanceHints {
@@ -970,6 +986,7 @@ fn read_headers_footers(
             tab_stops: header_tab_stops,
             table_cell_tab_stops: header_table_cell_tab_stops,
             table_layout: header_table_layout_parts,
+            column_breaks: header_column_break_parts,
             records: header_records,
             comment_anchors: header_comment_anchors,
             text_boxes: header_text_boxes,
@@ -996,6 +1013,7 @@ fn read_headers_footers(
         let mut header_table_cell_spacing = header_line_spacing.default_table_cells;
         let mut header_table_cell_tabs = header_table_cell_tab_stops.default;
         let mut header_table_layout = header_table_layout_parts.default;
+        let mut header_column_breaks = header_column_break_parts.default;
         // Omitted odd/default refs inherit the previous section; an explicit
         // default ref, even when blank/unresolved, resets the inherited surface.
         if !header_has_default && !inherited_header.is_empty() {
@@ -1006,6 +1024,7 @@ fn read_headers_footers(
             header_table_cell_spacing = inherited_header_table_cell_line_spacing.clone();
             header_table_cell_tabs = inherited_header_table_cell_tab_stops.clone();
             header_table_layout = inherited_header_table_layout.clone();
+            header_column_breaks = inherited_header_column_breaks.clone();
         }
         if header_has_default || !header.is_empty() {
             inherited_header = header.clone();
@@ -1015,6 +1034,7 @@ fn read_headers_footers(
             inherited_header_table_cell_line_spacing = header_table_cell_spacing.clone();
             inherited_header_table_cell_tab_stops = header_table_cell_tabs.clone();
             inherited_header_table_layout = header_table_layout.clone();
+            inherited_header_column_breaks = header_column_breaks.clone();
         }
 
         let HeaderFooterPartRead {
@@ -1024,6 +1044,7 @@ fn read_headers_footers(
             tab_stops: footer_tab_stops,
             table_cell_tab_stops: footer_table_cell_tab_stops,
             table_layout: footer_table_layout_parts,
+            column_breaks: footer_column_break_parts,
             records: footer_records,
             comment_anchors: footer_comment_anchors,
             text_boxes: footer_text_boxes,
@@ -1050,6 +1071,7 @@ fn read_headers_footers(
         let mut footer_table_cell_spacing = footer_line_spacing.default_table_cells;
         let mut footer_table_cell_tabs = footer_table_cell_tab_stops.default;
         let mut footer_table_layout = footer_table_layout_parts.default;
+        let mut footer_column_breaks = footer_column_break_parts.default;
         // Same inheritance rule as headers.
         if !footer_has_default && !inherited_footer.is_empty() {
             footer = inherited_footer.clone();
@@ -1059,6 +1081,7 @@ fn read_headers_footers(
             footer_table_cell_spacing = inherited_footer_table_cell_line_spacing.clone();
             footer_table_cell_tabs = inherited_footer_table_cell_tab_stops.clone();
             footer_table_layout = inherited_footer_table_layout.clone();
+            footer_column_breaks = inherited_footer_column_breaks.clone();
         }
         if footer_has_default || !footer.is_empty() {
             inherited_footer = footer.clone();
@@ -1068,6 +1091,7 @@ fn read_headers_footers(
             inherited_footer_table_cell_line_spacing = footer_table_cell_spacing.clone();
             inherited_footer_table_cell_tab_stops = footer_table_cell_tabs.clone();
             inherited_footer_table_layout = footer_table_layout.clone();
+            inherited_footer_column_breaks = footer_column_breaks.clone();
         }
         sections.push(SectionHeaderFooter {
             header,
@@ -1121,6 +1145,14 @@ fn read_headers_footers(
                 footer: footer_table_layout,
                 first_footer: footer_table_layout_parts.first,
                 even_footer: footer_table_layout_parts.even,
+            },
+            column_breaks: crate::model::RunningSurfaceColumnBreakHints {
+                header: header_column_breaks,
+                first_header: header_column_break_parts.first,
+                even_header: header_column_break_parts.even,
+                footer: footer_column_breaks,
+                first_footer: footer_column_break_parts.first,
+                even_footer: footer_column_break_parts.even,
             },
             distances,
         });
@@ -1326,6 +1358,29 @@ fn running_table_layout_by_model_section(
     aligned
 }
 
+fn running_column_breaks_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::model::RunningSurfaceColumnBreakHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::model::RunningSurfaceColumnBreakHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.column_breaks.clone();
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.column_breaks.clone();
+    }
+    aligned
+}
+
 fn running_surface_distances_by_model_section(
     blocks: &[Block],
     sections: &[SectionHeaderFooter],
@@ -1386,6 +1441,7 @@ fn read_hf_parts(
     let mut tab_stops = HeaderFooterTabStops::default();
     let mut table_cell_tab_stops = HeaderFooterTableCellTabStops::default();
     let mut table_layout = HeaderFooterTableLayout::default();
+    let mut column_breaks = HeaderFooterColumnBreaks::default();
     let mut records = Vec::new();
     let mut comment_anchors = HashMap::new();
     let mut text_boxes = Vec::new();
@@ -1616,6 +1672,9 @@ fn read_hf_parts(
                         .first
                         .nested_tables
                         .extend(part_layout_hints.table_nested);
+                    column_breaks
+                        .first
+                        .extend(part_layout_hints.column_break_offsets);
                 }
                 "even" => {
                     blocks.even.extend(part_blocks.clone());
@@ -1647,6 +1706,9 @@ fn read_hf_parts(
                         .even
                         .nested_tables
                         .extend(part_layout_hints.table_nested);
+                    column_breaks
+                        .even
+                        .extend(part_layout_hints.column_break_offsets);
                 }
                 _ => {
                     blocks.default.extend(part_blocks.clone());
@@ -1678,6 +1740,9 @@ fn read_hf_parts(
                         .default
                         .nested_tables
                         .extend(part_layout_hints.table_nested);
+                    column_breaks
+                        .default
+                        .extend(part_layout_hints.column_break_offsets);
                 }
             }
         }
@@ -1700,6 +1765,7 @@ fn read_hf_parts(
         tab_stops,
         table_cell_tab_stops,
         table_layout,
+        column_breaks,
         records,
         comment_anchors,
         text_boxes,

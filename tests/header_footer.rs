@@ -2004,13 +2004,20 @@ fn running_surface_six_variant_nested_table_docx() -> Vec<u8> {
                         line_twips: u32,
                         tab_twips: u32,
                         hyperlink: bool| {
-        let hyperlink = if hyperlink {
+        let top_tail = if hyperlink {
+            format!(
+                r#"<w:hyperlink r:id="rIdLink"><w:r><w:br w:type="column"/><w:t>{label} TOP B</w:t></w:r></w:hyperlink>"#
+            )
+        } else {
+            format!(r#"<w:r><w:br w:type="column"/><w:t>{label} TOP B</w:t></w:r>"#)
+        };
+        let nested_hyperlink = if hyperlink {
             r#"<w:hyperlink r:id="rIdLink"><w:r><w:t>LOCAL LINK</w:t></w:r></w:hyperlink>"#
         } else {
             ""
         };
         format!(
-            r#"<w:{root} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>{label} PARENT A</w:t><w:br w:type="column"/><w:t>{label} PARENT B</w:t></w:r></w:p><w:sdt><w:sdtContent><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="{line_twips}" w:lineRule="exact"/><w:tabs><w:tab w:val="center" w:pos="{tab_twips}" w:leader="hyphen"/></w:tabs></w:pPr><w:r><w:t>{label} NESTED A</w:t><w:tab/><w:t>{label} NESTED B</w:t><w:br w:type="column"/><w:t>{label} NESTED C</w:t></w:r>{hyperlink}</w:p><w:customXml><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3200"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:spacing w:line="{deep_line}" w:lineRule="atLeast"/><w:tabs><w:tab w:val="right" w:pos="{deep_tab}" w:leader="dot"/></w:tabs></w:pPr><w:r><w:t>{label} DEEP A</w:t><w:br w:type="column"/><w:t>{label} DEEP B</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:customXml></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:pPr><w:spacing w:line="999" w:lineRule="exact"/><w:tabs><w:tab w:val="left" w:pos="999"/></w:tabs></w:pPr><w:r><w:t>{label} LEAK</w:t><w:br w:type="column"/></w:r></w:p></w:tc></w:tr></w:tbl></w:sdtContent></w:sdt></w:tc></w:tr></w:tbl></w:{root}>"#,
+            r#"<w:{root} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:sdt><w:sdtContent><w:p><w:r><w:t>{label} TOP A</w:t></w:r>{top_tail}</w:p></w:sdtContent></w:sdt><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>{label} PARENT A</w:t><w:br w:type="column"/><w:t>{label} PARENT B</w:t></w:r></w:p><w:sdt><w:sdtContent><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="{line_twips}" w:lineRule="exact"/><w:tabs><w:tab w:val="center" w:pos="{tab_twips}" w:leader="hyphen"/></w:tabs></w:pPr><w:r><w:t>{label} NESTED A</w:t><w:tab/><w:t>{label} NESTED B</w:t><w:br w:type="column"/><w:t>{label} NESTED C</w:t></w:r>{nested_hyperlink}</w:p><w:customXml><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3200"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:spacing w:line="{deep_line}" w:lineRule="atLeast"/><w:tabs><w:tab w:val="right" w:pos="{deep_tab}" w:leader="dot"/></w:tabs></w:pPr><w:r><w:t>{label} DEEP A</w:t><w:br w:type="column"/><w:t>{label} DEEP B</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:customXml></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:pPr><w:spacing w:line="999" w:lineRule="exact"/><w:tabs><w:tab w:val="left" w:pos="999"/></w:tabs></w:pPr><w:r><w:t>{label} LEAK</w:t><w:br w:type="column"/></w:r></w:p></w:tc></w:tr></w:tbl></w:sdtContent></w:sdt></w:tc></w:tr></w:tbl></w:{root}>"#,
             deep_line = line_twips + 100,
             deep_tab = tab_twips + 100,
         )
@@ -2053,7 +2060,7 @@ fn running_surface_six_variant_nested_table_docx() -> Vec<u8> {
 }
 
 #[test]
-fn opened_docx_running_table_nested_layout_isolates_six_variants_and_inheritance() {
+fn opened_docx_running_layout_isolates_six_variants_and_inheritance() {
     let document = Document::open(&running_surface_six_variant_nested_table_docx())
         .expect("six-variant running nested-table fixture opens");
     let model = document.model();
@@ -2092,11 +2099,19 @@ fn opened_docx_running_table_nested_layout_isolates_six_variants_and_inheritance
             .collect::<Vec<_>>();
         assert_eq!(running_parts.len(), expected_parts, "{label}");
         for xml in running_parts {
+            let top_marker = format!("{label} TOP A");
+            let top_paragraph = paragraph_with_marker(xml, &top_marker);
             assert_eq!(
                 xml.matches(r#"<w:br w:type="column"/>"#).count(),
-                3,
+                4,
                 "{label}: {xml}"
             );
+            assert_eq!(
+                top_paragraph.matches(r#"<w:br w:type="column"/>"#).count(),
+                1,
+                "{label}: {top_paragraph}"
+            );
+            assert!(!top_paragraph.contains("<w:br/>"), "{label}");
             assert_eq!(xml.matches("<w:cantSplit/>").count(), 2, "{label}");
             assert!(xml.contains("<w:keepNext/>"), "{label}");
             assert_eq!(xml.matches("<w:keepLines/>").count(), 2, "{label}");

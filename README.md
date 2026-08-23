@@ -500,8 +500,11 @@ selected running surfaces retain effective `keepNext`, `keepLines`, and widow-of
 state on direct top-level paragraphs and direct paragraphs in surviving cells of
 top-level tables, plus effective no-split state for aligned top-level table rows,
 through an all-or-nothing section/block/tree-aligned bridge. Opened DOCX inputs
-additionally retain visible manual column breaks in direct paragraphs of those
-top-level running-table cells and recursively carry row no-split state,
+additionally retain visible manual column breaks in ordinary top-level paragraphs
+across those six running variants through a separately validated section/variant/
+paragraph-aligned bridge that follows default-surface inheritance and keeps local
+relationships. They also retain visible manual column breaks in direct paragraphs
+of those top-level running-table cells and recursively carry row no-split state,
 cell-paragraph keep/widow controls, exact/minimum line rules, explicit tabs, and
 visible column breaks through nested running-table descendants. The private
 six-variant tree follows default-surface inheritance, validates every table slot
@@ -513,9 +516,8 @@ remaps every body sidecar before removing the duplicate from `word/document.xml`
 Unselected running stories retain their flattened fallback. Legacy nested-table
 recovery and note paragraph layout properties remain outside these layout-hint
 paths. Legacy nested running tables and legacy running-story manual breaks remain
-unsupported, while ordinary top-level running-paragraph manual breaks remain
-outside both fresh-conversion paths. Settings-defined default-tab intervals
-remain outside the tab path. Table-cell page breaks and note manual breaks also
+unsupported. Settings-defined default-tab intervals remain outside the tab path.
+Table-cell page breaks and note manual breaks also
 remain outside the break-preservation paths.
 Ordinary top-level paragraphs in selected default/first/even running headers
 and footers from opened DOCX and legacy DOC inputs also consume reader-resolved
@@ -1039,17 +1041,19 @@ through section-aligned source-only hints. Those same selected running surfaces
 retain effective `keepNext`, `keepLines`, and widow-off state on direct top-level
 paragraphs and direct paragraphs in surviving cells of top-level tables, plus
 effective no-split state for aligned top-level table rows. Opened DOCX inputs
-also retain visible manual column breaks in direct paragraphs of top-level
-running-table cells and recursively retain row no-split state, cell-paragraph
-keep/widow controls, exact/minimum line rules, explicit tabs, and visible column
-breaks in nested running-table descendants across all six variants. The private
+also retain visible manual column breaks in ordinary top-level paragraphs across
+those six running variants through a separately validated section/variant/
+paragraph-aligned bridge that follows default-surface inheritance and keeps local
+relationships. They retain visible manual column breaks in direct paragraphs of
+top-level running-table cells and recursively retain row no-split state,
+cell-paragraph keep/widow controls, exact/minimum line rules, explicit tabs, and
+visible column breaks in nested running-table descendants across all six variants. The private
 tree follows default-surface inheritance, validates each table slot and recursive
 component independently, and keeps header/footer-local relationships. Legacy
 nested-table descendants and note paragraph layout properties remain outside
 these layout-hint paths. Legacy nested running tables and legacy running-story
-manual breaks remain unsupported; ordinary top-level running-paragraph manual
-breaks remain outside both fresh-conversion paths. Settings-defined default-tab
-intervals, table-cell page breaks, and note manual breaks also remain outside the
+manual breaks remain unsupported. Settings-defined default-tab intervals,
+table-cell page breaks, and note manual breaks also remain outside the
 bounded paths.
 
 Opened legacy `.doc` inputs additionally promote normalized footnote/endnote

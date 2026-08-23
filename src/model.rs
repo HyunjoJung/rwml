@@ -473,6 +473,17 @@ pub(crate) struct RunningSurfaceTableCellTabStopHints {
 
 #[cfg(feature = "docx")]
 #[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceColumnBreakHints {
+    pub(crate) header: Vec<Vec<usize>>,
+    pub(crate) first_header: Vec<Vec<usize>>,
+    pub(crate) even_header: Vec<Vec<usize>>,
+    pub(crate) footer: Vec<Vec<usize>>,
+    pub(crate) first_footer: Vec<Vec<usize>>,
+    pub(crate) even_footer: Vec<Vec<usize>>,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct RunningTableLayoutHints {
     pub(crate) cell_column_breaks: Vec<TableCellColumnBreakHints>,
     pub(crate) nested_tables: Vec<TableCellNestedPaginationHints>,
