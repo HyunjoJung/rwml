@@ -881,7 +881,7 @@ python scripts/render_validate.py --json --page-cap 32 --min-mean-recall 0.90 --
 # which needs a host with no duplicate font families: two builds sharing one
 # family name but differing in vertical metrics make LibreOffice pick between
 # them per run, shifting every baseline.
-VERSION=0.1.2
+VERSION=0.1.3
 REV="$(git rev-parse HEAD)"
 python scripts/bench_vs_mature.py --corpus corpus/public/benchmark --json \
   --version "$VERSION" --git-rev "$REV" \
