@@ -15,6 +15,8 @@ use crate::chpx::{highlight_name, Chp, ChpxTable, PcdPrm1Patch};
 use crate::clx::Piece;
 use crate::fib::{self, Fib};
 use crate::list::Numberer;
+#[cfg(feature = "render")]
+use crate::model::RunningSurfaceLineSpacingHints;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocGrid, DocGridType, DocMeta, DocModel,
     DocSetup, FieldRole, Image, Indent, LineSpacingHint, ListInfo, PageNumberFormat, PageSetup,
@@ -27,8 +29,6 @@ use crate::papx::{
     PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
     ParagraphSpacingOverrides,
 };
-#[cfg(feature = "render")]
-use crate::render::RunningSurfaceLineSpacingHints;
 use crate::stsh::StyleSheet;
 use crate::table::{self, CellBuild, RowBuild};
 use crate::util::{u16le, u32le};

@@ -1030,14 +1030,17 @@ impl Document {
     /// carry reader-resolved explicit tab stops through section-aligned private
     /// hints. Direct paragraph blocks in surviving cells of top-level tables on
     /// those running surfaces use a companion block/row/surviving-cell/paragraph-
-    /// aligned bridge. Nested-table descendants and notes remain outside these
-    /// fresh-conversion paths; running surfaces remain outside line-rule and
-    /// pagination conversion, while legacy-DOC running stories and nested
-    /// running-table descendants remain outside tab conversion. Settings-defined
-    /// default-tab intervals remain outside the tab path, and table-cell, note,
-    /// running-surface, and nested-content manual breaks remain outside the
-    /// column-break path. Standalone [`write_docx`] remains model-only for all of
-    /// these private hints.
+    /// aligned bridge. Direct top-level running paragraphs also carry reader-
+    /// resolved exact/minimum line rules through a section-aligned source-only
+    /// bridge. Nested-table descendants and notes remain outside these fresh-
+    /// conversion paths; running-table-cell paragraphs remain outside line-rule
+    /// conversion and all running surfaces remain outside pagination conversion,
+    /// while legacy-DOC running stories and nested running-table descendants
+    /// remain outside tab conversion. Settings-defined default-tab intervals
+    /// remain outside the tab path, and table-cell, note, running-surface, and
+    /// nested-content manual breaks remain outside the column-break path.
+    /// Standalone [`write_docx`] remains model-only for all of these private
+    /// hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
@@ -1056,6 +1059,7 @@ impl Document {
                         final_separator: assembled.final_section_column_separator,
                         final_rtl: assembled.final_section_column_rtl,
                         running_surface_distances: &assembled.running_surface_distances,
+                        running_line_spacing: &[],
                         running_tab_stops: &[],
                         running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &assembled.line_spacing_hints,
@@ -1084,6 +1088,7 @@ impl Document {
                         final_separator: state.final_section_column_separator,
                         final_rtl: state.final_section_column_rtl,
                         running_surface_distances: &state.running_surface_distances,
+                        running_line_spacing: &state.running_line_spacing_hints,
                         running_tab_stops: &state.running_tab_stops,
                         running_table_cell_tab_stops: &state.running_table_cell_tab_stops,
                         paragraph_line_spacing: &state.line_spacing_hints,
@@ -6184,7 +6189,7 @@ mod tests {
 
     #[cfg(feature = "render")]
     fn legacy_running_spacing_at(
-        hints: &render::RunningSurfaceLineSpacingHints,
+        hints: &model::RunningSurfaceLineSpacingHints,
         story_position: usize,
     ) -> &[Option<crate::model::LineSpacingHint>] {
         match story_position {
@@ -6199,7 +6204,7 @@ mod tests {
 
     #[cfg(feature = "render")]
     fn legacy_running_table_spacing_at(
-        hints: &render::RunningSurfaceLineSpacingHints,
+        hints: &model::RunningSurfaceLineSpacingHints,
         story_position: usize,
     ) -> &[crate::model::TableCellLineSpacingHints] {
         match story_position {

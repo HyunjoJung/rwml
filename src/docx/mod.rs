@@ -216,9 +216,8 @@ pub(crate) struct DocxState {
     /// Renderer-only table-cell tab stops aligned to `notes` blocks.
     #[cfg(feature = "render")]
     pub note_table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
-    /// Renderer-only exact/minimum line spacing for section running surfaces.
-    #[cfg(feature = "render")]
-    pub running_line_spacing_hints: Vec<crate::render::RunningSurfaceLineSpacingHints>,
+    /// Source-only exact/minimum line spacing for section running surfaces.
+    pub running_line_spacing_hints: Vec<crate::model::RunningSurfaceLineSpacingHints>,
     /// Source-only explicit paragraph tab stops for section running surfaces.
     pub running_tab_stops: Vec<crate::model::RunningSurfaceTabStopHints>,
     /// Source-only table-cell tab stops for section running surfaces.
@@ -581,7 +580,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     );
     floating_shapes.extend(header_footer_floating_shapes);
     text_boxes.extend(header_footer_text_boxes);
-    #[cfg(feature = "render")]
     let running_line_spacing_hints =
         running_line_spacing_by_model_section(&blocks, &section_header_footers);
     let running_tab_stops = running_tab_stops_by_model_section(&blocks, &section_header_footers);
@@ -740,7 +738,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         note_tab_stops: note_part.tab_stops,
         #[cfg(feature = "render")]
         note_table_cell_tab_stops: note_part.table_cell_tab_stops,
-        #[cfg(feature = "render")]
         running_line_spacing_hints,
         running_tab_stops,
         running_table_cell_tab_stops,
@@ -794,8 +791,7 @@ struct SectionHeaderFooter {
     footer: Vec<Block>,
     first_footer: Vec<Block>,
     even_footer: Vec<Block>,
-    #[cfg(feature = "render")]
-    line_spacing: crate::render::RunningSurfaceLineSpacingHints,
+    line_spacing: crate::model::RunningSurfaceLineSpacingHints,
     tab_stops: crate::model::RunningSurfaceTabStopHints,
     table_cell_tab_stops: crate::model::RunningSurfaceTableCellTabStopHints,
     distances: crate::model::RunningSurfaceDistanceHints,
@@ -808,7 +804,6 @@ struct HeaderFooterBlocks {
     even: Vec<Block>,
 }
 
-#[cfg(feature = "render")]
 #[derive(Default)]
 struct HeaderFooterLineSpacing {
     default: Vec<Option<crate::model::LineSpacingHint>>,
@@ -846,7 +841,6 @@ struct HeaderFooterRead {
 
 struct HeaderFooterPartRead {
     blocks: HeaderFooterBlocks,
-    #[cfg(feature = "render")]
     line_spacing: HeaderFooterLineSpacing,
     tab_stops: HeaderFooterTabStops,
     table_cell_tab_stops: HeaderFooterTableCellTabStops,
@@ -906,16 +900,12 @@ fn read_headers_footers(
     let mut seen_text_boxes = std::collections::HashSet::new();
     let mut inherited_header = Vec::new();
     let mut inherited_footer = Vec::new();
-    #[cfg(feature = "render")]
     let mut inherited_header_line_spacing = Vec::new();
     let mut inherited_header_tab_stops = Vec::new();
-    #[cfg(feature = "render")]
     let mut inherited_header_table_cell_line_spacing = Vec::new();
     let mut inherited_header_table_cell_tab_stops = Vec::new();
-    #[cfg(feature = "render")]
     let mut inherited_footer_line_spacing = Vec::new();
     let mut inherited_footer_tab_stops = Vec::new();
-    #[cfg(feature = "render")]
     let mut inherited_footer_table_cell_line_spacing = Vec::new();
     let mut inherited_footer_table_cell_tab_stops = Vec::new();
 
@@ -932,8 +922,7 @@ fn read_headers_footers(
         let footer_has_default = has_default_header_footer_ref(&refs.footers);
         let HeaderFooterPartRead {
             blocks: header_blocks,
-            #[cfg(feature = "render")]
-                line_spacing: header_line_spacing,
+            line_spacing: header_line_spacing,
             tab_stops: header_tab_stops,
             table_cell_tab_stops: header_table_cell_tab_stops,
             records: header_records,
@@ -956,39 +945,30 @@ fn read_headers_footers(
         extend_unique_floating_shape_records(&mut floating_shapes, header_floating_shapes);
         field_entries.extend(header_fields);
         let mut header = header_blocks.default;
-        #[cfg(feature = "render")]
         let mut header_spacing = header_line_spacing.default;
         let mut header_tabs = header_tab_stops.default;
-        #[cfg(feature = "render")]
         let mut header_table_cell_spacing = header_line_spacing.default_table_cells;
         let mut header_table_cell_tabs = header_table_cell_tab_stops.default;
         // Omitted odd/default refs inherit the previous section; an explicit
         // default ref, even when blank/unresolved, resets the inherited surface.
         if !header_has_default && !inherited_header.is_empty() {
             header = inherited_header.clone();
+            header_spacing = inherited_header_line_spacing.clone();
             header_tabs = inherited_header_tab_stops.clone();
+            header_table_cell_spacing = inherited_header_table_cell_line_spacing.clone();
             header_table_cell_tabs = inherited_header_table_cell_tab_stops.clone();
-            #[cfg(feature = "render")]
-            {
-                header_spacing = inherited_header_line_spacing.clone();
-                header_table_cell_spacing = inherited_header_table_cell_line_spacing.clone();
-            }
         }
         if header_has_default || !header.is_empty() {
             inherited_header = header.clone();
+            inherited_header_line_spacing = header_spacing.clone();
             inherited_header_tab_stops = header_tabs.clone();
+            inherited_header_table_cell_line_spacing = header_table_cell_spacing.clone();
             inherited_header_table_cell_tab_stops = header_table_cell_tabs.clone();
-            #[cfg(feature = "render")]
-            {
-                inherited_header_line_spacing = header_spacing.clone();
-                inherited_header_table_cell_line_spacing = header_table_cell_spacing.clone();
-            }
         }
 
         let HeaderFooterPartRead {
             blocks: footer_blocks,
-            #[cfg(feature = "render")]
-                line_spacing: footer_line_spacing,
+            line_spacing: footer_line_spacing,
             tab_stops: footer_tab_stops,
             table_cell_tab_stops: footer_table_cell_tab_stops,
             records: footer_records,
@@ -1011,32 +991,24 @@ fn read_headers_footers(
         extend_unique_floating_shape_records(&mut floating_shapes, footer_floating_shapes);
         field_entries.extend(footer_fields);
         let mut footer = footer_blocks.default;
-        #[cfg(feature = "render")]
         let mut footer_spacing = footer_line_spacing.default;
         let mut footer_tabs = footer_tab_stops.default;
-        #[cfg(feature = "render")]
         let mut footer_table_cell_spacing = footer_line_spacing.default_table_cells;
         let mut footer_table_cell_tabs = footer_table_cell_tab_stops.default;
         // Same inheritance rule as headers.
         if !footer_has_default && !inherited_footer.is_empty() {
             footer = inherited_footer.clone();
+            footer_spacing = inherited_footer_line_spacing.clone();
             footer_tabs = inherited_footer_tab_stops.clone();
+            footer_table_cell_spacing = inherited_footer_table_cell_line_spacing.clone();
             footer_table_cell_tabs = inherited_footer_table_cell_tab_stops.clone();
-            #[cfg(feature = "render")]
-            {
-                footer_spacing = inherited_footer_line_spacing.clone();
-                footer_table_cell_spacing = inherited_footer_table_cell_line_spacing.clone();
-            }
         }
         if footer_has_default || !footer.is_empty() {
             inherited_footer = footer.clone();
+            inherited_footer_line_spacing = footer_spacing.clone();
             inherited_footer_tab_stops = footer_tabs.clone();
+            inherited_footer_table_cell_line_spacing = footer_table_cell_spacing.clone();
             inherited_footer_table_cell_tab_stops = footer_table_cell_tabs.clone();
-            #[cfg(feature = "render")]
-            {
-                inherited_footer_line_spacing = footer_spacing.clone();
-                inherited_footer_table_cell_line_spacing = footer_table_cell_spacing.clone();
-            }
         }
         sections.push(SectionHeaderFooter {
             header,
@@ -1045,8 +1017,7 @@ fn read_headers_footers(
             footer,
             first_footer: footer_blocks.first,
             even_footer: footer_blocks.even,
-            #[cfg(feature = "render")]
-            line_spacing: crate::render::RunningSurfaceLineSpacingHints {
+            line_spacing: crate::model::RunningSurfaceLineSpacingHints {
                 header: header_spacing,
                 header_table_cells: header_table_cell_spacing,
                 first_header: header_line_spacing.first,
@@ -1165,17 +1136,16 @@ fn apply_section_header_footers(blocks: &mut [Block], sections: &[SectionHeaderF
     }
 }
 
-#[cfg(feature = "render")]
 fn running_line_spacing_by_model_section(
     blocks: &[Block],
     sections: &[SectionHeaderFooter],
-) -> Vec<crate::render::RunningSurfaceLineSpacingHints> {
+) -> Vec<crate::model::RunningSurfaceLineSpacingHints> {
     let section_break_count = blocks
         .iter()
         .filter(|block| matches!(block, Block::SectionBreak(_)))
         .count();
     let mut aligned =
-        vec![crate::render::RunningSurfaceLineSpacingHints::default(); section_break_count + 1];
+        vec![crate::model::RunningSurfaceLineSpacingHints::default(); section_break_count + 1];
     for (target, source) in aligned
         .iter_mut()
         .take(section_break_count)
@@ -1290,7 +1260,6 @@ fn read_hf_parts(
     let mut seen_revisions = std::collections::HashSet::new();
     let mut seen_floating_shapes = std::collections::HashSet::new();
     let mut blocks = HeaderFooterBlocks::default();
-    #[cfg(feature = "render")]
     let mut line_spacing = HeaderFooterLineSpacing::default();
     let mut tab_stops = HeaderFooterTabStops::default();
     let mut table_cell_tab_stops = HeaderFooterTableCellTabStops::default();
@@ -1496,45 +1465,36 @@ fn read_hf_parts(
             match type_name {
                 "first" => {
                     blocks.first.extend(part_blocks.clone());
+                    line_spacing.first.extend(part_layout_hints.line_spacing);
+                    line_spacing
+                        .first_table_cells
+                        .extend(part_layout_hints.table_cell_line_spacing);
                     tab_stops.first.extend(part_layout_hints.tab_stops);
                     table_cell_tab_stops
                         .first
                         .extend(part_layout_hints.table_cell_tabs);
-                    #[cfg(feature = "render")]
-                    {
-                        line_spacing.first.extend(part_layout_hints.line_spacing);
-                        line_spacing
-                            .first_table_cells
-                            .extend(part_layout_hints.table_cell_line_spacing);
-                    }
                 }
                 "even" => {
                     blocks.even.extend(part_blocks.clone());
+                    line_spacing.even.extend(part_layout_hints.line_spacing);
+                    line_spacing
+                        .even_table_cells
+                        .extend(part_layout_hints.table_cell_line_spacing);
                     tab_stops.even.extend(part_layout_hints.tab_stops);
                     table_cell_tab_stops
                         .even
                         .extend(part_layout_hints.table_cell_tabs);
-                    #[cfg(feature = "render")]
-                    {
-                        line_spacing.even.extend(part_layout_hints.line_spacing);
-                        line_spacing
-                            .even_table_cells
-                            .extend(part_layout_hints.table_cell_line_spacing);
-                    }
                 }
                 _ => {
                     blocks.default.extend(part_blocks.clone());
+                    line_spacing.default.extend(part_layout_hints.line_spacing);
+                    line_spacing
+                        .default_table_cells
+                        .extend(part_layout_hints.table_cell_line_spacing);
                     tab_stops.default.extend(part_layout_hints.tab_stops);
                     table_cell_tab_stops
                         .default
                         .extend(part_layout_hints.table_cell_tabs);
-                    #[cfg(feature = "render")]
-                    {
-                        line_spacing.default.extend(part_layout_hints.line_spacing);
-                        line_spacing
-                            .default_table_cells
-                            .extend(part_layout_hints.table_cell_line_spacing);
-                    }
                 }
             }
         }
@@ -1552,7 +1512,6 @@ fn read_hf_parts(
     }
     HeaderFooterPartRead {
         blocks,
-        #[cfg(feature = "render")]
         line_spacing,
         tab_stops,
         table_cell_tab_stops,

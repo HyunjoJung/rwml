@@ -975,17 +975,16 @@ fn opened_docx_render_applies_running_header_and_footer_paragraph_gaps() {
     assert_eq!(both_pdf, both.to_pdf_with_fonts(&fonts));
 }
 
-#[cfg(feature = "render")]
 fn running_surface_line_spacing_docx(
     ending_header_properties: &str,
     final_header_properties: &str,
     even_footer_properties: &str,
 ) -> Vec<u8> {
     let ending_header = format!(
-        r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr>{ending_header_properties}</w:pPr><w:r><w:t>SHARED RUNNING HEADER</w:t></w:r></w:p></w:hdr>"#
+        r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr>{ending_header_properties}</w:pPr><w:r><w:t>ENDING RUNNING HEADER</w:t></w:r></w:p></w:hdr>"#
     );
     let final_header = format!(
-        r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr>{final_header_properties}</w:pPr><w:r><w:t>SHARED RUNNING HEADER</w:t></w:r></w:p></w:hdr>"#
+        r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr>{final_header_properties}</w:pPr><w:r><w:t>FINAL RUNNING HEADER</w:t></w:r></w:p></w:hdr>"#
     );
     let even_footer = format!(
         r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr>{even_footer_properties}</w:pPr><w:r><w:t>EVEN RUNNING FOOTER</w:t></w:r></w:p></w:ftr>"#
@@ -1016,6 +1015,50 @@ fn running_surface_line_spacing_docx(
         ("word/header2.xml", &final_header),
         ("word/footer1.xml", &even_footer),
     ])
+}
+
+#[test]
+fn opened_docx_running_surface_absolute_spacing_roundtrips_through_fresh_conversion() {
+    let document = Document::open(&running_surface_line_spacing_docx(
+        r#"<w:spacing w:line="100" w:lineRule="exact"/>"#,
+        r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#,
+        r#"<w:spacing w:line="120" w:lineRule="exact"/>"#,
+    ))
+    .expect("running-surface line-spacing fixture opens");
+    let model = document.model();
+    let converted = document.to_docx();
+
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(
+        Document::open(&converted)
+            .expect("fresh conversion reopens")
+            .model(),
+        model
+    );
+
+    let parts = unzip_parts(&converted);
+    let running_part = |needle: &str| {
+        parts
+            .iter()
+            .find_map(|(name, body)| {
+                ((name.starts_with("word/header") || name.starts_with("word/footer"))
+                    && std::str::from_utf8(body).is_ok_and(|xml| xml.contains(needle)))
+                .then(|| std::str::from_utf8(body).unwrap())
+            })
+            .unwrap_or_else(|| panic!("missing generated running part containing {needle:?}"))
+    };
+    assert!(running_part("ENDING RUNNING HEADER")
+        .contains(r#"<w:spacing w:line="100" w:lineRule="exact"/>"#));
+    assert!(running_part("FINAL RUNNING HEADER")
+        .contains(r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#));
+    assert!(running_part("EVEN RUNNING FOOTER")
+        .contains(r#"<w:spacing w:line="120" w:lineRule="exact"/>"#));
+
+    let standalone = unzip_parts(&rwml::write_docx(&model));
+    assert!(standalone.iter().all(|(name, body)| {
+        !(name.starts_with("word/header") || name.starts_with("word/footer"))
+            || !std::str::from_utf8(body).unwrap().contains("w:lineRule=")
+    }));
 }
 
 #[cfg(feature = "render")]

@@ -410,6 +410,23 @@ pub(crate) struct TabStop {
 
 #[cfg(any(feature = "docx", feature = "render"))]
 #[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceLineSpacingHints {
+    pub(crate) header: Vec<Option<LineSpacingHint>>,
+    pub(crate) header_table_cells: Vec<TableCellLineSpacingHints>,
+    pub(crate) first_header: Vec<Option<LineSpacingHint>>,
+    pub(crate) first_header_table_cells: Vec<TableCellLineSpacingHints>,
+    pub(crate) even_header: Vec<Option<LineSpacingHint>>,
+    pub(crate) even_header_table_cells: Vec<TableCellLineSpacingHints>,
+    pub(crate) footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) footer_table_cells: Vec<TableCellLineSpacingHints>,
+    pub(crate) first_footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) first_footer_table_cells: Vec<TableCellLineSpacingHints>,
+    pub(crate) even_footer: Vec<Option<LineSpacingHint>>,
+    pub(crate) even_footer_table_cells: Vec<TableCellLineSpacingHints>,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct RunningSurfaceTabStopHints {
     pub(crate) header: Vec<Vec<TabStop>>,
     pub(crate) first_header: Vec<Vec<TabStop>>,

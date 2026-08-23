@@ -47,7 +47,7 @@ use parley::{FontContext, Layout, LayoutContext};
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
     FieldRole, Image, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
-    Run, RunningSurfaceDistanceHints, RunningSurfaceTabStopHints,
+    Run, RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints, RunningSurfaceTabStopHints,
     RunningSurfaceTableCellTabStopHints, SectionBreakKind, SectionColumnLayoutHints, SectionSetup,
     Spacing, TabAlignment, TabLeader, TabStop, Table, TableBorderSide, TableCellLineSpacingHints,
     TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
@@ -160,22 +160,6 @@ const MAX_ABSOLUTE_LINE_HEIGHT_PT: f32 = 1_000_000.0;
 const RIGHT_TO_LEFT_MARK: char = '\u{200F}';
 const RIGHT_TO_LEFT_ISOLATE: char = '\u{2067}';
 const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
-
-#[derive(Debug, Clone, Default, PartialEq)]
-pub(crate) struct RunningSurfaceLineSpacingHints {
-    pub(crate) header: Vec<Option<LineSpacingHint>>,
-    pub(crate) header_table_cells: Vec<TableCellLineSpacingHints>,
-    pub(crate) first_header: Vec<Option<LineSpacingHint>>,
-    pub(crate) first_header_table_cells: Vec<TableCellLineSpacingHints>,
-    pub(crate) even_header: Vec<Option<LineSpacingHint>>,
-    pub(crate) even_header_table_cells: Vec<TableCellLineSpacingHints>,
-    pub(crate) footer: Vec<Option<LineSpacingHint>>,
-    pub(crate) footer_table_cells: Vec<TableCellLineSpacingHints>,
-    pub(crate) first_footer: Vec<Option<LineSpacingHint>>,
-    pub(crate) first_footer_table_cells: Vec<TableCellLineSpacingHints>,
-    pub(crate) even_footer: Vec<Option<LineSpacingHint>>,
-    pub(crate) even_footer_table_cells: Vec<TableCellLineSpacingHints>,
-}
 
 #[derive(Clone, Copy, Default)]
 pub(crate) struct SourceRenderHints<'a> {
