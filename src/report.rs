@@ -662,6 +662,9 @@ fn supports_owned_computed_field_evaluation(field: &Field) -> bool {
             FieldKind::Dynamic(kind) if kind == "IF" || kind == "COMPARE" => {
                 crate::docx::supports_context_free_if_compare_field_syntax(&field.instruction)
             }
+            FieldKind::Dynamic(kind) if kind == "=" => {
+                crate::docx::supports_context_free_formula_field_syntax(&field.instruction)
+            }
             FieldKind::Display(kind) if kind == "SYMBOL" => {
                 crate::docx::supports_computed_symbol_field_syntax(&field.instruction)
             }
@@ -5111,6 +5114,13 @@ mod tests {
                     ..Run::default()
                 },
                 Run {
+                    text: "2.50".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"= 10 / 4 \# "0.00""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
                     text: "cached quote".to_string(),
                     field: FieldRole::Simple {
                         instruction: r#"QUOTE "broken"#.to_string(),
@@ -5142,13 +5152,29 @@ mod tests {
                     field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
                     ..Run::default()
                 },
+                Run {
+                    text: "cached bookmark formula".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: "= Amount + 1".to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached DEFINED formula".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: "= DEFINED(Known)".to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                    ..Run::default()
+                },
             ],
             ..Paragraph::default()
         })];
 
         let inventory = super::feature_inventory_for_model(&blocks);
 
-        assert_eq!(inventory.fields, 8);
+        assert_eq!(inventory.fields, 11);
         assert_eq!(
             inventory.unsupported_field_kinds,
             vec![
@@ -5168,6 +5194,10 @@ mod tests {
                     kind: FieldKind::Dynamic("COMPARE".to_string()),
                     count: 1,
                 },
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("=".to_string()),
+                    count: 2,
+                },
             ]
         );
         assert_eq!(
@@ -5179,7 +5209,7 @@ mod tests {
                 },
                 super::FieldEvaluationReasonCount {
                     reason: super::FieldEvaluationReason::NoComputedResult,
-                    count: 1,
+                    count: 3,
                 },
             ]
         );

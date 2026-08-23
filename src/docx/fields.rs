@@ -66,7 +66,9 @@ pub(crate) use self::document_info::{
 #[cfg(test)]
 use self::formula::computed_formula_result;
 use self::formula::computed_formula_result_with_bookmarks;
-pub(crate) use self::formula::supports_formula_field_syntax;
+pub(crate) use self::formula::{
+    supports_context_free_formula_field_syntax, supports_formula_field_syntax,
+};
 pub(crate) use self::legacy_form::{
     computed_legacy_form_result, legacy_form_context, LegacyFormContext,
 };
@@ -2824,12 +2826,12 @@ mod tests {
         ordinal_page_number_text, page_ref_context, page_ref_instruction, ref_instruction,
         ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
         supports_action_field_syntax, supports_compare_field_syntax,
-        supports_computed_symbol_field_syntax, supports_context_free_if_compare_field_syntax,
-        supports_formula_field_syntax, supports_if_field_syntax,
-        supports_merge_control_field_syntax, supports_prompt_field_syntax,
-        supports_reference_index_marker_syntax, supports_sequence_field_syntax,
-        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
-        PageNumberFormat, TocEntrySource,
+        supports_computed_symbol_field_syntax, supports_context_free_formula_field_syntax,
+        supports_context_free_if_compare_field_syntax, supports_formula_field_syntax,
+        supports_if_field_syntax, supports_merge_control_field_syntax,
+        supports_prompt_field_syntax, supports_reference_index_marker_syntax,
+        supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
+        toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
@@ -2913,6 +2915,31 @@ mod tests {
         assert!(!supports_formula_field_syntax("= 1 +"));
         assert!(!supports_formula_field_syntax("= (1 + 2"));
         assert!(!supports_formula_field_syntax("= 1e+"));
+    }
+
+    #[test]
+    fn context_free_formula_ownership_requires_context_independent_finite_results() {
+        for instruction in [
+            r#"= 10 / 4 \# "0.00""#,
+            r#"= ROUND(AVERAGE(2; 4; 7); 1) \# "0.0""#,
+            "= IF(1, 7, Missing + 1)",
+        ] {
+            assert!(supports_context_free_formula_field_syntax(instruction));
+        }
+        for instruction in [
+            "= Amount + 1",
+            "= SUM(LEFT)",
+            "= A1 + 1",
+            "= DEFINED(Known)",
+            "= defined (Known)",
+            "= IF(1, 7, DEFINED(Known))",
+            "= 1 / 0",
+            "= 1e309 + 1",
+            "= 1 +",
+            r#"QUOTE "not a formula""#,
+        ] {
+            assert!(!supports_context_free_formula_field_syntax(instruction));
+        }
     }
 
     #[test]

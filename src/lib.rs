@@ -1144,7 +1144,13 @@ impl Document {
     /// result run likewise survive when quoted-text or finite-number operands
     /// compute without bookmark or `SET` state, including compact comparisons
     /// and wildcard equality. Bookmark- or `SET`-backed, malformed or nonfinite,
-    /// and split-result comparisons, formula and prompt/control fields remain
+    /// and split-result comparisons and prompt/control fields remain excluded.
+    /// Context-free, non-dirty formula (`=`) instructions with one modeled result
+    /// run likewise survive when finite literal arithmetic or scalar-function
+    /// expressions compute without bookmark, `SET`, table-cell, or positional
+    /// context and do not use `DEFINED`; supported numeric pictures, computed text,
+    /// and modeled formatting are retained. Stateful or table-dependent,
+    /// `DEFINED`, malformed or nonfinite, and split-result formulas remain
     /// excluded.
     /// Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline
     /// runs also retain globally unique media parts and relationships owned by

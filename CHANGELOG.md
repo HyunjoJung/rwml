@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  context-free, non-dirty formula (`=`) fields with one modeled result run in
+  exact real footnote and endnote payloads. Finite literal arithmetic and scalar-
+  function expressions, supported numeric pictures, normalized instructions,
+  deterministic computed text, source order, and modeled formatting survive at
+  the top level and through recursively nested table cells; one-result-run
+  complex source fields normalize to non-dirty `w:fldSimple`. Bookmark- or
+  `SET`-backed expressions, `DEFINED`, table-cell or positional references,
+  malformed or nonfinite formulas, and split results still trigger note-local
+  plain-text fallback. This does not broaden prompt/control, relationship, field-
+  update, or layout behavior.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   context-free, non-dirty `IF` and `COMPARE` fields with one modeled result run
   in exact real footnote and endnote payloads. Quoted-text or finite-number
   operands, compact comparisons, wildcard equality, optional false branches,
@@ -17,8 +28,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   through recursively nested table cells; one-result-run complex source fields
   normalize to non-dirty `w:fldSimple`. Bookmark- or `SET`-backed, malformed or
   nonfinite, and split-result comparisons still trigger note-local plain-text
-  fallback. This does not broaden formula, prompt, merge-control, relationship,
-  field-update, or layout behavior.
+  fallback. This does not broaden prompt, merge-control, relationship, field-
+  update, or layout behavior.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-validated, non-dirty literal `QUOTE` fields with one modeled result run
   in exact real footnote and endnote payloads. Normalized instructions, computed

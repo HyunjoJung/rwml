@@ -11,7 +11,6 @@ use super::{
     page_number_format_from_field_format, quoted_literal_text, PageNumberFormat,
 };
 
-#[cfg(test)]
 pub(super) fn computed_formula_result(instruction: &str) -> Option<String> {
     computed_formula_result_with_bookmarks(instruction, None)
 }
@@ -108,6 +107,39 @@ pub(super) fn formula_instruction(instruction: &str) -> Option<FormulaInstructio
 
 pub(crate) fn supports_formula_field_syntax(instruction: &str) -> bool {
     formula_field_expression_syntax(instruction)
+}
+
+pub(crate) fn supports_context_free_formula_field_syntax(instruction: &str) -> bool {
+    let Some(spec) = formula_instruction(instruction) else {
+        return false;
+    };
+    !formula_expression_uses_defined_function(&spec.expression)
+        && computed_formula_result(instruction).is_some()
+}
+
+fn formula_expression_uses_defined_function(expression: &str) -> bool {
+    let chars: Vec<_> = expression.chars().collect();
+    let mut index = 0;
+    while index < chars.len() {
+        if !is_formula_identifier_start(chars[index]) {
+            index += 1;
+            continue;
+        }
+        let start = index;
+        index += 1;
+        while index < chars.len() && is_formula_identifier_continue(chars[index]) {
+            index += 1;
+        }
+        let name: String = chars[start..index].iter().collect();
+        let mut next = index;
+        while next < chars.len() && chars[next].is_whitespace() {
+            next += 1;
+        }
+        if name.eq_ignore_ascii_case("DEFINED") && chars.get(next) == Some(&'(') {
+            return true;
+        }
+    }
+    false
 }
 
 fn formula_number_format_switch(tokens: &[String]) -> Option<FormulaNumberFormatSwitch> {

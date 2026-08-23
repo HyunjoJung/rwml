@@ -552,6 +552,35 @@ fn if_compare_field_note_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="251"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="261"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="252"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="262"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:footnoteReference w:id="253"/></w:r><w:r><w:t> BODY F</w:t></w:r><w:r><w:endnoteReference w:id="263"/></w:r><w:r><w:t> BODY G</w:t></w:r><w:r><w:footnoteReference w:id="254"/></w:r><w:r><w:t> BODY H</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="251"><w:p><w:r><w:t xml:space="preserve">FOOT FORMULA BEFORE </w:t></w:r><w:fldSimple w:instr=" = 10 / 4 \# &quot;0.00&quot; "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT FORMULA</w:t></w:r></w:fldSimple><w:r><w:t> FOOT FORMULA AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="252"><w:p><w:fldSimple w:instr=" SET Amount 7 "><w:r><w:t>STALE AMOUNT SET</w:t></w:r></w:fldSimple><w:r><w:t xml:space="preserve">STATE FORMULA BEFORE </w:t></w:r><w:fldSimple w:instr=" = Amount + 1 "><w:r><w:t>STALE STATE FORMULA</w:t></w:r></w:fldSimple><w:r><w:t> STATE FORMULA AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="253"><w:p><w:r><w:t xml:space="preserve">SPLIT FORMULA BEFORE </w:t></w:r><w:fldSimple w:instr=" = 2 + 3 \* OrdText "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE SPLIT FORMULA A</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE SPLIT FORMULA B</w:t></w:r></w:fldSimple><w:r><w:t> SPLIT FORMULA AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="254"><w:p><w:fldSimple w:instr=" SET Known 5 "><w:r><w:t>STALE KNOWN SET</w:t></w:r></w:fldSimple><w:r><w:t xml:space="preserve">DEFINED FORMULA BEFORE </w:t></w:r><w:fldSimple w:instr=" = DEFINED(Known) "><w:r><w:t>STALE DEFINED FORMULA</w:t></w:r></w:fldSimple><w:r><w:t> DEFINED FORMULA AFTER</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="261"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END FORMULA BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> = ROUND(AVERAGE(2; 4; 7); 1) \# &quot;0.0&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END FORMULA</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END FORMULA AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="262"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1600"/><w:gridCol w:w="1600"/><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:tcPr/><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">POSITIONAL FORMULA BEFORE </w:t></w:r><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>STALE POSITIONAL FORMULA</w:t></w:r></w:fldSimple><w:r><w:t> POSITIONAL FORMULA AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="263"><w:p><w:r><w:t xml:space="preserve">NONFINITE FORMULA BEFORE </w:t></w:r><w:fldSimple w:instr=" = 1e309 + 1 "><w:r><w:t>CACHED NONFINITE FORMULA</w:t></w:r></w:fldSimple><w:r><w:t> NONFINITE FORMULA AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -2114,6 +2143,156 @@ fn opened_docx_note_context_free_if_compare_fields_keep_results_and_instructions
     assert_eq!(
         rejected_fillin.text(),
         "FILLIN BEFORE CACHED FILLIN FILLIN AFTER"
+    );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_context_free_formula_fields_keep_results_and_instructions() {
+    let document = Document::open(&formula_field_note_docx()).expect("formula field notes open");
+    assert_eq!(document.notes().len(), 7, "source note records missing");
+    assert_eq!(document.report().features.fields, 9);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone formula normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT FORMULA BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END FORMULA BEFORE");
+    let rejected_state = note_with_marker(footnotes, "footnote", "STATE FORMULA BEFORE");
+    let rejected_split = note_with_marker(footnotes, "footnote", "SPLIT FORMULA BEFORE");
+    let rejected_defined = note_with_marker(footnotes, "footnote", "DEFINED FORMULA BEFORE");
+    let rejected_positional = note_with_marker(endnotes, "endnote", "POSITIONAL FORMULA BEFORE");
+    let rejected_nonfinite = note_with_marker(endnotes, "endnote", "NONFINITE FORMULA BEFORE");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(r#"<w:fldSimple w:instr=" = 10 / 4 \# &quot;0.00&quot; ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains(">2.50</w:t>")
+            && footnote.contains("FOOT FORMULA BEFORE ")
+            && footnote.contains(" FOOT FORMULA AFTER"),
+        "top-level context-free formula field missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT FORMULA"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(
+            r#"<w:fldSimple w:instr=" = ROUND(AVERAGE(2; 4; 7); 1) \# &quot;0.0&quot; ">"#
+        ) && endnote.contains("<w:i/>")
+            && endnote.contains(">4.3</w:t>")
+            && endnote.contains("END FORMULA BEFORE ")
+            && endnote.contains(" END FORMULA AFTER"),
+        "nested context-free formula field missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END FORMULA"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [
+        rejected_state,
+        rejected_split,
+        rejected_defined,
+        rejected_positional,
+        rejected_nonfinite,
+    ] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+    }
+    assert!(!footnotes.contains("SET Amount 7"));
+    assert!(!footnotes.contains("= Amount + 1"));
+    assert!(!footnotes.contains(r#"= 2 + 3 \* OrdText"#));
+    assert!(!footnotes.contains("SET Known 5"));
+    assert!(!footnotes.contains("= DEFINED(Known)"));
+    assert!(!endnotes.contains("= SUM(LEFT)"));
+    assert!(!endnotes.contains("= 1e309 + 1"));
+    assert!(!footnotes.contains("STALE AMOUNT SET"));
+    assert!(!footnotes.contains("STALE STATE FORMULA"));
+    assert!(!footnotes.contains("STALE SPLIT FORMULA A"));
+    assert!(!footnotes.contains("STALE SPLIT FORMULA B"));
+    assert!(!footnotes.contains("STALE KNOWN SET"));
+
+    let reopened = Document::open(&converted).expect("converted formula field notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[0].instruction, r#"= 10 / 4 \# "0.00""#);
+    assert_eq!(fields[0].result, "2.50");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("2.50"));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(
+        fields[1].instruction,
+        r#"= ROUND(AVERAGE(2; 4; 7); 1) \# "0.0""#
+    );
+    assert_eq!(fields[1].result, "4.3");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("4.3"));
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 5] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_state) = &reopened_model.blocks[2] else {
+        panic!("SET-backed formula fallback paragraph")
+    };
+    assert_eq!(
+        rejected_state.text(),
+        "STATE FORMULA BEFORE 8 STATE FORMULA AFTER"
+    );
+    let Block::Paragraph(rejected_split) = &reopened_model.blocks[3] else {
+        panic!("split-result formula fallback paragraph")
+    };
+    assert_eq!(
+        rejected_split.text(),
+        "SPLIT FORMULA BEFORE fifth SPLIT FORMULA AFTER"
+    );
+    let Block::Paragraph(rejected_defined) = &reopened_model.blocks[4] else {
+        panic!("DEFINED formula fallback paragraph")
+    };
+    assert_eq!(
+        rejected_defined.text(),
+        "DEFINED FORMULA BEFORE 1 DEFINED FORMULA AFTER"
+    );
+    let Block::Paragraph(rejected_positional) = &reopened_model.blocks[6] else {
+        panic!("positional formula flattened fallback paragraph")
+    };
+    assert_eq!(
+        rejected_positional.text(),
+        "2\t3\tPOSITIONAL FORMULA BEFORE 5 POSITIONAL FORMULA AFTER"
+    );
+    let Block::Paragraph(rejected_nonfinite) = &reopened_model.blocks[7] else {
+        panic!("nonfinite formula fallback paragraph")
+    };
+    assert_eq!(
+        rejected_nonfinite.text(),
+        "NONFINITE FORMULA BEFORE CACHED NONFINITE FORMULA NONFINITE FORMULA AFTER"
     );
     assert_eq!(reopened.to_docx(), converted);
 
