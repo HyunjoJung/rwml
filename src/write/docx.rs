@@ -1178,6 +1178,10 @@ struct Ctx {
     footnotes: Vec<WrittenNote>,
     /// Authored endnotes emitted while writing body runs.
     endnotes: Vec<WrittenNote>,
+    /// Relationships owned by `word/footnotes.xml`.
+    footnote_rels: Vec<Rel>,
+    /// Relationships owned by `word/endnotes.xml`.
+    endnote_rels: Vec<Rel>,
     /// Next generated header part number.
     header_id: u32,
     /// Next generated footer part number.
@@ -1225,6 +1229,8 @@ impl Ctx {
             bookmark_id: 0,
             footnotes: Vec::new(),
             endnotes: Vec::new(),
+            footnote_rels: Vec::new(),
+            endnote_rels: Vec::new(),
             header_id: 0,
             footer_id: 0,
         }
@@ -1804,6 +1810,7 @@ impl Ctx {
         &mut self,
         note: &AuthoredNote,
         payload: &NoteWritePayload,
+        rels: &mut Vec<Rel>,
     ) -> Option<String> {
         if !source_note_payload_is_supported(note, payload) {
             return None;
@@ -1821,49 +1828,33 @@ impl Ctx {
             .then_some(payload.table_pagination.as_slice());
         let mut body = String::new();
         for (index, block) in payload.blocks.iter().enumerate() {
-            match block {
-                Block::Paragraph(paragraph) => self.write_paragraph_with_source_hints(
-                    &mut body,
-                    paragraph,
-                    ParagraphWriteHints {
-                        line_spacing: line_spacing
-                            .and_then(|hints| hints.get(index))
-                            .copied()
-                            .flatten(),
-                        pagination: pagination.and_then(|hints| hints.get(index)).copied(),
-                        tab_stops: tab_stops
-                            .and_then(|hints| hints.get(index))
-                            .map(Vec::as_slice),
-                        column_break_offsets: column_break_offsets
-                            .and_then(|hints| hints.get(index))
-                            .map(Vec::as_slice),
-                        note_payloads: None,
-                    },
-                ),
-                Block::Table(table) => {
-                    if let Some(hints) = table_pagination
+            let table_hints = table_pagination
+                .and_then(|hints| hints.get(index))
+                .and_then(Option::as_ref);
+            self.write_hf_block(
+                &mut body,
+                block,
+                rels,
+                RunningBlockSlotWriteHints {
+                    line_spacing: line_spacing
                         .and_then(|hints| hints.get(index))
-                        .and_then(Option::as_ref)
-                    {
-                        self.write_table_with_source_hints(
-                            &mut body,
-                            table,
-                            TableWriteHints {
-                                row_pagination: Some(&hints.rows),
-                                cell_pagination: Some(&hints.cells),
-                                cell_line_spacing: Some(&hints.cell_line_spacing),
-                                cell_column_breaks: Some(&hints.cell_column_breaks),
-                                nested_tables: Some(&hints.nested),
-                                cell_tab_stops: Some(&hints.cell_tabs),
-                            },
-                        );
-                    } else {
-                        self.write_table(&mut body, table);
-                    }
-                }
-                Block::PageBreak => self.write_block(&mut body, block),
-                _ => return None,
-            }
+                        .copied()
+                        .flatten(),
+                    pagination: pagination.and_then(|hints| hints.get(index)).copied(),
+                    tab_stops: tab_stops
+                        .and_then(|hints| hints.get(index))
+                        .map(Vec::as_slice),
+                    table_row_pagination: table_hints.map(|hints| hints.rows.as_slice()),
+                    table_cell_pagination: table_hints.map(|hints| &hints.cells),
+                    table_cell_line_spacing: table_hints.map(|hints| &hints.cell_line_spacing),
+                    table_cell_tab_stops: table_hints.map(|hints| &hints.cell_tabs),
+                    table_cell_column_breaks: table_hints.map(|hints| &hints.cell_column_breaks),
+                    table_nested: table_hints.map(|hints| &hints.nested),
+                    column_break_offsets: column_break_offsets
+                        .and_then(|hints| hints.get(index))
+                        .map(Vec::as_slice),
+                },
+            );
         }
         Some(body)
     }
@@ -1877,7 +1868,22 @@ impl Ctx {
         let Some(note) = note else {
             return;
         };
-        let body_xml = payload.and_then(|payload| self.render_note_payload(note, payload));
+        let body_xml = match note.kind {
+            NoteKind::Footnote => {
+                let mut rels = std::mem::take(&mut self.footnote_rels);
+                let body_xml =
+                    payload.and_then(|payload| self.render_note_payload(note, payload, &mut rels));
+                self.footnote_rels = rels;
+                body_xml
+            }
+            NoteKind::Endnote => {
+                let mut rels = std::mem::take(&mut self.endnote_rels);
+                let body_xml =
+                    payload.and_then(|payload| self.render_note_payload(note, payload, &mut rels));
+                self.endnote_rels = rels;
+                body_xml
+            }
+        };
         let (tag, notes) = match note.kind {
             NoteKind::Footnote => ("footnoteReference", &mut self.footnotes),
             NoteKind::Endnote => ("endnoteReference", &mut self.endnotes),
@@ -3011,13 +3017,24 @@ fn source_note_payload_is_supported(note: &AuthoredNote, payload: &NoteWritePayl
 fn source_note_paragraph_is_supported(paragraph: &Paragraph) -> bool {
     paragraph.runs.iter().all(|run| {
         run.image.is_none()
-            && matches!(&run.field, FieldRole::None)
+            && source_note_field_is_supported(&run.field)
             && run.comment.is_none()
             && run.revision.is_none()
             && run.content_control.is_none()
             && run.bookmark.is_none()
             && run.note.is_none()
     })
+}
+
+fn source_note_field_is_supported(field: &FieldRole) -> bool {
+    match field {
+        FieldRole::None => true,
+        FieldRole::Hyperlink { url } => {
+            let url = url.trim();
+            !url.is_empty() && !url.starts_with('#')
+        }
+        _ => false,
+    }
 }
 
 fn source_note_table_is_supported(table: &Table) -> bool {
@@ -3046,10 +3063,14 @@ fn source_note_table_is_supported(table: &Table) -> bool {
     true
 }
 
-fn notes_xml(root: &str, item: &str, notes: &[WrittenNote]) -> Vec<u8> {
+fn notes_xml(root: &str, item: &str, notes: &[WrittenNote], has_relationships: bool) -> Vec<u8> {
     let mut s = String::new();
     s.push_str(XML_DECL);
-    s.push_str(&format!(r#"<w:{root} xmlns:w="{W_NS}">"#));
+    if has_relationships {
+        s.push_str(&format!(r#"<w:{root} xmlns:w="{W_NS}" xmlns:r="{R_NS}">"#));
+    } else {
+        s.push_str(&format!(r#"<w:{root} xmlns:w="{W_NS}">"#));
+    }
     s.push_str(&format!(
         concat!(
             r#"<w:{item} w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:{item}>"#,
@@ -4548,8 +4569,14 @@ fn try_to_docx_with_source_hints(
     if let Some(footnotes) = br.footnotes_xml {
         pkg.add_part("word/footnotes.xml", Some(CT_FOOTNOTES), footnotes);
     }
+    if !br.footnote_rels.is_empty() {
+        pkg.add_rels("word/_rels/footnotes.xml.rels", br.footnote_rels);
+    }
     if let Some(endnotes) = br.endnotes_xml {
         pkg.add_part("word/endnotes.xml", Some(CT_ENDNOTES), endnotes);
+    }
+    if !br.endnote_rels.is_empty() {
+        pkg.add_rels("word/_rels/endnotes.xml.rels", br.endnote_rels);
     }
     let core_properties_xml = core_properties_xml(&model.setup);
     let has_core_properties = core_properties_xml.is_some();
@@ -4706,8 +4733,12 @@ pub(crate) struct BodyRender {
     pub comments_ext_xml: Option<Vec<u8>>,
     /// Serialized footnotes part, if authored footnotes were emitted.
     pub footnotes_xml: Option<Vec<u8>>,
+    /// Relationships owned by the serialized footnotes part.
+    pub footnote_rels: Vec<Rel>,
     /// Serialized endnotes part, if authored endnotes were emitted.
     pub endnotes_xml: Option<Vec<u8>>,
+    /// Relationships owned by the serialized endnotes part.
+    pub endnote_rels: Vec<Rel>,
     /// Serialized settings part, if document settings were emitted.
     pub settings_xml: Option<Vec<u8>>,
     /// `(part path, bytes, extension, content-type)` for inline/block images.
@@ -4873,7 +4904,12 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
             external: false,
         });
         ctx.next_rid += 1;
-        Some(notes_xml("footnotes", "footnote", &ctx.footnotes))
+        Some(notes_xml(
+            "footnotes",
+            "footnote",
+            &ctx.footnotes,
+            !ctx.footnote_rels.is_empty(),
+        ))
     };
     let endnotes_xml = if ctx.endnotes.is_empty() {
         None
@@ -4885,7 +4921,12 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
             external: false,
         });
         ctx.next_rid += 1;
-        Some(notes_xml("endnotes", "endnote", &ctx.endnotes))
+        Some(notes_xml(
+            "endnotes",
+            "endnote",
+            &ctx.endnotes,
+            !ctx.endnote_rels.is_empty(),
+        ))
     };
     let settings_xml = if ctx.has_even_header_footer || model.setup.document_id.is_some() {
         Some(
@@ -4940,7 +4981,9 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         comments_xml,
         comments_ext_xml,
         footnotes_xml,
+        footnote_rels: ctx.footnote_rels,
         endnotes_xml,
+        endnote_rels: ctx.endnote_rels,
         settings_xml,
         media: ctx.media,
         chart_parts: ctx.chart_parts,
@@ -4956,7 +4999,7 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
 mod tests {
     use super::{
         render_body, section_columns_xml, source_column_break_offsets, source_line_spacing,
-        source_tab_stops_xml, SectionColumnWriteHint, SourceWriteHints,
+        source_tab_stops_xml, SectionColumnWriteHint, SourceWriteHints, REL_HYPERLINK,
     };
     use crate::model::{
         Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
@@ -6424,6 +6467,8 @@ mod tests {
             (
                 String::from_utf8(rendered.footnotes_xml.expect("footnotes part")).unwrap(),
                 String::from_utf8(rendered.endnotes_xml.expect("endnotes part")).unwrap(),
+                rendered.footnote_rels,
+                rendered.endnote_rels,
             )
         };
         let counts = |xml: &str, item: &str, text: &str| {
@@ -6438,7 +6483,7 @@ mod tests {
             )
         };
         let render_counts = |payloads: &[Vec<Option<NoteWritePayload>>]| {
-            let (footnotes, endnotes) = render(payloads);
+            let (footnotes, endnotes, _, _) = render(payloads);
             (
                 counts(&footnotes, "footnote", "FOOT"),
                 counts(&endnotes, "endnote", "END"),
@@ -6498,10 +6543,44 @@ mod tests {
         paragraph.runs[0].field = FieldRole::Hyperlink {
             url: "https://example.com/note".to_string(),
         };
+        let (footnotes, endnotes, footnote_rels, endnote_rels) = render(&relationship_bearing);
         assert_eq!(
-            render_counts(&relationship_bearing),
-            ((1, 0, 2, 0, 0, 0), (1, 0, 0, 0, 1, 0))
+            (
+                counts(&footnotes, "footnote", "FOOT"),
+                counts(&endnotes, "endnote", "END")
+            ),
+            ((2, 1, 0, 1, 2, 1), (1, 0, 0, 0, 1, 0))
         );
+        assert!(footnotes.contains(r#"<w:hyperlink r:id="rId1">"#));
+        assert_eq!(footnote_rels.len(), 1);
+        assert_eq!(footnote_rels[0].rel_type, REL_HYPERLINK);
+        assert_eq!(footnote_rels[0].target, "https://example.com/note");
+        assert!(footnote_rels[0].external);
+        assert!(endnote_rels.is_empty());
+
+        let mut internal_anchor = relationship_bearing.clone();
+        let Block::Paragraph(paragraph) = &mut internal_anchor[0][0].as_mut().unwrap().blocks[0]
+        else {
+            panic!("paragraph payload")
+        };
+        paragraph.runs[0].field = FieldRole::Hyperlink {
+            url: "#note-anchor".to_string(),
+        };
+        let (footnotes, _, footnote_rels, _) = render(&internal_anchor);
+        assert_eq!(counts(&footnotes, "footnote", "FOOT"), (1, 0, 2, 0, 0, 0));
+        assert!(footnote_rels.is_empty());
+
+        let mut mixed_semantics = relationship_bearing.clone();
+        let Block::Paragraph(paragraph) = &mut mixed_semantics[0][0].as_mut().unwrap().blocks[1]
+        else {
+            panic!("paragraph payload")
+        };
+        paragraph.runs[0].field = FieldRole::Simple {
+            instruction: "MERGEFIELD Client".to_string(),
+        };
+        let (footnotes, _, footnote_rels, _) = render(&mixed_semantics);
+        assert_eq!(counts(&footnotes, "footnote", "FOOT"), (1, 0, 2, 0, 0, 0));
+        assert!(footnote_rels.is_empty());
     }
 
     #[test]
@@ -6659,6 +6738,8 @@ mod tests {
             (
                 String::from_utf8(rendered.footnotes_xml.expect("footnotes part")).unwrap(),
                 String::from_utf8(rendered.endnotes_xml.expect("endnotes part")).unwrap(),
+                rendered.footnote_rels,
+                rendered.endnote_rels,
             )
         };
         let counts = |xml: &str, item: &str, text: &str| {
@@ -6676,7 +6757,7 @@ mod tests {
             )
         };
         let render_counts = |payloads: &[Vec<Option<NoteWritePayload>>]| {
-            let (footnotes, endnotes) = render(payloads);
+            let (footnotes, endnotes, _, _) = render(payloads);
             (
                 counts(&footnotes, "footnote", "TABLE"),
                 counts(&endnotes, "endnote", "END"),
@@ -6782,10 +6863,20 @@ mod tests {
         paragraph.runs[0].field = FieldRole::Hyperlink {
             url: "https://example.com/note-table".to_string(),
         };
+        let (footnotes, endnotes, footnote_rels, endnote_rels) = render(&relationship_bearing);
         assert_eq!(
-            render_counts(&relationship_bearing),
-            ((0, 1, 0, 2, 0, 0, 0, 0, 0), (0, 1, 0, 0, 0, 0, 1, 0, 0))
+            (
+                counts(&footnotes, "footnote", "TABLE"),
+                counts(&endnotes, "endnote", "END")
+            ),
+            ((2, 4, 2, 0, 2, 2, 2, 2, 2), (0, 1, 0, 0, 0, 0, 1, 0, 0))
         );
+        assert!(footnotes.contains(r#"<w:hyperlink r:id="rId1">"#));
+        assert_eq!(footnote_rels.len(), 1);
+        assert_eq!(footnote_rels[0].rel_type, REL_HYPERLINK);
+        assert_eq!(footnote_rels[0].target, "https://example.com/note-table");
+        assert!(footnote_rels[0].external);
+        assert!(endnote_rels.is_empty());
     }
 
     #[test]

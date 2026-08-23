@@ -1082,17 +1082,21 @@ and numbering, separators, custom marks, table-cell/manual-break anchors, and
 page-bottom placement remain outside that normalized legacy path.
 
 When the exact body note-reference contract succeeds for an opened DOCX, fresh
-conversion separately retains mixed ordinary paragraphs and relationship-free
-table trees rooted at top-level tables in real footnote and endnote bodies. Every
+conversion separately retains mixed ordinary paragraphs and supported table trees
+rooted at top-level tables in real footnote and endnote bodies. Every
 surviving cell may contain ordinary paragraphs or further nested tables under the
 same constraint. The private ID-keyed payload preserves block order, modeled
 table properties and horizontal/vertical merges, modeled paragraph and character
 formatting, row no-split and cell keep/widow controls, exact/minimum line rules,
 explicit tabs and leaders, visible manual column breaks at every table depth, and
 manual page breaks between top-level paragraph fragments and inside table cells
-at every selected depth. Unsupported media, relationships, fields, annotations,
-bookmarks, or nested notes degrade only that note to the normalized one-paragraph
-text fallback; supported sibling notes remain rich. Source IDs, numbering and
+at every selected depth. Relationship-backed external hyperlinks survive in
+top-level and recursively nested note paragraphs through relationship files owned
+by the corresponding footnote or endnote part; simple HYPERLINK field syntax may
+normalize to a `w:hyperlink` element. Unsupported media, charts, internal-anchor
+links, other fields, annotations, bookmarks, or nested notes degrade only that
+note to the normalized one-paragraph text fallback without leaving an orphan
+relationship; supported sibling notes remain rich. Source IDs, numbering and
 separators, custom marks, page-bottom placement, and Word-exact pagination are not
 preserved. Standalone `write_docx` and the public model remain unchanged.
 

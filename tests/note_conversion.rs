@@ -145,8 +145,45 @@ fn nested_and_relationship_table_note_docx() -> Vec<u8> {
     note_table_docx(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="21"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="22"/></w:r></w:p><w:sectPr/></w:body></w:document>"#,
         r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="21"><w:tbl><w:tblPr><w:tblW w:w="4000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepNext/><w:spacing w:line="220" w:lineRule="exact"/></w:pPr><w:r><w:t>OUTER TABLE A</w:t><w:br w:type="page"/><w:t>OUTER TABLE B</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="3000" w:type="pct"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="300" w:lineRule="atLeast"/><w:tabs><w:tab w:val="center" w:pos="900" w:leader="dot"/></w:tabs></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>NESTED TABLE A</w:t><w:br w:type="column"/><w:t>NESTED TABLE B</w:t><w:tab/><w:t>NESTED TAB</w:t><w:br w:type="page"/><w:t>NESTED PAGE</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:footnote></w:footnotes>"#,
-        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="22"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com/note-table&quot; "><w:r><w:t>UNSUPPORTED LINK TABLE</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:endnote></w:endnotes>"#,
+        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="22"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:fldSimple w:instr=" MERGEFIELD Client "><w:r><w:t>UNSUPPORTED FIELD TABLE</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:endnote></w:endnotes>"#,
     )
+}
+
+fn relationship_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="31"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="41"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="32"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="42"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:endnoteReference w:id="43"/></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:footnote w:id="31"><w:p><w:hyperlink r:id="rFootOne"><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>FOOT LINK ONE</w:t></w:r></w:hyperlink></w:p></w:footnote><w:footnote w:id="32"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:hyperlink r:id="rFootTwo"><w:r><w:rPr><w:b/></w:rPr><w:t>FOOT NESTED LINK</w:t></w:r></w:hyperlink></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/_rels/footnotes.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rFootOne" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/foot-one?x=1&amp;y=2" TargetMode="External"/><Relationship Id="rFootTwo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/foot-two" TargetMode="External"/></Relationships>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:endnote w:id="41"><w:p><w:hyperlink r:id="rEndOne"><w:r><w:rPr><w:i/></w:rPr><w:t>END LINK ONE</w:t></w:r></w:hyperlink></w:p></w:endnote><w:endnote w:id="42"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:hyperlink r:id="rEndTwo"><w:r><w:rPr><w:smallCaps/></w:rPr><w:t>END NESTED LINK</w:t></w:r></w:hyperlink></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="43"><w:p><w:hyperlink r:id="rRejected"><w:r><w:t>REJECTED LINK</w:t></w:r></w:hyperlink><w:fldSimple w:instr=" MERGEFIELD Client "><w:r><w:t> UNSUPPORTED FIELD</w:t></w:r></w:fldSimple></w:p></w:endnote></w:endnotes>"#,
+        ),
+        (
+            "word/_rels/endnotes.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rEndOne" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/end-one" TargetMode="External"/><Relationship Id="rEndTwo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/end-two" TargetMode="External"/><Relationship Id="rRejected" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/rejected" TargetMode="External"/></Relationships>"#,
+        ),
+    ])
 }
 
 fn note_with_marker<'a>(xml: &'a str, item: &str, marker: &str) -> &'a str {
@@ -345,7 +382,7 @@ fn nested_note_table_roundtrips_without_disabling_supported_sibling() {
     let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
     let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
     let footnote = note_with_marker(footnotes, "footnote", "NESTED TABLE A");
-    let endnote = note_with_marker(endnotes, "endnote", "UNSUPPORTED LINK TABLE");
+    let endnote = note_with_marker(endnotes, "endnote", "UNSUPPORTED FIELD TABLE");
 
     assert_eq!(footnote.matches("<w:tbl>").count(), 2, "{footnote}");
     assert_eq!(
@@ -373,4 +410,73 @@ fn nested_note_table_roundtrips_without_disabling_supported_sibling() {
     let standalone = unzip_parts(&standalone_bytes);
     assert!(!standalone.contains_key("word/footnotes.xml"));
     assert!(!standalone.contains_key("word/endnotes.xml"));
+}
+
+#[test]
+fn opened_docx_note_external_hyperlinks_keep_part_local_relationships() {
+    let document = Document::open(&relationship_note_docx()).expect("relationship notes open");
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    let document_rels = std::str::from_utf8(&parts["word/_rels/document.xml.rels"]).unwrap();
+    assert!(parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(parts.contains_key("word/_rels/endnotes.xml.rels"));
+    let footnote_rels = std::str::from_utf8(&parts["word/_rels/footnotes.xml.rels"]).unwrap();
+    let endnote_rels = std::str::from_utf8(&parts["word/_rels/endnotes.xml.rels"]).unwrap();
+
+    let foot_one = note_with_marker(footnotes, "footnote", "FOOT LINK ONE");
+    let foot_two = note_with_marker(footnotes, "footnote", "FOOT NESTED LINK");
+    let end_one = note_with_marker(endnotes, "endnote", "END LINK ONE");
+    let end_two = note_with_marker(endnotes, "endnote", "END NESTED LINK");
+    let rejected = note_with_marker(endnotes, "endnote", "REJECTED LINK");
+    assert!(footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(endnotes.contains("xmlns:r="), "{endnotes}");
+    assert!(foot_one.contains(r#"<w:hyperlink r:id="rId1">"#));
+    assert!(foot_two.contains(r#"<w:hyperlink r:id="rId2">"#));
+    assert_eq!(foot_two.matches("<w:tbl>").count(), 2, "{foot_two}");
+    assert!(end_one.contains(r#"<w:hyperlink r:id="rId1">"#));
+    assert!(end_two.contains(r#"<w:hyperlink r:id="rId2">"#));
+    assert_eq!(end_two.matches("<w:tbl>").count(), 2, "{end_two}");
+    assert!(!rejected.contains("<w:hyperlink"), "{rejected}");
+    assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+    assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+
+    assert_eq!(footnote_rels.matches("TargetMode=\"External\"").count(), 2);
+    assert!(footnote_rels.contains(r#"Id="rId1""#));
+    assert!(footnote_rels.contains(r#"Id="rId2""#));
+    assert!(footnote_rels.contains("https://example.com/foot-one?x=1&amp;y=2"));
+    assert!(footnote_rels.contains("https://example.com/foot-two"));
+    assert_eq!(endnote_rels.matches("TargetMode=\"External\"").count(), 2);
+    assert!(endnote_rels.contains(r#"Id="rId1""#));
+    assert!(endnote_rels.contains(r#"Id="rId2""#));
+    assert!(endnote_rels.contains("https://example.com/end-one"));
+    assert!(endnote_rels.contains("https://example.com/end-two"));
+    assert!(!endnote_rels.contains("https://example.com/rejected"));
+    for target in ["foot-one", "foot-two", "end-one", "end-two", "rejected"] {
+        assert!(!document_rels.contains(target), "{document_rels}");
+    }
+
+    let reopened = Document::open(&converted).expect("converted relationship notes reopen");
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    assert_eq!(
+        &reopened_model.blocks[..reopened_model.blocks.len() - 1],
+        &normalized_model.blocks[..normalized_model.blocks.len() - 1]
+    );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
 }

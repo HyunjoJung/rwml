@@ -1087,7 +1087,7 @@ impl Document {
     /// ordinary top-level paragraph anchors promote normalized footnote/endnote
     /// text into real references and note parts. Reopened DOCX inputs retain that
     /// exact body-reference subset through a private block/id/offset bridge and
-    /// also retain mixed ordinary paragraphs and relationship-free table trees
+    /// also retain mixed ordinary paragraphs and supported table trees
     /// rooted at top-level tables. Surviving cells may recursively contain
     /// ordinary paragraphs or further tables under the same constraint. The
     /// private payload preserves modeled table properties and merges,
@@ -1095,6 +1095,10 @@ impl Document {
     /// exact/minimum line rules, explicit tabs, and visible manual column breaks
     /// at every table depth. Manual page breaks between top-level paragraph
     /// fragments and inside table cells at every selected depth are also retained.
+    /// Relationship-backed external hyperlinks in those paragraphs retain
+    /// relationships owned by the corresponding footnote or endnote part,
+    /// including through nested tables. Simple HYPERLINK field syntax may
+    /// normalize to a `w:hyperlink` element.
     /// An unsupported opened-DOCX note body falls back independently to normalized
     /// one-paragraph text.
     /// Legacy nested-table descendants and note paragraph layout properties
@@ -1105,10 +1109,10 @@ impl Document {
     /// recursively nested body and running-surface table cells survive fresh
     /// conversion through the ordered public block tree across all six selected
     /// running variants; preview table fragmentation and Word-exact pagination
-    /// are not claimed. Media, relationships, fields, annotations, bookmarks,
-    /// nested notes, source IDs and numbering, separators, custom marks, complex
-    /// anchors, and page-bottom placement remain outside the bounded opened-DOCX
-    /// note path.
+    /// are not claimed. Media, charts, internal-anchor links, other fields,
+    /// annotations, bookmarks, nested notes, source IDs and numbering, separators,
+    /// custom marks, complex anchors, and page-bottom placement remain outside the
+    /// bounded opened-DOCX note path.
     /// Standalone [`write_docx`] remains model-only for all of these private
     /// hints.
     /// Available with the default `docx` feature.

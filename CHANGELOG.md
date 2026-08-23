@@ -8,6 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  relationship-backed external hyperlinks in exact real footnote and endnote
+  payloads. Each generated note part owns an independent relationship file, IDs
+  remain unique across multiple notes in that part, and links survive in ordinary
+  top-level paragraphs and recursively nested supported table cells without
+  leaking into `document.xml.rels`. Both note families, escaped targets,
+  deterministic bytes, native reopen/reconversion, source-model immutability,
+  standalone-writer exclusion, and all-or-nothing fallback without orphan
+  relationships are covered. Simple HYPERLINK field syntax may normalize to a
+  `w:hyperlink` element. Internal-anchor links, media, charts, other fields,
+  annotations, bookmarks, nested notes, page-bottom placement, and Word-exact
+  pagination remain outside this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs retains typed
   manual page breaks in direct and recursively nested body and running-surface
   table cells through the existing ordered public block tree. Evidence covers
@@ -31,8 +43,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   breaks, and PDF distinction between running line and column breaks remain
   outside this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
-  mixed ordinary paragraphs and relationship-free table trees rooted at top-level
-  tables in real footnote and endnote bodies when the exact body-reference
+  mixed ordinary paragraphs and supported table trees rooted at top-level tables
+  in real footnote and endnote bodies when the exact body-reference
   contract succeeds. Surviving cells may recursively contain ordinary paragraphs
   or further tables under the same constraint. An ID-keyed, run-aligned private
   payload retains block order, modeled table properties and horizontal/vertical
@@ -47,9 +59,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   table pagination metadata, page-break/tab-slot alignment, malformed alignment,
   table-component and break-leaf isolation, deterministic bytes, native reopen
   and reconversion, public-model equality, and standalone-writer exclusion are
-  covered. Media, relationship-bearing runs, fields, annotations, bookmarks,
-  nested notes, custom marks, source IDs/numbering and separators, page-bottom
-  placement, and Word-exact pagination remain unsupported by this bounded path.
+  covered. Relationship-backed external hyperlink runs are retained with
+  note-part-local relationships. Media, charts, internal-anchor links, other
+  fields, annotations, bookmarks, nested notes, custom marks, source IDs/
+  numbering and separators, page-bottom placement, and Word-exact pagination
+  remain unsupported by this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   visible manual column breaks in ordinary top-level paragraphs across all
   default/first/even headers and footers. The private section-aligned six-variant
