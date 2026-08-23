@@ -17,6 +17,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   independently, deterministic bytes and native reopen are covered, and
   standalone model writing remains unchanged. Table-cell, note, running-surface,
   and nested-content manual breaks remain outside this bounded path.
+- Preserves reader-resolved explicit paragraph tab stops when
+  `Document::to_docx()` freshly converts direct top-level paragraphs in selected
+  default/first/even headers and footers from an opened DOCX. A private
+  section-aligned six-variant sidecar follows effective default-surface
+  inheritance, validates each complete running block stream independently, and
+  emits bounded left, center, right, decimal, and bar stops with supported
+  leaders through the established paragraph-property formatter. Deterministic
+  bytes, native reopen/model equality, nonparagraph slots, local relationships,
+  generated page-number fields, and malformed section/variant isolation are
+  covered. Standalone model writing remains unchanged; legacy-DOC running
+  stories, running-table-cell paragraphs, settings-defined default-tab
+  intervals, and fresh note conversion remain outside this bridge.
 - Applies opened-DOCX table-cell tab stops in top-level real footnote and endnote
   tables through the existing table shaper. A private block/row/surviving-cell/
   paragraph tree follows visible note blocks in footnote-then-endnote order,
@@ -41,8 +53,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   preserving the public model; supported leaders and a positive
   `w:defaultTabStop` interval use the established paragraph shaper. Running
   table-cell tab hints remain independently aligned. Legacy-DOC running stories,
-  fresh conversion, post-tab field containment, and Word-exact tab reflow and
-  pagination remain outside this bounded path.
+  running-table-cell fresh conversion, post-tab field containment, and
+  Word-exact tab reflow and pagination remain outside this bounded path.
 - Preserves reader-resolved explicit DOCX paragraph tab stops when
   `Document::to_docx()` freshly converts aligned top-level body paragraphs and
   direct paragraph blocks in surviving cells of top-level tables. The bounded
@@ -52,8 +64,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   block, row, cell, and cell-block alignment, rounded-position ordering, the
   256-stop and 31,680-twip limits, vertical-merge ownership, deterministic
   bytes, and native reopen are covered. Standalone model writing remains
-  unchanged; nested-table descendants, notes, running surfaces,
-  and settings-defined default-tab intervals remain outside this tab bridge.
+  unchanged; nested-table descendants, notes, and settings-defined default-tab
+  intervals remain outside this body/table tab bridge. Direct top-level
+  opened-DOCX running paragraphs use the separate section-aligned bridge above.
 - Extends source-aware body layout conversion to DOCX-backed
   `Document::to_docx()`. Default builds now retain the reader-resolved
   exact/minimum line rules and effective `keepNext`, `keepLines`, and widow-off

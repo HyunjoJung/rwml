@@ -1,6 +1,6 @@
 #![cfg(feature = "docx")]
 
-use std::io::Write;
+use std::io::{Read, Write};
 
 #[cfg(feature = "render")]
 use rwml::FieldRole;
@@ -27,6 +27,18 @@ fn docx_fixture_bytes(parts: &[(&str, &[u8])]) -> Vec<u8> {
         zip.finish().unwrap();
     }
     out
+}
+
+fn unzip_parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
+    let mut parts = std::collections::BTreeMap::new();
+    for index in 0..zip.len() {
+        let mut file = zip.by_index(index).unwrap();
+        let mut body = Vec::new();
+        file.read_to_end(&mut body).unwrap();
+        parts.insert(file.name().to_string(), body);
+    }
+    parts
 }
 
 #[cfg(feature = "render")]
@@ -1169,26 +1181,27 @@ fn opened_docx_render_consumes_running_table_cell_absolute_spacing() {
     );
 }
 
-#[cfg(feature = "render")]
 fn running_surface_paragraph_tab_docx(
     header_tabs: &str,
     even_footer_tabs: &str,
     default_tab_stop_twips: u32,
 ) -> Vec<u8> {
-    let paragraph = |tabs: &str| {
-        format!(r#"<w:p><w:pPr>{tabs}</w:pPr><w:r><w:t>A</w:t><w:tab/><w:t>B</w:t></w:r></w:p>"#)
+    let paragraph = |label: &str, tabs: &str| {
+        format!(
+            r#"<w:p><w:pPr>{tabs}</w:pPr><w:r><w:t>A</w:t><w:tab/><w:t>B</w:t></w:r></w:p><w:p><w:r><w:t>{label}</w:t></w:r></w:p>"#
+        )
     };
     let header = format!(
         r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}</w:hdr>"#,
-        paragraph(header_tabs)
+        paragraph("DEFAULT HEADER MARKER", header_tabs)
     );
     let footer = format!(
         r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}</w:ftr>"#,
-        paragraph("")
+        paragraph("DEFAULT FOOTER MARKER", "")
     );
     let even_footer = format!(
         r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{}</w:ftr>"#,
-        paragraph(even_footer_tabs)
+        paragraph("EVEN FOOTER MARKER", even_footer_tabs)
     );
     let settings = format!(
         r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:defaultTabStop w:val="{default_tab_stop_twips}"/></w:settings>"#
@@ -1220,6 +1233,63 @@ fn running_surface_paragraph_tab_docx(
         ("word/footer1.xml", &footer),
         ("word/footer2.xml", &even_footer),
     ])
+}
+
+#[test]
+fn opened_docx_running_surface_paragraph_tabs_roundtrip_through_fresh_conversion() {
+    let document = Document::open(&running_surface_paragraph_tab_docx(
+        r#"<w:tabs><w:tab w:val="left" w:pos="1440" w:leader="dot"/></w:tabs>"#,
+        r#"<w:tabs><w:tab w:val="right" w:pos="1200" w:leader="hyphen"/></w:tabs>"#,
+        720,
+    ))
+    .expect("running-paragraph tab fixture opens");
+    let model = document.model();
+    let converted = document.to_docx();
+
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(
+        Document::open(&converted)
+            .expect("fresh conversion reopens")
+            .model(),
+        model
+    );
+
+    let parts = unzip_parts(&converted);
+    let running_parts = |needle: &str| {
+        parts
+            .iter()
+            .filter(|(name, body)| {
+                (name.starts_with("word/header") || name.starts_with("word/footer"))
+                    && std::str::from_utf8(body).is_ok_and(|xml| xml.contains(needle))
+            })
+            .map(|(_, body)| std::str::from_utf8(body).unwrap())
+            .collect::<Vec<_>>()
+    };
+    let headers = running_parts("DEFAULT HEADER MARKER");
+    assert_eq!(
+        headers.len(),
+        2,
+        "default header is effective in both sections"
+    );
+    assert!(headers
+        .iter()
+        .all(|xml| xml
+            .contains(r#"<w:tabs><w:tab w:val="left" w:pos="1440" w:leader="dot"/></w:tabs>"#)));
+
+    let default_footers = running_parts("DEFAULT FOOTER MARKER");
+    assert_eq!(default_footers.len(), 1);
+    assert!(default_footers.iter().all(|xml| !xml.contains("<w:tabs>")));
+
+    let even_footers = running_parts("EVEN FOOTER MARKER");
+    assert_eq!(even_footers.len(), 1);
+    assert!(even_footers[0]
+        .contains(r#"<w:tabs><w:tab w:val="right" w:pos="1200" w:leader="hyphen"/></w:tabs>"#));
+
+    let standalone = unzip_parts(&rwml::write_docx(&model));
+    assert!(standalone.iter().all(|(name, body)| {
+        !(name.starts_with("word/header") || name.starts_with("word/footer"))
+            || !std::str::from_utf8(body).unwrap().contains("<w:tabs>")
+    }));
 }
 
 #[cfg(feature = "render")]

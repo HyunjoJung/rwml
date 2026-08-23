@@ -409,6 +409,17 @@ pub(crate) struct TabStop {
 }
 
 #[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceTabStopHints {
+    pub(crate) header: Vec<Vec<TabStop>>,
+    pub(crate) first_header: Vec<Vec<TabStop>>,
+    pub(crate) even_header: Vec<Vec<TabStop>>,
+    pub(crate) footer: Vec<Vec<TabStop>>,
+    pub(crate) first_footer: Vec<Vec<TabStop>>,
+    pub(crate) even_footer: Vec<Vec<TabStop>>,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
 pub(crate) const MAX_TAB_STOPS: usize = 256;
 
 /// A paragraph style definition for generated `.docx` output.
