@@ -3019,19 +3019,28 @@ fn source_note_paragraph_is_supported(paragraph: &Paragraph) -> bool {
 }
 
 fn source_note_table_is_supported(table: &Table) -> bool {
-    let mut has_cell = false;
-    for cell in table.rows.iter().flat_map(|row| &row.cells) {
-        has_cell = true;
-        if cell.blocks.is_empty()
-            || !cell.blocks.iter().all(|block| match block {
-                Block::Paragraph(paragraph) => source_note_paragraph_is_supported(paragraph),
-                _ => false,
-            })
-        {
+    let mut pending = vec![table];
+    while let Some(table) = pending.pop() {
+        let mut has_cell = false;
+        for cell in table.rows.iter().flat_map(|row| &row.cells) {
+            has_cell = true;
+            if cell.blocks.is_empty() {
+                return false;
+            }
+            for block in &cell.blocks {
+                match block {
+                    Block::Paragraph(paragraph)
+                        if source_note_paragraph_is_supported(paragraph) => {}
+                    Block::Table(table) => pending.push(table),
+                    _ => return false,
+                }
+            }
+        }
+        if !has_cell {
             return false;
         }
     }
-    has_cell
+    true
 }
 
 fn notes_xml(root: &str, item: &str, notes: &[WrittenNote]) -> Vec<u8> {
@@ -6494,7 +6503,9 @@ mod tests {
 
     #[test]
     fn source_note_table_payloads_validate_components_leaves_and_siblings() {
-        let footnote_text = "TABLE\nBREAK";
+        let outer_text = "TABLE\nBREAK";
+        let nested_text = "NESTED\nBREAK";
+        let footnote_text = "TABLE\nBREAK NESTED\nBREAK";
         let endnote_text = "END";
         let model = DocModel {
             blocks: vec![Block::Paragraph(Paragraph {
@@ -6520,18 +6531,47 @@ mod tests {
             })],
             ..DocModel::default()
         };
-        let mut table_paragraph = para(footnote_text);
+        let mut table_paragraph = para(outer_text);
         table_paragraph.props.align = Align::Center;
+        let nested_table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(para(nested_text))],
+                    ..Cell::default()
+                }],
+            }],
+            width_pct: Some(0.6),
+            ..Table::default()
+        };
         let table = Table {
             rows: vec![Row {
                 cells: vec![Cell {
-                    blocks: vec![Block::Paragraph(table_paragraph)],
+                    blocks: vec![
+                        Block::Paragraph(table_paragraph),
+                        Block::Table(nested_table),
+                    ],
                     ..Cell::default()
                 }],
             }],
             width_pct: Some(0.8),
             fixed_layout: true,
             ..Table::default()
+        };
+        let nested_hints = TablePaginationHints {
+            rows: vec![TableRowPaginationHint { cant_split: true }],
+            cells: vec![vec![vec![Some(PaginationHint {
+                keep_lines: true,
+                widow_control: false,
+                ..PaginationHint::default()
+            })]]],
+            cell_line_spacing: vec![vec![vec![Some(LineSpacingHint::Exact(15.0))]]],
+            cell_column_breaks: vec![vec![vec![vec![6]]]],
+            nested: vec![vec![vec![None]]],
+            cell_tabs: vec![vec![vec![vec![tab(
+                48.0,
+                TabAlignment::Right,
+                TabLeader::Hyphen,
+            )]]]],
         };
         let valid = vec![vec![
             Some(NoteWritePayload {
@@ -6544,19 +6584,21 @@ mod tests {
                 column_break_offsets: vec![Vec::new()],
                 table_pagination: vec![Some(TablePaginationHints {
                     rows: vec![TableRowPaginationHint { cant_split: true }],
-                    cells: vec![vec![vec![Some(PaginationHint {
-                        keep_lines: true,
-                        widow_control: false,
-                        ..PaginationHint::default()
-                    })]]],
-                    cell_line_spacing: vec![vec![vec![Some(LineSpacingHint::Exact(12.0))]]],
-                    cell_column_breaks: vec![vec![vec![vec![5]]]],
-                    nested: vec![vec![vec![None]]],
-                    cell_tabs: vec![vec![vec![vec![tab(
-                        36.0,
-                        TabAlignment::Center,
-                        TabLeader::Dot,
-                    )]]]],
+                    cells: vec![vec![vec![
+                        Some(PaginationHint {
+                            keep_lines: true,
+                            widow_control: false,
+                            ..PaginationHint::default()
+                        }),
+                        None,
+                    ]]],
+                    cell_line_spacing: vec![vec![vec![Some(LineSpacingHint::Exact(12.0)), None]]],
+                    cell_column_breaks: vec![vec![vec![vec![5], Vec::new()]]],
+                    nested: vec![vec![vec![None, Some(nested_hints)]]],
+                    cell_tabs: vec![vec![vec![
+                        vec![tab(36.0, TabAlignment::Center, TabLeader::Dot)],
+                        Vec::new(),
+                    ]]],
                 })],
             }),
             Some(NoteWritePayload {
@@ -6630,7 +6672,7 @@ mod tests {
 
         assert_eq!(
             render_counts(&valid),
-            ((1, 1, 1, 0, 1, 1, 1, 1), (0, 1, 0, 0, 0, 0, 1, 0))
+            ((2, 2, 2, 0, 2, 2, 2, 2), (0, 1, 0, 0, 0, 0, 1, 0))
         );
 
         let mut bad_table_outer = valid.clone();
@@ -6641,7 +6683,7 @@ mod tests {
             .clear();
         assert_eq!(
             render_counts(&bad_table_outer),
-            ((1, 1, 0, 1, 0, 0, 0, 0), (0, 1, 0, 0, 0, 0, 1, 0))
+            ((2, 2, 0, 2, 0, 0, 0, 0), (0, 1, 0, 0, 0, 0, 1, 0))
         );
 
         let mut bad_row_component = valid.clone();
@@ -6652,7 +6694,7 @@ mod tests {
             .clear();
         assert_eq!(
             render_counts(&bad_row_component),
-            ((1, 1, 1, 0, 0, 1, 1, 1), (0, 1, 0, 0, 0, 0, 1, 0))
+            ((2, 2, 2, 0, 1, 2, 2, 2), (0, 1, 0, 0, 0, 0, 1, 0))
         );
 
         let mut bad_line_component = valid.clone();
@@ -6663,7 +6705,7 @@ mod tests {
             .clear();
         assert_eq!(
             render_counts(&bad_line_component),
-            ((1, 1, 1, 0, 1, 1, 0, 1), (0, 1, 0, 0, 0, 0, 1, 0))
+            ((2, 2, 2, 0, 2, 2, 1, 2), (0, 1, 0, 0, 0, 0, 1, 0))
         );
 
         let mut bad_break_leaf = valid.clone();
@@ -6673,7 +6715,44 @@ mod tests {
             .cell_column_breaks[0][0][0] = vec![5, 5];
         assert_eq!(
             render_counts(&bad_break_leaf),
-            ((1, 1, 0, 1, 1, 1, 1, 1), (0, 1, 0, 0, 0, 0, 1, 0))
+            ((2, 2, 1, 1, 2, 2, 2, 2), (0, 1, 0, 0, 0, 0, 1, 0))
+        );
+
+        let mut missing_nested_slot = valid.clone();
+        missing_nested_slot[0][0].as_mut().unwrap().table_pagination[0]
+            .as_mut()
+            .unwrap()
+            .nested[0][0][1] = None;
+        assert_eq!(
+            render_counts(&missing_nested_slot),
+            ((2, 2, 1, 1, 1, 1, 1, 1), (0, 1, 0, 0, 0, 0, 1, 0))
+        );
+
+        let mut bad_nested_rows = valid.clone();
+        bad_nested_rows[0][0].as_mut().unwrap().table_pagination[0]
+            .as_mut()
+            .unwrap()
+            .nested[0][0][1]
+            .as_mut()
+            .unwrap()
+            .rows
+            .clear();
+        assert_eq!(
+            render_counts(&bad_nested_rows),
+            ((2, 2, 2, 0, 1, 2, 2, 2), (0, 1, 0, 0, 0, 0, 1, 0))
+        );
+
+        let mut bad_nested_break = valid.clone();
+        bad_nested_break[0][0].as_mut().unwrap().table_pagination[0]
+            .as_mut()
+            .unwrap()
+            .nested[0][0][1]
+            .as_mut()
+            .unwrap()
+            .cell_column_breaks[0][0][0] = vec![6, 6];
+        assert_eq!(
+            render_counts(&bad_nested_break),
+            ((2, 2, 1, 1, 2, 2, 2, 2), (0, 1, 0, 0, 0, 0, 1, 0))
         );
 
         let mut relationship_bearing = valid.clone();
@@ -6681,15 +6760,18 @@ mod tests {
         else {
             panic!("table payload")
         };
-        let Block::Paragraph(paragraph) = &mut table.rows[0].cells[0].blocks[0] else {
-            panic!("table paragraph payload")
+        let Block::Table(nested) = &mut table.rows[0].cells[0].blocks[1] else {
+            panic!("nested table payload")
+        };
+        let Block::Paragraph(paragraph) = &mut nested.rows[0].cells[0].blocks[0] else {
+            panic!("nested table paragraph payload")
         };
         paragraph.runs[0].field = FieldRole::Hyperlink {
             url: "https://example.com/note-table".to_string(),
         };
         assert_eq!(
             render_counts(&relationship_bearing),
-            ((0, 1, 0, 1, 0, 0, 0, 0), (0, 1, 0, 0, 0, 0, 1, 0))
+            ((0, 1, 0, 2, 0, 0, 0, 0), (0, 1, 0, 0, 0, 0, 1, 0))
         );
     }
 

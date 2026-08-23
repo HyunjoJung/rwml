@@ -2103,19 +2103,27 @@ fn note_write_payload(
 }
 
 fn note_write_table_shape_supported(table: &crate::model::Table) -> bool {
-    let mut has_cell = false;
-    for cell in table.rows.iter().flat_map(|row| &row.cells) {
-        has_cell = true;
-        if cell.blocks.is_empty()
-            || !cell
-                .blocks
-                .iter()
-                .all(|block| matches!(block, Block::Paragraph(_)))
-        {
+    let mut pending = vec![table];
+    while let Some(table) = pending.pop() {
+        let mut has_cell = false;
+        for cell in table.rows.iter().flat_map(|row| &row.cells) {
+            has_cell = true;
+            if cell.blocks.is_empty() {
+                return false;
+            }
+            for block in &cell.blocks {
+                match block {
+                    Block::Paragraph(_) => {}
+                    Block::Table(table) => pending.push(table),
+                    _ => return false,
+                }
+            }
+        }
+        if !has_cell {
             return false;
         }
     }
-    has_cell
+    true
 }
 
 fn read_text_boxes(

@@ -20,21 +20,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   breaks, and PDF distinction between running line and column breaks remain
   outside this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
-  mixed ordinary paragraphs and relationship-free top-level tables in real
-  footnote and endnote bodies when the exact body-reference contract succeeds and
-  every surviving table cell contains only direct ordinary paragraphs. An ID-
-  keyed, run-aligned private payload retains block order, modeled table properties
-  and horizontal/vertical merges, modeled paragraph and character formatting,
-  row no-split and cell keep/widow controls, exact/minimum line rules, explicit
-  tabs and leaders, and visible manual column breaks. An unsupported or malformed
-  note body falls back independently to one normalized text paragraph while
-  supported siblings retain their payload; body anchor projection remains all-
-  or-nothing. Both note families, accepted-current paragraph wrappers, malformed
-  alignment, table-component and break-leaf isolation, deterministic bytes,
-  native reopen and reconversion, public-model equality, and standalone-writer
-  exclusion are covered. Nested tables, media, relationship-bearing runs, fields,
-  annotations, bookmarks, nested notes, custom marks, source IDs/numbering and
-  separators, and page-bottom placement remain unsupported by this bounded path.
+  mixed ordinary paragraphs and relationship-free table trees rooted at top-level
+  tables in real footnote and endnote bodies when the exact body-reference
+  contract succeeds. Surviving cells may recursively contain ordinary paragraphs
+  or further tables under the same constraint. An ID-keyed, run-aligned private
+  payload retains block order, modeled table properties and horizontal/vertical
+  merges, modeled paragraph and character formatting, row no-split and cell keep/
+  widow controls, exact/minimum line rules, explicit tabs and leaders, and visible
+  manual column breaks at every table depth. An unsupported or malformed note
+  body falls back independently to one normalized text paragraph while supported
+  siblings retain their payload; body anchor projection remains all-or-nothing.
+  Both note families, accepted-current paragraph wrappers, nested table
+  pagination metadata, malformed alignment, table-component and break-leaf
+  isolation, deterministic bytes, native reopen and reconversion, public-model
+  equality, and standalone-writer exclusion are covered. Media, relationship-
+  bearing runs, fields, annotations, bookmarks, nested notes, table-cell page
+  breaks, custom marks, source IDs/numbering and separators, and page-bottom
+  placement remain unsupported by this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   visible manual column breaks in ordinary top-level paragraphs across all
   default/first/even headers and footers. The private section-aligned six-variant

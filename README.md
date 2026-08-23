@@ -1076,16 +1076,17 @@ page-bottom placement remain outside that normalized legacy path.
 
 When the exact body note-reference contract succeeds for an opened DOCX, fresh
 conversion separately retains mixed ordinary paragraphs and relationship-free
-top-level tables in real footnote and endnote bodies when every surviving table
-cell contains only direct ordinary paragraphs. The private ID-keyed payload
-preserves block order, modeled table properties and horizontal/vertical merges,
-modeled paragraph and character formatting, row no-split and cell keep/widow
-controls, exact/minimum line rules, explicit tabs and leaders, and visible manual
-column breaks. Unsupported nested tables, media, relationships, fields,
-annotations, bookmarks, or nested notes degrade only that note to the normalized
-one-paragraph text fallback; supported sibling notes remain rich. Source IDs,
-numbering and separators, custom marks, and page-bottom placement are not
-preserved. Standalone `write_docx` and the public model remain unchanged.
+table trees rooted at top-level tables in real footnote and endnote bodies. Every
+surviving cell may contain ordinary paragraphs or further nested tables under the
+same constraint. The private ID-keyed payload preserves block order, modeled
+table properties and horizontal/vertical merges, modeled paragraph and character
+formatting, row no-split and cell keep/widow controls, exact/minimum line rules,
+explicit tabs and leaders, and visible manual column breaks at every table depth.
+Unsupported media, relationships, fields, annotations, bookmarks, nested notes,
+or table-cell page breaks degrade only that note to the normalized one-paragraph
+text fallback; supported sibling notes remain rich. Source IDs, numbering and
+separators, custom marks, and page-bottom placement are not preserved. Standalone
+`write_docx` and the public model remain unchanged.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the
