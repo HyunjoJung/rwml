@@ -474,13 +474,14 @@ strictly validated source-offset bridge. Direct top-level paragraphs in selected
 default/first/even running headers and footers from an opened DOCX also retain
 reader-resolved explicit tab stops through a section-aligned six-variant bridge.
 Direct paragraph blocks in surviving cells of top-level tables on those same
-running surfaces retain explicit tabs through a companion block/row/surviving-
-cell/paragraph-aligned bridge. Direct top-level running paragraphs also retain
+running surfaces retain explicit tabs and reader-resolved exact/minimum line
+rules through independently validated companion block/row/surviving-cell/
+paragraph-aligned bridges. Direct top-level running paragraphs also retain
 reader-resolved exact/minimum line rules through a section-aligned source-only
 bridge. Nested-table descendants and notes remain outside these fresh-conversion
-paths; running-table-cell paragraphs remain outside line-rule conversion and all
-running surfaces remain outside pagination conversion, while legacy-DOC running
-stories and nested running-table descendants remain outside tab conversion.
+paths, and all running surfaces remain outside pagination conversion; legacy-DOC
+running stories and nested running-table descendants remain outside tab and
+line-rule conversion.
 Settings-defined default-tab intervals remain outside the tab path, and table-
 cell, note, running-surface, and nested-content manual breaks remain outside the
 column-break path.
@@ -519,10 +520,11 @@ section-specific default-surface inheritance, page-variant selection, and
 non-table block positions before a running table. Exact running-surface content
 is clipped to its margin-band line or visible row fragment. Notes retain the
 preview renderer's flattened end-of-flow placement; page-bottom note
-composition, model-authored exact/minimum paragraph rules, and note,
-nested-table-descendant, or running-table-cell fresh conversion remain outside
-this absolute-spacing path. Direct top-level opened-DOCX running paragraphs use
-the bounded fresh-conversion bridge described above.
+composition, model-authored exact/minimum paragraph rules, and note or nested-
+table-descendant fresh conversion remain outside this absolute-spacing path.
+Direct top-level opened-DOCX running paragraphs and direct paragraphs in
+surviving cells of their top-level running tables use the bounded fresh-
+conversion bridges described above.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
 center/end/decimal stops. Supported LTR and RTL dot, hyphen, underscore,
 heavy, and middle-dot leaders plus bar tabs now paint through the same bounded
@@ -982,13 +984,13 @@ layout hints. Direct top-level paragraphs in selected default/first/even running
 headers and footers from an opened DOCX also retain reader-resolved explicit tab
 stops through section-aligned private hints. Direct paragraph blocks in
 surviving cells of top-level tables on those running surfaces use a companion
-block/row/surviving-cell/paragraph-aligned bridge. Direct top-level running
-paragraphs also retain reader-resolved exact/minimum line rules through a
-section-aligned source-only bridge. Nested-table descendants and notes remain
-outside these fresh-conversion paths; running-table-cell paragraphs remain
-outside line-rule conversion and all running surfaces remain outside pagination
-conversion, while legacy-DOC running stories and nested running-table
-descendants remain outside tab conversion. Settings-defined default-tab
+block/row/surviving-cell/paragraph-aligned bridge for explicit tabs and reader-
+resolved exact/minimum line rules. Direct top-level running paragraphs also
+retain exact/minimum line rules through a section-aligned source-only bridge.
+Nested-table descendants and notes remain outside these fresh-conversion paths,
+and all running surfaces remain outside pagination conversion; legacy-DOC
+running stories and nested running-table descendants remain outside tab and
+line-rule conversion. Settings-defined default-tab
 intervals remain outside the tab path, and table-cell, note, running-surface,
 and nested-content manual breaks remain outside the column-break path.
 

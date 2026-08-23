@@ -52,7 +52,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   numeric-value isolation, coexistence with tabs, table-cell tabs, distances,
   local relationships, generated page numbering, deterministic bytes, and
   native reopen/model equality are covered. Standalone model writing and
-  legacy-DOC conversion remain unchanged; running-table-cell line rules, running
+  legacy-DOC conversion remain unchanged; running pagination controls and fresh
+  note conversion remain outside this direct-paragraph bridge.
+- Preserves reader-resolved exact and minimum line spacing when
+  `Document::to_docx()` freshly converts direct paragraph blocks in surviving
+  cells of top-level tables in selected default/first/even headers and footers
+  from an opened DOCX. The existing six-variant aggregate now passes an
+  independently block-aligned table tree through the established row,
+  surviving-cell, and complete cell-block validator plus bounded paragraph
+  formatter. Both section positions, all six variants, vertical-merge
+  reconstruction, malformed section/variant/table and numeric-value isolation,
+  sibling tables, coexistence with direct spacing and both tab bridges,
+  distances, local relationships, generated page numbering, deterministic
+  bytes, and native reopen/model equality are covered. Standalone model writing
+  and legacy-DOC conversion remain unchanged; nested running tables, running
   pagination controls, and fresh note conversion remain outside this bridge.
 - Applies opened-DOCX table-cell tab stops in top-level real footnote and endnote
   tables through the existing table shaper. A private block/row/surviving-cell/
@@ -100,10 +113,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   top-level table rows. The existing validated writer bridge preserves those
   five source-only families deterministically through native reopen while
   standalone model writing remains unchanged. Nested-table descendants, notes,
-  running-surface pagination and table-cell line rules, package-preserving
-  `save()`, and the public model remain outside those layout families; direct
-  opened-DOCX running paragraphs use the separate bounded line-rule bridge above,
-  while top-level body manual column breaks use the separate bridge above.
+  running-surface pagination and nested running-table line rules, package-
+  preserving `save()`, and the public model remain outside those layout
+  families; direct opened-DOCX running paragraphs and direct cells of top-level
+  running tables use the separate bounded line-rule bridges above, while top-
+  level body manual column breaks use the separate bridge above.
 - Preserves resolved legacy-DOC `keepNext`, `keepLines`, and widow-off semantics
   when `Document::to_docx()` freshly converts aligned direct paragraph blocks in
   surviving cells of top-level tables. The source-only bridge validates block,

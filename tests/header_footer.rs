@@ -1119,7 +1119,6 @@ fn opened_docx_render_consumes_section_and_variant_running_surface_absolute_spac
     );
 }
 
-#[cfg(feature = "render")]
 fn running_surface_table_line_spacing_docx(
     header_cell_properties: &str,
     footer_cell_properties: &str,
@@ -1127,7 +1126,7 @@ fn running_surface_table_line_spacing_docx(
 ) -> Vec<u8> {
     let table = |label: &str, properties: &str| {
         format!(
-            r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr>{properties}</w:pPr><w:r><w:t>{label}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
+            r#"<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:tc><w:p><w:pPr>{properties}</w:pPr><w:r><w:t>{label}</w:t></w:r></w:p></w:tc></w:tr></w:tbl>"#
         )
     };
     let header = format!(
@@ -1136,7 +1135,7 @@ fn running_surface_table_line_spacing_docx(
     );
     let footer = format!(
         r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>FOOTER PREFIX</w:t></w:r></w:p>{}</w:ftr>"#,
-        table("FOOTER TABLE", footer_cell_properties)
+        table("DEFAULT FOOTER TABLE", footer_cell_properties)
     );
     let even_footer = format!(
         r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>EVEN FOOTER PREFIX</w:t></w:r></w:p>{}</w:ftr>"#,
@@ -1157,12 +1156,78 @@ fn running_surface_table_line_spacing_docx(
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>PAGE ONE</w:t></w:r></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:t>PAGE TWO</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="4400" w:h="7000"/><w:pgMar w:top="1800" w:right="400" w:bottom="1800" w:left="400"/><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/><w:footerReference w:type="even" r:id="rIdEvenFooter"/></w:sectPr></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>
+                <w:p><w:r><w:t>PAGE ONE</w:t></w:r></w:p>
+                <w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgSz w:w="4400" w:h="7000"/><w:pgMar w:top="1800" w:right="400" w:bottom="1800" w:left="400"/><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:pPr></w:p>
+                <w:p><w:r><w:t>PAGE TWO</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="7000"/><w:pgMar w:top="1800" w:right="400" w:bottom="1800" w:left="400"/><w:footerReference w:type="even" r:id="rIdEvenFooter"/></w:sectPr>
+            </w:body></w:document>"#,
         ),
         ("word/header1.xml", &header),
         ("word/footer1.xml", &footer),
         ("word/footer2.xml", &even_footer),
     ])
+}
+
+#[test]
+fn opened_docx_running_table_cell_absolute_spacing_roundtrips_through_fresh_conversion() {
+    let document = Document::open(&running_surface_table_line_spacing_docx(
+        r#"<w:spacing w:line="100" w:lineRule="exact"/>"#,
+        r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#,
+        r#"<w:spacing w:line="120" w:lineRule="exact"/>"#,
+    ))
+    .expect("running-table line-spacing fixture opens");
+    let model = document.model();
+    let converted = document.to_docx();
+
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(
+        Document::open(&converted)
+            .expect("fresh conversion reopens")
+            .model(),
+        model
+    );
+
+    let parts = unzip_parts(&converted);
+    let running_parts = |needle: &str| {
+        parts
+            .iter()
+            .filter(|(name, body)| {
+                (name.starts_with("word/header") || name.starts_with("word/footer"))
+                    && std::str::from_utf8(body).is_ok_and(|xml| xml.contains(needle))
+            })
+            .map(|(_, body)| std::str::from_utf8(body).unwrap())
+            .collect::<Vec<_>>()
+    };
+    let headers = running_parts("HEADER TABLE");
+    assert_eq!(
+        headers.len(),
+        2,
+        "default header is effective in both sections"
+    );
+    assert!(headers
+        .iter()
+        .all(|xml| { xml.contains(r#"<w:spacing w:line="100" w:lineRule="exact"/>"#) }));
+
+    let default_footers = running_parts("DEFAULT FOOTER TABLE");
+    assert_eq!(
+        default_footers.len(),
+        2,
+        "default footer is effective in both sections"
+    );
+    assert!(default_footers
+        .iter()
+        .all(|xml| { xml.contains(r#"<w:spacing w:line="800" w:lineRule="atLeast"/>"#) }));
+
+    let even_footers = running_parts("EVEN FOOTER TABLE");
+    assert_eq!(even_footers.len(), 1);
+    assert!(even_footers[0].contains(r#"<w:spacing w:line="120" w:lineRule="exact"/>"#));
+
+    let standalone = unzip_parts(&rwml::write_docx(&model));
+    assert!(standalone.iter().all(|(name, body)| {
+        !(name.starts_with("word/header") || name.starts_with("word/footer"))
+            || !std::str::from_utf8(body).unwrap().contains("w:lineRule=")
+    }));
 }
 
 #[cfg(feature = "render")]

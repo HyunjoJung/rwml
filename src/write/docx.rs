@@ -85,7 +85,16 @@ struct SectionWriteHint<'a> {
 struct RunningBlockWriteHints<'a> {
     line_spacing: Option<&'a [Option<LineSpacingHint>]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
+    table_cell_line_spacing: Option<&'a [TableCellLineSpacingHints]>,
     table_cell_tab_stops: Option<&'a [TableCellTabStopHints]>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct RunningBlockSlotWriteHints<'a> {
+    line_spacing: Option<LineSpacingHint>,
+    tab_stops: Option<&'a [TabStop]>,
+    table_cell_line_spacing: Option<&'a TableCellLineSpacingHints>,
+    table_cell_tab_stops: Option<&'a TableCellTabStopHints>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -541,6 +550,9 @@ fn render_hf_body(
         .line_spacing
         .filter(|hints| hints.len() == blocks.len());
     let tab_stops = hints.tab_stops.filter(|hints| hints.len() == blocks.len());
+    let table_cell_line_spacing = hints
+        .table_cell_line_spacing
+        .filter(|hints| hints.len() == blocks.len());
     let table_cell_tab_stops = hints
         .table_cell_tab_stops
         .filter(|hints| hints.len() == blocks.len());
@@ -549,14 +561,17 @@ fn render_hf_body(
             &mut out,
             block,
             rels,
-            line_spacing
-                .and_then(|hints| hints.get(index))
-                .copied()
-                .flatten(),
-            tab_stops
-                .and_then(|hints| hints.get(index))
-                .map(Vec::as_slice),
-            table_cell_tab_stops.and_then(|hints| hints.get(index)),
+            RunningBlockSlotWriteHints {
+                line_spacing: line_spacing
+                    .and_then(|hints| hints.get(index))
+                    .copied()
+                    .flatten(),
+                tab_stops: tab_stops
+                    .and_then(|hints| hints.get(index))
+                    .map(Vec::as_slice),
+                table_cell_line_spacing: table_cell_line_spacing.and_then(|hints| hints.get(index)),
+                table_cell_tab_stops: table_cell_tab_stops.and_then(|hints| hints.get(index)),
+            },
         );
     }
     if page_numbers {
@@ -1103,27 +1118,30 @@ impl Ctx {
         out: &mut String,
         block: &Block,
         rels: &mut Vec<Rel>,
-        line_spacing: Option<LineSpacingHint>,
-        tab_stops: Option<&[TabStop]>,
-        table_cell_tab_stops: Option<&TableCellTabStopHints>,
+        hints: RunningBlockSlotWriteHints<'_>,
     ) {
         match block {
             Block::Paragraph(p) => {
                 out.push_str("<w:p>");
-                self.write_ppr(out, &p.props, line_spacing, None, tab_stops);
+                self.write_ppr(out, &p.props, hints.line_spacing, None, hints.tab_stops);
                 for r in &p.runs {
                     write_hf_run(self, rels, out, r);
                 }
                 out.push_str("</w:p>");
             }
             Block::Table(t) => {
-                let cell_tab_stops =
-                    table_cell_tab_stops.filter(|hints| Self::table_cell_tab_stops_align(t, hints));
+                let cell_line_spacing = hints
+                    .table_cell_line_spacing
+                    .filter(|hints| Self::table_cell_paragraph_hints_align(t, hints));
+                let cell_tab_stops = hints
+                    .table_cell_tab_stops
+                    .filter(|hints| Self::table_cell_tab_stops_align(t, hints));
                 self.write_table_inner(
                     out,
                     t,
                     Some(rels),
                     TableWriteHints {
+                        cell_line_spacing,
                         cell_tab_stops,
                         ..TableWriteHints::default()
                     },
@@ -1228,6 +1246,8 @@ impl Ctx {
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.header.as_slice()),
                 tab_stops: running_tabs.map(|hints| hints.header.as_slice()),
+                table_cell_line_spacing: running_spacing
+                    .map(|hints| hints.header_table_cells.as_slice()),
                 table_cell_tab_stops: running_table_tabs.map(|hints| hints.header.as_slice()),
             },
         );
@@ -1238,6 +1258,8 @@ impl Ctx {
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.first_header.as_slice()),
                 tab_stops: running_tabs.map(|hints| hints.first_header.as_slice()),
+                table_cell_line_spacing: running_spacing
+                    .map(|hints| hints.first_header_table_cells.as_slice()),
                 table_cell_tab_stops: running_table_tabs.map(|hints| hints.first_header.as_slice()),
             },
         );
@@ -1248,6 +1270,8 @@ impl Ctx {
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.even_header.as_slice()),
                 tab_stops: running_tabs.map(|hints| hints.even_header.as_slice()),
+                table_cell_line_spacing: running_spacing
+                    .map(|hints| hints.even_header_table_cells.as_slice()),
                 table_cell_tab_stops: running_table_tabs.map(|hints| hints.even_header.as_slice()),
             },
         );
@@ -1258,6 +1282,8 @@ impl Ctx {
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.footer.as_slice()),
                 tab_stops: running_tabs.map(|hints| hints.footer.as_slice()),
+                table_cell_line_spacing: running_spacing
+                    .map(|hints| hints.footer_table_cells.as_slice()),
                 table_cell_tab_stops: running_table_tabs.map(|hints| hints.footer.as_slice()),
             },
             setup.page_numbers,
@@ -1269,6 +1295,8 @@ impl Ctx {
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.first_footer.as_slice()),
                 tab_stops: running_tabs.map(|hints| hints.first_footer.as_slice()),
+                table_cell_line_spacing: running_spacing
+                    .map(|hints| hints.first_footer_table_cells.as_slice()),
                 table_cell_tab_stops: running_table_tabs.map(|hints| hints.first_footer.as_slice()),
             },
             false,
@@ -1280,6 +1308,8 @@ impl Ctx {
             RunningBlockWriteHints {
                 line_spacing: running_spacing.map(|hints| hints.even_footer.as_slice()),
                 tab_stops: running_tabs.map(|hints| hints.even_footer.as_slice()),
+                table_cell_line_spacing: running_spacing
+                    .map(|hints| hints.even_footer_table_cells.as_slice()),
                 table_cell_tab_stops: running_table_tabs.map(|hints| hints.even_footer.as_slice()),
             },
             false,
@@ -1866,6 +1896,7 @@ impl Ctx {
         out: &mut String,
         blocks: &[Block],
         rels: &mut Vec<Rel>,
+        line_spacing: Option<&[Option<LineSpacingHint>]>,
         tab_stops: Option<&[Vec<TabStop>]>,
     ) {
         if blocks.is_empty() {
@@ -1877,11 +1908,16 @@ impl Ctx {
                 out,
                 block,
                 rels,
-                None,
-                tab_stops
-                    .and_then(|hints| hints.get(index))
-                    .map(Vec::as_slice),
-                None,
+                RunningBlockSlotWriteHints {
+                    line_spacing: line_spacing
+                        .and_then(|hints| hints.get(index))
+                        .copied()
+                        .flatten(),
+                    tab_stops: tab_stops
+                        .and_then(|hints| hints.get(index))
+                        .map(Vec::as_slice),
+                    ..RunningBlockSlotWriteHints::default()
+                },
             );
         }
         if matches!(blocks.last(), Some(Block::Table(_))) {
@@ -2084,7 +2120,13 @@ impl Ctx {
                     }
                     row_xml.push_str("</w:tcPr>");
                     if let Some(rels) = hf_rels.as_deref_mut() {
-                        self.write_hf_cell_blocks(&mut row_xml, &c.blocks, rels, source_tab_stops);
+                        self.write_hf_cell_blocks(
+                            &mut row_xml,
+                            &c.blocks,
+                            rels,
+                            source_line_spacing,
+                            source_tab_stops,
+                        );
                     } else {
                         self.write_cell_blocks_with_source_hints(
                             &mut row_xml,
@@ -5142,7 +5184,7 @@ mod tests {
     }
 
     #[test]
-    fn source_running_table_cell_tab_writer_aligns_sections_and_isolates_tables() {
+    fn source_running_table_cell_writer_aligns_sections_and_isolates_tables() {
         let simple_table = |label: &str, hyperlink: bool| {
             let mut paragraph = para(label);
             if hyperlink {
@@ -5257,6 +5299,61 @@ mod tests {
             ],
         };
         let running_table_tabs = [section_zero_tabs, final_tabs];
+        let one_cell_spacing = |spacing| vec![vec![vec![Some(spacing)]]];
+        let prefix_spacing = |block_count: usize| {
+            let mut blocks = vec![None; block_count];
+            blocks[0] = Some(LineSpacingHint::Exact(7.0));
+            blocks
+        };
+        let running_line_spacing = [
+            RunningSurfaceLineSpacingHints {
+                header: prefix_spacing(2),
+                header_table_cells: vec![
+                    Vec::new(),
+                    one_cell_spacing(LineSpacingHint::Exact(10.0)),
+                ],
+                ..RunningSurfaceLineSpacingHints::default()
+            },
+            RunningSurfaceLineSpacingHints {
+                header: prefix_spacing(3),
+                header_table_cells: vec![
+                    Vec::new(),
+                    vec![
+                        vec![
+                            vec![Some(LineSpacingHint::Exact(11.0))],
+                            vec![Some(LineSpacingHint::AtLeast(12.0))],
+                        ],
+                        vec![vec![Some(LineSpacingHint::Exact(13.0))]],
+                    ],
+                    one_cell_spacing(LineSpacingHint::AtLeast(14.0)),
+                ],
+                first_header: prefix_spacing(2),
+                first_header_table_cells: vec![
+                    Vec::new(),
+                    one_cell_spacing(LineSpacingHint::Exact(20.0)),
+                ],
+                even_header: prefix_spacing(2),
+                even_header_table_cells: vec![
+                    Vec::new(),
+                    one_cell_spacing(LineSpacingHint::AtLeast(30.0)),
+                ],
+                footer: prefix_spacing(2),
+                footer_table_cells: vec![
+                    Vec::new(),
+                    one_cell_spacing(LineSpacingHint::Exact(40.0)),
+                ],
+                first_footer: prefix_spacing(2),
+                first_footer_table_cells: vec![
+                    Vec::new(),
+                    one_cell_spacing(LineSpacingHint::AtLeast(50.0)),
+                ],
+                even_footer: prefix_spacing(2),
+                even_footer_table_cells: vec![
+                    Vec::new(),
+                    one_cell_spacing(LineSpacingHint::Exact(60.0)),
+                ],
+            },
+        ];
         let prefix_tabs = |block_count: usize| {
             let mut blocks = vec![Vec::new(); block_count];
             blocks[0] = vec![tab(72.0, TabAlignment::Right, TabLeader::Dot)];
@@ -5286,7 +5383,8 @@ mod tests {
                 footer_pt: Some(22.0),
             },
         ];
-        let render = |table_tabs: &[RunningSurfaceTableCellTabStopHints]| {
+        let render = |table_tabs: &[RunningSurfaceTableCellTabStopHints],
+                      running_spacing: &[RunningSurfaceLineSpacingHints]| {
             render_body(
                 &model,
                 Some(SourceWriteHints {
@@ -5299,7 +5397,7 @@ mod tests {
                     final_separator: false,
                     final_rtl: false,
                     running_surface_distances: &distances,
-                    running_line_spacing: &[],
+                    running_line_spacing: running_spacing,
                     running_tab_stops: &running_tabs,
                     running_table_cell_tab_stops: table_tabs,
                     paragraph_line_spacing: &[],
@@ -5314,7 +5412,7 @@ mod tests {
             )
         };
 
-        let rendered = render(&running_table_tabs);
+        let rendered = render(&running_table_tabs, &running_line_spacing);
         let document_xml = std::str::from_utf8(&rendered.document_xml).unwrap();
         assert!(document_xml.contains(r#"w:header="220" w:footer="240""#));
         assert!(document_xml.contains(r#"w:header="420" w:footer="440""#));
@@ -5358,6 +5456,31 @@ mod tests {
             let paragraph = written_paragraph_with_text(xml, label);
             assert!(paragraph.contains(expected), "{label}: {paragraph}");
         }
+        for (label, expected) in [
+            ("SECTION ZERO CELL", r#"w:line="200" w:lineRule="exact""#),
+            ("DEFAULT HEADER OWNER", r#"w:line="220" w:lineRule="exact""#),
+            (
+                "DEFAULT HEADER PEER",
+                r#"w:line="240" w:lineRule="atLeast""#,
+            ),
+            (
+                "DEFAULT HEADER BOTTOM",
+                r#"w:line="260" w:lineRule="exact""#,
+            ),
+            (
+                "DEFAULT HEADER SECOND",
+                r#"w:line="280" w:lineRule="atLeast""#,
+            ),
+            ("FIRST HEADER CELL", r#"w:line="400" w:lineRule="exact""#),
+            ("EVEN HEADER CELL", r#"w:line="600" w:lineRule="atLeast""#),
+            ("DEFAULT FOOTER CELL", r#"w:line="800" w:lineRule="exact""#),
+            ("FIRST FOOTER CELL", r#"w:line="1000" w:lineRule="atLeast""#),
+            ("EVEN FOOTER CELL", r#"w:line="1200" w:lineRule="exact""#),
+        ] {
+            let (_, xml) = generated_running_part(&rendered, label);
+            let paragraph = written_paragraph_with_text(xml, label);
+            assert!(paragraph.contains(expected), "{label}: {paragraph}");
+        }
         for prefix in [
             "SECTION ZERO PREFIX",
             "DEFAULT HEADER PREFIX",
@@ -5371,6 +5494,10 @@ mod tests {
             let paragraph = written_paragraph_with_text(xml, prefix);
             assert!(
                 paragraph.contains(r#"w:val="right" w:pos="1440" w:leader="dot""#),
+                "{prefix}: {paragraph}"
+            );
+            assert!(
+                paragraph.contains(r#"w:line="140" w:lineRule="exact""#),
                 "{prefix}: {paragraph}"
             );
         }
@@ -5390,7 +5517,7 @@ mod tests {
         let (_, default_footer) = generated_running_part(&rendered, "DEFAULT FOOTER CELL");
         assert!(default_footer.contains(r#"<w:fldSimple w:instr=" PAGE ">"#));
 
-        let section_misaligned = render(&running_table_tabs[..1]);
+        let section_misaligned = render(&running_table_tabs[..1], &running_line_spacing);
         for label in [
             "SECTION ZERO CELL",
             "DEFAULT HEADER OWNER",
@@ -5418,10 +5545,37 @@ mod tests {
         let (_, misaligned_footer) =
             generated_running_part(&section_misaligned, "DEFAULT FOOTER CELL");
         assert!(misaligned_footer.contains(r#"<w:fldSimple w:instr=" PAGE ">"#));
+        assert!(
+            written_paragraph_with_text(misaligned_footer, "DEFAULT FOOTER CELL")
+                .contains(r#"w:line="800" w:lineRule="exact""#)
+        );
+
+        let spacing_section_misaligned = render(&running_table_tabs, &running_line_spacing[..1]);
+        for label in [
+            "SECTION ZERO CELL",
+            "DEFAULT HEADER OWNER",
+            "DEFAULT HEADER SECOND",
+            "FIRST HEADER CELL",
+            "EVEN HEADER CELL",
+            "DEFAULT FOOTER CELL",
+            "FIRST FOOTER CELL",
+            "EVEN FOOTER CELL",
+        ] {
+            let (_, xml) = generated_running_part(&spacing_section_misaligned, label);
+            let paragraph = written_paragraph_with_text(xml, label);
+            assert!(!paragraph.contains("w:lineRule="), "{label}: {paragraph}");
+            assert!(paragraph.contains("<w:tabs>"), "{label}: {paragraph}");
+        }
+        let (_, spacing_misaligned_prefix) =
+            generated_running_part(&spacing_section_misaligned, "DEFAULT HEADER PREFIX");
+        assert!(
+            !written_paragraph_with_text(spacing_misaligned_prefix, "DEFAULT HEADER PREFIX")
+                .contains("w:lineRule=")
+        );
 
         let mut variant_misaligned = running_table_tabs.clone();
         variant_misaligned[1].even_footer.pop();
-        let isolated_variant = render(&variant_misaligned);
+        let isolated_variant = render(&variant_misaligned, &running_line_spacing);
         let (_, even_footer) = generated_running_part(&isolated_variant, "EVEN FOOTER CELL");
         assert!(!written_paragraph_with_text(even_footer, "EVEN FOOTER CELL").contains("<w:tabs>"));
         let (_, first_footer) = generated_running_part(&isolated_variant, "FIRST FOOTER CELL");
@@ -5429,6 +5583,8 @@ mod tests {
             written_paragraph_with_text(first_footer, "FIRST FOOTER CELL")
                 .contains(r#"w:pos="1000""#)
         );
+        assert!(written_paragraph_with_text(even_footer, "EVEN FOOTER CELL")
+            .contains(r#"w:line="1200" w:lineRule="exact""#));
         let (_, even_prefix) = generated_running_part(&isolated_variant, "EVEN FOOTER PREFIX");
         assert!(
             written_paragraph_with_text(even_prefix, "EVEN FOOTER PREFIX")
@@ -5437,7 +5593,7 @@ mod tests {
 
         let mut malformed_table = running_table_tabs.clone();
         malformed_table[1].header[1].pop();
-        let isolated_table = render(&malformed_table);
+        let isolated_table = render(&malformed_table, &running_line_spacing);
         let (_, header) = generated_running_part(&isolated_table, "DEFAULT HEADER SECOND");
         for label in [
             "DEFAULT HEADER OWNER",
@@ -5454,6 +5610,61 @@ mod tests {
         );
         assert!(written_paragraph_with_text(header, "DEFAULT HEADER PREFIX")
             .contains(r#"w:pos="1440""#));
+
+        let mut spacing_variant_misaligned = running_line_spacing.clone();
+        spacing_variant_misaligned[1].even_footer_table_cells.pop();
+        let isolated_spacing_variant = render(&running_table_tabs, &spacing_variant_misaligned);
+        let (_, even_footer) =
+            generated_running_part(&isolated_spacing_variant, "EVEN FOOTER CELL");
+        let even_footer_cell = written_paragraph_with_text(even_footer, "EVEN FOOTER CELL");
+        assert!(
+            !even_footer_cell.contains("w:lineRule="),
+            "{even_footer_cell}"
+        );
+        assert!(even_footer_cell.contains(r#"w:pos="1200""#));
+        assert!(
+            written_paragraph_with_text(even_footer, "EVEN FOOTER PREFIX")
+                .contains(r#"w:line="140" w:lineRule="exact""#)
+        );
+        let (_, first_footer) =
+            generated_running_part(&isolated_spacing_variant, "FIRST FOOTER CELL");
+        assert!(
+            written_paragraph_with_text(first_footer, "FIRST FOOTER CELL")
+                .contains(r#"w:line="1000" w:lineRule="atLeast""#)
+        );
+
+        let mut malformed_spacing_table = running_line_spacing.clone();
+        malformed_spacing_table[1].header_table_cells[1].pop();
+        let isolated_spacing_table = render(&running_table_tabs, &malformed_spacing_table);
+        let (_, header) = generated_running_part(&isolated_spacing_table, "DEFAULT HEADER SECOND");
+        for label in [
+            "DEFAULT HEADER OWNER",
+            "DEFAULT HEADER PEER",
+            "DEFAULT HEADER BOTTOM",
+        ] {
+            let paragraph = written_paragraph_with_text(header, label);
+            assert!(!paragraph.contains("w:lineRule="), "{label}: {paragraph}");
+            assert!(paragraph.contains("<w:tabs>"), "{label}: {paragraph}");
+        }
+        assert!(written_paragraph_with_text(header, "DEFAULT HEADER SECOND")
+            .contains(r#"w:line="280" w:lineRule="atLeast""#));
+        assert!(written_paragraph_with_text(header, "DEFAULT HEADER PREFIX")
+            .contains(r#"w:line="140" w:lineRule="exact""#));
+
+        let mut invalid_spacing = running_line_spacing.clone();
+        invalid_spacing[1].first_header_table_cells[1][0][0][0] =
+            Some(LineSpacingHint::Exact(f32::NAN));
+        let bounded = render(&running_table_tabs, &invalid_spacing);
+        let (_, first_header) = generated_running_part(&bounded, "FIRST HEADER CELL");
+        let first_header_cell = written_paragraph_with_text(first_header, "FIRST HEADER CELL");
+        assert!(
+            !first_header_cell.contains("w:lineRule="),
+            "{first_header_cell}"
+        );
+        assert!(first_header_cell.contains(r#"w:pos="400""#));
+        let (_, even_header) = generated_running_part(&bounded, "EVEN HEADER CELL");
+        assert!(written_paragraph_with_text(even_header, "EVEN HEADER CELL")
+            .contains(r#"w:line="600" w:lineRule="atLeast""#));
     }
 
     #[test]

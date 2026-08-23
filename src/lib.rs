@@ -1030,15 +1030,15 @@ impl Document {
     /// carry reader-resolved explicit tab stops through section-aligned private
     /// hints. Direct paragraph blocks in surviving cells of top-level tables on
     /// those running surfaces use a companion block/row/surviving-cell/paragraph-
-    /// aligned bridge. Direct top-level running paragraphs also carry reader-
-    /// resolved exact/minimum line rules through a section-aligned source-only
-    /// bridge. Nested-table descendants and notes remain outside these fresh-
-    /// conversion paths; running-table-cell paragraphs remain outside line-rule
-    /// conversion and all running surfaces remain outside pagination conversion,
-    /// while legacy-DOC running stories and nested running-table descendants
-    /// remain outside tab conversion. Settings-defined default-tab intervals
-    /// remain outside the tab path, and table-cell, note, running-surface, and
-    /// nested-content manual breaks remain outside the column-break path.
+    /// aligned bridge for explicit tabs and reader-resolved exact/minimum line
+    /// rules. Direct top-level running paragraphs also carry exact/minimum line
+    /// rules through a section-aligned source-only bridge. Nested-table
+    /// descendants and notes remain outside these fresh-conversion paths, and all
+    /// running surfaces remain outside pagination conversion; legacy-DOC running
+    /// stories and nested running-table descendants remain outside tab and line-
+    /// rule conversion. Settings-defined default-tab intervals remain outside
+    /// the tab path, and table-cell, note, running-surface, and nested-content
+    /// manual breaks remain outside the column-break path.
     /// Standalone [`write_docx`] remains model-only for all of these private
     /// hints.
     /// Available with the default `docx` feature.
