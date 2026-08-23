@@ -455,8 +455,7 @@ leading-edge coordinates from the right page-text margin under resolved
 physical or logical left/right indents. Default-tab fallback targets use the
 same margin-anchored grid, use a positive `w:defaultTabStop` interval from
 `word/settings.xml` when present, and are clamped to the active paragraph box.
-Opened
-documents also honor document-default,
+Opened documents also honor document-default,
 declared default paragraph-style, and bounded explicit paragraph-style
 before/after spacing, proportional automatic line spacing, first-line/hanging
 indents, flat RGB shading, and `pageBreakBefore`; authored zero/off direct
@@ -464,7 +463,10 @@ overrides; and source-aligned `keepNext`,
 `keepLines`, and default-on `widowControl` pagination hints in top-level body
 paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
-render hints to the public `DocModel`. Resolved LTR tab stops in ordinary and
+render hints to the public `DocModel`. Legacy-backed fresh conversion now
+serializes the effective keep controls and widow-off state for aligned top-level
+paragraphs; table-cell, row, and non-body pagination controls remain
+source-render-only. Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
 justified-aligned paragraphs use that path when the resolved stop is reachable.
@@ -481,8 +483,9 @@ section-specific default-surface inheritance, page-variant selection, and
 non-table block positions before a running table. Exact running-surface content
 is clipped to its margin-band line or visible row fragment. Notes retain the
 preview renderer's flattened end-of-flow placement; page-bottom note
-composition, model-authored exact/minimum paragraph rules, and fresh conversion
-remain outside this absolute-spacing path.
+composition, model-authored exact/minimum paragraph rules, and DOCX-backed,
+note, table-cell, or running-surface fresh conversion remain outside this
+absolute-spacing path.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
 center/end/decimal stops. Supported LTR and RTL dot, hyphen, underscore,
 heavy, and middle-dot leaders plus bar tabs now paint through the same bounded
@@ -930,8 +933,9 @@ Converting an opened `.doc` or `.docx` through `Document::to_docx()` additionall
 retains validated source-only section column gaps, complete unequal geometry,
 separator flags, and right-to-left population without exposing them in the
 public model. Legacy-backed conversion also retains validated exact/minimum line
-rules for aligned top-level paragraphs; standalone model writing remains
-proportional-only.
+rules plus effective `keepNext`, `keepLines`, and widow-off state for aligned
+top-level paragraphs. Standalone model writing remains proportional-only and
+does not consume private pagination hints.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the

@@ -19,9 +19,9 @@ use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
     ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, LineSpacingHint,
-    ParaProps, Paragraph, ParagraphStyle, RunningSurfaceDistanceHints, SectionBreakKind,
-    SectionColumnLayoutHints, SectionSetup, Spacing, Table, TableBorderSide, TableBorderStyle,
-    VertAlign, WebExtensionTaskPane,
+    PaginationHint, ParaProps, Paragraph, ParagraphStyle, RunningSurfaceDistanceHints,
+    SectionBreakKind, SectionColumnLayoutHints, SectionSetup, Spacing, Table, TableBorderSide,
+    TableBorderStyle, VertAlign, WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -87,6 +87,7 @@ pub(crate) struct SourceWriteHints<'a> {
     pub(crate) final_rtl: bool,
     pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
     pub(crate) paragraph_line_spacing: &'a [Option<LineSpacingHint>],
+    pub(crate) paragraph_pagination: &'a [PaginationHint],
 }
 
 impl<'a> SourceWriteHints<'a> {
@@ -100,6 +101,10 @@ impl<'a> SourceWriteHints<'a> {
         block_count: usize,
     ) -> Option<&'a [Option<LineSpacingHint>]> {
         (self.paragraph_line_spacing.len() == block_count).then_some(self.paragraph_line_spacing)
+    }
+
+    fn aligned_paragraph_pagination(self, block_count: usize) -> Option<&'a [PaginationHint]> {
+        (self.paragraph_pagination.len() == block_count).then_some(self.paragraph_pagination)
     }
 
     fn for_block(
@@ -838,10 +843,11 @@ impl Ctx {
         block: &Block,
         section_hints: SectionWriteHint<'_>,
         line_spacing: Option<LineSpacingHint>,
+        pagination: Option<PaginationHint>,
     ) {
         match block {
             Block::Paragraph(paragraph) => {
-                self.write_paragraph_with_line_spacing(out, paragraph, line_spacing)
+                self.write_paragraph_with_source_hints(out, paragraph, line_spacing, pagination)
             }
             Block::SectionBreak(setup) => self.write_section_break(out, setup, section_hints),
             _ => self.write_block(out, block),
@@ -852,7 +858,7 @@ impl Ctx {
         match b {
             Block::Paragraph(p) => {
                 out.push_str("<w:p>");
-                self.write_ppr(out, &p.props, None);
+                self.write_ppr(out, &p.props, None, None);
                 for r in &p.runs {
                     write_hf_run(self, rels, out, r);
                 }
@@ -999,17 +1005,18 @@ impl Ctx {
     }
 
     fn write_paragraph(&mut self, out: &mut String, p: &Paragraph) {
-        self.write_paragraph_with_line_spacing(out, p, None);
+        self.write_paragraph_with_source_hints(out, p, None, None);
     }
 
-    fn write_paragraph_with_line_spacing(
+    fn write_paragraph_with_source_hints(
         &mut self,
         out: &mut String,
         p: &Paragraph,
         line_spacing: Option<LineSpacingHint>,
+        pagination: Option<PaginationHint>,
     ) {
         out.push_str("<w:p>");
-        self.write_ppr(out, &p.props, line_spacing);
+        self.write_ppr(out, &p.props, line_spacing, pagination);
         for r in &p.runs {
             self.write_run(out, r);
         }
@@ -1021,6 +1028,7 @@ impl Ctx {
         out: &mut String,
         pr: &ParaProps,
         line_spacing: Option<LineSpacingHint>,
+        pagination: Option<PaginationHint>,
     ) {
         let heading = pr.heading_level;
         // A heading suppresses list rendering — mirror the reader's precedence.
@@ -1055,6 +1063,9 @@ impl Ctx {
             || ind.right_pt.is_some()
             || ind.first_line_pt.is_some()
             || ind.hanging_pt.is_some();
+        let keep_next = pagination.is_some_and(|hint| hint.keep_next);
+        let keep_lines = pagination.is_some_and(|hint| hint.keep_lines);
+        let widow_control_off = pagination.is_some_and(|hint| !hint.widow_control);
         if style_id.is_none()
             && list.is_none()
             && jc.is_none()
@@ -1064,18 +1075,33 @@ impl Ctx {
             && pr.shading.is_none()
             && !pr.page_break_before
             && !pr.bidi
+            && !keep_next
+            && !keep_lines
+            && !widow_control_off
         {
             return;
         }
         out.push_str("<w:pPr>");
-        // Schema order: pStyle, numPr, pageBreakBefore, shd, bidi, spacing, ind,
-        // jc, outlineLvl.
+        // Schema order: pStyle, keepNext, keepLines, pageBreakBefore,
+        // widowControl, numPr, shd, bidi, spacing, ind, jc, outlineLvl.
         if let Some(s) = &style_id {
             self.has_styles = true;
             if generated_heading_style {
                 self.has_heading = true;
             }
             out.push_str(&format!(r#"<w:pStyle w:val="{}"/>"#, esc_attr(s)));
+        }
+        if keep_next {
+            out.push_str("<w:keepNext/>");
+        }
+        if keep_lines {
+            out.push_str("<w:keepLines/>");
+        }
+        if pr.page_break_before {
+            out.push_str("<w:pageBreakBefore/>");
+        }
+        if widow_control_off {
+            out.push_str(r#"<w:widowControl w:val="0"/>"#);
         }
         if let Some(li) = list {
             self.has_list = true;
@@ -1084,9 +1110,6 @@ impl Ctx {
                 r#"<w:numPr><w:ilvl w:val="{}"/><w:numId w:val="{num_id}"/></w:numPr>"#,
                 li.level
             ));
-        }
-        if pr.page_break_before {
-            out.push_str("<w:pageBreakBefore/>");
         }
         if let Some(c) = pr.shading {
             out.push_str(&format!(
@@ -3657,6 +3680,8 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         source_hints.and_then(|hints| hints.aligned_distances(section_count));
     let paragraph_line_spacing =
         source_hints.and_then(|hints| hints.aligned_paragraph_line_spacing(model.blocks.len()));
+    let paragraph_pagination =
+        source_hints.and_then(|hints| hints.aligned_paragraph_pagination(model.blocks.len()));
     let mut section_index = 0;
     for (index, block) in model.blocks.iter().enumerate() {
         ctx.write_top_level_block(
@@ -3669,6 +3694,9 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
                 .and_then(|hints| hints.get(index))
                 .copied()
                 .flatten(),
+            paragraph_pagination
+                .and_then(|hints| hints.get(index))
+                .copied(),
         );
         if matches!(block, Block::SectionBreak(_)) {
             section_index += 1;
@@ -3813,8 +3841,8 @@ mod tests {
     };
     use crate::model::{
         Align, Block, Cell, CharProps, DocModel, FieldRole, Image, LineSpacingHint, ListInfo,
-        ParaProps, Paragraph, Row, Run, RunningSurfaceDistanceHints, SectionColumnHint,
-        SectionColumnLayoutHints, SectionSetup, Table,
+        PaginationHint, ParaProps, Paragraph, Row, Run, RunningSurfaceDistanceHints,
+        SectionColumnHint, SectionColumnLayoutHints, SectionSetup, Table,
     };
     use crate::Document;
 
@@ -3908,6 +3936,7 @@ mod tests {
                 final_rtl: false,
                 running_surface_distances: &distances,
                 paragraph_line_spacing: &[],
+                paragraph_pagination: &[],
             }),
         );
         let document_xml = String::from_utf8(rendered.document_xml).unwrap();
@@ -3949,6 +3978,7 @@ mod tests {
                 final_rtl: false,
                 running_surface_distances: &distances,
                 paragraph_line_spacing: &line_spacing,
+                paragraph_pagination: &[],
             }),
         );
         let document_xml = String::from_utf8(rendered.document_xml).unwrap();
@@ -3974,6 +4004,68 @@ mod tests {
         ] {
             assert_eq!(source_line_spacing(Some(hint)), None);
         }
+    }
+
+    #[test]
+    fn source_paragraph_pagination_writer_rejects_misalignment_and_orders_controls() {
+        let mut paragraph = para("body");
+        paragraph.props.page_break_before = true;
+        paragraph.props.list = Some(ListInfo {
+            level: 2,
+            ordered: true,
+            label: "1.".to_string(),
+        });
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(paragraph)],
+            ..DocModel::default()
+        };
+        let gaps = [None];
+        let layouts = [None];
+        let separators = [false];
+        let rtl = [false];
+        let distances = [RunningSurfaceDistanceHints::default()];
+        let pagination = PaginationHint {
+            keep_next: true,
+            keep_lines: true,
+            widow_control: false,
+        };
+        let misaligned = [pagination, pagination];
+        let render = |paragraph_pagination: &[PaginationHint]| {
+            String::from_utf8(
+                render_body(
+                    &model,
+                    Some(SourceWriteHints {
+                        gaps: &gaps,
+                        layouts: &layouts,
+                        separators: &separators,
+                        rtl: &rtl,
+                        final_gap: None,
+                        final_layout: None,
+                        final_separator: false,
+                        final_rtl: false,
+                        running_surface_distances: &distances,
+                        paragraph_line_spacing: &[],
+                        paragraph_pagination,
+                    }),
+                )
+                .document_xml,
+            )
+            .unwrap()
+        };
+
+        let rejected = render(&misaligned);
+        assert!(!rejected.contains("<w:keepNext"), "{rejected}");
+        assert!(!rejected.contains("<w:keepLines"), "{rejected}");
+        assert!(!rejected.contains("<w:widowControl"), "{rejected}");
+
+        let aligned = render(&[pagination]);
+        assert!(
+            aligned.contains(concat!(
+                "<w:keepNext/><w:keepLines/><w:pageBreakBefore/>",
+                r#"<w:widowControl w:val="0"/><w:numPr>"#,
+            )),
+            "{aligned}"
+        );
     }
 
     /// Build a representative model, write it to `.docx`, read it back, and assert

@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Preserves resolved legacy-DOC `keepNext`, `keepLines`, and default-on
+  `widowControl` semantics when `Document::to_docx()` freshly converts aligned
+  top-level paragraphs. The source-only writer bridge rejects a misaligned
+  pagination vector, emits effective keep controls, writes widow-off explicitly,
+  and keeps the existing modeled `pageBreakBefore` in CT_PPr schema order before
+  numbering. Style/direct on/off precedence, deterministic bytes, native reopen,
+  and unchanged standalone model writing are covered. DOCX-backed conversion,
+  table-cell and row controls, non-body stories, and the public model remain
+  unchanged.
 - Preserves resolved legacy-DOC exact and minimum line spacing when
   `Document::to_docx()` freshly converts aligned top-level paragraphs. The
   existing private block sidecar now emits bounded positive `w:line` values with
