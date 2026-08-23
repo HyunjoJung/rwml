@@ -54,7 +54,8 @@ mod toc;
 pub(crate) use self::display::computed_run_symbol_char;
 use self::display::unquote_field_text;
 pub(crate) use self::display::{
-    computed_display_result, supports_computed_symbol_field_syntax, supports_display_field_syntax,
+    computed_display_result, supports_computed_symbol_field_syntax,
+    supports_context_free_display_field_syntax, supports_display_field_syntax,
 };
 #[cfg(test)]
 use self::document_info::document_info_instruction;
@@ -2830,13 +2831,13 @@ mod tests {
         ordinal_page_number_text, page_ref_context, page_ref_instruction, ref_instruction,
         ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
         supports_action_field_syntax, supports_compare_field_syntax,
-        supports_computed_symbol_field_syntax, supports_context_free_fill_in_field_syntax,
-        supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
-        supports_formula_field_syntax, supports_if_field_syntax,
-        supports_merge_control_field_syntax, supports_prompt_field_syntax,
-        supports_reference_index_marker_syntax, supports_sequence_field_syntax,
-        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
-        PageNumberFormat, TocEntrySource,
+        supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
+        supports_context_free_fill_in_field_syntax, supports_context_free_formula_field_syntax,
+        supports_context_free_if_compare_field_syntax, supports_formula_field_syntax,
+        supports_if_field_syntax, supports_merge_control_field_syntax,
+        supports_prompt_field_syntax, supports_reference_index_marker_syntax,
+        supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
+        toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
@@ -3047,6 +3048,26 @@ mod tests {
             r#"QUOTE "not a prompt""#,
         ] {
             assert!(!supports_context_free_fill_in_field_syntax(instruction));
+        }
+    }
+
+    #[test]
+    fn context_free_display_ownership_requires_computed_eq_or_advance_syntax() {
+        for instruction in [
+            r#"EQ \f(1,2)"#,
+            r#"EQ \d \fo10 \li()"#,
+            r#"ADVANCE \r"2" \d4 \* MERGEFORMAT"#,
+        ] {
+            assert!(supports_context_free_display_field_syntax(instruction));
+        }
+        for instruction in [
+            r#"EQ \f(1,"#,
+            "EQ plain text",
+            r#"ADVANCE \z 2"#,
+            r#"SYMBOL 183 \f Symbol"#,
+            r#"MACROBUTTON RunReport "Run""#,
+        ] {
+            assert!(!supports_context_free_display_field_syntax(instruction));
         }
     }
 

@@ -1124,7 +1124,13 @@ atomically.
 Parser-validated, non-dirty `SYMBOL` instructions that actually compute one
 character likewise survive as normalized simple fields with modeled formatting;
 stale cached characters stay replaced by the deterministic result. Malformed or
-unmapped symbols and other display/action fields remain excluded.
+unmapped symbols remain excluded. Context-free, non-dirty `EQ` and `ADVANCE`
+instructions with one modeled result run likewise survive. Supported EQ
+expressions retain deterministic plain-text approximations and modeled formatting;
+parser-valid ADVANCE instructions retain an empty current result and any modeled
+result-run formatting. Malformed or unsupported display syntax, split results,
+and action fields remain excluded. This does not add native PDF equation layout,
+ADVANCE displacement, or action execution.
 Parser-validated, non-dirty literal `QUOTE` instructions with one modeled result
 run likewise survive as normalized simple fields with computed text, supported
 text-format switches, and modeled formatting. Malformed or split-result `QUOTE`

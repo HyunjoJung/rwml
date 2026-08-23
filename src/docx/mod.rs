@@ -145,6 +145,10 @@ pub(crate) fn supports_context_free_fill_in_field_syntax(instruction: &str) -> b
     fields::supports_context_free_fill_in_field_syntax(instruction)
 }
 
+pub(crate) fn supports_context_free_display_field_syntax(instruction: &str) -> bool {
+    fields::supports_context_free_display_field_syntax(instruction)
+}
+
 pub(crate) fn supports_quote_field_syntax(instruction: &str) -> bool {
     fields::supports_quote_field_syntax(instruction)
 }

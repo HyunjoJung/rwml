@@ -3138,6 +3138,7 @@ fn preserves_computed_field_instruction(instruction: &str) -> bool {
         || super::fields::supports_context_free_if_compare_field_syntax(instruction)
         || super::fields::supports_context_free_formula_field_syntax(instruction)
         || super::fields::supports_context_free_fill_in_field_syntax(instruction)
+        || super::fields::supports_context_free_display_field_syntax(instruction)
 }
 
 fn preserves_computed_empty_field_instruction(instruction: &str) -> bool {
@@ -5089,7 +5090,7 @@ fn read_fldsimple(
         paragraph_style_id,
         url.as_deref(),
         depth + 1,
-        url.is_none() && preserves_computed_empty_field_instruction(&instruction),
+        url.is_none() && preserves_computed_field_instruction(&instruction),
     );
     if url.is_none() {
         let instruction = normalized_field_instruction(&instruction);

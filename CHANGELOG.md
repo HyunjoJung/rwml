@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  context-free, non-dirty `EQ` and `ADVANCE` fields with one modeled result run in
+  exact real footnote and endnote payloads. Supported EQ expressions retain their
+  normalized instructions, deterministic plain-text approximations, source order,
+  and modeled formatting; parser-valid ADVANCE instructions retain their empty
+  current result and formatted result run. Top-level and recursively nested table-
+  cell fields survive, and one-result-run complex source fields normalize to non-
+  dirty `w:fldSimple`. Malformed or unsupported display syntax, split results, and
+  action fields still trigger note-local plain-text fallback. This transports
+  instructions and current results without adding native PDF equation layout,
+  ADVANCE displacement, action execution, relationships, or field updates.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-validated, non-dirty `FILLIN` fields with an explicit literal default and
   one modeled result run in exact real footnote and endnote payloads. Quoted and
   bounded multi-token defaults, neutral `\o`, supported text-format switches,

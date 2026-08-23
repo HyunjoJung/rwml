@@ -16841,10 +16841,12 @@ fn docx_display_field_diagnostics_split_valid_broader_eq_from_malformed_eq() {
     assert_eq!(
         model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("EQ")),
         vec![
+            (r#"EQ \s\up8(A)\ai4(B)"#.to_string(), None),
             (
                 r#"EQ \s\up8(A"#.to_string(),
                 Some(FieldUnsupportedReason::UnsupportedSwitch),
             ),
+            (r#"EQ \d \fo10(A)"#.to_string(), None),
             (
                 r#"EQ \d \fo10(A"#.to_string(),
                 Some(FieldUnsupportedReason::UnsupportedSwitch),

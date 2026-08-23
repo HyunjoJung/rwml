@@ -489,7 +489,7 @@ fn symbol_field_note_docx() -> Vec<u8> {
         ),
         (
             "word/endnotes.xml",
-            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="201"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END SYMBOL BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> SYMBOL 0x03BB \u \f &quot;Times New Roman&quot; \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END SYMBOL</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END SYMBOL AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="202"><w:p><w:r><w:t xml:space="preserve">COMPUTED EQ BEFORE </w:t></w:r><w:fldSimple w:instr=" EQ \f(1,2) "><w:r><w:t>STALE COMPUTED EQ</w:t></w:r></w:fldSimple><w:r><w:t> COMPUTED EQ AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="201"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END SYMBOL BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> SYMBOL 0x03BB \u \f &quot;Times New Roman&quot; \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END SYMBOL</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END SYMBOL AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="202"><w:p><w:r><w:t xml:space="preserve">ACTION BEFORE </w:t></w:r><w:fldSimple w:instr=" MACROBUTTON RunReport &quot;Fresh Action&quot; "><w:r><w:t>STALE ACTION</w:t></w:r></w:fldSimple><w:r><w:t> ACTION AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
         ),
     ])
 }
@@ -608,6 +608,14 @@ fn fill_in_field_note_docx() -> Vec<u8> {
             r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="281"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END FILLIN BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> FILLIN Project display prompt \d Client 42 \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END FILLIN</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END FILLIN AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="282"><w:p><w:r><w:t xml:space="preserve">MALFORMED FILLIN BEFORE </w:t></w:r><w:fldSimple w:instr=" FILLIN &quot;broken prompt "><w:r><w:t>CACHED MALFORMED FILLIN</w:t></w:r></w:fldSimple><w:r><w:t> MALFORMED FILLIN AFTER</w:t></w:r></w:p></w:endnote><w:endnote w:id="283"><w:p><w:r><w:t>ASK BEFORE[</w:t></w:r><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; \d &quot;ac-42&quot; \o "><w:r><w:t>STALE ASK</w:t></w:r></w:fldSimple><w:r><w:t>]ASK AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
         ),
     ])
+}
+
+fn display_field_note_docx() -> Vec<u8> {
+    note_table_docx(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="291"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="301"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="292"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="302"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:footnoteReference w:id="293"/></w:r><w:r><w:t> BODY F</w:t></w:r><w:r><w:endnoteReference w:id="303"/></w:r><w:r><w:t> BODY G</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="291"><w:p><w:r><w:t xml:space="preserve">FOOT EQ BEFORE </w:t></w:r><w:fldSimple w:instr=" EQ \f( &quot;Alpha, One&quot; , &quot;Beta Two&quot; ) \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT EQ</w:t></w:r></w:fldSimple><w:r><w:t> FOOT EQ AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="292"><w:p><w:r><w:t xml:space="preserve">MALFORMED EQ BEFORE </w:t></w:r><w:fldSimple w:instr=" EQ \f(1, "><w:r><w:t>CACHED MALFORMED EQ</w:t></w:r></w:fldSimple><w:r><w:t> MALFORMED EQ AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="293"><w:p><w:r><w:t xml:space="preserve">SPLIT EQ BEFORE </w:t></w:r><w:fldSimple w:instr=" EQ \f(1,2) "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE SPLIT EQ A</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE SPLIT EQ B</w:t></w:r></w:fldSimple><w:r><w:t> SPLIT EQ AFTER</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="301"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END ADVANCE BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ADVANCE \r&quot;2&quot; \d4 \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END ADVANCE</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END ADVANCE AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="302"><w:p><w:r><w:t xml:space="preserve">BAD ADVANCE BEFORE </w:t></w:r><w:fldSimple w:instr=" ADVANCE \z 2 "><w:r><w:t>CACHED BAD ADVANCE</w:t></w:r></w:fldSimple><w:r><w:t> BAD ADVANCE AFTER</w:t></w:r></w:p></w:endnote><w:endnote w:id="303"><w:p><w:r><w:t xml:space="preserve">ACTION BEFORE </w:t></w:r><w:fldSimple w:instr=" MACROBUTTON RunReport &quot;Fresh Action&quot; "><w:r><w:t>STALE ACTION</w:t></w:r></w:fldSimple><w:r><w:t> ACTION AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+    )
 }
 
 fn raster_note_docx() -> Vec<u8> {
@@ -1825,7 +1833,7 @@ fn opened_docx_note_symbol_fields_keep_computed_characters_and_instructions() {
     let footnote = note_with_marker(footnotes, "footnote", "FOOT SYMBOL BEFORE");
     let endnote = note_with_marker(endnotes, "endnote", "END SYMBOL BEFORE");
     let rejected_malformed = note_with_marker(footnotes, "footnote", "REJECTED MALFORMED SYMBOL");
-    let rejected_eq = note_with_marker(endnotes, "endnote", "COMPUTED EQ BEFORE");
+    let rejected_action = note_with_marker(endnotes, "endnote", "ACTION BEFORE");
 
     assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
     assert!(
@@ -1854,14 +1862,15 @@ fn opened_docx_note_symbol_fields_keep_computed_characters_and_instructions() {
     assert!(!endnote.contains("<w:fldChar"), "{endnote}");
     assert!(!endnote.contains("w:dirty="), "{endnote}");
 
-    for rejected in [rejected_malformed, rejected_eq] {
+    for rejected in [rejected_malformed, rejected_action] {
         assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
         assert!(!rejected.contains("<w:fldChar"), "{rejected}");
         assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
     }
     assert!(!footnotes.contains(r#"SYMBOL 65 \f"#));
-    assert!(!endnotes.contains(r#"EQ \f(1,2)"#));
-    assert!(!endnotes.contains("STALE COMPUTED EQ"));
+    assert!(!endnotes.contains("MACROBUTTON"));
+    assert!(!endnotes.contains("STALE ACTION"));
+    assert!(endnotes.contains("Fresh Action"));
 
     let reopened = Document::open(&converted).expect("converted SYMBOL field notes reopen");
     assert_eq!(reopened.report().features.fields, 2);
@@ -1896,15 +1905,12 @@ fn opened_docx_note_symbol_fields_keep_computed_characters_and_instructions() {
         rejected_malformed.text(),
         "REJECTED MALFORMED SYMBOL FALLBACK"
     );
-    let Block::Paragraph(rejected_eq) = &reopened_model.blocks[4] else {
-        panic!("rejected computed-EQ fallback paragraph")
+    let Block::Paragraph(rejected_action) = &reopened_model.blocks[4] else {
+        panic!("rejected action fallback paragraph")
     };
-    let rejected_eq_text = rejected_eq.text();
-    assert!(
-        rejected_eq_text.starts_with("COMPUTED EQ BEFORE ")
-            && rejected_eq_text.ends_with(" COMPUTED EQ AFTER")
-            && rejected_eq_text.contains("1/2"),
-        "computed EQ fallback text changed: {rejected_eq_text:?}"
+    assert_eq!(
+        rejected_action.text(),
+        "ACTION BEFORE Fresh Action ACTION AFTER"
     );
     assert_eq!(reopened.to_docx(), converted);
 
@@ -2466,6 +2472,144 @@ fn opened_docx_note_explicit_default_fill_in_fields_keep_results_and_instruction
         panic!("ASK fallback paragraph")
     };
     assert_eq!(rejected_ask.text(), "ASK BEFORE[]ASK AFTER");
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_context_free_display_fields_keep_results_and_instructions() {
+    let document = Document::open(&display_field_note_docx()).expect("display field notes open");
+    assert_eq!(document.notes().len(), 6, "source note records missing");
+    assert_eq!(document.report().features.fields, 6);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone display normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT EQ BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END ADVANCE BEFORE");
+    let rejected_malformed = note_with_marker(footnotes, "footnote", "MALFORMED EQ BEFORE");
+    let rejected_split = note_with_marker(footnotes, "footnote", "SPLIT EQ BEFORE");
+    let rejected_advance = note_with_marker(endnotes, "endnote", "BAD ADVANCE BEFORE");
+    let rejected_action = note_with_marker(endnotes, "endnote", "ACTION BEFORE");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(
+            r#"<w:fldSimple w:instr=" EQ \f( &quot;Alpha, One&quot; , &quot;Beta Two&quot; ) \* Upper ">"#
+        ) && footnote.contains("<w:b/>")
+            && footnote.contains("ALPHA, ONE/BETA TWO")
+            && footnote.contains("FOOT EQ BEFORE ")
+            && footnote.contains(" FOOT EQ AFTER"),
+        "top-level computed EQ field missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT EQ"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:fldSimple w:instr=" ADVANCE \r&quot;2&quot; \d4 \* MERGEFORMAT ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains("END ADVANCE BEFORE ")
+            && endnote.contains(" END ADVANCE AFTER"),
+        "nested computed ADVANCE field missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END ADVANCE"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [
+        rejected_malformed,
+        rejected_split,
+        rejected_advance,
+        rejected_action,
+    ] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains(r#"EQ \f(1,"#));
+    assert!(!footnotes.contains("STALE SPLIT EQ A"));
+    assert!(!footnotes.contains("STALE SPLIT EQ B"));
+    assert!(!endnotes.contains(r#"ADVANCE \z 2"#));
+    assert!(!endnotes.contains("MACROBUTTON"));
+    assert!(!endnotes.contains("STALE ACTION"));
+    assert!(footnotes.contains("CACHED MALFORMED EQ"));
+    assert!(endnotes.contains("CACHED BAD ADVANCE"));
+    assert!(endnotes.contains("Fresh Action"));
+
+    let reopened = Document::open(&converted).expect("converted display field notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Display("EQ".to_string()));
+    assert_eq!(
+        fields[0].instruction,
+        r#"EQ \f( "Alpha, One" , "Beta Two" ) \* Upper"#
+    );
+    assert_eq!(fields[0].result, "ALPHA, ONE/BETA TWO");
+    assert_eq!(
+        fields[0].computed_result.as_deref(),
+        Some("ALPHA, ONE/BETA TWO")
+    );
+    assert_eq!(fields[1].kind, FieldKind::Display("ADVANCE".to_string()));
+    assert_eq!(fields[1].instruction, r#"ADVANCE \r"2" \d4 \* MERGEFORMAT"#);
+    assert_eq!(fields[1].result, "");
+    assert_eq!(fields[1].computed_result.as_deref(), Some(""));
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 4] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_malformed) = &reopened_model.blocks[2] else {
+        panic!("malformed EQ fallback paragraph")
+    };
+    assert_eq!(
+        rejected_malformed.text(),
+        "MALFORMED EQ BEFORE CACHED MALFORMED EQ MALFORMED EQ AFTER"
+    );
+    let Block::Paragraph(rejected_split) = &reopened_model.blocks[3] else {
+        panic!("split-result EQ fallback paragraph")
+    };
+    assert_eq!(rejected_split.text(), "SPLIT EQ BEFORE 1/2 SPLIT EQ AFTER");
+    let Block::Paragraph(rejected_advance) = &reopened_model.blocks[5] else {
+        panic!("unsupported ADVANCE fallback paragraph")
+    };
+    assert_eq!(
+        rejected_advance.text(),
+        "BAD ADVANCE BEFORE CACHED BAD ADVANCE BAD ADVANCE AFTER"
+    );
+    let Block::Paragraph(rejected_action) = &reopened_model.blocks[6] else {
+        panic!("action fallback paragraph")
+    };
+    assert_eq!(
+        rejected_action.text(),
+        "ACTION BEFORE Fresh Action ACTION AFTER"
+    );
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);
