@@ -446,6 +446,17 @@ pub(crate) fn computed_revision_number_result(
     Some(apply_field_text_format(revision, text_format))
 }
 
+pub(crate) fn computed_preserved_revision_number_result(
+    instruction: &str,
+    core_properties: &CoreProperties,
+) -> Option<String> {
+    let revision = core_properties.revision.as_deref()?;
+    if revision.is_empty() || revision.trim() != revision {
+        return None;
+    }
+    computed_revision_number_result(instruction, core_properties)
+}
+
 pub(crate) fn supports_revision_number_field_syntax(instruction: &str) -> bool {
     revision_number_field_text_format(instruction).is_some()
 }

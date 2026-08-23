@@ -663,6 +663,39 @@ fn document_info_field_note_docx() -> Vec<u8> {
     ])
 }
 
+fn revision_number_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="411"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="421"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="412"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="422"/></w:r><w:r><w:t> BODY E</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="411"><w:p><w:r><w:t xml:space="preserve">FOOT REVISION BEFORE </w:t></w:r><w:fldSimple w:instr=" REVNUM \* Caps "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT REVISION</w:t></w:r></w:fldSimple><w:r><w:t> FOOT REVISION AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="412"><w:p><w:r><w:t xml:space="preserve">MALFORMED REVISION BEFORE </w:t></w:r><w:fldSimple w:instr=" REVNUM \x "><w:r><w:t>CACHED MALFORMED REVISION</w:t></w:r></w:fldSimple><w:r><w:t> MALFORMED REVISION AFTER</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="421"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END REVISION BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> REVNUM \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END REVISION</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END REVISION AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="422"><w:p><w:r><w:t xml:space="preserve">SPLIT REVISION BEFORE </w:t></w:r><w:fldSimple w:instr=" REVNUM "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE SPLIT REVISION A</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE SPLIT REVISION B</w:t></w:r></w:fldSimple><w:r><w:t> SPLIT REVISION AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision>draft revision</cp:revision></cp:coreProperties>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -2851,6 +2884,140 @@ fn opened_docx_note_core_and_custom_property_fields_keep_results_and_instruction
     let standalone = unzip_parts(&standalone_bytes);
     assert!(standalone.contains_key("docProps/core.xml"));
     assert!(standalone.contains_key("docProps/custom.xml"));
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_revision_number_fields_keep_results_and_instructions() {
+    let document =
+        Document::open(&revision_number_field_note_docx()).expect("revision field notes open");
+    assert_eq!(document.notes().len(), 4, "source note records missing");
+    assert_eq!(document.report().features.fields, 4);
+    assert_eq!(
+        document.core_properties().revision.as_deref(),
+        Some("draft revision")
+    );
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone revision normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    let core = std::str::from_utf8(&parts["docProps/core.xml"]).unwrap();
+    assert!(
+        core.contains("<cp:revision>draft revision</cp:revision>"),
+        "{core}"
+    );
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT REVISION BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END REVISION BEFORE");
+    let rejected_malformed = note_with_marker(footnotes, "footnote", "MALFORMED REVISION BEFORE");
+    let rejected_split = note_with_marker(endnotes, "endnote", "SPLIT REVISION BEFORE");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(r#"<w:fldSimple w:instr=" REVNUM \* Caps ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains("Draft Revision")
+            && footnote.contains("FOOT REVISION BEFORE ")
+            && footnote.contains(" FOOT REVISION AFTER"),
+        "top-level revision field missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT REVISION"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:fldSimple w:instr=" REVNUM \* Upper ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains("DRAFT REVISION")
+            && endnote.contains("END REVISION BEFORE ")
+            && endnote.contains(" END REVISION AFTER"),
+        "nested revision field missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END REVISION"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [rejected_malformed, rejected_split] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains(r#"REVNUM \x"#));
+    assert!(!endnotes.contains(r#"<w:fldSimple w:instr=" REVNUM ""#));
+    assert!(!footnotes.contains("STALE FOOT REVISION"));
+    assert!(!endnotes.contains("STALE END REVISION"));
+    assert!(!endnotes.contains("STALE SPLIT REVISION A"));
+    assert!(!endnotes.contains("STALE SPLIT REVISION B"));
+    assert!(footnotes.contains("CACHED MALFORMED REVISION"));
+    assert!(endnotes.contains("draft revision"));
+
+    let reopened = Document::open(&converted).expect("converted revision notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentStructure("REVNUM".to_string())
+    );
+    assert_eq!(fields[0].instruction, r#"REVNUM \* Caps"#);
+    assert_eq!(fields[0].result, "Draft Revision");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Draft Revision"));
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::DocumentStructure("REVNUM".to_string())
+    );
+    assert_eq!(fields[1].instruction, r#"REVNUM \* Upper"#);
+    assert_eq!(fields[1].result, "DRAFT REVISION");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("DRAFT REVISION"));
+    assert_eq!(
+        reopened.core_properties().revision.as_deref(),
+        Some("draft revision")
+    );
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 3] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_malformed) = &reopened_model.blocks[2] else {
+        panic!("malformed revision fallback paragraph")
+    };
+    assert_eq!(
+        rejected_malformed.text(),
+        "MALFORMED REVISION BEFORE CACHED MALFORMED REVISION MALFORMED REVISION AFTER"
+    );
+    let Block::Paragraph(rejected_split) = &reopened_model.blocks[4] else {
+        panic!("split revision fallback paragraph")
+    };
+    assert_eq!(
+        rejected_split.text(),
+        "SPLIT REVISION BEFORE draft revision SPLIT REVISION AFTER"
+    );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(standalone.contains_key("docProps/core.xml"));
     assert!(!standalone.contains_key("word/footnotes.xml"));
     assert!(!standalone.contains_key("word/endnotes.xml"));
     assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));

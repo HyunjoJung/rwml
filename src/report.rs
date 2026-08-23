@@ -677,6 +677,9 @@ fn supports_owned_computed_field_evaluation(field: &Field) -> bool {
             FieldKind::DocumentInfo(_) => {
                 crate::docx::supports_preserved_document_info_field_syntax(&field.instruction)
             }
+            FieldKind::DocumentStructure(kind) if kind == "REVNUM" => {
+                crate::docx::supports_revision_number_field_syntax(&field.instruction)
+            }
             _ => false,
         }
     }
@@ -5336,6 +5339,29 @@ mod tests {
             "REVNUM",
             r#"DOCPROPERTY "Broken Name"#,
         ] {
+            assert!(
+                !super::supports_owned_computed_field_evaluation(&field(instruction)),
+                "{instruction}"
+            );
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn owned_revision_number_fields_use_the_note_writer_syntax_boundary() {
+        let field = |instruction: &str| Field {
+            kind: FieldKind::DocumentStructure("REVNUM".to_string()),
+            instruction: instruction.to_string(),
+            ..Field::default()
+        };
+
+        for instruction in ["REVNUM", r#"REVNUM \* Upper"#, r#"REVNUM \* Caps"#] {
+            assert!(
+                super::supports_owned_computed_field_evaluation(&field(instruction)),
+                "{instruction}"
+            );
+        }
+        for instruction in [r#"REVNUM \x"#, r#"REVNUM "broken"#, "SECTION"] {
             assert!(
                 !super::supports_owned_computed_field_evaluation(&field(instruction)),
                 "{instruction}"

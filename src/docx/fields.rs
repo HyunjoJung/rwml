@@ -61,9 +61,9 @@ pub(crate) use self::display::{
 use self::document_info::document_info_instruction;
 pub(crate) use self::document_info::{
     computed_context_document_info_result, computed_document_info_result,
-    computed_preserved_document_info_result, computed_revision_number_result,
-    supports_document_info_field_syntax, supports_preserved_document_info_field_syntax,
-    supports_revision_number_field_syntax,
+    computed_preserved_document_info_result, computed_preserved_revision_number_result,
+    computed_revision_number_result, supports_document_info_field_syntax,
+    supports_preserved_document_info_field_syntax, supports_revision_number_field_syntax,
 };
 #[cfg(test)]
 use self::formula::computed_formula_result;
@@ -2827,10 +2827,11 @@ mod tests {
         cardinal_page_number_text, computed_action_result, computed_ask_result,
         computed_display_result, computed_dynamic_result, computed_listnum_result,
         computed_numbering_result, computed_preserved_document_info_result,
-        computed_reference_index_result, computed_sequence_result, computed_set_result,
-        computed_toc_entry_result, direct_bookmark_ref_instruction, document_info_instruction,
-        format_page_number, note_ref_context, note_ref_instruction, ordinal_page_number_text,
-        page_ref_context, page_ref_instruction, ref_instruction, ref_position_context, ref_targets,
+        computed_preserved_revision_number_result, computed_reference_index_result,
+        computed_sequence_result, computed_set_result, computed_toc_entry_result,
+        direct_bookmark_ref_instruction, document_info_instruction, format_page_number,
+        note_ref_context, note_ref_instruction, ordinal_page_number_text, page_ref_context,
+        page_ref_instruction, ref_instruction, ref_position_context, ref_targets,
         seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
         supports_compare_field_syntax, supports_computed_symbol_field_syntax,
         supports_context_free_display_field_syntax, supports_context_free_fill_in_field_syntax,
@@ -2838,8 +2839,9 @@ mod tests {
         supports_formula_field_syntax, supports_if_field_syntax,
         supports_merge_control_field_syntax, supports_preserved_document_info_field_syntax,
         supports_prompt_field_syntax, supports_reference_index_marker_syntax,
-        supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
-        toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
+        supports_revision_number_field_syntax, supports_sequence_field_syntax,
+        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
+        PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
@@ -3347,6 +3349,51 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn preserved_revision_number_fields_require_fresh_writer_stable_sources() {
+        let core = CoreProperties {
+            revision: Some("draft revision".to_string()),
+            ..CoreProperties::default()
+        };
+
+        for (instruction, expected) in [
+            ("REVNUM", "draft revision"),
+            (r#"REVNUM \* Upper"#, "DRAFT REVISION"),
+            (r#"REVNUM \* Caps"#, "Draft Revision"),
+        ] {
+            assert!(
+                supports_revision_number_field_syntax(instruction),
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_revision_number_result(instruction, &core).as_deref(),
+                Some(expected),
+                "{instruction}"
+            );
+        }
+        assert!(!supports_revision_number_field_syntax(r#"REVNUM \x"#));
+        assert_eq!(
+            computed_preserved_revision_number_result(r#"REVNUM \x"#, &core),
+            None
+        );
+        for revision in [
+            None,
+            Some(String::new()),
+            Some(" draft revision ".to_string()),
+        ] {
+            assert_eq!(
+                computed_preserved_revision_number_result(
+                    "REVNUM",
+                    &CoreProperties {
+                        revision,
+                        ..CoreProperties::default()
+                    },
+                ),
+                None
+            );
+        }
     }
 
     #[test]

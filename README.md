@@ -1164,6 +1164,13 @@ user fields, `REVNUM`, malformed or dirty instructions, and split results remain
 excluded. This path uses the core/custom properties already carried by the fresh
 model; it does not copy app/settings parts or add field updates, user context,
 relationships, or layout behavior.
+Parser-validated, non-dirty `REVNUM` fields with one modeled result run likewise
+survive when the core revision exists and already matches the fresh writer's
+nonempty trim normalization. Normalized instructions, deterministic current
+results, supported text-format switches, and modeled formatting are retained.
+Missing, empty, trim-unstable, malformed, dirty, or split-result cases remain
+excluded. This does not add revision tracking, field updates, relationships, or
+layout behavior.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names

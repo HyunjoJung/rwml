@@ -3146,6 +3146,11 @@ fn preserves_computed_field_instruction(instruction: &str, ctx: &Ctx<'_>) -> boo
             ctx.custom_properties,
         )
         .is_some()
+        || super::fields::computed_preserved_revision_number_result(
+            instruction,
+            ctx.core_properties,
+        )
+        .is_some()
 }
 
 fn preserves_context_free_computed_field_instruction(instruction: &str) -> bool {

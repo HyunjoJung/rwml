@@ -28,6 +28,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   note-local plain-text fallback. This does not copy app/settings parts or add
   field updates, user context, relationships, or layout behavior.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty `REVNUM` fields with one modeled result run in
+  exact real footnote and endnote payloads when the core revision exists and
+  already matches the fresh writer's nonempty trim normalization. Normalized
+  instructions, deterministic current results, supported text-format switches,
+  source order, and modeled formatting survive at the top level and through
+  recursively nested table cells; one-result-run complex source fields normalize
+  to non-dirty `w:fldSimple`. Missing, empty, trim-unstable, malformed, dirty, or
+  split-result cases still trigger note-local plain-text fallback. This does not
+  add revision tracking, field updates, relationships, or layout behavior.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   context-free, non-dirty `EQ` and `ADVANCE` fields with one modeled result run in
   exact real footnote and endnote payloads. Supported EQ expressions retain their
   normalized instructions, deterministic plain-text approximations, source order,
