@@ -9,6 +9,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty `RD`, `TA`, and `XE` hidden marker fields in exact
+  real footnote and endnote payloads with nonempty visible text. Normalized
+  instructions, empty computed results, source order, and modeled formatting
+  survive at the top level and through recursively nested table cells; one-
+  result-run complex source fields normalize to non-dirty `w:fldSimple`. Both
+  note families, deterministic bytes, source-model immutability, native reopen/
+  reconversion, standalone note exclusion, stale-cache removal, and malformed or
+  generated-index sibling fallback are covered. This does not generate or update
+  indexes, tables of authorities, or master-document references. Marker-only
+  notes, `TC`, generated `BIBLIOGRAPHY`/`CITATION`/`INDEX`/`TOA` fields, dirty or
+  malformed markers, comments, tracked revisions, nested notes, floating
+  placement, page-bottom composition, and Word-exact pagination remain outside
+  this bounded path.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-validated, non-dirty `FILENAME` cached result runs in exact real footnote
   and endnote payloads. Bounded path-display and text-format switches survive
   with normalized instructions and modeled formatting at the top level and

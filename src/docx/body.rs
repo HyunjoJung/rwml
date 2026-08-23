@@ -2963,6 +2963,7 @@ struct ComplexFieldTracker {
     result_text: String,
     result_start: Option<usize>,
     pending: Option<PendingComplexField>,
+    preserve_empty_runs: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -3172,9 +3173,13 @@ fn read_runs_container_with_complex(
     paragraph_style_id: Option<&str>,
     link: Option<&str>,
     depth: u32,
+    preserve_empty_runs: bool,
 ) -> Vec<Run> {
     let mut runs = Vec::new();
-    let mut complex_field = ComplexFieldTracker::default();
+    let mut complex_field = ComplexFieldTracker {
+        preserve_empty_runs,
+        ..ComplexFieldTracker::default()
+    };
     append_runs_container_with_complex(
         r,
         ctx,
@@ -4183,6 +4188,7 @@ fn read_run(
     let mut direct_props = DirectRunProps::default();
     let mut text = String::new();
     let mut text_is_field_result = false;
+    let mut has_field_markup = false;
     let mut images: Vec<Run> = Vec::new();
     let mut image_result_runs = Vec::new();
     loop {
@@ -4190,10 +4196,12 @@ fn read_run(
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"rPr" => direct_props = read_rpr(r),
                 b"fldChar" => {
+                    has_field_markup = true;
                     apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index);
                     skip_subtree(r);
                 }
                 b"instrText" => {
+                    has_field_markup = true;
                     let instruction = read_text(r);
                     if let Some(tracker) = complex_field.as_deref_mut() {
                         tracker.push_instruction(&instruction);
@@ -4263,6 +4271,7 @@ fn read_run(
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"fldChar" => {
+                    has_field_markup = true;
                     apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index)
                 }
                 b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
@@ -4289,7 +4298,13 @@ fn read_run(
         }
     }
     let mut runs = Vec::new();
-    if !text.is_empty() {
+    let preserve_empty_run = text.is_empty()
+        && images.is_empty()
+        && !has_field_markup
+        && complex_field
+            .as_deref()
+            .is_some_and(|tracker| tracker.preserve_empty_runs && tracker.phase.is_none());
+    if !text.is_empty() || preserve_empty_run {
         let props = effective_run_props(ctx, paragraph_style_id, &direct_props);
         if text_is_field_result {
             if let Some(tracker) = complex_field.as_deref_mut() {
@@ -5031,7 +5046,7 @@ fn read_hyperlink(
     depth: u32,
 ) -> Vec<Run> {
     let url = hyperlink_url(start, ctx);
-    read_runs_container_with_complex(r, ctx, paragraph_style_id, url.as_deref(), depth + 1)
+    read_runs_container_with_complex(r, ctx, paragraph_style_id, url.as_deref(), depth + 1, false)
 }
 
 fn hyperlink_url(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<String> {
@@ -5044,7 +5059,7 @@ fn hyperlink_url(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<String> {
 }
 
 /// Read `<w:fldSimple>`: hyperlinks keep link semantics; other simple fields
-/// keep their normalized instruction on the cached result runs.
+/// keep normalized instructions, including formatted empty marker results.
 fn read_fldsimple(
     r: &mut Xml<'_>,
     start: &BytesStart<'_>,
@@ -5054,8 +5069,14 @@ fn read_fldsimple(
 ) -> Vec<Run> {
     let instruction = attr_local(start, b"instr").unwrap_or_default();
     let url = hyperlink_instr_url(&instruction);
-    let mut runs =
-        read_runs_container_with_complex(r, ctx, paragraph_style_id, url.as_deref(), depth + 1);
+    let mut runs = read_runs_container_with_complex(
+        r,
+        ctx,
+        paragraph_style_id,
+        url.as_deref(),
+        depth + 1,
+        url.is_none() && super::fields::supports_reference_index_marker_syntax(&instruction),
+    );
     if url.is_none() {
         let instruction = normalized_field_instruction(&instruction);
         if !instruction.is_empty() {

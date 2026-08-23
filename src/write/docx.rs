@@ -17,6 +17,7 @@
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::annotation::{filename_field_syntax, merge_field_syntax};
+use crate::docx::supports_reference_index_marker_syntax;
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
@@ -3115,6 +3116,10 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                 FieldKind::Filename => {
                     run.field_unsupported_reason.is_none() && filename_field_syntax(instruction)
                 }
+                FieldKind::ReferenceIndex(_) => {
+                    run.field_unsupported_reason.is_none()
+                        && supports_reference_index_marker_syntax(instruction)
+                }
                 FieldKind::Compatibility(_)
                 | FieldKind::InsertedContent(_)
                 | FieldKind::MailMerge(_)
@@ -5264,6 +5269,21 @@ mod tests {
         assert!(source_note_field_is_supported(&filename));
         let mut dirty_filename = filename.clone();
         dirty_filename.field_dirty = true;
+        let marker = |instruction: &str| Run {
+            field: FieldRole::Simple {
+                instruction: instruction.to_string(),
+            },
+            ..Run::default()
+        };
+        for instruction in [
+            r#"XE "Mercury" \t "See planets" \* FirstCap"#,
+            r#"TA \l "Case v. Example" \c 1 \* CHARFORMAT"#,
+            r#"rd "appendix.docx" \* MERGEFORMAT"#,
+        ] {
+            assert!(source_note_field_is_supported(&marker(instruction)));
+        }
+        let mut dirty_marker = marker(r#"XE "Dirty""#);
+        dirty_marker.field_dirty = true;
 
         let mut dirty = cached("PRIVATE legacy-data");
         dirty.field_dirty = true;
@@ -5284,11 +5304,15 @@ mod tests {
         for rejected in [
             dirty,
             dirty_filename,
+            dirty_marker,
             malformed,
             malformed_merge,
             malformed_filename,
+            marker(r#"TA \l "Broken Case" \c"#),
+            marker(r#"INDEX \e " - ""#),
             cached("MERGEFIELD Client"),
             cached("FILENAME \\p"),
+            cached(r#"XE "Wrong reason""#),
             Run {
                 field: FieldRole::Simple {
                     instruction: "CUSTOM literal payload".to_string(),

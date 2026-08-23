@@ -407,6 +407,35 @@ fn filename_field_note_docx() -> Vec<u8> {
     ])
 }
 
+fn reference_index_marker_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="151"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="161"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="152"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="162"/></w:r><w:r><w:t> BODY E</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="151"><w:p><w:r><w:t xml:space="preserve">FOOT BEFORE </w:t></w:r><w:fldSimple w:instr=" XE &quot;Mercury&quot; \t &quot;See planets&quot; \* FirstCap "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE XE CACHE</w:t></w:r></w:fldSimple><w:r><w:t>FOOT AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="152"><w:p><w:fldSimple w:instr=" TA \l &quot;Broken Case&quot; \c "><w:r><w:t>REJECTED MALFORMED TA</w:t></w:r></w:fldSimple><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="161"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TA \l &quot;Case v. Example&quot; \c 1 \* CHARFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE TA CACHE</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t xml:space="preserve"> BETWEEN </w:t></w:r><w:fldSimple w:instr=" RD &quot;appendix.docx&quot; \* MERGEFORMAT "><w:r><w:rPr><w:smallCaps/></w:rPr><w:t>STALE RD CACHE</w:t></w:r></w:fldSimple><w:r><w:t> END AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="162"><w:p><w:fldSimple w:instr=" INDEX \e &quot; - &quot; "><w:r><w:t>REJECTED GENERATED INDEX</w:t></w:r></w:fldSimple><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -1353,6 +1382,130 @@ fn opened_docx_note_filename_fields_keep_validated_cached_results() {
     assert_eq!(
         rejected_unknown.text(),
         "REJECTED UNKNOWN FILENAME SIBLING FALLBACK"
+    );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_reference_index_markers_keep_hidden_instructions() {
+    let document = Document::open(&reference_index_marker_note_docx())
+        .expect("reference-index marker notes open");
+    assert_eq!(document.notes().len(), 4, "source note records missing");
+    assert_eq!(document.report().features.fields, 5);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone marker normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END BEFORE");
+    let rejected_malformed = note_with_marker(footnotes, "footnote", "REJECTED MALFORMED TA");
+    let rejected_generated = note_with_marker(endnotes, "endnote", "REJECTED GENERATED INDEX");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(
+            r#"<w:fldSimple w:instr=" XE &quot;Mercury&quot; \t &quot;See planets&quot; \* FirstCap ">"#
+        ) && footnote.contains("<w:b/>")
+            && footnote.contains("FOOT BEFORE ")
+            && footnote.contains("FOOT AFTER"),
+        "top-level XE marker missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE XE CACHE"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 2, "{endnote}");
+    assert!(
+        endnote.contains(
+            r#"<w:fldSimple w:instr=" TA \l &quot;Case v. Example&quot; \c 1 \* CHARFORMAT ">"#
+        ) && endnote
+            .contains(r#"<w:fldSimple w:instr=" RD &quot;appendix.docx&quot; \* MERGEFORMAT ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains("<w:smallCaps/>")
+            && endnote.contains("END BEFORE ")
+            && endnote.contains(" BETWEEN ")
+            && endnote.contains(" END AFTER"),
+        "nested TA/RD markers missing: {endnote}"
+    );
+    let ta_offset = endnote.find(" TA \\l").expect("TA marker order");
+    let rd_offset = endnote.find(" RD &quot;").expect("RD marker order");
+    assert!(ta_offset < rd_offset, "marker order changed: {endnote}");
+    assert!(!endnote.contains("STALE TA CACHE"), "{endnote}");
+    assert!(!endnote.contains("STALE RD CACHE"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [rejected_malformed, rejected_generated] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains(r#"TA \l &quot;Broken Case&quot;"#));
+    assert!(!endnotes.contains(r#"INDEX \e"#));
+
+    let reopened = Document::open(&converted).expect("converted marker notes reopen");
+    assert_eq!(reopened.report().features.fields, 3);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::ReferenceIndex("XE".to_string()));
+    assert_eq!(
+        fields[0].instruction,
+        r#"XE "Mercury" \t "See planets" \* FirstCap"#
+    );
+    assert_eq!(fields[1].kind, FieldKind::ReferenceIndex("TA".to_string()));
+    assert_eq!(
+        fields[1].instruction,
+        r#"TA \l "Case v. Example" \c 1 \* CHARFORMAT"#
+    );
+    assert_eq!(fields[2].kind, FieldKind::ReferenceIndex("RD".to_string()));
+    assert_eq!(
+        fields[2].instruction,
+        r#"RD "appendix.docx" \* MERGEFORMAT"#
+    );
+    assert!(fields.iter().all(|field| field.result.is_empty()));
+    assert!(fields
+        .iter()
+        .all(|field| field.computed_result.as_deref() == Some("")));
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 3] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_malformed) = &reopened_model.blocks[2] else {
+        panic!("rejected malformed-marker fallback paragraph")
+    };
+    assert_eq!(rejected_malformed.text(), "REJECTED MALFORMED TA FALLBACK");
+    let Block::Paragraph(rejected_generated) = &reopened_model.blocks[4] else {
+        panic!("rejected generated-index fallback paragraph")
+    };
+    assert_eq!(
+        rejected_generated.text(),
+        "REJECTED GENERATED INDEX FALLBACK"
     );
     assert_eq!(reopened.to_docx(), converted);
 

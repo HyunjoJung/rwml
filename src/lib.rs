@@ -1122,9 +1122,15 @@ impl Document {
     /// no external merge data source is copied or evaluated. Parser-validated,
     /// non-dirty `FILENAME` cached results with bounded path-display and text-
     /// format switches likewise survive as normalized simple fields; no
-    /// filesystem path is read and no destination filename is inferred. Dirty
-    /// modeled runs, malformed field syntax, and unknown or context-sensitive/
-    /// computed fields reject that note atomically.
+    /// filesystem path is read and no destination filename is inferred.
+    /// Parser-validated, non-dirty `RD`, `TA`, and `XE` marker instructions also
+    /// survive in source order as empty simple fields with modeled formatting
+    /// while stale marker cache text stays hidden. This path does not generate or
+    /// update indexes, tables of authorities, or master-document references;
+    /// marker-only notes, `TC`, and generated `BIBLIOGRAPHY`/`CITATION`/`INDEX`/
+    /// `TOA` fields remain excluded. Dirty modeled runs, malformed field syntax,
+    /// and unknown or other context-sensitive/generated fields reject that note
+    /// atomically.
     /// Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline
     /// runs also retain globally unique media parts and relationships owned by
     /// the corresponding note part, including through nested tables and under
