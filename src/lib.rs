@@ -1016,8 +1016,8 @@ impl Document {
     /// preserves the structure (text, character runs, headings, alignment, lists,
     /// tables with colspan/rowspan, images, hyperlinks), so a legacy `.doc` can be
     /// converted to a clean, Office-openable `.docx` through the shared model.
-    /// Opened legacy documents also carry validated source-only section column
-    /// gaps, complete unequal geometry, separator flags, and right-to-left
+    /// Opened legacy and DOCX documents also carry validated source-only section
+    /// column gaps, complete unequal geometry, separator flags, and right-to-left
     /// population into the generated package; standalone [`write_docx`] remains
     /// model-only for those private hints.
     /// Available with the default `docx` feature.
@@ -1043,7 +1043,19 @@ impl Document {
             Backend::Docx(state) => {
                 let mut model = state.model.clone();
                 model.blocks.extend(state.notes.iter().cloned());
-                write::to_docx(&model)
+                write::to_docx_with_section_columns(
+                    &model,
+                    write::SourceSectionColumnWriteHints {
+                        gaps: &state.section_column_gap_pt,
+                        layouts: &state.section_column_layouts,
+                        separators: &state.section_column_separators,
+                        rtl: &state.section_column_rtl,
+                        final_gap: state.final_section_column_gap_pt,
+                        final_layout: state.final_section_column_layout.as_ref(),
+                        final_separator: state.final_section_column_separator,
+                        final_rtl: state.final_section_column_rtl,
+                    },
+                )
             }
         }
     }
@@ -12065,6 +12077,121 @@ mod tests {
         assert_eq!(raw_model_layout.block_pages, vec![Some(1), Some(1)]);
         assert_eq!(opened_document_layout.block_pages, vec![Some(1), Some(2)]);
         assert_eq!(opened_document_layout.pages, 2);
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_to_docx_preserves_private_section_column_semantics() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:sectPr><w:cols w:num="2" w:space="800" w:sep="1"/></w:sectPr></w:pPr>
+                    <w:r><w:t>ending section</w:t></w:r>
+                </w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:equalWidth="0">
+                    <w:col w:w="3000" w:space="200"/><w:col w:w="5000"/>
+                </w:cols><w:bidi/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        let converted = document.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let ending_columns = document_xml
+            .find(r#"<w:cols w:num="2" w:space="800" w:sep="1"/>"#)
+            .unwrap_or_else(|| panic!("ending-section column hints were lost: {document_xml}"));
+        let final_columns = document_xml
+            .find(
+                r#"<w:cols w:num="2" w:equalWidth="0"><w:col w:w="3000" w:space="200"/><w:col w:w="5000"/></w:cols>"#,
+            )
+            .unwrap_or_else(|| panic!("final-section column hints were lost: {document_xml}"));
+        assert!(ending_columns < final_columns, "{document_xml}");
+        assert!(document_xml.contains("<w:bidi/>"), "{document_xml}");
+        assert_eq!(converted, document.to_docx());
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(reopened.model().setup.columns, Some(2));
+        #[cfg(feature = "render")]
+        reopened.with_render_model_and_hints(|model, hints| {
+            let boundary = model
+                .blocks
+                .iter()
+                .position(|block| matches!(block, Block::SectionBreak(_)))
+                .expect("converted section boundary");
+            assert_eq!(hints.section_column_gap_pt[boundary], Some(40.0));
+            assert!(hints.section_column_separators[boundary]);
+            let layout = hints
+                .final_section_column_layout
+                .expect("converted final custom columns");
+            assert_eq!(layout.columns[0].width_pt, 150.0);
+            assert_eq!(layout.columns[0].space_after_pt, 10.0);
+            assert_eq!(layout.columns[1].width_pt, 250.0);
+            assert!(hints.final_section_column_rtl);
+        });
+
+        let model_only = write_docx(&document.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert_eq!(model_only_xml.matches(r#"<w:cols w:num="2"/>"#).count(), 2);
+        assert!(!model_only_xml.contains("w:equalWidth"));
+        assert!(!model_only_xml.contains("<w:bidi/>"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_to_docx_selects_column_branch_and_isolates_bad_geometry() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+                xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+                <w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:p><w:pPr><w:sectPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:cols w:num="2" w:space="600" w:sep="1"/></mc:Choice>
+                    <mc:Fallback><w:cols w:num="3" w:space="1200"/></mc:Fallback>
+                </mc:AlternateContent></w:sectPr></w:pPr><w:r><w:t>choice</w:t></w:r></w:p>
+                <w:p><w:pPr><w:sectPr><w:cols w:equalWidth="0" w:sep="1">
+                    <w:col w:w="0" w:space="400"/><w:col w:w="4000"/>
+                </w:cols><w:bidi/></w:sectPr></w:pPr><w:r><w:t>malformed</w:t></w:r></w:p>
+                <w:p><w:r><w:t>final</w:t></w:r></w:p>
+                <w:sectPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:cols w:num="2" w:space="200"/></mc:Choice>
+                    <mc:Fallback><w:cols w:num="4" w:space="1400"/></mc:Fallback>
+                </mc:AlternateContent></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        let document_xml = docx_part(&document.to_docx(), "word/document.xml");
+        let selected = document_xml
+            .find(r#"<w:cols w:num="2" w:space="600" w:sep="1"/>"#)
+            .expect("selected column branch");
+        let malformed = document_xml[selected + 1..]
+            .find(r#"<w:cols w:sep="1"/>"#)
+            .map(|index| selected + 1 + index)
+            .expect("malformed section fallback");
+        let final_section = document_xml[malformed + 1..]
+            .find(r#"<w:cols w:num="2" w:space="200"/>"#)
+            .map(|index| malformed + 1 + index)
+            .expect("final section columns");
+
+        assert!(selected < malformed && malformed < final_section);
+        assert!(!document_xml.contains(r#"w:num="3""#));
+        assert!(!document_xml.contains(r#"w:num="4""#));
+        assert!(!document_xml.contains(r#"w:space="1200""#));
+        assert!(!document_xml.contains(r#"w:space="1400""#));
+        assert!(!document_xml.contains("w:equalWidth"));
+        assert_eq!(document_xml.matches("<w:bidi/>").count(), 1);
+
+        let reopened = Document::open(&document.to_docx()).unwrap();
+        let section_columns = reopened
+            .model()
+            .blocks
+            .into_iter()
+            .filter_map(|block| match block {
+                Block::SectionBreak(section) => Some(section.columns),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(section_columns, [Some(2), None]);
+        assert_eq!(reopened.model().setup.columns, Some(2));
     }
 
     #[cfg(all(feature = "docx", feature = "render"))]

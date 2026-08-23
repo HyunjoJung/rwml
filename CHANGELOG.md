@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Extends source-aware section-column conversion to DOCX-backed
+  `Document::to_docx()`. A default-build capture now retains only the aligned
+  equal gaps, complete unequal layouts, separator flags, and section direction
+  already resolved by the bounded accepted-current reader; renderer pagination
+  sidecars remain feature-gated. Intermediate and final sections emit through
+  the validated writer bridge, including selected Markup Compatibility
+  branches, while malformed custom geometry stays isolated. Standalone
+  `write_docx(&DocModel)` remains model-only and package-preserving `save()` is
+  unchanged.
 - Preserves validated section-column semantics when `Document::to_docx()`
   converts an opened legacy `.doc`. Section-aligned equal gaps, complete
   unequal widths and following spaces, separator rules, and right-to-left
@@ -15,9 +24,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fresh package and survive native reopen. Invalid or misaligned private
   geometry falls back to the modeled count and any valid equal gap without
   affecting neighboring sections. Standalone model authoring through
-  `write_docx` and DOCX-backed `Document::to_docx()` remain model-only for
-  these private hints; exact per-column rewrapping and Word-exact pagination
-  remain outside this conversion bridge.
+  `write_docx` remains model-only for these private hints; exact per-column
+  rewrapping and Word-exact pagination remain outside this conversion bridge.
 - Populates opened DOCX and legacy `.doc` section columns from right to left in
   PDF previews when `w:sectPr/w:bidi` or `sprmSFBiDi` is
   active. DOCX on/off values follow accepted-current Markup Compatibility
@@ -46,8 +54,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   remains at least the renderer minimum, otherwise the established equal-column
   fallback wins. Pagination places content in each active width, while shaping
   remains conservatively bounded to the narrowest section column. DOCX-backed
-  private-width `Document::to_docx()` round-trip, deferred per-column
-  rewrapping, and Word-exact pagination remain outside this bounded path.
+  `Document::to_docx()` conversion uses the source-aware bridge above; deferred
+  per-column rewrapping and Word-exact pagination remain outside this bounded
+  path.
 - Applies complete explicit unequal-column geometry from opened legacy `.doc`
   sections to PDF and `LayoutPages` previews through the same private
   section-aligned path. A false `sprmSFEvenlySpaced` selector accepts two
@@ -303,8 +312,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sections use the separate bounded private geometry path above; malformed
   sections keep the existing fallback. Legacy-backed `Document::to_docx()` now
   carries a validated source gap through an internal writer hint, while
-  standalone model authoring and DOCX-backed fresh conversion remain
-  count-only because the public section model has no gap field.
+  standalone model authoring remains count-only because the public section
+  model has no gap field.
 - Applies an opened DOCX section's explicit `w:cols/@w:space` value to both
   equal-column paragraph shaping and the corresponding PDF column origins,
   including section-local values selected through accepted-current Markup

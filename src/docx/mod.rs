@@ -227,29 +227,21 @@ pub(crate) struct DocxState {
     /// Renderer-only manual column-break character offsets within body paragraphs.
     #[cfg(feature = "render")]
     pub column_break_offsets: Vec<Vec<usize>>,
-    /// Renderer-only explicit equal-column gaps aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only explicit equal-column gaps aligned to body model blocks.
     pub section_column_gap_pt: Vec<Option<f32>>,
-    /// Renderer-only explicit unequal-column geometry aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only explicit unequal-column geometry aligned to body model blocks.
     pub section_column_layouts: Vec<Option<crate::model::SectionColumnLayoutHints>>,
-    /// Renderer-only column-separator flags aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only column-separator flags aligned to body model blocks.
     pub section_column_separators: Vec<bool>,
-    /// Renderer-only right-to-left column population aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only right-to-left column population aligned to body model blocks.
     pub section_column_rtl: Vec<bool>,
-    /// Renderer-only explicit equal-column gap for the final body section.
-    #[cfg(feature = "render")]
+    /// Source-only explicit equal-column gap for the final body section.
     pub final_section_column_gap_pt: Option<f32>,
-    /// Renderer-only explicit unequal-column geometry for the final body section.
-    #[cfg(feature = "render")]
+    /// Source-only explicit unequal-column geometry for the final body section.
     pub final_section_column_layout: Option<crate::model::SectionColumnLayoutHints>,
-    /// Renderer-only column-separator flag for the final body section.
-    #[cfg(feature = "render")]
+    /// Source-only column-separator flag for the final body section.
     pub final_section_column_separator: bool,
-    /// Renderer-only right-to-left population for the final body section.
-    #[cfg(feature = "render")]
+    /// Source-only right-to-left population for the final body section.
     pub final_section_column_rtl: bool,
     /// Renderer-only effective table-row pagination controls aligned to body model blocks.
     #[cfg(feature = "render")]
@@ -471,21 +463,25 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         field_bookmarks: Default::default(),
         counters: Default::default(),
         paragraph_charts: Default::default(),
+        section_column_capture: Default::default(),
         pagination_capture: Default::default(),
     };
+    ctx.begin_section_column_capture();
     #[cfg(feature = "render")]
     ctx.begin_pagination_capture();
     let mut blocks = body::parse_document(&doc_xml, &ctx); // body only
+    let body::BodySectionColumnHints {
+        gaps: section_column_gap_pt,
+        layouts: section_column_layouts,
+        separators: section_column_separators,
+        rtl: section_column_rtl,
+    } = ctx.take_section_column_hints();
     #[cfg(feature = "render")]
     let body::BodyRenderHints {
         pagination: pagination_hints,
         line_spacing: line_spacing_hints,
         tab_stops,
         column_break_offsets,
-        section_column_gap_pt,
-        section_column_layouts,
-        section_column_separators,
-        section_column_rtl,
         table_rows: table_row_pagination,
         table_cells: table_cell_pagination,
         table_cell_line_spacing,
@@ -723,6 +719,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     // Retain the whole package verbatim for package-preserving editing/save. The
     // reader above is unchanged; this is an independent second pass over `bytes`.
     let package = crate::opc::Package::from_zip(bytes)?;
+    let final_section_columns = body::scan_final_section_column_hints(&doc_xml);
     Ok(DocxState {
         model,
         notes: note_part.blocks,
@@ -750,22 +747,14 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         tab_stops,
         #[cfg(feature = "render")]
         column_break_offsets,
-        #[cfg(feature = "render")]
         section_column_gap_pt,
-        #[cfg(feature = "render")]
         section_column_layouts,
-        #[cfg(feature = "render")]
         section_column_separators,
-        #[cfg(feature = "render")]
         section_column_rtl,
-        #[cfg(feature = "render")]
-        final_section_column_gap_pt: body::scan_section_column_gap_pt(&doc_xml),
-        #[cfg(feature = "render")]
-        final_section_column_layout: body::scan_section_column_layout(&doc_xml),
-        #[cfg(feature = "render")]
-        final_section_column_separator: body::scan_section_column_separator(&doc_xml),
-        #[cfg(feature = "render")]
-        final_section_column_rtl: body::scan_section_column_rtl(&doc_xml),
+        final_section_column_gap_pt: final_section_columns.gap_pt,
+        final_section_column_layout: final_section_columns.layout,
+        final_section_column_separator: final_section_columns.separator,
+        final_section_column_rtl: final_section_columns.rtl,
         #[cfg(feature = "render")]
         table_row_pagination,
         #[cfg(feature = "render")]
@@ -1410,6 +1399,7 @@ fn read_hf_parts(
             field_bookmarks: Default::default(),
             counters: Default::default(),
             paragraph_charts: Default::default(),
+            section_column_capture: Default::default(),
             pagination_capture: Default::default(),
         };
         let type_name = normalized_header_footer_type(&reference.type_name);
@@ -1721,6 +1711,7 @@ fn read_notes(
         field_bookmarks: Default::default(),
         counters: Default::default(),
         paragraph_charts: Default::default(),
+        section_column_capture: Default::default(),
         pagination_capture: Default::default(),
     };
     let mut blocks = Vec::new();

@@ -82,16 +82,29 @@ pub(super) struct PaginationCapture {
     line_spacing: Vec<Option<LineSpacingHint>>,
     tab_stops: Vec<Vec<TabStop>>,
     column_break_offsets: Vec<Vec<usize>>,
-    section_column_gap_pt: Vec<Option<f32>>,
-    section_column_layouts: Vec<Option<SectionColumnLayoutHints>>,
-    section_column_separators: Vec<bool>,
-    section_column_rtl: Vec<bool>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
     table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
     table_nested_pagination: Vec<TableCellNestedPaginationHints>,
     table_cell_tab_stops: Vec<TableCellTabStopHints>,
     suspended: usize,
+}
+
+#[derive(Default)]
+pub(super) struct SectionColumnCapture {
+    gaps: Vec<Option<f32>>,
+    layouts: Vec<Option<SectionColumnLayoutHints>>,
+    separators: Vec<bool>,
+    rtl: Vec<bool>,
+    suspended: usize,
+}
+
+#[derive(Default)]
+pub(super) struct BodySectionColumnHints {
+    pub(super) gaps: Vec<Option<f32>>,
+    pub(super) layouts: Vec<Option<SectionColumnLayoutHints>>,
+    pub(super) separators: Vec<bool>,
+    pub(super) rtl: Vec<bool>,
 }
 
 #[cfg(feature = "render")]
@@ -101,10 +114,6 @@ pub(super) struct BodyRenderHints {
     pub(super) line_spacing: Vec<Option<LineSpacingHint>>,
     pub(super) tab_stops: Vec<Vec<TabStop>>,
     pub(super) column_break_offsets: Vec<Vec<usize>>,
-    pub(super) section_column_gap_pt: Vec<Option<f32>>,
-    pub(super) section_column_layouts: Vec<Option<SectionColumnLayoutHints>>,
-    pub(super) section_column_separators: Vec<bool>,
-    pub(super) section_column_rtl: Vec<bool>,
     pub(super) table_rows: Vec<Vec<TableRowPaginationHint>>,
     pub(super) table_cells: Vec<TableCellPaginationHints>,
     pub(super) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
@@ -163,6 +172,7 @@ pub(crate) struct Ctx<'a> {
     /// single-threaded and `finalize_paragraph` runs in reading order).
     pub counters: std::cell::RefCell<HashMap<String, [u32; 9]>>,
     pub paragraph_charts: std::cell::RefCell<Vec<Vec<Chart>>>,
+    pub(super) section_column_capture: std::cell::RefCell<Option<SectionColumnCapture>>,
     pub(super) pagination_capture: std::cell::RefCell<Option<PaginationCapture>>,
 }
 
@@ -181,6 +191,23 @@ impl Ctx<'_> {
         self.paragraph_charts.borrow_mut().pop().unwrap_or_default()
     }
 
+    pub(crate) fn begin_section_column_capture(&self) {
+        *self.section_column_capture.borrow_mut() = Some(SectionColumnCapture::default());
+    }
+
+    pub(crate) fn take_section_column_hints(&self) -> BodySectionColumnHints {
+        self.section_column_capture
+            .borrow_mut()
+            .take()
+            .map(|capture| BodySectionColumnHints {
+                gaps: capture.gaps,
+                layouts: capture.layouts,
+                separators: capture.separators,
+                rtl: capture.rtl,
+            })
+            .unwrap_or_default()
+    }
+
     #[cfg(feature = "render")]
     pub(crate) fn begin_pagination_capture(&self) {
         *self.pagination_capture.borrow_mut() = Some(PaginationCapture::default());
@@ -196,10 +223,6 @@ impl Ctx<'_> {
                 line_spacing: capture.line_spacing,
                 tab_stops: capture.tab_stops,
                 column_break_offsets: capture.column_break_offsets,
-                section_column_gap_pt: capture.section_column_gap_pt,
-                section_column_layouts: capture.section_column_layouts,
-                section_column_separators: capture.section_column_separators,
-                section_column_rtl: capture.section_column_rtl,
                 table_rows: capture.table_row_pagination,
                 table_cells: capture.table_cell_pagination,
                 table_cell_line_spacing: capture.table_cell_line_spacing,
@@ -209,13 +232,19 @@ impl Ctx<'_> {
             .unwrap_or_default()
     }
 
-    fn suspend_pagination_capture(&self) {
+    fn suspend_block_captures(&self) {
+        if let Some(capture) = self.section_column_capture.borrow_mut().as_mut() {
+            capture.suspended = capture.suspended.saturating_add(1);
+        }
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             capture.suspended = capture.suspended.saturating_add(1);
         }
     }
 
-    fn resume_pagination_capture(&self) {
+    fn resume_block_captures(&self) {
+        if let Some(capture) = self.section_column_capture.borrow_mut().as_mut() {
+            capture.suspended = capture.suspended.saturating_sub(1);
+        }
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             capture.suspended = capture.suspended.saturating_sub(1);
         }
@@ -229,6 +258,14 @@ impl Ctx<'_> {
         section_columns: BlockSectionColumnHints<'_>,
         column_break_offsets: &[usize],
     ) {
+        if let Some(capture) = self.section_column_capture.borrow_mut().as_mut() {
+            if capture.suspended == 0 {
+                capture.gaps.push(section_columns.gap_pt);
+                capture.layouts.push(section_columns.layout.cloned());
+                capture.separators.push(section_columns.separator);
+                capture.rtl.push(section_columns.rtl);
+            }
+        }
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
                 capture.hints.push(hint);
@@ -237,14 +274,6 @@ impl Ctx<'_> {
                 capture
                     .column_break_offsets
                     .push(column_break_offsets.to_vec());
-                capture.section_column_gap_pt.push(section_columns.gap_pt);
-                capture
-                    .section_column_layouts
-                    .push(section_columns.layout.cloned());
-                capture
-                    .section_column_separators
-                    .push(section_columns.separator);
-                capture.section_column_rtl.push(section_columns.rtl);
                 capture.table_row_pagination.push(Vec::new());
                 capture.table_cell_pagination.push(Vec::new());
                 capture.table_cell_line_spacing.push(Vec::new());
@@ -255,16 +284,20 @@ impl Ctx<'_> {
     }
 
     fn capture_table_block_hints(&self, table: &TablePaginationHints) {
+        if let Some(capture) = self.section_column_capture.borrow_mut().as_mut() {
+            if capture.suspended == 0 {
+                capture.gaps.push(None);
+                capture.layouts.push(None);
+                capture.separators.push(false);
+                capture.rtl.push(false);
+            }
+        }
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
                 capture.hints.push(PaginationHint::default());
                 capture.line_spacing.push(None);
                 capture.tab_stops.push(Vec::new());
                 capture.column_break_offsets.push(Vec::new());
-                capture.section_column_gap_pt.push(None);
-                capture.section_column_layouts.push(None);
-                capture.section_column_separators.push(false);
-                capture.section_column_rtl.push(false);
                 capture.table_row_pagination.push(table.rows.clone());
                 capture.table_cell_pagination.push(table.cells.clone());
                 capture
@@ -682,6 +715,38 @@ fn apply_section_page_margins(
     page.margin_bottom_pt = bottom;
 }
 
+#[derive(Default)]
+pub(super) struct FinalSectionColumnHints {
+    pub(super) gap_pt: Option<f32>,
+    pub(super) layout: Option<SectionColumnLayoutHints>,
+    pub(super) separator: bool,
+    pub(super) rtl: bool,
+}
+
+pub(crate) fn scan_final_section_column_hints(xml: &str) -> FinalSectionColumnHints {
+    let mut r = Reader::from_str(xml);
+    let mut hints = FinalSectionColumnHints::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                let section = read_sect_pr(&mut r, 0);
+                hints = FinalSectionColumnHints {
+                    gap_pt: section.column_gap_pt,
+                    layout: section.column_layout,
+                    separator: section.column_separator,
+                    rtl: section.column_rtl,
+                };
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                hints = FinalSectionColumnHints::default();
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    hints
+}
+
 /// Scan the final/body section properties for text column count.
 pub(crate) fn scan_section_columns(xml: &str) -> Option<u16> {
     let mut r = Reader::from_str(xml);
@@ -699,86 +764,6 @@ pub(crate) fn scan_section_columns(xml: &str) -> Option<u16> {
         }
     }
     columns
-}
-
-/// Scan the final/body section's explicit unequal-column geometry.
-#[cfg(feature = "render")]
-pub(crate) fn scan_section_column_layout(xml: &str) -> Option<SectionColumnLayoutHints> {
-    let mut r = Reader::from_str(xml);
-    let mut layout = None;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                layout = read_section_column_properties(&mut r).layout;
-            }
-            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                layout = None;
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    layout
-}
-
-/// Scan the final/body section's explicit equal-column spacing.
-#[cfg(feature = "render")]
-pub(crate) fn scan_section_column_gap_pt(xml: &str) -> Option<f32> {
-    let mut r = Reader::from_str(xml);
-    let mut column_gap_pt = None;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                column_gap_pt = read_section_column_gap_pt(&mut r);
-            }
-            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                column_gap_pt = None;
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    column_gap_pt
-}
-
-/// Scan whether the final/body section requests rules between text columns.
-#[cfg(feature = "render")]
-pub(crate) fn scan_section_column_separator(xml: &str) -> bool {
-    let mut r = Reader::from_str(xml);
-    let mut separator = false;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                separator = read_section_column_properties(&mut r).separator;
-            }
-            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                separator = false;
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    separator
-}
-
-/// Scan whether the final/body section populates text columns right to left.
-#[cfg(feature = "render")]
-pub(crate) fn scan_section_column_rtl(xml: &str) -> bool {
-    let mut r = Reader::from_str(xml);
-    let mut rtl = false;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                rtl = read_section_column_rtl(&mut r);
-            }
-            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                rtl = false;
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    rtl
 }
 
 /// Scan the final/body section properties for text flow direction.
@@ -922,11 +907,6 @@ fn read_section_column_properties(r: &mut Xml<'_>) -> ParsedSectionColumns {
     columns
 }
 
-#[cfg(feature = "render")]
-fn read_section_column_gap_pt(r: &mut Xml<'_>) -> Option<f32> {
-    read_section_column_properties(r).gap_pt
-}
-
 fn section_columns_from_attrs(e: &BytesStart<'_>) -> ParsedSectionColumns {
     let separator = section_column_separator(e);
     if explicitly_unequal_columns(e) {
@@ -1061,28 +1041,6 @@ fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
         }
     }
     text_direction
-}
-
-#[cfg(feature = "render")]
-fn read_section_column_rtl(r: &mut Xml<'_>) -> bool {
-    let mut rtl = false;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                if let Some(value) = read_section_setup_alternate_content(r).column_rtl {
-                    rtl = value;
-                }
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"bidi" => {
-                rtl = toggle_on(attr_local(&e, b"val"));
-            }
-            Ok(Event::Start(_)) => skip_subtree(r),
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    rtl
 }
 
 fn section_text_direction(e: &BytesStart<'_>) -> Option<TextDirection> {
@@ -6308,9 +6266,9 @@ fn read_table_block(
     ctx: &Ctx<'_>,
     depth: u32,
 ) -> Option<(Block, TablePaginationHints)> {
-    ctx.suspend_pagination_capture();
+    ctx.suspend_block_captures();
     let (table, pagination) = read_table(r, ctx, depth);
-    ctx.resume_pagination_capture();
+    ctx.resume_block_captures();
     if table.rows.is_empty() {
         None
     } else {
@@ -8494,6 +8452,7 @@ mod tests {
             field_bookmarks: Default::default(),
             counters: Default::default(),
             paragraph_charts: Default::default(),
+            section_column_capture: Default::default(),
             pagination_capture: Default::default(),
         };
         if capture_pagination {
@@ -10563,7 +10522,6 @@ mod tests {
         assert!(scan_section_title_page(xml));
     }
 
-    #[cfg(feature = "render")]
     #[test]
     fn final_section_column_spacing_uses_equal_current_branch_only() {
         let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
@@ -10579,7 +10537,7 @@ mod tests {
             </w:sectPr>
         </w:body></w:document>"#;
 
-        assert_eq!(scan_section_column_gap_pt(xml), Some(48.0));
+        assert_eq!(scan_final_section_column_hints(xml).gap_pt, Some(48.0));
 
         let unequal = r#"<w:document><w:body><w:sectPr>
             <w:cols w:num="2" w:equalWidth="0" w:space="960">
@@ -10587,36 +10545,34 @@ mod tests {
                 <w:col w:w="4800"/>
             </w:cols>
         </w:sectPr></w:body></w:document>"#;
-        assert_eq!(scan_section_column_gap_pt(unequal), None);
+        assert_eq!(scan_final_section_column_hints(unequal).gap_pt, None);
     }
 
-    #[cfg(feature = "render")]
     #[test]
     fn final_section_column_separator_follows_on_off_and_default_values() {
         for value in ["true", "TRUE", "on", "1", "unexpected"] {
             let xml = format!(
                 r#"<w:document><w:body><w:sectPr><w:cols w:num="2" w:sep="{value}"/></w:sectPr></w:body></w:document>"#
             );
-            assert!(scan_section_column_separator(&xml), "{value}");
+            assert!(scan_final_section_column_hints(&xml).separator, "{value}");
         }
         for value in ["false", "FALSE", "off", "0"] {
             let xml = format!(
                 r#"<w:document><w:body><w:sectPr><w:cols w:num="2" w:sep="{value}"/></w:sectPr></w:body></w:document>"#
             );
-            assert!(!scan_section_column_separator(&xml), "{value}");
+            assert!(!scan_final_section_column_hints(&xml).separator, "{value}");
         }
 
         let omitted =
             r#"<w:document><w:body><w:sectPr><w:cols w:num="2"/></w:sectPr></w:body></w:document>"#;
-        assert!(!scan_section_column_separator(omitted));
+        assert!(!scan_final_section_column_hints(omitted).separator);
 
         let last_definition_wins = r#"<w:document><w:body><w:sectPr>
             <w:cols w:num="2" w:sep="1"/><w:cols w:num="2"/>
         </w:sectPr></w:body></w:document>"#;
-        assert!(!scan_section_column_separator(last_definition_wins));
+        assert!(!scan_final_section_column_hints(last_definition_wins).separator);
     }
 
-    #[cfg(feature = "render")]
     #[test]
     fn section_column_separator_uses_selected_mce_branch_and_survives_bad_geometry() {
         let selected = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:sectPr>
@@ -10625,42 +10581,46 @@ mod tests {
                 <mc:Fallback><w:cols w:num="2" w:sep="off"/></mc:Fallback>
             </mc:AlternateContent>
         </w:sectPr></w:body></w:document>"#;
-        assert!(scan_section_column_separator(selected));
+        assert!(scan_final_section_column_hints(selected).separator);
 
         let malformed = r#"<w:document><w:body><w:sectPr>
             <w:cols w:equalWidth="0" w:sep="1"><w:col w:w="0"/></w:cols>
         </w:sectPr></w:body></w:document>"#;
-        assert_eq!(scan_section_column_layout(malformed), None);
-        assert!(scan_section_column_separator(malformed));
+        let malformed = scan_final_section_column_hints(malformed);
+        assert_eq!(malformed.layout, None);
+        assert!(malformed.separator);
     }
 
-    #[cfg(feature = "render")]
     #[test]
     fn final_section_column_rtl_follows_on_off_source_order_and_selected_mce_branch() {
         for value in ["1", "true", "on"] {
             let xml = format!("<w:document><w:body><w:sectPr><w:bidi w:val=\"{value}\"/></w:sectPr></w:body></w:document>");
-            assert!(scan_section_column_rtl(&xml), "{value}");
+            assert!(scan_final_section_column_hints(&xml).rtl, "{value}");
         }
         for value in ["0", "false", "off"] {
             let xml = format!("<w:document><w:body><w:sectPr><w:bidi w:val=\"{value}\"/></w:sectPr></w:body></w:document>");
-            assert!(!scan_section_column_rtl(&xml), "{value}");
+            assert!(!scan_final_section_column_hints(&xml).rtl, "{value}");
         }
-        assert!(scan_section_column_rtl(
-            "<w:document><w:body><w:sectPr><w:bidi></w:bidi></w:sectPr></w:body></w:document>"
-        ));
-        assert!(!scan_section_column_rtl(
+        assert!(
+            scan_final_section_column_hints(
+                "<w:document><w:body><w:sectPr><w:bidi></w:bidi></w:sectPr></w:body></w:document>"
+            )
+            .rtl
+        );
+        assert!(!scan_final_section_column_hints(
             "<w:document><w:body><w:sectPr><w:bidi/><w:bidi w:val=\"0\"/></w:sectPr></w:body></w:document>"
-        ));
+        )
+        .rtl);
 
         let selected = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:sectPr>
             <mc:AlternateContent><mc:Choice Requires="w14"><w:bidi/></mc:Choice><mc:Fallback><w:bidi w:val="0"/></mc:Fallback></mc:AlternateContent>
         </w:sectPr></w:body></w:document>"#;
-        assert!(scan_section_column_rtl(selected));
+        assert!(scan_final_section_column_hints(selected).rtl);
 
         let empty_choice = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:sectPr>
             <mc:AlternateContent><mc:Choice Requires="w14"/><mc:Fallback><w:bidi/></mc:Fallback></mc:AlternateContent>
         </w:sectPr></w:body></w:document>"#;
-        assert!(!scan_section_column_rtl(empty_choice));
+        assert!(!scan_final_section_column_hints(empty_choice).rtl);
     }
 
     #[test]
@@ -10675,7 +10635,6 @@ mod tests {
         assert_eq!(scan_section_columns(xml), Some(2));
     }
 
-    #[cfg(feature = "render")]
     #[test]
     fn final_unequal_columns_preserve_bounded_direct_geometry() {
         let xml = r#"<w:document><w:body><w:sectPr>
@@ -10685,16 +10644,16 @@ mod tests {
             </w:cols>
         </w:sectPr></w:body></w:document>"#;
 
-        let layout = scan_section_column_layout(xml).expect("unequal column geometry");
+        let hints = scan_final_section_column_hints(xml);
+        let layout = hints.layout.expect("unequal column geometry");
         assert_eq!(layout.columns.len(), 2);
         assert_eq!(layout.columns[0].width_pt, 120.0);
         assert_eq!(layout.columns[0].space_after_pt, 24.0);
         assert_eq!(layout.columns[1].width_pt, 240.0);
         assert_eq!(layout.columns[1].space_after_pt, 6.0);
-        assert_eq!(scan_section_column_gap_pt(xml), None);
+        assert_eq!(hints.gap_pt, None);
     }
 
-    #[cfg(feature = "render")]
     #[test]
     fn unequal_columns_reject_malformed_or_excessive_direct_geometry() {
         for cols in [
@@ -10708,7 +10667,7 @@ mod tests {
                 r#"<w:document><w:body><w:sectPr><w:cols w:num="7" w:equalWidth="0">{cols}</w:cols></w:sectPr></w:body></w:document>"#
             );
             assert_eq!(scan_section_columns(&xml), None, "{cols}");
-            assert_eq!(scan_section_column_layout(&xml), None, "{cols}");
+            assert_eq!(scan_final_section_column_hints(&xml).layout, None, "{cols}");
         }
 
         let sixty_four = (0..64)
@@ -10719,7 +10678,8 @@ mod tests {
         );
         assert_eq!(scan_section_columns(&accepted), Some(64));
         assert_eq!(
-            scan_section_column_layout(&accepted)
+            scan_final_section_column_hints(&accepted)
+                .layout
                 .expect("64 direct columns")
                 .columns
                 .len(),
@@ -10731,10 +10691,9 @@ mod tests {
             r#"<w:document><w:body><w:sectPr><w:cols w:num="9" w:equalWidth="0">{sixty_five}</w:cols></w:sectPr></w:body></w:document>"#
         );
         assert_eq!(scan_section_columns(&rejected), None);
-        assert_eq!(scan_section_column_layout(&rejected), None);
+        assert_eq!(scan_final_section_column_hints(&rejected).layout, None);
     }
 
-    #[cfg(feature = "render")]
     #[test]
     fn unequal_columns_follow_selected_alternate_content_branch() {
         let xml = r#"<w:document><w:body><w:sectPr><mc:AlternateContent>
@@ -10745,13 +10704,14 @@ mod tests {
         </mc:AlternateContent></w:sectPr></w:body></w:document>"#;
 
         assert_eq!(scan_section_columns(xml), Some(2));
-        let layout = scan_section_column_layout(xml).expect("selected Choice geometry");
+        let layout = scan_final_section_column_hints(xml)
+            .layout
+            .expect("selected Choice geometry");
         assert_eq!(layout.columns[0].width_pt, 100.0);
         assert_eq!(layout.columns[0].space_after_pt, 20.0);
         assert_eq!(layout.columns[1].width_pt, 200.0);
     }
 
-    #[cfg(feature = "render")]
     #[test]
     fn equal_columns_ignore_direct_geometry() {
         let xml = r#"<w:document><w:body><w:sectPr>
@@ -10761,8 +10721,9 @@ mod tests {
         </w:sectPr></w:body></w:document>"#;
 
         assert_eq!(scan_section_columns(xml), Some(3));
-        assert_eq!(scan_section_column_gap_pt(xml), Some(18.0));
-        assert_eq!(scan_section_column_layout(xml), None);
+        let hints = scan_final_section_column_hints(xml);
+        assert_eq!(hints.gap_pt, Some(18.0));
+        assert_eq!(hints.layout, None);
     }
 
     #[test]
@@ -10882,6 +10843,7 @@ mod tests {
             field_bookmarks: Default::default(),
             counters: Default::default(),
             paragraph_charts: Default::default(),
+            section_column_capture: Default::default(),
             pagination_capture: Default::default(),
         };
         let xml = r#"<w:footnotes>
@@ -10962,6 +10924,7 @@ mod tests {
             field_bookmarks: Default::default(),
             counters: Default::default(),
             paragraph_charts: Default::default(),
+            section_column_capture: Default::default(),
             pagination_capture: Default::default(),
         };
         let xml = r#"<w:footnotes xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
@@ -11055,6 +11018,7 @@ mod tests {
             field_bookmarks: Default::default(),
             counters: Default::default(),
             paragraph_charts: Default::default(),
+            section_column_capture: Default::default(),
             pagination_capture: Default::default(),
         };
         let xml = r#"<w:hdr><w:p><w:r><w:t>헤더 텍스트</w:t></w:r></w:p></w:hdr>"#;
