@@ -82,24 +82,27 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/rwml-release-tools"
           "$RUNNER_TEMP/rwml-release-tools/bin/pip" install --disable-pip-version-check --no-cache-dir PyMuPDF Pillow
-          mkdir -p target/release-evidence
+          evidence_dir="$RUNNER_TEMP/rwml-release-evidence"
+          mkdir -p "$evidence_dir"
           set +e
           "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/render_validate.py \
             --json --soffice local --manifest corpus/public/RENDER_MANIFEST.tsv \
             --recall-min 0.97 --min-mean-recall 0.90 --max-skipped 0 --verify-oracle \
-            > target/release-evidence/render-validation.json
+            > "$evidence_dir/render-validation.json"
           render_status=$?
           set -e
-          cat target/release-evidence/render-validation.json
+          cat "$evidence_dir/render-validation.json"
           if [[ "$render_status" -ne 0 ]]; then
             exit "$render_status"
           fi
+          python3 -m json.tool "$evidence_dir/render-validation.json" > /dev/null
           cargo build --release --example extract --locked
           "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/bench_vs_mature.py \
             --corpus corpus/public/benchmark --json \
             --version "$RWML_VERSION" --git-rev "$GITHUB_SHA" \
             --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 --min-scored 1 \
-            --output target/release-evidence/extract-benchmark.json
+            --output "$evidence_dir/extract-benchmark.json"
+          python3 -m json.tool "$evidence_dir/extract-benchmark.json" > /dev/null
 
       - name: Publish bundled font crate dependency
         env:
@@ -144,8 +147,23 @@ jobs:
 
       - name: Generate release manifest
         run: |
-          mkdir -p target/release-evidence
+          assets_dir="$RUNNER_TEMP/rwml-release-assets"
+          mkdir -p target/release-evidence "$assets_dir"
+          install -m 0644 "$RUNNER_TEMP/rwml-release-evidence/render-validation.json" \
+            target/release-evidence/render-validation.json
+          install -m 0644 "$RUNNER_TEMP/rwml-release-evidence/extract-benchmark.json" \
+            target/release-evidence/extract-benchmark.json
           python3 scripts/public_hygiene_audit.py --json > target/release-evidence/public-hygiene.json
+          for report in \
+            target/release-evidence/public-hygiene.json \
+            target/release-evidence/render-validation.json \
+            target/release-evidence/extract-benchmark.json; do
+            if [[ ! -s "$report" ]]; then
+              echo "release evidence is empty: $report" >&2
+              exit 1
+            fi
+            python3 -m json.tool "$report" > /dev/null
+          done
           python3 scripts/release_manifest.py \
             --version "$RWML_VERSION" \
             --git-rev "$GITHUB_SHA" \
@@ -159,18 +177,32 @@ jobs:
             --output target/release-evidence/rwml-release-manifest.json \
             target/package/rwml-${RWML_VERSION}.crate \
             rwml-fonts/target/package/rwml-fonts-${RWML_VERSION}.crate
+          python3 -m json.tool target/release-evidence/rwml-release-manifest.json > /dev/null
+          release_assets=(
+            "target/package/rwml-${RWML_VERSION}.crate"
+            "rwml-fonts/target/package/rwml-fonts-${RWML_VERSION}.crate"
+            "target/release-evidence/public-hygiene.json"
+            "target/release-evidence/render-validation.json"
+            "target/release-evidence/extract-benchmark.json"
+            "target/release-evidence/rwml-release-manifest.json"
+          )
+          for asset in "${release_assets[@]}"; do
+            install -m 0644 "$asset" "$assets_dir/"
+          done
+          sha256sum "$assets_dir"/*
 
       - name: Upload release manifest artifacts
         uses: actions/upload-artifact@v7
         with:
           name: rwml-release-manifest
           path: |
-            target/release-evidence/public-hygiene.json
-            target/release-evidence/rwml-release-manifest.json
-            target/release-evidence/render-validation.json
-            target/release-evidence/extract-benchmark.json
-            target/package/rwml-${{ env.RWML_VERSION }}.crate
-            rwml-fonts/target/package/rwml-fonts-${{ env.RWML_VERSION }}.crate
+            ${{ runner.temp }}/rwml-release-assets/public-hygiene.json
+            ${{ runner.temp }}/rwml-release-assets/rwml-release-manifest.json
+            ${{ runner.temp }}/rwml-release-assets/render-validation.json
+            ${{ runner.temp }}/rwml-release-assets/extract-benchmark.json
+            ${{ runner.temp }}/rwml-release-assets/rwml-${{ env.RWML_VERSION }}.crate
+            ${{ runner.temp }}/rwml-release-assets/rwml-fonts-${{ env.RWML_VERSION }}.crate
+          if-no-files-found: error
 
       - name: Publish main crate
         env:
@@ -187,13 +219,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          assets_dir="$RUNNER_TEMP/rwml-release-assets"
           assets=(
-            "target/package/rwml-${RWML_VERSION}.crate"
-            "rwml-fonts/target/package/rwml-fonts-${RWML_VERSION}.crate"
-            "target/release-evidence/public-hygiene.json"
-            "target/release-evidence/render-validation.json"
-            "target/release-evidence/extract-benchmark.json"
-            "target/release-evidence/rwml-release-manifest.json"
+            "$assets_dir/rwml-${RWML_VERSION}.crate"
+            "$assets_dir/rwml-fonts-${RWML_VERSION}.crate"
+            "$assets_dir/public-hygiene.json"
+            "$assets_dir/render-validation.json"
+            "$assets_dir/extract-benchmark.json"
+            "$assets_dir/rwml-release-manifest.json"
           )
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber

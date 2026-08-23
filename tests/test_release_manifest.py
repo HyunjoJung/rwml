@@ -737,6 +737,30 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not contain a JSON object"):
                 release_manifest.report_summary(validation)
 
+    def test_cli_identifies_empty_json_evidence_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rwml.crate"
+            hygiene = root / "public-hygiene.json"
+            artifact.write_bytes(b"release artifact")
+            hygiene.write_text("", encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--hygiene-report",
+                    str(hygiene),
+                    str(artifact),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn(f"{hygiene}: invalid JSON", completed.stderr)
+
     def test_report_summary_rejects_empty_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
             validation = pathlib.Path(tmp) / "render-validation.json"

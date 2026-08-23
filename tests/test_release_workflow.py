@@ -119,7 +119,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("target/release-evidence/public-hygiene.json", text)
         self.assertIn("target/release-evidence/rwml-release-manifest.json", text)
         self.assertIn("target/package/rwml-${RWML_VERSION}.crate", text)
-        self.assertIn("target/package/rwml-${{ env.RWML_VERSION }}.crate", text)
+        self.assertIn(
+            "${{ runner.temp }}/rwml-release-assets/rwml-${{ env.RWML_VERSION }}.crate",
+            text,
+        )
         self.assertIn("actions/upload-artifact@v7", text)
         for artifact in [
             "rwml-${RWML_VERSION}.crate",
@@ -137,10 +140,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
         self.assertIn("set +e", step)
         self.assertIn("render_status=$?", step)
-        self.assertIn("cat target/release-evidence/render-validation.json", step)
+        self.assertIn('cat "$evidence_dir/render-validation.json"', step)
         self.assertIn('exit "$render_status"', step)
         self.assertLess(
-            step.index("cat target/release-evidence/render-validation.json"),
+            step.index('cat "$evidence_dir/render-validation.json"'),
             step.index('exit "$render_status"'),
         )
 
@@ -151,6 +154,38 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("target/release-evidence", text)
         self.assertNotIn("dist/", text)
         self.assertIn("/target", gitignore.splitlines())
+
+    def test_release_evidence_survives_packaging_and_is_validated_before_use(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        evidence = step_body(text, "Generate strict revision-bound evidence")
+        manifest = step_body(text, "Generate release manifest")
+        upload = step_body(text, "Upload release manifest artifacts")
+        create_release = step_body(text, "Create GitHub Release")
+
+        self.assertIn(
+            'evidence_dir="$RUNNER_TEMP/rwml-release-evidence"', evidence
+        )
+        self.assertNotIn("target/release-evidence", evidence)
+        self.assertIn(
+            'python3 -m json.tool "$evidence_dir/render-validation.json"',
+            evidence,
+        )
+        self.assertIn(
+            'python3 -m json.tool "$evidence_dir/extract-benchmark.json"',
+            evidence,
+        )
+        self.assertIn(
+            'install -m 0644 "$RUNNER_TEMP/rwml-release-evidence/render-validation.json"',
+            manifest,
+        )
+        self.assertIn(
+            'install -m 0644 "$RUNNER_TEMP/rwml-release-evidence/extract-benchmark.json"',
+            manifest,
+        )
+        self.assertIn('assets_dir="$RUNNER_TEMP/rwml-release-assets"', manifest)
+        self.assertIn("python3 -m json.tool", manifest)
+        self.assertIn("${{ runner.temp }}/rwml-release-assets", upload)
+        self.assertIn("$RUNNER_TEMP/rwml-release-assets", create_release)
 
     def test_release_workflow_checks_patch_compatible_public_api(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -214,9 +249,13 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(
             "rwml-fonts/target/package/rwml-fonts-${RWML_VERSION}.crate", manifest
         )
-        self.assertIn("target/package/rwml-${{ env.RWML_VERSION }}.crate", upload)
         self.assertIn(
-            "rwml-fonts/target/package/rwml-fonts-${{ env.RWML_VERSION }}.crate",
+            "${{ runner.temp }}/rwml-release-assets/rwml-${{ env.RWML_VERSION }}.crate",
+            upload,
+        )
+        self.assertIn(
+            "${{ runner.temp }}/rwml-release-assets/"
+            "rwml-fonts-${{ env.RWML_VERSION }}.crate",
             upload,
         )
         self.assertIn("CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}", main_publish)

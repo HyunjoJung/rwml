@@ -120,6 +120,20 @@ def path_sort_key(path: Path) -> str:
     return path.as_posix()
 
 
+def load_json(path: Path) -> Any:
+    try:
+        payload = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError(f"{path}: invalid UTF-8 JSON") from error
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            f"{path}: invalid JSON at line {error.lineno} column {error.colno}: "
+            f"{error.msg}"
+        ) from error
+
+
 def require_unique_paths(label: str, paths: list[Path] | None) -> None:
     seen: set[Path] = set()
     for path in paths or []:
@@ -138,7 +152,7 @@ def is_number(value: Any) -> bool:
 
 
 def report_summary(path: Path) -> dict[str, Any]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = load_json(path)
     if not isinstance(data, dict):
         raise ValueError(f"{path} does not contain a JSON object")
     summary = data.get("summary")
@@ -246,7 +260,7 @@ def report_summary(path: Path) -> dict[str, Any]:
 def require_public_release_benchmark_identity(policy: str, path: Path) -> None:
     if policy != "public-release":
         return
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = load_json(path)
     if not isinstance(data, dict):
         raise ValueError(f"{path} does not contain a JSON object")
     if data.get("schema") != PUBLIC_RELEASE_BENCHMARK_SCHEMA:
@@ -268,7 +282,7 @@ def validation_summary(path: Path | None) -> dict[str, Any] | None:
 def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
     if path is None:
         return None
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = load_json(path)
     if not isinstance(data, dict):
         raise ValueError(f"{path} does not contain a JSON object")
     passed = data.get("passed")
@@ -560,7 +574,7 @@ def public_release_render_manifest_document_names(
 
 
 def validation_report_document_names(path: Path) -> set[str]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = load_json(path)
     if not isinstance(data, dict):
         raise ValueError(f"{path} does not contain a JSON object")
     rows = data.get("rows")
