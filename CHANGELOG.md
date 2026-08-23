@@ -20,16 +20,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   breaks, and PDF distinction between running line and column breaks remain
   outside this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
-  paragraph-only real footnote and endnote bodies when the exact body-reference
-  contract succeeds. An ID-keyed, run-aligned private payload retains multiple
-  paragraphs, modeled paragraph and character formatting, keep/widow controls,
-  exact/minimum line rules, explicit tabs and leaders, and visible manual column
-  breaks. An unsupported or malformed note body falls back independently to one
-  normalized text paragraph while supported siblings retain their payload; body
-  anchor projection remains all-or-nothing. Both note families, accepted-current
-  paragraph wrappers, malformed alignment and component isolation, deterministic
-  bytes, native reopen and reconversion, public-model equality, and standalone-
-  writer exclusion are covered. Tables, media, relationship-bearing runs, fields,
+  mixed ordinary paragraphs and relationship-free top-level tables in real
+  footnote and endnote bodies when the exact body-reference contract succeeds and
+  every surviving table cell contains only direct ordinary paragraphs. An ID-
+  keyed, run-aligned private payload retains block order, modeled table properties
+  and horizontal/vertical merges, modeled paragraph and character formatting,
+  row no-split and cell keep/widow controls, exact/minimum line rules, explicit
+  tabs and leaders, and visible manual column breaks. An unsupported or malformed
+  note body falls back independently to one normalized text paragraph while
+  supported siblings retain their payload; body anchor projection remains all-
+  or-nothing. Both note families, accepted-current paragraph wrappers, malformed
+  alignment, table-component and break-leaf isolation, deterministic bytes,
+  native reopen and reconversion, public-model equality, and standalone-writer
+  exclusion are covered. Nested tables, media, relationship-bearing runs, fields,
   annotations, bookmarks, nested notes, custom marks, source IDs/numbering and
   separators, and page-bottom placement remain unsupported by this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves

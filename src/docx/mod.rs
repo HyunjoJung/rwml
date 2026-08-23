@@ -2065,24 +2065,32 @@ fn note_write_payload(
     hints: &body::BodyLayoutHints,
     block_offset: usize,
 ) -> Option<crate::model::NoteWritePayload> {
-    if blocks.is_empty()
-        || !blocks
-            .iter()
-            .all(|block| matches!(block, Block::Paragraph(_)))
-    {
+    if blocks.is_empty() {
         return None;
     }
     let block_end = block_offset.checked_add(blocks.len())?;
+    let mut table_pagination = Vec::with_capacity(blocks.len());
+    for (local_index, block) in blocks.iter().enumerate() {
+        match block {
+            Block::Paragraph(_) => table_pagination.push(None),
+            Block::Table(table) if note_write_table_shape_supported(table) => {
+                let index = block_offset.checked_add(local_index)?;
+                table_pagination.push(Some(crate::model::TablePaginationHints {
+                    rows: hints.table_rows.get(index)?.clone(),
+                    cells: hints.table_cells.get(index)?.clone(),
+                    cell_line_spacing: hints.table_cell_line_spacing.get(index)?.clone(),
+                    cell_column_breaks: hints.table_cell_column_breaks.get(index)?.clone(),
+                    nested: hints.table_nested.get(index)?.clone(),
+                    cell_tabs: hints.table_cell_tabs.get(index)?.clone(),
+                }));
+            }
+            _ => return None,
+        }
+    }
     Some(crate::model::NoteWritePayload {
         kind,
         text: text.to_string(),
-        paragraphs: blocks
-            .iter()
-            .filter_map(|block| match block {
-                Block::Paragraph(paragraph) => Some(paragraph.clone()),
-                _ => None,
-            })
-            .collect(),
+        blocks: blocks.to_vec(),
         pagination: hints.pagination.get(block_offset..block_end)?.to_vec(),
         line_spacing: hints.line_spacing.get(block_offset..block_end)?.to_vec(),
         tab_stops: hints.tab_stops.get(block_offset..block_end)?.to_vec(),
@@ -2090,7 +2098,24 @@ fn note_write_payload(
             .column_break_offsets
             .get(block_offset..block_end)?
             .to_vec(),
+        table_pagination,
     })
+}
+
+fn note_write_table_shape_supported(table: &crate::model::Table) -> bool {
+    let mut has_cell = false;
+    for cell in table.rows.iter().flat_map(|row| &row.cells) {
+        has_cell = true;
+        if cell.blocks.is_empty()
+            || !cell
+                .blocks
+                .iter()
+                .all(|block| matches!(block, Block::Paragraph(_)))
+        {
+            return false;
+        }
+    }
+    has_cell
 }
 
 fn read_text_boxes(
@@ -4724,7 +4749,7 @@ fn body_text(model: &DocModel) -> String {
     blocks_text(&model.blocks)
 }
 
-fn blocks_text(blocks: &[Block]) -> String {
+pub(crate) fn blocks_text(blocks: &[Block]) -> String {
     let mut raw = String::new();
     flatten(blocks, &mut raw);
     text::finalize(&raw)

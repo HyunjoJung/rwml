@@ -1808,35 +1808,61 @@ impl Ctx {
         if !source_note_payload_is_supported(note, payload) {
             return None;
         }
-        let paragraph_count = payload.paragraphs.len();
+        let block_count = payload.blocks.len();
         let pagination =
-            (payload.pagination.len() == paragraph_count).then_some(payload.pagination.as_slice());
-        let line_spacing = (payload.line_spacing.len() == paragraph_count)
-            .then_some(payload.line_spacing.as_slice());
+            (payload.pagination.len() == block_count).then_some(payload.pagination.as_slice());
+        let line_spacing =
+            (payload.line_spacing.len() == block_count).then_some(payload.line_spacing.as_slice());
         let tab_stops =
-            (payload.tab_stops.len() == paragraph_count).then_some(payload.tab_stops.as_slice());
-        let column_break_offsets = (payload.column_break_offsets.len() == paragraph_count)
+            (payload.tab_stops.len() == block_count).then_some(payload.tab_stops.as_slice());
+        let column_break_offsets = (payload.column_break_offsets.len() == block_count)
             .then_some(payload.column_break_offsets.as_slice());
+        let table_pagination = (payload.table_pagination.len() == block_count)
+            .then_some(payload.table_pagination.as_slice());
         let mut body = String::new();
-        for (index, paragraph) in payload.paragraphs.iter().enumerate() {
-            self.write_paragraph_with_source_hints(
-                &mut body,
-                paragraph,
-                ParagraphWriteHints {
-                    line_spacing: line_spacing
+        for (index, block) in payload.blocks.iter().enumerate() {
+            match block {
+                Block::Paragraph(paragraph) => self.write_paragraph_with_source_hints(
+                    &mut body,
+                    paragraph,
+                    ParagraphWriteHints {
+                        line_spacing: line_spacing
+                            .and_then(|hints| hints.get(index))
+                            .copied()
+                            .flatten(),
+                        pagination: pagination.and_then(|hints| hints.get(index)).copied(),
+                        tab_stops: tab_stops
+                            .and_then(|hints| hints.get(index))
+                            .map(Vec::as_slice),
+                        column_break_offsets: column_break_offsets
+                            .and_then(|hints| hints.get(index))
+                            .map(Vec::as_slice),
+                        note_payloads: None,
+                    },
+                ),
+                Block::Table(table) => {
+                    if let Some(hints) = table_pagination
                         .and_then(|hints| hints.get(index))
-                        .copied()
-                        .flatten(),
-                    pagination: pagination.and_then(|hints| hints.get(index)).copied(),
-                    tab_stops: tab_stops
-                        .and_then(|hints| hints.get(index))
-                        .map(Vec::as_slice),
-                    column_break_offsets: column_break_offsets
-                        .and_then(|hints| hints.get(index))
-                        .map(Vec::as_slice),
-                    note_payloads: None,
-                },
-            );
+                        .and_then(Option::as_ref)
+                    {
+                        self.write_table_with_source_hints(
+                            &mut body,
+                            table,
+                            TableWriteHints {
+                                row_pagination: Some(&hints.rows),
+                                cell_pagination: Some(&hints.cells),
+                                cell_line_spacing: Some(&hints.cell_line_spacing),
+                                cell_column_breaks: Some(&hints.cell_column_breaks),
+                                nested_tables: Some(&hints.nested),
+                                cell_tab_stops: Some(&hints.cell_tabs),
+                            },
+                        );
+                    } else {
+                        self.write_table(&mut body, table);
+                    }
+                }
+                _ => return None,
+            }
         }
         Some(body)
     }
@@ -2968,31 +2994,44 @@ fn source_note_payload_is_supported(note: &AuthoredNote, payload: &NoteWritePayl
     if payload.kind != note.kind
         || payload.text.is_empty()
         || payload.text != note.text
-        || payload.paragraphs.is_empty()
-        || source_note_payload_text(&payload.paragraphs) != payload.text
+        || payload.blocks.is_empty()
+        || crate::docx::blocks_text(&payload.blocks) != payload.text
     {
         return false;
     }
-    payload.paragraphs.iter().all(|paragraph| {
-        paragraph.runs.iter().all(|run| {
-            run.image.is_none()
-                && matches!(&run.field, FieldRole::None)
-                && run.comment.is_none()
-                && run.revision.is_none()
-                && run.content_control.is_none()
-                && run.bookmark.is_none()
-                && run.note.is_none()
-        })
+    payload.blocks.iter().all(|block| match block {
+        Block::Paragraph(paragraph) => source_note_paragraph_is_supported(paragraph),
+        Block::Table(table) => source_note_table_is_supported(table),
+        _ => false,
     })
 }
 
-fn source_note_payload_text(paragraphs: &[Paragraph]) -> String {
-    let mut raw = String::new();
-    for paragraph in paragraphs {
-        raw.push_str(&paragraph.text());
-        raw.push('\n');
+fn source_note_paragraph_is_supported(paragraph: &Paragraph) -> bool {
+    paragraph.runs.iter().all(|run| {
+        run.image.is_none()
+            && matches!(&run.field, FieldRole::None)
+            && run.comment.is_none()
+            && run.revision.is_none()
+            && run.content_control.is_none()
+            && run.bookmark.is_none()
+            && run.note.is_none()
+    })
+}
+
+fn source_note_table_is_supported(table: &Table) -> bool {
+    let mut has_cell = false;
+    for cell in table.rows.iter().flat_map(|row| &row.cells) {
+        has_cell = true;
+        if cell.blocks.is_empty()
+            || !cell.blocks.iter().all(|block| match block {
+                Block::Paragraph(paragraph) => source_note_paragraph_is_supported(paragraph),
+                _ => false,
+            })
+        {
+            return false;
+        }
     }
-    crate::text::finalize(&raw)
+    has_cell
 }
 
 fn notes_xml(root: &str, item: &str, notes: &[WrittenNote]) -> Vec<u8> {
@@ -6298,7 +6337,10 @@ mod tests {
             Some(NoteWritePayload {
                 kind: NoteKind::Footnote,
                 text: footnote_text.to_string(),
-                paragraphs: vec![footnote_first, para("SECOND")],
+                blocks: vec![
+                    Block::Paragraph(footnote_first),
+                    Block::Paragraph(para("SECOND")),
+                ],
                 pagination: vec![
                     PaginationHint {
                         keep_next: true,
@@ -6319,11 +6361,12 @@ mod tests {
                     Vec::new(),
                 ],
                 column_break_offsets: vec![vec![4], Vec::new()],
+                table_pagination: vec![None, None],
             }),
             Some(NoteWritePayload {
                 kind: NoteKind::Endnote,
                 text: endnote_text.to_string(),
-                paragraphs: vec![para(endnote_text)],
+                blocks: vec![Block::Paragraph(para(endnote_text))],
                 pagination: vec![PaginationHint {
                     widow_control: true,
                     ..PaginationHint::default()
@@ -6331,6 +6374,7 @@ mod tests {
                 line_spacing: vec![Some(LineSpacingHint::Exact(20.0))],
                 tab_stops: vec![Vec::new()],
                 column_break_offsets: vec![Vec::new()],
+                table_pagination: vec![None],
             }),
         ]];
         let render = |note_payloads: &[Vec<Option<NoteWritePayload>>]| {
@@ -6434,13 +6478,218 @@ mod tests {
         );
 
         let mut relationship_bearing = valid.clone();
-        relationship_bearing[0][0].as_mut().unwrap().paragraphs[0].runs[0].field =
-            FieldRole::Hyperlink {
-                url: "https://example.com/note".to_string(),
-            };
+        let Block::Paragraph(paragraph) =
+            &mut relationship_bearing[0][0].as_mut().unwrap().blocks[0]
+        else {
+            panic!("paragraph payload")
+        };
+        paragraph.runs[0].field = FieldRole::Hyperlink {
+            url: "https://example.com/note".to_string(),
+        };
         assert_eq!(
             render_counts(&relationship_bearing),
             ((1, 0, 2, 0, 0, 0), (1, 0, 0, 0, 1, 0))
+        );
+    }
+
+    #[test]
+    fn source_note_table_payloads_validate_components_leaves_and_siblings() {
+        let footnote_text = "TABLE\nBREAK";
+        let endnote_text = "END";
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(Paragraph {
+                runs: vec![
+                    Run {
+                        text: "A".to_string(),
+                        note: Some(AuthoredNote {
+                            kind: NoteKind::Footnote,
+                            text: footnote_text.to_string(),
+                        }),
+                        ..Run::default()
+                    },
+                    Run {
+                        text: "B".to_string(),
+                        note: Some(AuthoredNote {
+                            kind: NoteKind::Endnote,
+                            text: endnote_text.to_string(),
+                        }),
+                        ..Run::default()
+                    },
+                ],
+                ..Paragraph::default()
+            })],
+            ..DocModel::default()
+        };
+        let mut table_paragraph = para(footnote_text);
+        table_paragraph.props.align = Align::Center;
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(table_paragraph)],
+                    ..Cell::default()
+                }],
+            }],
+            width_pct: Some(0.8),
+            fixed_layout: true,
+            ..Table::default()
+        };
+        let valid = vec![vec![
+            Some(NoteWritePayload {
+                kind: NoteKind::Footnote,
+                text: footnote_text.to_string(),
+                blocks: vec![Block::Table(table)],
+                pagination: vec![PaginationHint::default()],
+                line_spacing: vec![None],
+                tab_stops: vec![Vec::new()],
+                column_break_offsets: vec![Vec::new()],
+                table_pagination: vec![Some(TablePaginationHints {
+                    rows: vec![TableRowPaginationHint { cant_split: true }],
+                    cells: vec![vec![vec![Some(PaginationHint {
+                        keep_lines: true,
+                        widow_control: false,
+                        ..PaginationHint::default()
+                    })]]],
+                    cell_line_spacing: vec![vec![vec![Some(LineSpacingHint::Exact(12.0))]]],
+                    cell_column_breaks: vec![vec![vec![vec![5]]]],
+                    nested: vec![vec![vec![None]]],
+                    cell_tabs: vec![vec![vec![vec![tab(
+                        36.0,
+                        TabAlignment::Center,
+                        TabLeader::Dot,
+                    )]]]],
+                })],
+            }),
+            Some(NoteWritePayload {
+                kind: NoteKind::Endnote,
+                text: endnote_text.to_string(),
+                blocks: vec![Block::Paragraph(para(endnote_text))],
+                pagination: vec![PaginationHint::default()],
+                line_spacing: vec![Some(LineSpacingHint::Exact(20.0))],
+                tab_stops: vec![Vec::new()],
+                column_break_offsets: vec![Vec::new()],
+                table_pagination: vec![None],
+            }),
+        ]];
+        let render = |note_payloads: &[Vec<Option<NoteWritePayload>>]| {
+            let rendered = render_body(
+                &model,
+                Some(SourceWriteHints {
+                    gaps: &[None],
+                    layouts: &[None],
+                    separators: &[false],
+                    rtl: &[false],
+                    final_gap: None,
+                    final_layout: None,
+                    final_separator: false,
+                    final_rtl: false,
+                    running_surface_distances: &[RunningSurfaceDistanceHints::default()],
+                    running_line_spacing: &[],
+                    running_pagination: &[],
+                    running_tab_stops: &[],
+                    running_table_cell_tab_stops: &[],
+                    running_table_layout: &[],
+                    running_column_break_offsets: &[],
+                    note_payloads,
+                    paragraph_line_spacing: &[],
+                    paragraph_pagination: &[],
+                    paragraph_tab_stops: &[],
+                    column_break_offsets: &[],
+                    table_cell_column_break_offsets: &[],
+                    table_row_pagination: &[],
+                    table_cell_pagination: &[],
+                    table_cell_line_spacing: &[],
+                    table_nested_pagination: &[],
+                    table_cell_tab_stops: &[],
+                }),
+            );
+            (
+                String::from_utf8(rendered.footnotes_xml.expect("footnotes part")).unwrap(),
+                String::from_utf8(rendered.endnotes_xml.expect("endnotes part")).unwrap(),
+            )
+        };
+        let counts = |xml: &str, item: &str, text: &str| {
+            let note = written_note_with_text(xml, item, text);
+            (
+                note.matches("<w:tbl>").count(),
+                note.matches("<w:p>").count(),
+                note.matches(r#"<w:br w:type="column"/>"#).count(),
+                note.matches("<w:br/>").count(),
+                note.matches("<w:cantSplit/>").count(),
+                note.matches("<w:keepLines/>").count(),
+                note.matches("w:lineRule=").count(),
+                note.matches("<w:tabs>").count(),
+            )
+        };
+        let render_counts = |payloads: &[Vec<Option<NoteWritePayload>>]| {
+            let (footnotes, endnotes) = render(payloads);
+            (
+                counts(&footnotes, "footnote", "TABLE"),
+                counts(&endnotes, "endnote", "END"),
+            )
+        };
+
+        assert_eq!(
+            render_counts(&valid),
+            ((1, 1, 1, 0, 1, 1, 1, 1), (0, 1, 0, 0, 0, 0, 1, 0))
+        );
+
+        let mut bad_table_outer = valid.clone();
+        bad_table_outer[0][0]
+            .as_mut()
+            .unwrap()
+            .table_pagination
+            .clear();
+        assert_eq!(
+            render_counts(&bad_table_outer),
+            ((1, 1, 0, 1, 0, 0, 0, 0), (0, 1, 0, 0, 0, 0, 1, 0))
+        );
+
+        let mut bad_row_component = valid.clone();
+        bad_row_component[0][0].as_mut().unwrap().table_pagination[0]
+            .as_mut()
+            .unwrap()
+            .rows
+            .clear();
+        assert_eq!(
+            render_counts(&bad_row_component),
+            ((1, 1, 1, 0, 0, 1, 1, 1), (0, 1, 0, 0, 0, 0, 1, 0))
+        );
+
+        let mut bad_line_component = valid.clone();
+        bad_line_component[0][0].as_mut().unwrap().table_pagination[0]
+            .as_mut()
+            .unwrap()
+            .cell_line_spacing[0][0]
+            .clear();
+        assert_eq!(
+            render_counts(&bad_line_component),
+            ((1, 1, 1, 0, 1, 1, 0, 1), (0, 1, 0, 0, 0, 0, 1, 0))
+        );
+
+        let mut bad_break_leaf = valid.clone();
+        bad_break_leaf[0][0].as_mut().unwrap().table_pagination[0]
+            .as_mut()
+            .unwrap()
+            .cell_column_breaks[0][0][0] = vec![5, 5];
+        assert_eq!(
+            render_counts(&bad_break_leaf),
+            ((1, 1, 0, 1, 1, 1, 1, 1), (0, 1, 0, 0, 0, 0, 1, 0))
+        );
+
+        let mut relationship_bearing = valid.clone();
+        let Block::Table(table) = &mut relationship_bearing[0][0].as_mut().unwrap().blocks[0]
+        else {
+            panic!("table payload")
+        };
+        let Block::Paragraph(paragraph) = &mut table.rows[0].cells[0].blocks[0] else {
+            panic!("table paragraph payload")
+        };
+        paragraph.runs[0].field = FieldRole::Hyperlink {
+            url: "https://example.com/note-table".to_string(),
+        };
+        assert_eq!(
+            render_counts(&relationship_bearing),
+            ((0, 1, 0, 1, 0, 0, 0, 0), (0, 1, 0, 0, 0, 0, 1, 0))
         );
     }
 
