@@ -7037,6 +7037,7 @@ mod tests {
 
         let written = render(std::slice::from_ref(&valid));
         assert_eq!(written.matches(r#"<w:br w:type="column"/>"#).count(), 3);
+        assert_eq!(written.matches(r#"<w:br w:type="page"/>"#).count(), 1);
         assert_eq!(written.matches("<w:br/>").count(), 1);
         for marker in ["<w:bookmarkStart", "<w:hyperlink", "<w:sdt>", "<w:ins"] {
             assert!(written.contains(marker), "missing {marker}: {written}");
@@ -7057,6 +7058,7 @@ mod tests {
         for malformed in malformed_trees {
             let rejected = render(&malformed);
             assert!(!rejected.contains(r#"<w:br w:type="column"/>"#));
+            assert_eq!(rejected.matches(r#"<w:br w:type="page"/>"#).count(), 1);
             assert_eq!(rejected.matches("<w:br/>").count(), 4);
             assert!(rejected.contains("<w:cantSplit/>"), "{rejected}");
             assert!(rejected.contains(r#"w:line="240" w:lineRule="exact""#));
@@ -7067,6 +7069,7 @@ mod tests {
             malformed[0][0][0] = malformed_leaf;
             let isolated = render(&[malformed]);
             assert_eq!(isolated.matches(r#"<w:br w:type="column"/>"#).count(), 1);
+            assert_eq!(isolated.matches(r#"<w:br w:type="page"/>"#).count(), 1);
             assert_eq!(isolated.matches("<w:br/>").count(), 3);
             assert!(isolated.contains("<w:cantSplit/>"), "{isolated}");
         }

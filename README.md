@@ -520,10 +520,13 @@ Unselected running stories retain their flattened fallback. Legacy nested-table
 recovery and note paragraph layout properties remain outside these running-
 surface layout-hint paths. Legacy manual breaks in running-table cells and nested
 running tables remain unsupported. Settings-defined default-tab intervals remain
-outside the tab path. Table-cell page breaks remain outside the body and running-
-surface break-preservation paths, and legacy note manual breaks remain
-unsupported; the separate bounded opened-DOCX note conversion described below
-retains supported note column and page breaks, including inside table cells.
+outside the tab path. Opened DOCX inputs retain typed manual page breaks in direct
+and recursively nested body and running-surface table cells during fresh
+conversion, including all selected header/footer variants. This transport does
+not claim preview table fragmentation or Word-exact pagination. Legacy note
+manual breaks remain unsupported; the separate bounded opened-DOCX note
+conversion described below retains supported note column and page breaks,
+including inside table cells.
 Ordinary top-level paragraphs in selected default/first/even running headers
 and footers from opened DOCX and legacy DOC inputs also consume reader-resolved
 explicit tab stops and supported leaders through section-aligned render hints.
@@ -1058,10 +1061,13 @@ tree follows default-surface inheritance, validates each table slot and recursiv
 component independently, and keeps header/footer-local relationships. Legacy
 nested-table descendants and note paragraph layout properties remain outside
 these layout-hint paths. Legacy manual breaks in running-table cells and nested
-running tables remain unsupported. Settings-defined default-tab intervals, body
-and running-surface table-cell page breaks, and legacy note manual breaks also
-remain outside the bounded paths. Opened-DOCX note column and page breaks use the
-separate block/tree-aligned bridge described below.
+running tables remain unsupported. Opened DOCX typed manual page breaks in direct
+and recursively nested body and running-surface table cells survive fresh
+conversion through the ordered public block tree; all six selected running
+variants are covered. Settings-defined default-tab intervals and legacy note
+manual breaks remain outside the bounded paths, and table-cell preview pagination
+is not claimed. Opened-DOCX note column and page breaks use the separate
+block/tree-aligned bridge described below.
 
 Opened legacy `.doc` inputs additionally promote normalized footnote/endnote
 text into real references and note parts only when nonempty

@@ -1100,11 +1100,14 @@ impl Document {
     /// Legacy nested-table descendants and note paragraph layout properties
     /// remain outside these layout-hint paths. Legacy manual breaks in running-
     /// table cells and nested running tables remain unsupported. Settings-defined
-    /// default-tab intervals, body and running-surface table-cell page breaks, and
-    /// legacy note manual breaks also remain outside the bounded paths. Media,
-    /// relationships, fields, annotations, bookmarks, nested notes, source IDs
-    /// and numbering, separators, custom marks, complex anchors, page-bottom
-    /// placement, and Word-exact pagination remain outside the bounded opened-DOCX
+    /// default-tab intervals and legacy note manual breaks also remain outside the
+    /// bounded paths. Opened DOCX typed manual page breaks in direct and
+    /// recursively nested body and running-surface table cells survive fresh
+    /// conversion through the ordered public block tree across all six selected
+    /// running variants; preview table fragmentation and Word-exact pagination
+    /// are not claimed. Media, relationships, fields, annotations, bookmarks,
+    /// nested notes, source IDs and numbering, separators, custom marks, complex
+    /// anchors, and page-bottom placement remain outside the bounded opened-DOCX
     /// note path.
     /// Standalone [`write_docx`] remains model-only for all of these private
     /// hints.
@@ -16381,13 +16384,16 @@ mod tests {
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
                 <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:spacing w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>top</w:t></w:r></w:p>
                 <w:tbl><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>
-                    <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:spacing w:line="400" w:lineRule="atLeast"/></w:pPr><w:r><w:t>cell</w:t></w:r></w:p>
-                    <w:tbl><w:tr><w:tc><w:p><w:pPr><w:keepNext/><w:spacing w:line="600" w:lineRule="exact"/></w:pPr><w:r><w:t>nested</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                    <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:spacing w:line="400" w:lineRule="atLeast"/></w:pPr><w:r><w:t>cell</w:t><w:br w:type="page"/><w:t>cell after</w:t></w:r></w:p>
+                    <w:tbl><w:tr><w:tc><w:p><w:pPr><w:keepNext/><w:spacing w:line="600" w:lineRule="exact"/></w:pPr><w:r><w:t>nested</w:t><w:br w:type="page"/><w:t>nested after</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
                 </w:tc></w:tr></w:tbl>
                 <w:sectPr/>
             </w:body></w:document>"#,
         );
         let opened = Document::open(&source).unwrap();
+        let source_model = opened.model();
+        let model_only = write_docx(&source_model);
+        let normalized_blocks = Document::open(&model_only).unwrap().model().blocks;
         let converted = opened.to_docx();
         let document_xml = docx_part(&converted, "word/document.xml");
         let top = docx_paragraph_with_text(&document_xml, "top");
@@ -16411,10 +16417,21 @@ mod tests {
             nested.contains(r#"w:line="600" w:lineRule="exact""#),
             "{nested}"
         );
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="page"/>"#).count(),
+            2,
+            "{document_xml}"
+        );
         assert!(!document_xml.contains("<w:tabs>"), "{document_xml}");
         assert_eq!(converted, opened.to_docx());
+        assert_eq!(opened.model(), source_model);
 
-        let model_only_xml = docx_part(&write_docx(&opened.model()), "word/document.xml");
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert_eq!(
+            model_only_xml.matches(r#"<w:br w:type="page"/>"#).count(),
+            2,
+            "{model_only_xml}"
+        );
         assert!(!model_only_xml.contains("<w:keepNext"));
         assert!(!model_only_xml.contains("<w:keepLines"));
         assert!(!model_only_xml.contains("<w:widowControl"));
@@ -16427,6 +16444,7 @@ mod tests {
         let Backend::Docx(state) = reopened.backend else {
             panic!("converted document must use the DOCX backend");
         };
+        assert_eq!(state.model.blocks, normalized_blocks);
         assert_eq!(
             state.pagination_hints[0],
             crate::model::PaginationHint {
@@ -16458,7 +16476,7 @@ mod tests {
             state.table_cell_line_spacing[table_index][0][0][0],
             Some(crate::model::LineSpacingHint::AtLeast(20.0))
         );
-        let nested_hints = state.table_nested_pagination[table_index][0][0][1]
+        let nested_hints = state.table_nested_pagination[table_index][0][0][3]
             .as_ref()
             .expect("converted nested table hints");
         assert!(nested_hints.cells[0][0][0]

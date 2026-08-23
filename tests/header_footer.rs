@@ -2017,7 +2017,7 @@ fn running_surface_six_variant_nested_table_docx() -> Vec<u8> {
             ""
         };
         format!(
-            r#"<w:{root} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:sdt><w:sdtContent><w:p><w:r><w:t>{label} TOP A</w:t></w:r>{top_tail}</w:p></w:sdtContent></w:sdt><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>{label} PARENT A</w:t><w:br w:type="column"/><w:t>{label} PARENT B</w:t></w:r></w:p><w:sdt><w:sdtContent><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="{line_twips}" w:lineRule="exact"/><w:tabs><w:tab w:val="center" w:pos="{tab_twips}" w:leader="hyphen"/></w:tabs></w:pPr><w:r><w:t>{label} NESTED A</w:t><w:tab/><w:t>{label} NESTED B</w:t><w:br w:type="column"/><w:t>{label} NESTED C</w:t></w:r>{nested_hyperlink}</w:p><w:customXml><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3200"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:spacing w:line="{deep_line}" w:lineRule="atLeast"/><w:tabs><w:tab w:val="right" w:pos="{deep_tab}" w:leader="dot"/></w:tabs></w:pPr><w:r><w:t>{label} DEEP A</w:t><w:br w:type="column"/><w:t>{label} DEEP B</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:customXml></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:pPr><w:spacing w:line="999" w:lineRule="exact"/><w:tabs><w:tab w:val="left" w:pos="999"/></w:tabs></w:pPr><w:r><w:t>{label} LEAK</w:t><w:br w:type="column"/></w:r></w:p></w:tc></w:tr></w:tbl></w:sdtContent></w:sdt></w:tc></w:tr></w:tbl></w:{root}>"#,
+            r#"<w:{root} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:sdt><w:sdtContent><w:p><w:r><w:t>{label} TOP A</w:t></w:r>{top_tail}</w:p></w:sdtContent></w:sdt><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>{label} PARENT A</w:t><w:br w:type="column"/><w:t>{label} PARENT B</w:t><w:br w:type="page"/><w:t>{label} PARENT C</w:t></w:r></w:p><w:sdt><w:sdtContent><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="{line_twips}" w:lineRule="exact"/><w:tabs><w:tab w:val="center" w:pos="{tab_twips}" w:leader="hyphen"/></w:tabs></w:pPr><w:r><w:t>{label} NESTED A</w:t><w:tab/><w:t>{label} NESTED B</w:t><w:br w:type="column"/><w:t>{label} NESTED C</w:t><w:br w:type="page"/><w:t>{label} NESTED D</w:t></w:r>{nested_hyperlink}</w:p><w:customXml><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3200"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:spacing w:line="{deep_line}" w:lineRule="atLeast"/><w:tabs><w:tab w:val="right" w:pos="{deep_tab}" w:leader="dot"/></w:tabs></w:pPr><w:r><w:t>{label} DEEP A</w:t><w:br w:type="column"/><w:t>{label} DEEP B</w:t><w:br w:type="page"/><w:t>{label} DEEP C</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:customXml></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:pPr><w:spacing w:line="999" w:lineRule="exact"/><w:tabs><w:tab w:val="left" w:pos="999"/></w:tabs></w:pPr><w:r><w:t>{label} LEAK</w:t><w:br w:type="column"/></w:r></w:p></w:tc></w:tr></w:tbl></w:sdtContent></w:sdt></w:tc></w:tr></w:tbl></w:{root}>"#,
             deep_line = line_twips + 100,
             deep_tab = tab_twips + 100,
         )
@@ -2107,6 +2107,11 @@ fn opened_docx_running_layout_isolates_six_variants_and_inheritance() {
                 "{label}: {xml}"
             );
             assert_eq!(
+                xml.matches(r#"<w:br w:type="page"/>"#).count(),
+                3,
+                "{label}: {xml}"
+            );
+            assert_eq!(
                 top_paragraph.matches(r#"<w:br w:type="column"/>"#).count(),
                 1,
                 "{label}: {top_paragraph}"
@@ -2114,7 +2119,7 @@ fn opened_docx_running_layout_isolates_six_variants_and_inheritance() {
             assert!(!top_paragraph.contains("<w:br/>"), "{label}");
             assert_eq!(xml.matches("<w:cantSplit/>").count(), 2, "{label}");
             assert!(xml.contains("<w:keepNext/>"), "{label}");
-            assert_eq!(xml.matches("<w:keepLines/>").count(), 2, "{label}");
+            assert_eq!(xml.matches("<w:keepLines/>").count(), 4, "{label}");
             assert!(xml.contains(r#"<w:widowControl w:val="0"/>"#), "{label}");
             assert!(
                 xml.contains(&format!(
@@ -2168,6 +2173,11 @@ fn opened_docx_running_layout_isolates_six_variants_and_inheritance() {
         }
         let xml = std::str::from_utf8(body).unwrap();
         assert!(!xml.contains(r#"<w:br w:type="column"/>"#), "{name}");
+        assert_eq!(
+            xml.matches(r#"<w:br w:type="page"/>"#).count(),
+            3,
+            "{name}: {xml}"
+        );
         assert!(!xml.contains("<w:cantSplit/>"), "{name}");
         assert!(!xml.contains("<w:keepNext/>"), "{name}");
         assert!(!xml.contains("<w:keepLines/>"), "{name}");

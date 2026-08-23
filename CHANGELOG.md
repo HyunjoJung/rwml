@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs retains typed
+  manual page breaks in direct and recursively nested body and running-surface
+  table cells through the existing ordered public block tree. Evidence covers
+  two body-table depths plus three running-table depths across all default/first/
+  even header and footer variants, default-surface inheritance, local
+  relationships, row no-split and cell keep/widow controls, exact/minimum line
+  rules, tabs/leaders, manual column breaks, deterministic bytes, native reopen
+  against the established normalized model, source-model immutability,
+  standalone model writing, and malformed unrelated hint isolation. This is a
+  transport guarantee only; preview table fragmentation, page-bottom note
+  composition, legacy note breaks, and Word-exact pagination remain unsupported.
 - Fresh `Document::to_docx()` conversion of opened legacy DOC inputs now
   preserves visible manual column breaks in ordinary top-level paragraphs across
   all default/first/even headers and footers. A paragraph-aligned source-story
@@ -49,9 +60,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hyperlink, malformed outer/variant/leaf data, coexistence with running-table
   breaks, deterministic bytes, native reopen, and standalone-writer exclusion are
   covered. Legacy running-table cell and nested running-table breaks, note
-  paragraph properties and breaks, table-cell page breaks, and PDF distinction
-  between running line and column breaks remain outside this bounded conversion
-  path.
+  paragraph properties and breaks, and PDF distinction between running line and
+  column breaks remain outside this bounded conversion path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   visible manual column breaks in direct paragraphs of top-level running-table
   cells and recursively preserves row no-split state, cell-paragraph keep/widow
@@ -64,9 +74,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   defaults, malformed outer/slot/child data, malformed break leaves,
   deterministic bytes, native reopen, parser depth limits, and standalone-writer
   exclusion are covered. Legacy nested running tables and their manual breaks,
-  legacy running-table cell breaks, note paragraph properties, table-cell page
-  breaks, and PDF consumption of nested running-table layout hints remain outside
-  this bounded conversion path.
+  legacy running-table cell breaks, note paragraph properties, preview
+  pagination of typed table-cell page breaks, and PDF consumption of nested
+  running-table layout hints remain outside this bounded conversion path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now recursively
   preserves source-only row no-split state, direct cell-paragraph keep/widow
   controls, exact/minimum line rules, explicit tab stops, and visible manual
@@ -78,8 +88,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   isolation, malformed break leaves, deterministic bytes, native reopen, parser
   depth limits, standalone-writer exclusion, and unchanged running-surface
   behavior are covered. Legacy nested-table recovery, nested running tables,
-  notes, table-cell page breaks, and PDF behavior remain outside this bounded
-  conversion path.
+  notes, preview pagination of typed table-cell page breaks, and other PDF
+  behavior remain outside this bounded conversion path.
 - Fresh `Document::to_docx()` conversion now preserves visible manual column
   breaks in direct paragraph blocks of surviving cells in top-level body tables
   from opened DOCX and legacy DOC inputs. A private block/row/surviving-cell/
@@ -89,8 +99,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   aware column-break writer. Multiple cell paragraphs, accepted-current run
   wrappers, hidden controls, malformed tree and leaf isolation, deterministic
   bytes, native reopen, and unchanged public-model/standalone-writer behavior are
-  covered. Table-cell page breaks, nested tables, notes, running surfaces, and
-  PDF pagination remain outside this bounded path.
+  covered. Typed table-cell page-break transport is separately covered above;
+  nested tables, notes, running surfaces, and PDF pagination remain outside this
+  bounded column-break path.
 - Fresh legacy `Document::to_docx()` conversion now excludes a HeaderFooter
   source region from `word/document.xml` only when assembly actually promoted
   that exact nonempty block range into a selected section running slot. The
