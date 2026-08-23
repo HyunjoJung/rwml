@@ -3135,6 +3135,7 @@ fn preserves_computed_field_instruction(instruction: &str) -> bool {
     preserves_computed_empty_field_instruction(instruction)
         || super::fields::supports_computed_symbol_field_syntax(instruction)
         || super::fields::supports_quote_field_syntax(instruction)
+        || super::fields::supports_context_free_if_compare_field_syntax(instruction)
 }
 
 fn preserves_computed_empty_field_instruction(instruction: &str) -> bool {

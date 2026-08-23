@@ -2005,7 +2005,6 @@ struct IfInstruction {
     text_format: Option<FieldTextFormat>,
 }
 
-#[cfg(test)]
 fn computed_if_result(instruction: &str) -> Option<String> {
     computed_if_result_with_bookmarks(instruction, &HashMap::new())
 }
@@ -2062,7 +2061,6 @@ pub(crate) fn supports_if_field_syntax(instruction: &str) -> bool {
     if_field_syntax(instruction)
 }
 
-#[cfg(test)]
 fn computed_compare_result(instruction: &str) -> Option<String> {
     computed_compare_result_with_bookmarks(instruction, &HashMap::new())
 }
@@ -2081,6 +2079,12 @@ fn computed_compare_result_with_bookmarks(
         result.to_string(),
         spec.text_format,
     ))
+}
+
+pub(crate) fn supports_context_free_if_compare_field_syntax(instruction: &str) -> bool {
+    computed_if_result(instruction)
+        .or_else(|| computed_compare_result(instruction))
+        .is_some()
 }
 
 pub(crate) fn supports_compare_field_syntax(instruction: &str) -> bool {
@@ -2820,11 +2824,12 @@ mod tests {
         ordinal_page_number_text, page_ref_context, page_ref_instruction, ref_instruction,
         ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
         supports_action_field_syntax, supports_compare_field_syntax,
-        supports_computed_symbol_field_syntax, supports_formula_field_syntax,
-        supports_if_field_syntax, supports_merge_control_field_syntax,
-        supports_prompt_field_syntax, supports_reference_index_marker_syntax,
-        supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
-        toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
+        supports_computed_symbol_field_syntax, supports_context_free_if_compare_field_syntax,
+        supports_formula_field_syntax, supports_if_field_syntax,
+        supports_merge_control_field_syntax, supports_prompt_field_syntax,
+        supports_reference_index_marker_syntax, supports_sequence_field_syntax,
+        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
+        PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
@@ -3726,6 +3731,27 @@ mod tests {
             computed_dynamic_result(r#"COMPARE "A*" = "AB" \* MERGEFORMAT"#).as_deref(),
             Some("1")
         );
+    }
+
+    #[test]
+    fn context_free_if_compare_ownership_requires_literal_operands() {
+        for instruction in [
+            r#"IF 1 = 1 "ship" "hold" \* Upper"#,
+            r#"IF "A=B"="A=B" yes no"#,
+            r#"COMPARE "A*" = "AB" \* MERGEFORMAT"#,
+            "COMPARE 5 > 3",
+        ] {
+            assert!(supports_context_free_if_compare_field_syntax(instruction));
+        }
+        for instruction in [
+            r#"IF Gate = "Ready" "ship" "hold""#,
+            r#"COMPARE CustomerTier = "Gold""#,
+            "COMPARE 1e309 > 0",
+            r#"IF 1 = 1 "broken"#,
+            r#"QUOTE "not a comparison""#,
+        ] {
+            assert!(!supports_context_free_if_compare_field_syntax(instruction));
+        }
     }
 
     #[test]

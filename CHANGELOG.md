@@ -9,6 +9,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  context-free, non-dirty `IF` and `COMPARE` fields with one modeled result run
+  in exact real footnote and endnote payloads. Quoted-text or finite-number
+  operands, compact comparisons, wildcard equality, optional false branches,
+  normalized instructions, deterministic computed text, supported text-format
+  switches, source order, and modeled formatting survive at the top level and
+  through recursively nested table cells; one-result-run complex source fields
+  normalize to non-dirty `w:fldSimple`. Bookmark- or `SET`-backed, malformed or
+  nonfinite, and split-result comparisons still trigger note-local plain-text
+  fallback. This does not broaden formula, prompt, merge-control, relationship,
+  field-update, or layout behavior.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-validated, non-dirty literal `QUOTE` fields with one modeled result run
   in exact real footnote and endnote payloads. Normalized instructions, computed
   text and supported text-format switches, source order, and modeled formatting

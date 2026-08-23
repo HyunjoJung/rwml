@@ -659,6 +659,9 @@ fn supports_owned_computed_field_evaluation(field: &Field) -> bool {
             FieldKind::Dynamic(kind) if kind == "QUOTE" => {
                 crate::docx::supports_quote_field_syntax(&field.instruction)
             }
+            FieldKind::Dynamic(kind) if kind == "IF" || kind == "COMPARE" => {
+                crate::docx::supports_context_free_if_compare_field_syntax(&field.instruction)
+            }
             FieldKind::Display(kind) if kind == "SYMBOL" => {
                 crate::docx::supports_computed_symbol_field_syntax(&field.instruction)
             }
@@ -5094,6 +5097,20 @@ mod tests {
                     ..Run::default()
                 },
                 Run {
+                    text: "Ready".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"IF 2 > 1 "Ready" "Held""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "1".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"COMPARE "A*" = "AB""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
                     text: "cached quote".to_string(),
                     field: FieldRole::Simple {
                         instruction: r#"QUOTE "broken"#.to_string(),
@@ -5109,13 +5126,29 @@ mod tests {
                     field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
                     ..Run::default()
                 },
+                Run {
+                    text: "cached bookmark IF".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"IF Gate = "Ready" "yes" "no""#.to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached nonfinite compare".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: "COMPARE 1e309 > 0".to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
+                    ..Run::default()
+                },
             ],
             ..Paragraph::default()
         })];
 
         let inventory = super::feature_inventory_for_model(&blocks);
 
-        assert_eq!(inventory.fields, 4);
+        assert_eq!(inventory.fields, 8);
         assert_eq!(
             inventory.unsupported_field_kinds,
             vec![
@@ -5127,14 +5160,28 @@ mod tests {
                     kind: FieldKind::Display("SYMBOL".to_string()),
                     count: 1,
                 },
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("IF".to_string()),
+                    count: 1,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("COMPARE".to_string()),
+                    count: 1,
+                },
             ]
         );
         assert_eq!(
             inventory.unsupported_field_reasons,
-            vec![super::FieldEvaluationReasonCount {
-                reason: super::FieldEvaluationReason::UnsupportedSwitch,
-                count: 2,
-            }]
+            vec![
+                super::FieldEvaluationReasonCount {
+                    reason: super::FieldEvaluationReason::UnsupportedSwitch,
+                    count: 3,
+                },
+                super::FieldEvaluationReasonCount {
+                    reason: super::FieldEvaluationReason::NoComputedResult,
+                    count: 1,
+                },
+            ]
         );
 
         #[cfg(feature = "render")]

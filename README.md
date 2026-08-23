@@ -1129,6 +1129,11 @@ Parser-validated, non-dirty literal `QUOTE` instructions with one modeled result
 run likewise survive as normalized simple fields with computed text, supported
 text-format switches, and modeled formatting. Malformed or split-result `QUOTE`
 fields and other dynamic fields remain excluded.
+Context-free, non-dirty `IF` and `COMPARE` instructions with one modeled result
+run likewise survive when quoted-text or finite-number operands compute without
+bookmark or `SET` state, including compact comparisons and wildcard equality.
+Bookmark- or `SET`-backed, malformed or nonfinite, and split-result comparisons,
+formula and prompt/control fields remain excluded.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names

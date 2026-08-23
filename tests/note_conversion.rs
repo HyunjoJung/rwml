@@ -518,7 +518,36 @@ fn quote_field_note_docx() -> Vec<u8> {
         ),
         (
             "word/endnotes.xml",
-            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="221"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END QUOTE BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> QUOTE &quot;fresh end words&quot; \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END QUOTE</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END QUOTE AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="222"><w:p><w:r><w:t xml:space="preserve">COMPUTED IF BEFORE </w:t></w:r><w:fldSimple w:instr=" IF 2 &gt; 1 &quot;literal yes&quot; &quot;literal no&quot; "><w:r><w:t>STALE COMPUTED IF</w:t></w:r></w:fldSimple><w:r><w:t> COMPUTED IF AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="221"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END QUOTE BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> QUOTE &quot;fresh end words&quot; \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END QUOTE</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END QUOTE AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="222"><w:p><w:r><w:t xml:space="preserve">FILLIN BEFORE </w:t></w:r><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; "><w:r><w:t>CACHED FILLIN</w:t></w:r></w:fldSimple><w:r><w:t> FILLIN AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
+fn if_compare_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="231"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="241"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="232"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="242"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:footnoteReference w:id="233"/></w:r><w:r><w:t> BODY F</w:t></w:r><w:r><w:endnoteReference w:id="243"/></w:r><w:r><w:t> BODY G</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="231"><w:p><w:r><w:t xml:space="preserve">FOOT IF BEFORE </w:t></w:r><w:fldSimple w:instr=" IF 2 &gt;= 1 &quot;fresh foot if&quot; &quot;bad foot if&quot; \* Caps "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT IF</w:t></w:r></w:fldSimple><w:r><w:t> FOOT IF AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="232"><w:p><w:fldSimple w:instr=" SET GateState &quot;Ready&quot; "><w:r><w:t>STALE SET</w:t></w:r></w:fldSimple><w:r><w:t xml:space="preserve">STATE IF BEFORE </w:t></w:r><w:fldSimple w:instr=" IF GateState = &quot;Ready&quot; &quot;source yes&quot; &quot;source no&quot; "><w:r><w:t>STALE STATE IF</w:t></w:r></w:fldSimple><w:r><w:t> STATE IF AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="233"><w:p><w:r><w:t xml:space="preserve">SPLIT IF BEFORE </w:t></w:r><w:fldSimple w:instr=" IF 1=1 &quot;split if&quot; &quot;bad split&quot; \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE SPLIT IF A</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE SPLIT IF B</w:t></w:r></w:fldSimple><w:r><w:t> SPLIT IF AFTER</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="241"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END COMPARE BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> COMPARE &quot;Alpha-42&quot; = &quot;Alpha-*&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END COMPARE</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END COMPARE AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="242"><w:p><w:r><w:t xml:space="preserve">NONFINITE COMPARE BEFORE </w:t></w:r><w:fldSimple w:instr=" COMPARE 1e309 &gt; 0 "><w:r><w:t>CACHED NONFINITE COMPARE</w:t></w:r></w:fldSimple><w:r><w:t> NONFINITE COMPARE AFTER</w:t></w:r></w:p></w:endnote><w:endnote w:id="243"><w:p><w:r><w:t xml:space="preserve">FILLIN BEFORE </w:t></w:r><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; "><w:r><w:t>CACHED FILLIN</w:t></w:r></w:fldSimple><w:r><w:t> FILLIN AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
         ),
     ])
 }
@@ -1854,7 +1883,7 @@ fn opened_docx_note_quote_fields_keep_computed_text_and_instructions() {
     let endnote = note_with_marker(endnotes, "endnote", "END QUOTE BEFORE");
     let rejected_malformed = note_with_marker(footnotes, "footnote", "REJECTED MALFORMED");
     let rejected_split = note_with_marker(footnotes, "footnote", "SPLIT QUOTE BEFORE");
-    let rejected_if = note_with_marker(endnotes, "endnote", "COMPUTED IF BEFORE");
+    let rejected_fillin = note_with_marker(endnotes, "endnote", "FILLIN BEFORE");
 
     assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
     assert!(
@@ -1883,17 +1912,17 @@ fn opened_docx_note_quote_fields_keep_computed_text_and_instructions() {
     assert!(!endnote.contains("<w:fldChar"), "{endnote}");
     assert!(!endnote.contains("w:dirty="), "{endnote}");
 
-    for rejected in [rejected_malformed, rejected_split, rejected_if] {
+    for rejected in [rejected_malformed, rejected_split, rejected_fillin] {
         assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
         assert!(!rejected.contains("<w:fldChar"), "{rejected}");
         assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
     }
     assert!(!footnotes.contains(r#"QUOTE &quot;broken foot"#));
     assert!(!footnotes.contains(r#"QUOTE &quot;split quote&quot;"#));
-    assert!(!endnotes.contains(r#"IF 2 &gt; 1"#));
+    assert!(!endnotes.contains(r#"FILLIN &quot;Client?&quot;"#));
     assert!(!footnotes.contains("STALE SPLIT A"));
     assert!(!footnotes.contains("STALE SPLIT B"));
-    assert!(!endnotes.contains("STALE COMPUTED IF"));
+    assert!(endnotes.contains("CACHED FILLIN"));
 
     let reopened = Document::open(&converted).expect("converted QUOTE field notes reopen");
     assert_eq!(reopened.report().features.fields, 2);
@@ -1938,12 +1967,153 @@ fn opened_docx_note_quote_fields_keep_computed_text_and_instructions() {
         rejected_split.text(),
         "SPLIT QUOTE BEFORE SPLIT QUOTE SPLIT QUOTE AFTER"
     );
-    let Block::Paragraph(rejected_if) = &reopened_model.blocks[5] else {
-        panic!("rejected computed-IF fallback paragraph")
+    let Block::Paragraph(rejected_fillin) = &reopened_model.blocks[5] else {
+        panic!("rejected FILLIN fallback paragraph")
     };
     assert_eq!(
-        rejected_if.text(),
-        "COMPUTED IF BEFORE literal yes COMPUTED IF AFTER"
+        rejected_fillin.text(),
+        "FILLIN BEFORE CACHED FILLIN FILLIN AFTER"
+    );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_context_free_if_compare_fields_keep_results_and_instructions() {
+    let document =
+        Document::open(&if_compare_field_note_docx()).expect("IF/COMPARE field notes open");
+    assert_eq!(document.notes().len(), 6, "source note records missing");
+    assert_eq!(document.report().features.fields, 7);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone IF/COMPARE normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT IF BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END COMPARE BEFORE");
+    let rejected_state = note_with_marker(footnotes, "footnote", "STATE IF BEFORE");
+    let rejected_split = note_with_marker(footnotes, "footnote", "SPLIT IF BEFORE");
+    let rejected_nonfinite = note_with_marker(endnotes, "endnote", "NONFINITE COMPARE BEFORE");
+    let rejected_fillin = note_with_marker(endnotes, "endnote", "FILLIN BEFORE");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(
+            r#"<w:fldSimple w:instr=" IF 2 &gt;= 1 &quot;fresh foot if&quot; &quot;bad foot if&quot; \* Caps ">"#
+        ) && footnote.contains("<w:b/>")
+            && footnote.contains("Fresh Foot If")
+            && footnote.contains("FOOT IF BEFORE ")
+            && footnote.contains(" FOOT IF AFTER"),
+        "top-level context-free IF field missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT IF"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(
+            r#"<w:fldSimple w:instr=" COMPARE &quot;Alpha-42&quot; = &quot;Alpha-*&quot; ">"#
+        ) && endnote.contains("<w:i/>")
+            && endnote.contains(">1</w:t>")
+            && endnote.contains("END COMPARE BEFORE ")
+            && endnote.contains(" END COMPARE AFTER"),
+        "nested context-free COMPARE field missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END COMPARE"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [
+        rejected_state,
+        rejected_split,
+        rejected_nonfinite,
+        rejected_fillin,
+    ] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains(r#"SET GateState &quot;Ready&quot;"#));
+    assert!(!footnotes.contains(r#"IF GateState = &quot;Ready&quot;"#));
+    assert!(!footnotes.contains(r#"IF 1=1 &quot;split if&quot;"#));
+    assert!(!endnotes.contains("COMPARE 1e309"));
+    assert!(!endnotes.contains(r#"FILLIN &quot;Client?&quot;"#));
+    assert!(!footnotes.contains("STALE SET"));
+    assert!(!footnotes.contains("STALE STATE IF"));
+    assert!(!footnotes.contains("STALE SPLIT IF A"));
+    assert!(!footnotes.contains("STALE SPLIT IF B"));
+
+    let reopened = Document::open(&converted).expect("converted IF/COMPARE field notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[0].instruction,
+        r#"IF 2 >= 1 "fresh foot if" "bad foot if" \* Caps"#
+    );
+    assert_eq!(fields[0].result, "Fresh Foot If");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Fresh Foot If"));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[1].instruction, r#"COMPARE "Alpha-42" = "Alpha-*""#);
+    assert_eq!(fields[1].result, "1");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 4] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_state) = &reopened_model.blocks[2] else {
+        panic!("SET-backed IF fallback paragraph")
+    };
+    assert_eq!(
+        rejected_state.text(),
+        "STATE IF BEFORE source yes STATE IF AFTER"
+    );
+    let Block::Paragraph(rejected_split) = &reopened_model.blocks[3] else {
+        panic!("split-result IF fallback paragraph")
+    };
+    assert_eq!(
+        rejected_split.text(),
+        "SPLIT IF BEFORE SPLIT IF SPLIT IF AFTER"
+    );
+    let Block::Paragraph(rejected_nonfinite) = &reopened_model.blocks[5] else {
+        panic!("nonfinite COMPARE fallback paragraph")
+    };
+    assert_eq!(
+        rejected_nonfinite.text(),
+        "NONFINITE COMPARE BEFORE CACHED NONFINITE COMPARE NONFINITE COMPARE AFTER"
+    );
+    let Block::Paragraph(rejected_fillin) = &reopened_model.blocks[6] else {
+        panic!("FILLIN fallback paragraph")
+    };
+    assert_eq!(
+        rejected_fillin.text(),
+        "FILLIN BEFORE CACHED FILLIN FILLIN AFTER"
     );
     assert_eq!(reopened.to_docx(), converted);
 

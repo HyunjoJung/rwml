@@ -18,8 +18,9 @@ use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::annotation::{filename_field_syntax, merge_field_syntax};
 use crate::docx::{
-    supports_computed_symbol_field_syntax, supports_quote_field_syntax,
-    supports_reference_index_marker_syntax, supports_toc_entry_field_syntax,
+    supports_computed_symbol_field_syntax, supports_context_free_if_compare_field_syntax,
+    supports_quote_field_syntax, supports_reference_index_marker_syntax,
+    supports_toc_entry_field_syntax,
 };
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
@@ -3135,6 +3136,10 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                     run.field_unsupported_reason.is_none()
                         && supports_quote_field_syntax(instruction)
                 }
+                FieldKind::Dynamic(kind) if kind == "IF" || kind == "COMPARE" => {
+                    run.field_unsupported_reason.is_none()
+                        && supports_context_free_if_compare_field_syntax(instruction)
+                }
                 FieldKind::Compatibility(_)
                 | FieldKind::InsertedContent(_)
                 | FieldKind::MailMerge(_)
@@ -5156,8 +5161,8 @@ mod tests {
     use super::{
         render_body, section_columns_xml, source_column_break_offsets, source_line_spacing,
         source_note_content_control_is_supported, source_note_field_is_supported,
-        source_note_payload_is_supported, source_tab_stops_xml, SectionColumnWriteHint,
-        SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
+        source_note_paragraph_is_supported, source_note_payload_is_supported, source_tab_stops_xml,
+        SectionColumnWriteHint, SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
     };
     use crate::model::{
         Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
@@ -5297,6 +5302,8 @@ mod tests {
             r#"TC "Manual entry" \f m \l 2 \* Caps"#,
             r#"SYMBOL 183 \f Symbol \s 12"#,
             r#"QUOTE "literal note" \* Upper"#,
+            r#"IF 2 >= 1 "ready note" "held note" \* Caps"#,
+            r#"COMPARE "Alpha-42" = "Alpha-*""#,
         ] {
             assert!(source_note_field_is_supported(&marker(instruction)));
         }
@@ -5306,6 +5313,8 @@ mod tests {
         dirty_symbol.field_dirty = true;
         let mut dirty_quote = marker(r#"QUOTE "dirty note""#);
         dirty_quote.field_dirty = true;
+        let mut dirty_if = marker(r#"IF 1 = 1 "dirty" "clean""#);
+        dirty_if.field_dirty = true;
 
         let mut dirty = cached("PRIVATE legacy-data");
         dirty.field_dirty = true;
@@ -5329,6 +5338,7 @@ mod tests {
             dirty_marker,
             dirty_symbol,
             dirty_quote,
+            dirty_if,
             malformed,
             malformed_merge,
             malformed_filename,
@@ -5338,7 +5348,9 @@ mod tests {
             marker(r#"SYMBOL 66 \f Wingdings"#),
             marker(r#"EQ \f(1,2)"#),
             marker(r#"QUOTE "broken note"#),
-            marker(r#"IF 2 > 1 "yes" "no""#),
+            marker(r#"IF Gate = "Ready" "yes" "no""#),
+            marker(r#"IF 2 > 1 "yes" "no"#),
+            marker(r#"COMPARE 1e309 > 0"#),
             marker(r#"INDEX \e " - ""#),
             marker(r#"TOC \f m"#),
             cached("MERGEFIELD Client"),
@@ -5347,6 +5359,7 @@ mod tests {
             cached(r#"TC "Wrong reason""#),
             cached(r#"SYMBOL 0x03BB \u"#),
             cached(r#"QUOTE "wrong reason""#),
+            cached(r#"IF 2 > 1 "wrong reason" "no""#),
             Run {
                 field: FieldRole::Simple {
                     instruction: "CUSTOM literal payload".to_string(),
@@ -5367,6 +5380,18 @@ mod tests {
         ] {
             assert!(!source_note_field_is_supported(&rejected));
         }
+
+        let split_result = Paragraph {
+            runs: vec![
+                marker(r#"IF 1 = 1 "split" "no""#),
+                Run {
+                    field: FieldRole::Other,
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        };
+        assert!(!source_note_paragraph_is_supported(&split_result));
     }
 
     fn written_paragraph_with_text<'a>(xml: &'a str, text: &str) -> &'a str {

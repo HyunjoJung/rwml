@@ -9198,6 +9198,19 @@ fn docx_dynamic_fields_compute_formula_quote_if_compare_and_literal_set_ref() {
     );
     assert_eq!(
         model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("IF ") || instruction.starts_with("COMPARE ")
+        }),
+        [2, 3, 4, 5, 6, 7, 19]
+            .into_iter()
+            .map(|index| (fields[index].instruction.clone(), None))
+            .chain(std::iter::once((
+                fields[20].instruction.clone(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            )))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
             instruction.starts_with("FILLIN")
                 || instruction.starts_with("ASK")
                 || instruction.starts_with("COMPARE 1e309")
