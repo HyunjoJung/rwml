@@ -73,15 +73,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   interactive prompting, field-update, relationship, or layout behavior.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   context-free, non-dirty formula (`=`) fields with one modeled result run in
-  exact real footnote and endnote payloads. Finite literal arithmetic and scalar-
-  function expressions, supported numeric pictures, normalized instructions,
-  deterministic computed text, source order, and modeled formatting survive at
-  the top level and through recursively nested table cells; one-result-run
-  complex source fields normalize to non-dirty `w:fldSimple`. Bookmark- or
-  `SET`-backed expressions, `DEFINED`, table-cell or positional references,
-  malformed or nonfinite formulas, and split results still trigger note-local
-  plain-text fallback. This does not broaden prompt/control, relationship, field-
-  update, or layout behavior.
+  exact real footnote and endnote payloads, plus one independently verified
+  table-dependent formula per qualifying formula-owning table. Finite literal
+  arithmetic, scalar functions, direct/range and positional table references,
+  supported numeric pictures, normalized instructions, deterministic computed
+  text, source order, and modeled formatting survive; qualifying tables are
+  span-free, left-to-right, non-header grids whose cells each contain one stable
+  nonempty run, and may themselves be nested under other supported note tables.
+  One-result-run complex source fields normalize to non-dirty `w:fldSimple`.
+  Bookmark- or `SET`-backed expressions, non-table-local `DEFINED` state, multiple
+  or dependent table formulas, spans, RTL/header grids, non-plain operands,
+  malformed or nonfinite formulas, mismatched results, and split results still
+  trigger note-local plain-text fallback. This does not broaden prompt/control,
+  relationship, field-update, or layout behavior.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   context-free, non-dirty `IF` and `COMPARE` fields with one modeled result run
   in exact real footnote and endnote payloads. Quoted-text or finite-number

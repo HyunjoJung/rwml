@@ -20,10 +20,11 @@ use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::annotation::{filename_field_syntax, merge_field_syntax};
 use crate::docx::{
-    computed_preserved_note_local_ref_result, preserved_note_local_ref_target,
-    supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
-    supports_context_free_fill_in_field_syntax, supports_context_free_formula_field_syntax,
-    supports_context_free_if_compare_field_syntax, supports_preserved_document_info_field_syntax,
+    computed_preserved_note_local_ref_result, computed_span_free_table_formula_result,
+    preserved_note_local_ref_target, supports_computed_symbol_field_syntax,
+    supports_context_free_display_field_syntax, supports_context_free_fill_in_field_syntax,
+    supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
+    supports_formula_field_syntax, supports_preserved_document_info_field_syntax,
     supports_quote_field_syntax, supports_reference_index_marker_syntax,
     supports_revision_number_field_syntax, supports_toc_entry_field_syntax,
 };
@@ -3072,6 +3073,7 @@ fn source_note_payload_is_supported(note: &AuthoredNote, payload: &NoteWritePayl
         Block::PageBreak => true,
         _ => false,
     }) && source_note_local_ref_fields_are_supported(&payload.blocks)
+        && source_note_table_formula_fields_are_supported(&payload.blocks)
 }
 
 fn source_note_local_ref_fields_are_supported(blocks: &[Block]) -> bool {
@@ -3195,7 +3197,7 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                 }
                 FieldKind::Dynamic(kind) if kind == "=" => {
                     run.field_unsupported_reason.is_none()
-                        && supports_context_free_formula_field_syntax(instruction)
+                        && supports_formula_field_syntax(instruction)
                 }
                 FieldKind::Dynamic(kind) if kind == "FILLIN" => {
                     run.field_unsupported_reason.is_none()
@@ -3272,6 +3274,109 @@ fn source_note_table_is_supported(table: &Table) -> bool {
         }
     }
     true
+}
+
+fn source_note_table_formula_fields_are_supported(blocks: &[Block]) -> bool {
+    blocks.iter().all(|block| match block {
+        Block::Paragraph(paragraph) => !paragraph
+            .runs
+            .iter()
+            .any(source_note_run_is_contextual_table_formula),
+        Block::Table(table) => source_note_table_formula_is_supported(table),
+        _ => true,
+    })
+}
+
+fn source_note_run_is_contextual_table_formula(run: &crate::model::Run) -> bool {
+    let FieldRole::Simple { instruction } = &run.field else {
+        return false;
+    };
+    matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::Dynamic(kind) if kind == "="
+    ) && !supports_context_free_formula_field_syntax(instruction)
+}
+
+fn source_note_table_formula_is_supported(table: &Table) -> bool {
+    let mut formulas = Vec::new();
+    let mut nested_tables = Vec::new();
+    for (row_index, row) in table.rows.iter().enumerate() {
+        for (col_index, cell) in row.cells.iter().enumerate() {
+            for block in &cell.blocks {
+                match block {
+                    Block::Paragraph(paragraph) => {
+                        for run in &paragraph.runs {
+                            if source_note_run_is_contextual_table_formula(run) {
+                                formulas.push((row_index, col_index, run));
+                            }
+                        }
+                    }
+                    Block::Table(table) => nested_tables.push(table),
+                    _ => {}
+                }
+            }
+        }
+    }
+    if !nested_tables
+        .into_iter()
+        .all(source_note_table_formula_is_supported)
+    {
+        return false;
+    }
+    let [(formula_row, formula_col, formula_run)] = formulas.as_slice() else {
+        return formulas.is_empty();
+    };
+    if table.bidi_visual || table.header_rows != 0 || table.rows.is_empty() {
+        return false;
+    }
+
+    let mut rows = Vec::with_capacity(table.rows.len());
+    for (row_index, row) in table.rows.iter().enumerate() {
+        if row.cells.is_empty() {
+            return false;
+        }
+        let mut values = Vec::with_capacity(row.cells.len());
+        for (col_index, cell) in row.cells.iter().enumerate() {
+            if cell.row_span != 1 || cell.col_span != 1 || cell.is_header {
+                return false;
+            }
+            let [Block::Paragraph(paragraph)] = cell.blocks.as_slice() else {
+                return false;
+            };
+            let [run] = paragraph.runs.as_slice() else {
+                return false;
+            };
+            if run.text.is_empty()
+                || run.text.contains(['\t', '\n'])
+                || run.image.is_some()
+                || run.comment.is_some()
+                || run.revision.is_some()
+                || run.content_control.is_some()
+                || run.bookmark.is_some()
+                || run.note.is_some()
+                || run.field_dirty
+                || run.field_unsupported_reason.is_some()
+            {
+                return false;
+            }
+            if (row_index, col_index) == (*formula_row, *formula_col) {
+                if !source_note_run_is_contextual_table_formula(run) {
+                    return false;
+                }
+            } else if !matches!(run.field, FieldRole::None) {
+                return false;
+            }
+            values.push(run.text.clone());
+        }
+        rows.push(values);
+    }
+
+    let FieldRole::Simple { instruction } = &formula_run.field else {
+        return false;
+    };
+    computed_span_free_table_formula_result(instruction, &rows, *formula_row, *formula_col)
+        .as_deref()
+        == Some(formula_run.text.as_str())
 }
 
 fn notes_xml(root: &str, item: &str, notes: &[WrittenNote], has_relationships: bool) -> Vec<u8> {
@@ -5238,7 +5343,8 @@ mod tests {
     use super::{
         render_body, section_columns_xml, source_column_break_offsets, source_line_spacing,
         source_note_content_control_is_supported, source_note_field_is_supported,
-        source_note_paragraph_is_supported, source_note_payload_is_supported, source_tab_stops_xml,
+        source_note_paragraph_is_supported, source_note_payload_is_supported,
+        source_note_table_formula_fields_are_supported, source_tab_stops_xml,
         SectionColumnWriteHint, SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
     };
     use crate::model::{
@@ -5383,6 +5489,10 @@ mod tests {
             r#"COMPARE "Alpha-42" = "Alpha-*""#,
             r#"= 10 / 4 \# "0.00""#,
             r#"= ROUND(AVERAGE(2; 4; 7); 1) \# "0.0""#,
+            "= Amount + 1",
+            "= SUM(LEFT)",
+            "= DEFINED(Known)",
+            "= 1e309 + 1",
             r#"FILLIN "Client?" \d "Acme" \o \* Caps"#,
             r#"FILLIN Project display prompt \d Client 42 \* Upper"#,
             r#"EQ \f( "Alpha, One" , "Beta Two" ) \* Upper"#,
@@ -5456,10 +5566,6 @@ mod tests {
             marker(r#"IF Gate = "Ready" "yes" "no""#),
             marker(r#"IF 2 > 1 "yes" "no"#),
             marker(r#"COMPARE 1e309 > 0"#),
-            marker("= Amount + 1"),
-            marker("= SUM(LEFT)"),
-            marker("= DEFINED(Known)"),
-            marker("= 1e309 + 1"),
             marker("= 1 +"),
             marker(r#"FILLIN "Client?""#),
             marker(r#"FILLIN "Client?" \d \o"#),
@@ -5529,6 +5635,181 @@ mod tests {
             ..Paragraph::default()
         };
         assert!(!source_note_paragraph_is_supported(&split_result));
+    }
+
+    #[test]
+    fn source_note_table_formulas_require_one_exact_span_free_owned_matrix() {
+        fn formula_run(instruction: &str, text: &str) -> Run {
+            Run {
+                text: text.to_string(),
+                field: FieldRole::Simple {
+                    instruction: instruction.to_string(),
+                },
+                ..Run::default()
+            }
+        }
+
+        fn formula_table() -> Table {
+            Table {
+                rows: vec![Row {
+                    cells: vec![
+                        cell("2"),
+                        cell("3"),
+                        Cell {
+                            blocks: vec![Block::Paragraph(Paragraph {
+                                runs: vec![formula_run(r#"= SUM(LEFT) \# "0.00""#, "5.00")],
+                                ..Paragraph::default()
+                            })],
+                            ..Cell::default()
+                        },
+                    ],
+                }],
+                ..Table::default()
+            }
+        }
+
+        fn run_mut(table: &mut Table, row: usize, col: usize) -> &mut Run {
+            let Block::Paragraph(paragraph) = &mut table.rows[row].cells[col].blocks[0] else {
+                panic!("formula test paragraph")
+            };
+            &mut paragraph.runs[0]
+        }
+
+        let valid = formula_table();
+        let valid_blocks = vec![Block::Table(valid.clone())];
+        assert!(source_note_table_formula_fields_are_supported(
+            &valid_blocks
+        ));
+        let mut defined = valid.clone();
+        *run_mut(&mut defined, 0, 2) = formula_run("= DEFINED(A1)", "1");
+        assert!(source_note_table_formula_fields_are_supported(&[
+            Block::Table(defined)
+        ]));
+        let text = crate::docx::blocks_text(&valid_blocks);
+        let note = AuthoredNote {
+            kind: NoteKind::Footnote,
+            text: text.clone(),
+        };
+        let payload = NoteWritePayload {
+            kind: NoteKind::Footnote,
+            text,
+            blocks: valid_blocks,
+            pagination: Vec::new(),
+            line_spacing: Vec::new(),
+            tab_stops: Vec::new(),
+            column_break_offsets: Vec::new(),
+            table_pagination: Vec::new(),
+        };
+        assert!(source_note_payload_is_supported(&note, &payload));
+
+        let nested = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Table(valid.clone())],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        assert!(source_note_table_formula_fields_are_supported(&[
+            Block::Table(nested)
+        ]));
+
+        let mut mismatch = valid.clone();
+        run_mut(&mut mismatch, 0, 2).text = "5.01".to_string();
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(mismatch)
+        ]));
+
+        let mut multiple = valid.clone();
+        *run_mut(&mut multiple, 0, 0) = formula_run("= B1 + 1", "4");
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(multiple)
+        ]));
+
+        let mut dirty = valid.clone();
+        run_mut(&mut dirty, 0, 2).field_dirty = true;
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(dirty)
+        ]));
+
+        let mut unsupported = valid.clone();
+        run_mut(&mut unsupported, 0, 2).field_unsupported_reason =
+            Some(FieldUnsupportedReason::NoComputedResult);
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(unsupported)
+        ]));
+
+        let mut malformed = valid.clone();
+        run_mut(&mut malformed, 0, 2).field = FieldRole::Simple {
+            instruction: "= SUM(LEFT".to_string(),
+        };
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(malformed)
+        ]));
+
+        let mut bidi = valid.clone();
+        bidi.bidi_visual = true;
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(bidi)
+        ]));
+
+        let mut header = valid.clone();
+        header.header_rows = 1;
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(header)
+        ]));
+
+        let mut span = valid.clone();
+        span.rows[0].cells[0].col_span = 2;
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(span)
+        ]));
+
+        let mut multi_run = valid.clone();
+        let Block::Paragraph(paragraph) = &mut multi_run.rows[0].cells[0].blocks[0] else {
+            panic!("operand paragraph")
+        };
+        paragraph.runs.push(Run {
+            text: " extra".to_string(),
+            ..Run::default()
+        });
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(multi_run)
+        ]));
+
+        let mut nested_operand = valid.clone();
+        nested_operand.rows[0].cells[0].blocks = vec![Block::Table(Table {
+            rows: vec![Row {
+                cells: vec![cell("2")],
+            }],
+            ..Table::default()
+        })];
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(nested_operand)
+        ]));
+
+        let mut field_backed = valid.clone();
+        run_mut(&mut field_backed, 0, 0).field = FieldRole::Simple {
+            instruction: "= 1 + 1".to_string(),
+        };
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(field_backed)
+        ]));
+
+        let mut empty = valid.clone();
+        run_mut(&mut empty, 0, 0).text.clear();
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            Block::Table(empty)
+        ]));
+
+        let outside_table = Block::Paragraph(Paragraph {
+            runs: vec![formula_run("= SUM(LEFT)", "5")],
+            ..Paragraph::default()
+        });
+        assert!(!source_note_table_formula_fields_are_supported(&[
+            outside_table
+        ]));
     }
 
     #[test]

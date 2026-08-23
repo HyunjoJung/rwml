@@ -121,7 +121,10 @@ pub(crate) use self::style_ref::{
 };
 #[cfg(test)]
 use self::table_formula::table_formula_context;
-pub(crate) use self::table_formula::{table_formula_context_with_properties, TableFormulaContext};
+pub(crate) use self::table_formula::{
+    computed_span_free_table_formula_result, table_formula_context_with_properties,
+    TableFormulaContext,
+};
 #[cfg(test)]
 use self::toc::toc_entries;
 pub(crate) use self::toc::{

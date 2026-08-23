@@ -201,6 +201,15 @@ pub(crate) fn supports_formula_field_syntax(instruction: &str) -> bool {
     fields::supports_formula_field_syntax(instruction)
 }
 
+pub(crate) fn computed_span_free_table_formula_result(
+    instruction: &str,
+    rows: &[Vec<String>],
+    row: usize,
+    col: usize,
+) -> Option<String> {
+    fields::computed_span_free_table_formula_result(instruction, rows, row, col)
+}
+
 pub(crate) fn supports_sequence_field_syntax(instruction: &str) -> bool {
     fields::supports_sequence_field_syntax(instruction)
 }
@@ -503,6 +512,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         style_ref_field_cursor: Default::default(),
         form_field_cursor: Default::default(),
         formula_field_cursor: Default::default(),
+        last_formula_field_used_table_context: Default::default(),
         sequence_counters: Default::default(),
         sequence_heading_counts: Default::default(),
         sequence_heading_scopes: Default::default(),
@@ -1625,6 +1635,7 @@ fn read_hf_parts(
             style_ref_field_cursor: Default::default(),
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
+            last_formula_field_used_table_context: Default::default(),
             sequence_counters: Default::default(),
             sequence_heading_counts: Default::default(),
             sequence_heading_scopes: Default::default(),
@@ -2012,6 +2023,7 @@ fn read_notes(
         style_ref_field_cursor: Default::default(),
         form_field_cursor: Default::default(),
         formula_field_cursor: Default::default(),
+        last_formula_field_used_table_context: Default::default(),
         sequence_counters: Default::default(),
         sequence_heading_counts: Default::default(),
         sequence_heading_scopes: Default::default(),

@@ -581,6 +581,48 @@ fn formula_field_note_docx() -> Vec<u8> {
     ])
 }
 
+fn table_formula_field_note_docx() -> Vec<u8> {
+    note_table_docx(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="351"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="361"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="352"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="362"/></w:r><w:r><w:t> BODY E</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:footnote w:id="351">
+                <w:p><w:r><w:t>FOOT TABLE FORMULA</w:t></w:r></w:p>
+                <w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1200"/><w:gridCol w:w="1200"/><w:gridCol w:w="1800"/></w:tblGrid><w:tr>
+                    <w:tc><w:tcPr/><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:tcPr/><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:tcPr/><w:p><w:fldSimple w:instr=" = SUM(LEFT) \# &quot;0.00&quot; "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT TABLE FORMULA</w:t></w:r></w:fldSimple></w:p></w:tc>
+                </w:tr></w:tbl>
+                <w:p><w:r><w:t xml:space="preserve">FOOT SCALAR FORMULA BEFORE </w:t></w:r><w:fldSimple w:instr=" = 8 / 2 "><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t>STALE FOOT SCALAR FORMULA</w:t></w:r></w:fldSimple><w:r><w:t> FOOT SCALAR FORMULA AFTER</w:t></w:r></w:p>
+            </w:footnote>
+            <w:footnote w:id="352">
+                <w:p><w:r><w:t>MULTI TABLE FORMULA</w:t></w:r></w:p>
+                <w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1200"/><w:gridCol w:w="1800"/></w:tblGrid>
+                    <w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:tcPr/><w:p><w:fldSimple w:instr=" = A1 + 1 "><w:r><w:t>STALE MULTI FORMULA ONE</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr>
+                    <w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:tcPr/><w:p><w:fldSimple w:instr=" = A2 + 1 "><w:r><w:t>STALE MULTI FORMULA TWO</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr>
+                </w:tbl>
+            </w:footnote>
+        </w:footnotes>"#,
+        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:endnote w:id="361">
+                <w:p><w:r><w:t>END NESTED TABLE FORMULA</w:t></w:r></w:p>
+                <w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:tc><w:tcPr/>
+                    <w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1200"/><w:gridCol w:w="1800"/></w:tblGrid>
+                        <w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:tcPr/><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc></w:tr>
+                        <w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:tcPr/><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> = SUM(A1:B1) \# &quot;0.0&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END TABLE FORMULA</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:tc></w:tr>
+                    </w:tbl>
+                </w:tc></w:tr></w:tbl>
+            </w:endnote>
+            <w:endnote w:id="362">
+                <w:p><w:r><w:t>SPAN TABLE FORMULA</w:t></w:r></w:p>
+                <w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="1200"/><w:gridCol w:w="1200"/><w:gridCol w:w="1800"/></w:tblGrid>
+                    <w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>9</w:t></w:r></w:p></w:tc><w:tc><w:tcPr/><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc></w:tr>
+                    <w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:tcPr/><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:tcPr/><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>STALE SPAN FORMULA</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr>
+                </w:tbl>
+            </w:endnote>
+        </w:endnotes>"#,
+    )
+}
+
 fn fill_in_field_note_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2459,6 +2501,175 @@ fn opened_docx_note_context_free_formula_fields_keep_results_and_instructions() 
         rejected_nonfinite.text(),
         "NONFINITE FORMULA BEFORE CACHED NONFINITE FORMULA NONFINITE FORMULA AFTER"
     );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_span_free_table_formulas_keep_results_and_instructions() {
+    let document =
+        Document::open(&table_formula_field_note_docx()).expect("table-formula notes open");
+    assert_eq!(document.notes().len(), 4, "source note records missing");
+    assert_eq!(document.report().features.fields, 6);
+    assert!(document
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let source_fields = document.fields();
+    for (instruction, result) in [
+        (r#"= SUM(LEFT) \# "0.00""#, "5.00"),
+        ("= 8 / 2", "4"),
+        ("= A1 + 1", "3"),
+        ("= A2 + 1", "5"),
+        (r#"= SUM(A1:B1) \# "0.0""#, "6.0"),
+        ("= SUM(LEFT)", "5"),
+    ] {
+        let field = source_fields
+            .iter()
+            .find(|field| field.instruction == instruction)
+            .unwrap_or_else(|| panic!("missing source field {instruction:?}"));
+        assert_eq!(
+            field.computed_result.as_deref(),
+            Some(result),
+            "{instruction}"
+        );
+    }
+
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone table-formula normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT TABLE FORMULA");
+    let endnote = note_with_marker(endnotes, "endnote", "END NESTED TABLE FORMULA");
+    let rejected_multi = note_with_marker(footnotes, "footnote", "MULTI TABLE FORMULA");
+    let rejected_span = note_with_marker(endnotes, "endnote", "SPAN TABLE FORMULA");
+
+    assert_eq!(footnote.matches("<w:tbl>").count(), 1, "{footnote}");
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 2, "{footnote}");
+    assert!(
+        footnote.contains(r#"<w:fldSimple w:instr=" = SUM(LEFT) \# &quot;0.00&quot; ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains(">5.00</w:t>")
+            && footnote.contains(r#"<w:fldSimple w:instr=" = 8 / 2 ">"#)
+            && footnote.contains("<w:u w:val=\"single\"/>")
+            && footnote.contains(">4</w:t>"),
+        "top-level table and following scalar formulas missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:fldSimple w:instr=" = SUM(A1:B1) \# &quot;0.0&quot; ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains(">6.0</w:t>"),
+        "nested table formula missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END TABLE FORMULA"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [rejected_multi, rejected_span] {
+        assert!(!rejected.contains("<w:tbl>"), "{rejected}");
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(
+        rejected_multi.contains("MULTI TABLE FORMULA")
+            && rejected_multi.contains(">2</w:t>")
+            && rejected_multi.contains(">3</w:t>")
+            && rejected_multi.contains(">4</w:t>")
+            && rejected_multi.contains(">5</w:t>")
+            && rejected_multi.matches("<w:tab/>").count() == 2
+            && rejected_multi.matches("<w:br/>").count() == 2,
+        "{rejected_multi}"
+    );
+    assert!(
+        rejected_span.contains("SPAN TABLE FORMULA")
+            && rejected_span.contains(">9</w:t>")
+            && rejected_span.contains(">1</w:t>")
+            && rejected_span.contains(">2</w:t>")
+            && rejected_span.contains(">3</w:t>")
+            && rejected_span.contains(">5</w:t>")
+            && rejected_span.matches("<w:tab/>").count() == 3
+            && rejected_span.matches("<w:br/>").count() == 2,
+        "{rejected_span}"
+    );
+    assert!(!footnotes.contains("STALE MULTI FORMULA"), "{footnotes}");
+    assert!(!endnotes.contains("STALE SPAN FORMULA"), "{endnotes}");
+
+    let reopened = Document::open(&converted).expect("converted table-formula notes reopen");
+    assert_eq!(reopened.report().features.fields, 3);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let reopened_fields = reopened.fields();
+    for (instruction, result) in [
+        (r#"= SUM(LEFT) \# "0.00""#, "5.00"),
+        ("= 8 / 2", "4"),
+        (r#"= SUM(A1:B1) \# "0.0""#, "6.0"),
+    ] {
+        let field = reopened_fields
+            .iter()
+            .find(|field| field.instruction == instruction)
+            .unwrap_or_else(|| panic!("missing reopened field {instruction:?}"));
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.result, result, "{instruction}");
+        assert_eq!(
+            field.computed_result.as_deref(),
+            Some(result),
+            "{instruction}"
+        );
+    }
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), 8);
+    assert_eq!(normalized_model.blocks.len(), 10);
+    for (reopened_index, normalized_index) in [(0, 0), (1, 1), (3, 3), (5, 6)] {
+        assert_eq!(
+            reopened_model.blocks[reopened_index],
+            normalized_model.blocks[normalized_index]
+        );
+    }
+    for (reopened_index, normalized_index) in [(2, 2), (6, 7)] {
+        let mut normalized_ownership = reopened_model.blocks[reopened_index].clone();
+        clear_simple_field_ownership(&mut normalized_ownership);
+        assert_eq!(
+            normalized_ownership,
+            normalized_model.blocks[normalized_index]
+        );
+    }
+    let Block::Paragraph(rejected_multi) = &reopened_model.blocks[4] else {
+        panic!("multiple-formula fallback paragraph")
+    };
+    assert_eq!(rejected_multi.text(), "MULTI TABLE FORMULA\n2\t3\n4\t5");
+    let Block::Paragraph(rejected_span) = &reopened_model.blocks[7] else {
+        panic!("spanned-formula fallback paragraph")
+    };
+    assert_eq!(rejected_span.text(), "SPAN TABLE FORMULA\n9\t1\n2\t3\t5");
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);

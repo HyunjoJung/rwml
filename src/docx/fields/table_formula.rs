@@ -1272,6 +1272,28 @@ fn computed_table_formula_result(
     Some(apply_field_text_format(text, spec.text_format))
 }
 
+pub(crate) fn computed_span_free_table_formula_result(
+    instruction: &str,
+    rows: &[Vec<String>],
+    row: usize,
+    col: usize,
+) -> Option<String> {
+    let mut cells = rows
+        .iter()
+        .map(|table_row| {
+            table_row
+                .iter()
+                .map(|text| TableFormulaCell {
+                    text: text.clone(),
+                    ..TableFormulaCell::default()
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    cells.get_mut(row)?.get_mut(col)?.contains_formula = true;
+    computed_table_formula_result(instruction, &cells, row, col)
+}
+
 fn span_safe_formula(
     instruction: &str,
     rows: &[Vec<TableFormulaCell>],

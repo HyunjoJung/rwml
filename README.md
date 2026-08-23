@@ -1142,12 +1142,18 @@ Context-free, non-dirty `IF` and `COMPARE` instructions with one modeled result
 run likewise survive when quoted-text or finite-number operands compute without
 bookmark or `SET` state, including compact comparisons and wildcard equality.
 Bookmark- or `SET`-backed, malformed or nonfinite, and split-result comparisons
-remain excluded. Context-free, non-dirty formula (`=`)
-instructions with one modeled result run likewise survive when finite literal
-arithmetic or scalar-function expressions compute without bookmark, `SET`, table-
-cell, or positional context and do not use `DEFINED`; supported numeric pictures,
-computed text, and modeled formatting are retained. Stateful or table-dependent,
-`DEFINED`, malformed or nonfinite, and split-result formulas remain excluded.
+remain excluded. Context-free, non-dirty formula (`=`) instructions with one
+modeled result run likewise survive when finite literal arithmetic or scalar-
+function expressions compute without bookmark or `SET` state and do not use
+`DEFINED`. A formula-owning table may instead retain exactly one parser-computed
+direct/range or positional formula when its independently rebuilt matrix is span-
+free, left-to-right, has no header rows, and every cell contains exactly one
+stable nonempty run; such a table may be nested under other supported note tables.
+Supported numeric pictures, table-local `DEFINED` calls, computed text, and
+modeled formatting are retained. Stateful expressions, including non-table-local
+`DEFINED`, multiple or dependent formulas, spans, RTL/header grids, non-plain
+operands, malformed or nonfinite formulas, mismatched results, and split results
+remain excluded.
 Parser-validated, non-dirty `FILLIN` instructions with an explicit literal default
 and one modeled result run likewise retain quoted or bounded multi-token defaults,
 neutral `\o`, supported text formatting, and deterministic current results. This

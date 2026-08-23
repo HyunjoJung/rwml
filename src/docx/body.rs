@@ -163,6 +163,7 @@ pub(crate) struct Ctx<'a> {
     pub style_ref_field_cursor: std::cell::RefCell<usize>,
     pub form_field_cursor: std::cell::RefCell<usize>,
     pub formula_field_cursor: std::cell::RefCell<usize>,
+    pub last_formula_field_used_table_context: std::cell::Cell<bool>,
     pub sequence_counters: std::cell::RefCell<HashMap<String, i64>>,
     pub sequence_heading_counts: std::cell::RefCell<[u32; 9]>,
     pub sequence_heading_scopes: std::cell::RefCell<HashMap<(String, u8), u32>>,
@@ -3158,6 +3159,12 @@ fn preserves_computed_field_instruction(instruction: &str, ctx: &Ctx<'_>) -> boo
                 ctx.ref_targets,
             )
             .is_some())
+        || (ctx.preserve_note_local_fields
+            && ctx.last_formula_field_used_table_context.get()
+            && matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::Dynamic(kind) if kind == "="
+            ))
 }
 
 fn preserves_context_free_computed_field_instruction(instruction: &str) -> bool {
@@ -5111,6 +5118,7 @@ fn read_fldsimple(
     paragraph_style_id: Option<&str>,
     depth: u32,
 ) -> Vec<Run> {
+    ctx.last_formula_field_used_table_context.set(false);
     let source_instruction = attr_local(start, b"instr").unwrap_or_default();
     let url = hyperlink_instr_url(&source_instruction);
     let instruction = normalized_field_instruction(&source_instruction);
@@ -5128,12 +5136,14 @@ fn read_fldsimple(
     if url.is_none() && !instruction.is_empty() {
         let current_result = runs.iter().map(|run| run.text.as_str()).collect::<String>();
         let computed = computed_simple_field_result(&instruction, ctx, &current_result);
+        let preserve_result_instruction =
+            computed.is_some() && preserves_computed_field_instruction(&instruction, ctx);
         if runs.is_empty() {
             if let Some(text) = computed {
                 runs.push(computed_simple_field_run(
                     instruction.clone(),
                     text,
-                    preserve_instruction,
+                    preserve_result_instruction,
                 ));
             } else {
                 runs.push(empty_simple_field_run(
@@ -5145,7 +5155,7 @@ fn read_fldsimple(
         }
         for (index, run) in runs.iter_mut().enumerate() {
             if let Some(text) = computed.as_deref() {
-                run.field = if index == 0 && preserve_instruction {
+                run.field = if index == 0 && preserve_result_instruction {
                     FieldRole::Simple {
                         instruction: instruction.clone(),
                     }
@@ -5176,8 +5186,10 @@ fn read_empty_fldsimple(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<Run> {
     if instruction.is_empty() {
         return None;
     }
-    let preserve_instruction = preserves_computed_field_instruction(&instruction, ctx);
-    computed_simple_field_result(&instruction, ctx, "")
+    let computed = computed_simple_field_result(&instruction, ctx, "");
+    let preserve_instruction =
+        computed.is_some() && preserves_computed_field_instruction(&instruction, ctx);
+    computed
         .map(|text| computed_simple_field_run(instruction.clone(), text, preserve_instruction))
         .or_else(|| {
             Some(empty_simple_field_run(
@@ -5669,6 +5681,7 @@ fn computed_simple_field_result(
     ctx: &Ctx<'_>,
     current_result: &str,
 ) -> Option<String> {
+    ctx.last_formula_field_used_table_context.set(false);
     let (ref_position, note_ref_position) = ref_field_positions(instruction, ctx);
     let ref_result = {
         let field_bookmarks = ctx.field_bookmarks.borrow();
@@ -5915,6 +5928,7 @@ fn computed_dynamic_field_result(instruction: &str, ctx: &Ctx<'_>) -> Option<Str
             index
         };
         if let Some(result) = ctx.table_formula_context.field_result(index) {
+            ctx.last_formula_field_used_table_context.set(true);
             return Some(result);
         }
         let field_bookmarks = ctx.field_bookmarks.borrow();
@@ -8624,6 +8638,7 @@ mod tests {
             style_ref_field_cursor: Default::default(),
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
+            last_formula_field_used_table_context: Default::default(),
             sequence_counters: Default::default(),
             sequence_heading_counts: Default::default(),
             sequence_heading_scopes: Default::default(),
@@ -11017,6 +11032,7 @@ mod tests {
             style_ref_field_cursor: Default::default(),
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
+            last_formula_field_used_table_context: Default::default(),
             sequence_counters: Default::default(),
             sequence_heading_counts: Default::default(),
             sequence_heading_scopes: Default::default(),
@@ -11099,6 +11115,7 @@ mod tests {
             style_ref_field_cursor: Default::default(),
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
+            last_formula_field_used_table_context: Default::default(),
             sequence_counters: Default::default(),
             sequence_heading_counts: Default::default(),
             sequence_heading_scopes: Default::default(),
@@ -11194,6 +11211,7 @@ mod tests {
             style_ref_field_cursor: Default::default(),
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
+            last_formula_field_used_table_context: Default::default(),
             sequence_counters: Default::default(),
             sequence_heading_counts: Default::default(),
             sequence_heading_scopes: Default::default(),
