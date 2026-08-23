@@ -499,16 +499,24 @@ retain the same rules through a section-aligned source-only bridge. Those same
 selected running surfaces retain effective `keepNext`, `keepLines`, and widow-off
 state on direct top-level paragraphs and direct paragraphs in surviving cells of
 top-level tables, plus effective no-split state for aligned top-level table rows,
-through an all-or-nothing section/block/tree-aligned bridge. Fresh legacy
+through an all-or-nothing section/block/tree-aligned bridge. Opened DOCX inputs
+additionally retain visible manual column breaks in direct paragraphs of those
+top-level running-table cells and recursively carry row no-split state,
+cell-paragraph keep/widow controls, exact/minimum line rules, explicit tabs, and
+visible column breaks through nested running-table descendants. The private
+six-variant tree follows default-surface inheritance, validates every table slot
+and recursive component independently, and keeps header/footer-local
+relationships. Fresh legacy
 conversion emits an exact HeaderFooter source range only in its generated
 running part when that range populated a selected section slot; it validates and
 remaps every body sidecar before removing the duplicate from `word/document.xml`.
 Unselected running stories retain their flattened fallback. Legacy nested-table
 recovery and note paragraph layout properties remain outside these layout-hint
-paths, while nested running-table descendants remain outside pagination, tab,
-line-rule, and manual-break conversion. Settings-defined default-tab intervals
-remain outside the tab path. Table-cell page breaks plus note and running-
-surface manual breaks remain outside the break-preservation paths.
+paths. Legacy nested running tables and legacy running-story manual breaks remain
+unsupported, while ordinary top-level running-paragraph manual breaks remain
+outside both fresh-conversion paths. Settings-defined default-tab intervals
+remain outside the tab path. Table-cell page breaks and note manual breaks also
+remain outside the break-preservation paths.
 Ordinary top-level paragraphs in selected default/first/even running headers
 and footers from opened DOCX and legacy DOC inputs also consume reader-resolved
 explicit tab stops and supported leaders through section-aligned render hints.
@@ -551,8 +559,8 @@ non-table block positions before a running table. Exact running-surface content
 is clipped to its margin-band line or visible row fragment. Notes retain the
 preview renderer's flattened end-of-flow placement; page-bottom note
 composition, model-authored exact/minimum paragraph rules, note paragraph-
-property conversion, and nested-running-table descendant conversion remain
-outside this absolute-spacing path.
+property conversion, and PDF consumption of nested-running-table descendant
+exact/minimum rules remain outside this absolute-spacing path.
 Direct top-level opened-DOCX running paragraphs and direct paragraphs in
 surviving cells of their top-level running tables use the bounded fresh-
 conversion bridges described above.
@@ -1030,13 +1038,19 @@ those direct table-cell paragraphs and on direct top-level running paragraphs
 through section-aligned source-only hints. Those same selected running surfaces
 retain effective `keepNext`, `keepLines`, and widow-off state on direct top-level
 paragraphs and direct paragraphs in surviving cells of top-level tables, plus
-effective no-split state for aligned top-level table rows. Legacy nested-table
-descendants and note paragraph layout properties remain outside these layout-
-hint paths, while nested running-table descendants remain outside pagination,
-tab, line-rule, and manual-break conversion. Settings-
-defined default-tab intervals remain outside the tab path. Table-cell page
-breaks plus note and running-surface manual breaks remain outside the break-
-preservation paths.
+effective no-split state for aligned top-level table rows. Opened DOCX inputs
+also retain visible manual column breaks in direct paragraphs of top-level
+running-table cells and recursively retain row no-split state, cell-paragraph
+keep/widow controls, exact/minimum line rules, explicit tabs, and visible column
+breaks in nested running-table descendants across all six variants. The private
+tree follows default-surface inheritance, validates each table slot and recursive
+component independently, and keeps header/footer-local relationships. Legacy
+nested-table descendants and note paragraph layout properties remain outside
+these layout-hint paths. Legacy nested running tables and legacy running-story
+manual breaks remain unsupported; ordinary top-level running-paragraph manual
+breaks remain outside both fresh-conversion paths. Settings-defined default-tab
+intervals, table-cell page breaks, and note manual breaks also remain outside the
+bounded paths.
 
 Opened legacy `.doc` inputs additionally promote normalized footnote/endnote
 text into real references and note parts only when nonempty

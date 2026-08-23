@@ -471,6 +471,24 @@ pub(crate) struct RunningSurfaceTableCellTabStopHints {
     pub(crate) even_footer: Vec<TableCellTabStopHints>,
 }
 
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningTableLayoutHints {
+    pub(crate) cell_column_breaks: Vec<TableCellColumnBreakHints>,
+    pub(crate) nested_tables: Vec<TableCellNestedPaginationHints>,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceTableLayoutHints {
+    pub(crate) header: RunningTableLayoutHints,
+    pub(crate) first_header: RunningTableLayoutHints,
+    pub(crate) even_header: RunningTableLayoutHints,
+    pub(crate) footer: RunningTableLayoutHints,
+    pub(crate) first_footer: RunningTableLayoutHints,
+    pub(crate) even_footer: RunningTableLayoutHints,
+}
+
 #[cfg(any(feature = "docx", feature = "render"))]
 pub(crate) const MAX_TAB_STOPS: usize = 256;
 

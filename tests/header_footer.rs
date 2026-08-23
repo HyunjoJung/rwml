@@ -1920,3 +1920,243 @@ fn opened_docx_render_consumes_running_surface_distances() {
     assert_eq!(footer, render(r#"w:footer="800""#));
     assert_eq!(both, render(r#"w:header="1000" w:footer="800""#));
 }
+
+fn running_surface_nested_table_layout_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>PARENT A</w:t><w:br w:type="column"/><w:t>PARENT B</w:t></w:r></w:p><w:sdt><w:sdtContent><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="240" w:lineRule="exact"/><w:tabs><w:tab w:val="center" w:pos="720" w:leader="hyphen"/></w:tabs></w:pPr><w:r><w:t>NESTED A</w:t><w:tab/><w:t>NESTED B</w:t><w:br w:type="column"/><w:t>NESTED C</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:sdtContent></w:sdt></w:tc></w:tr></w:tbl></w:hdr>"#,
+        ),
+    ])
+}
+
+#[test]
+fn opened_docx_running_table_nested_layout_roundtrips_through_fresh_conversion() {
+    let document = Document::open(&running_surface_nested_table_layout_docx())
+        .expect("running nested-table fixture opens");
+    let model = document.model();
+    let standalone = rwml::write_docx(&model);
+    let normalized_model = Document::open(&standalone)
+        .expect("standalone normalization reopens")
+        .model();
+    let converted = document.to_docx();
+
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(
+        Document::open(&converted)
+            .expect("fresh conversion reopens")
+            .model(),
+        normalized_model
+    );
+
+    let parts = unzip_parts(&converted);
+    let header = parts
+        .iter()
+        .find_map(|(name, body)| {
+            let xml = std::str::from_utf8(body).ok()?;
+            (name.starts_with("word/header") && xml.contains("NESTED A")).then_some(xml)
+        })
+        .expect("converted nested running header exists");
+    assert_eq!(
+        header.matches(r#"<w:br w:type="column"/>"#).count(),
+        2,
+        "direct and nested running-table column breaks survive"
+    );
+    assert!(header.contains("<w:cantSplit/>"));
+    assert!(header.contains("<w:keepNext/>"));
+    assert!(header.contains("<w:keepLines/>"));
+    assert!(header.contains(r#"<w:widowControl w:val="0"/>"#));
+    assert!(header.contains(r#"<w:spacing w:line="240" w:lineRule="exact"/>"#));
+    assert!(header
+        .contains(r#"<w:tabs><w:tab w:val="center" w:pos="720" w:leader="hyphen"/></w:tabs>"#));
+
+    let standalone = unzip_parts(&standalone);
+    assert!(standalone.iter().all(|(name, body)| {
+        !(name.starts_with("word/header") || name.starts_with("word/footer"))
+            || std::str::from_utf8(body).is_ok_and(|xml| {
+                !xml.contains(r#"<w:br w:type="column"/>"#)
+                    && !xml.contains("<w:cantSplit/>")
+                    && !xml.contains("w:lineRule=")
+                    && !xml.contains("<w:tabs>")
+            })
+    }));
+}
+
+fn running_surface_six_variant_nested_table_docx() -> Vec<u8> {
+    let running_part = |root: &str,
+                        label: &str,
+                        line_twips: u32,
+                        tab_twips: u32,
+                        hyperlink: bool| {
+        let hyperlink = if hyperlink {
+            r#"<w:hyperlink r:id="rIdLink"><w:r><w:t>LOCAL LINK</w:t></w:r></w:hyperlink>"#
+        } else {
+            ""
+        };
+        format!(
+            r#"<w:{root} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>{label} PARENT A</w:t><w:br w:type="column"/><w:t>{label} PARENT B</w:t></w:r></w:p><w:sdt><w:sdtContent><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="{line_twips}" w:lineRule="exact"/><w:tabs><w:tab w:val="center" w:pos="{tab_twips}" w:leader="hyphen"/></w:tabs></w:pPr><w:r><w:t>{label} NESTED A</w:t><w:tab/><w:t>{label} NESTED B</w:t><w:br w:type="column"/><w:t>{label} NESTED C</w:t></w:r>{hyperlink}</w:p><w:customXml><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3200"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:spacing w:line="{deep_line}" w:lineRule="atLeast"/><w:tabs><w:tab w:val="right" w:pos="{deep_tab}" w:leader="dot"/></w:tabs></w:pPr><w:r><w:t>{label} DEEP A</w:t><w:br w:type="column"/><w:t>{label} DEEP B</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:customXml></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:pPr><w:spacing w:line="999" w:lineRule="exact"/><w:tabs><w:tab w:val="left" w:pos="999"/></w:tabs></w:pPr><w:r><w:t>{label} LEAK</w:t><w:br w:type="column"/></w:r></w:p></w:tc></w:tr></w:tbl></w:sdtContent></w:sdt></w:tc></w:tr></w:tbl></w:{root}>"#,
+            deep_line = line_twips + 100,
+            deep_tab = tab_twips + 100,
+        )
+    };
+    let default_header = running_part("hdr", "DEFAULT HEADER", 201, 701, true);
+    let first_header = running_part("hdr", "FIRST HEADER", 202, 702, false);
+    let even_header = running_part("hdr", "EVEN HEADER", 203, 703, false);
+    let default_footer = running_part("ftr", "DEFAULT FOOTER", 204, 704, false);
+    let first_footer = running_part("ftr", "FIRST FOOTER", 205, 705, false);
+    let even_footer = running_part("ftr", "EVEN FOOTER", 206, 706, false);
+
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header3.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/footer2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/footer3.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDefaultHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFirstHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/><Relationship Id="rIdEvenHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header3.xml"/><Relationship Id="rIdDefaultFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rIdFirstFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/><Relationship Id="rIdEvenFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer3.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>SECTION ONE</w:t></w:r></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:headerReference w:type="default" r:id="rIdDefaultHeader"/><w:headerReference w:type="first" r:id="rIdFirstHeader"/><w:headerReference w:type="even" r:id="rIdEvenHeader"/><w:footerReference w:type="default" r:id="rIdDefaultFooter"/><w:footerReference w:type="first" r:id="rIdFirstFooter"/><w:footerReference w:type="even" r:id="rIdEvenFooter"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:t>SECTION TWO</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        ("word/header1.xml", &default_header),
+        ("word/header2.xml", &first_header),
+        ("word/header3.xml", &even_header),
+        ("word/footer1.xml", &default_footer),
+        ("word/footer2.xml", &first_footer),
+        ("word/footer3.xml", &even_footer),
+        (
+            "word/_rels/header1.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/running-nested" TargetMode="External"/></Relationships>"#,
+        ),
+    ])
+}
+
+#[test]
+fn opened_docx_running_table_nested_layout_isolates_six_variants_and_inheritance() {
+    let document = Document::open(&running_surface_six_variant_nested_table_docx())
+        .expect("six-variant running nested-table fixture opens");
+    let model = document.model();
+    assert!(!format!("{model:?}").contains("LEAK"));
+    let standalone = rwml::write_docx(&model);
+    let normalized_model = Document::open(&standalone)
+        .expect("standalone normalization reopens")
+        .model();
+    let converted = document.to_docx();
+
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(
+        Document::open(&converted)
+            .expect("fresh conversion reopens")
+            .model(),
+        normalized_model
+    );
+
+    let parts = unzip_parts(&converted);
+    for (label, line_twips, tab_twips, expected_parts) in [
+        ("DEFAULT HEADER", 201, 701, 2),
+        ("FIRST HEADER", 202, 702, 1),
+        ("EVEN HEADER", 203, 703, 1),
+        ("DEFAULT FOOTER", 204, 704, 2),
+        ("FIRST FOOTER", 205, 705, 1),
+        ("EVEN FOOTER", 206, 706, 1),
+    ] {
+        let running_parts = parts
+            .iter()
+            .filter_map(|(name, body)| {
+                let xml = std::str::from_utf8(body).ok()?;
+                ((name.starts_with("word/header") || name.starts_with("word/footer"))
+                    && xml.contains(&format!("{label} NESTED A")))
+                .then_some(xml)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(running_parts.len(), expected_parts, "{label}");
+        for xml in running_parts {
+            assert_eq!(
+                xml.matches(r#"<w:br w:type="column"/>"#).count(),
+                3,
+                "{label}: {xml}"
+            );
+            assert_eq!(xml.matches("<w:cantSplit/>").count(), 2, "{label}");
+            assert!(xml.contains("<w:keepNext/>"), "{label}");
+            assert_eq!(xml.matches("<w:keepLines/>").count(), 2, "{label}");
+            assert!(xml.contains(r#"<w:widowControl w:val="0"/>"#), "{label}");
+            assert!(
+                xml.contains(&format!(
+                    r#"<w:spacing w:line="{line_twips}" w:lineRule="exact"/>"#
+                )),
+                "{label}"
+            );
+            assert!(
+                xml.contains(&format!(
+                    r#"<w:spacing w:line="{}" w:lineRule="atLeast"/>"#,
+                    line_twips + 100
+                )),
+                "{label}"
+            );
+            assert!(
+                xml.contains(&format!(
+                    r#"<w:tab w:val="center" w:pos="{tab_twips}" w:leader="hyphen"/>"#
+                )),
+                "{label}"
+            );
+            assert!(
+                xml.contains(&format!(
+                    r#"<w:tab w:val="right" w:pos="{}" w:leader="dot"/>"#,
+                    tab_twips + 100
+                )),
+                "{label}"
+            );
+            assert!(!xml.contains("LEAK"), "{label}");
+            assert!(!xml.contains(r#"w:line="999""#), "{label}");
+        }
+    }
+
+    assert_eq!(
+        parts
+            .iter()
+            .filter(|(name, body)| {
+                name.starts_with("word/_rels/header")
+                    && name.ends_with(".xml.rels")
+                    && std::str::from_utf8(body)
+                        .is_ok_and(|xml| xml.contains("https://example.com/running-nested"))
+            })
+            .count(),
+        2,
+        "the inherited default header keeps a local hyperlink relationship in both sections"
+    );
+
+    let standalone = unzip_parts(&standalone);
+    for (name, body) in &standalone {
+        if !(name.starts_with("word/header") || name.starts_with("word/footer")) {
+            continue;
+        }
+        let xml = std::str::from_utf8(body).unwrap();
+        assert!(!xml.contains(r#"<w:br w:type="column"/>"#), "{name}");
+        assert!(!xml.contains("<w:cantSplit/>"), "{name}");
+        assert!(!xml.contains("<w:keepNext/>"), "{name}");
+        assert!(!xml.contains("<w:keepLines/>"), "{name}");
+        assert!(!xml.contains("w:lineRule="), "{name}");
+        assert!(!xml.contains("<w:tabs>"), "{name}");
+    }
+}

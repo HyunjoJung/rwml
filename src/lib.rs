@@ -1062,7 +1062,14 @@ impl Document {
     /// aligned source-only hints. Those same selected running surfaces retain
     /// effective `keepNext`, `keepLines`, and widow-off state on direct top-level
     /// paragraphs and direct paragraphs in surviving cells of top-level tables,
-    /// plus effective no-split state for aligned top-level table rows. Fresh
+    /// plus effective no-split state for aligned top-level table rows. Opened DOCX
+    /// inputs also carry visible manual column breaks in direct paragraphs of
+    /// top-level running-table cells and recursively carry row no-split state,
+    /// cell-paragraph keep/widow controls, exact/minimum line rules, explicit
+    /// tabs, and visible column breaks through nested running-table descendants
+    /// across all six variants. The private tree follows default-surface
+    /// inheritance, validates each table slot and recursive component
+    /// independently, and keeps header/footer-local relationships. Fresh
     /// legacy conversion excludes an exact nonempty HeaderFooter source region
     /// from the generated body only when assembly actually promoted that range
     /// into a selected section running slot; unselected running stories and all
@@ -1073,11 +1080,11 @@ impl Document {
     /// text into real references and note parts. Reopened DOCX inputs retain that
     /// normalized subset through an exact private block/id/offset bridge.
     /// Legacy nested-table descendants and note paragraph layout properties
-    /// remain outside these layout-hint paths, while nested running-
-    /// table descendants remain outside pagination, tab, line-rule, and manual-
-    /// break conversion. Settings-defined default-tab intervals remain outside
-    /// the tab path. Table-cell page breaks plus note and running-surface manual
-    /// breaks remain outside the break-preservation paths. Rich note formatting,
+    /// remain outside these layout-hint paths. Legacy nested running tables and
+    /// legacy running-story manual breaks remain unsupported; ordinary top-level
+    /// running-paragraph manual breaks remain outside both fresh-conversion paths.
+    /// Settings-defined default-tab intervals, table-cell page breaks, and note
+    /// manual breaks also remain outside the bounded paths. Rich note formatting,
     /// tables, media, source IDs and numbering,
     /// separators, custom marks, complex anchors, and page-bottom placement
     /// remain outside the normalized note path.
@@ -1107,6 +1114,7 @@ impl Document {
                         running_pagination: &assembled.running_pagination_hints,
                         running_tab_stops: &assembled.running_tab_stops,
                         running_table_cell_tab_stops: &assembled.running_table_cell_tab_stops,
+                        running_table_layout: &[],
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
                         paragraph_tab_stops: &assembled.tab_stops,
@@ -1143,6 +1151,7 @@ impl Document {
                         running_pagination: &state.running_pagination_hints,
                         running_tab_stops: &state.running_tab_stops,
                         running_table_cell_tab_stops: &state.running_table_cell_tab_stops,
+                        running_table_layout: &state.running_table_layout_hints,
                         paragraph_line_spacing: &state.line_spacing_hints,
                         paragraph_pagination: &state.pagination_hints,
                         paragraph_tab_stops: &state.tab_stops,
