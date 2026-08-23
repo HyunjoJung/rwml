@@ -574,6 +574,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         final_section_column_gap_pt: _final_section_column_gap_pt,
         section_column_layouts: _section_column_layouts,
         final_section_column_layout: _final_section_column_layout,
+        section_column_separators: _section_column_separators,
+        final_section_column_separator: _final_section_column_separator,
         table_row_pagination: _table_row_pagination,
         table_cell_pagination: _table_cell_pagination,
         table_cell_line_spacing: _table_cell_line_spacing,
@@ -2937,8 +2939,10 @@ impl Document {
                         column_break_offsets: &assembled.column_break_offsets,
                         section_column_gap_pt: &assembled.section_column_gap_pt,
                         section_column_layouts: &assembled.section_column_layouts,
+                        section_column_separators: &assembled.section_column_separators,
                         final_section_column_gap_pt: assembled.final_section_column_gap_pt,
                         final_section_column_layout: assembled.final_section_column_layout.as_ref(),
+                        final_section_column_separator: assembled.final_section_column_separator,
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
@@ -2963,8 +2967,10 @@ impl Document {
                         column_break_offsets: &d.column_break_offsets,
                         section_column_gap_pt: &d.section_column_gap_pt,
                         section_column_layouts: &d.section_column_layouts,
+                        section_column_separators: &d.section_column_separators,
                         final_section_column_gap_pt: d.final_section_column_gap_pt,
                         final_section_column_layout: d.final_section_column_layout.as_ref(),
+                        final_section_column_separator: d.final_section_column_separator,
                         table_row_pagination: &d.table_row_pagination,
                         table_cell_pagination: &d.table_cell_pagination,
                         table_cell_line_spacing: &d.table_cell_line_spacing,
@@ -6178,6 +6184,12 @@ mod tests {
         grpprl.extend_from_slice(&spacing_twips.to_le_bytes());
     }
 
+    #[cfg(feature = "render")]
+    fn push_section_column_separator(grpprl: &mut Vec<u8>, separator: u8) {
+        grpprl.extend_from_slice(&0x3019u16.to_le_bytes());
+        grpprl.push(separator);
+    }
+
     fn push_section_title_page(grpprl: &mut Vec<u8>, title_page: u8) {
         grpprl.extend_from_slice(&0x300Au16.to_le_bytes());
         grpprl.push(title_page);
@@ -7997,6 +8009,78 @@ mod tests {
         assert_eq!(
             first_wide.layout_pages_with_fonts(&fonts).unwrap(),
             first_wide.layout_pages_with_fonts(&fonts).unwrap()
+        );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_aligns_column_separators_and_isolates_malformed_sepx() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_separator(&mut first, 1);
+        let malformed = [0x03];
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut final_section, 1);
+        push_section_column_separator(&mut final_section, 1);
+        let document = Document::open(&legacy_doc_with_section_page_grpprls(
+            "AAAAABBBBBCCCCC",
+            &section_cps,
+            &[
+                first.as_slice(),
+                malformed.as_slice(),
+                final_section.as_slice(),
+            ],
+        ))
+        .unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 5);
+            assert_eq!(
+                hints.section_column_separators,
+                &[false, true, false, false, false]
+            );
+            assert!(hints.final_section_column_separator);
+        });
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_column_separator_changes_pdf_without_layout_change() {
+        let text = "legacy separator";
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let document = |separator| {
+            let mut section = section_page_grpprl(4_400, 3_000, 400, 400, 400, 400, false);
+            push_section_column_count(&mut section, 1);
+            if separator {
+                push_section_column_separator(&mut section, 1);
+            }
+            Document::open(&legacy_doc_with_section_page_grpprls(
+                text,
+                &section_cps,
+                &[section.as_slice()],
+            ))
+            .unwrap()
+        };
+        let baseline = document(false);
+        let separated = document(true);
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(baseline.model(), separated.model());
+        assert_eq!(
+            baseline.layout_pages_with_fonts(&fonts).unwrap(),
+            separated.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        separated.with_render_model_and_hints(|_, hints| {
+            assert!(hints.final_section_column_separator);
+        });
+        let baseline_pdf = baseline.try_to_pdf_with_fonts(&fonts).unwrap();
+        let separated_pdf = separated.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert_ne!(baseline_pdf, separated_pdf);
+        assert_eq!(
+            separated_pdf,
+            separated.try_to_pdf_with_fonts(&fonts).unwrap()
         );
     }
 
@@ -11831,6 +11915,27 @@ mod tests {
 
     #[cfg(all(feature = "docx", feature = "render"))]
     #[test]
+    fn opened_docx_carries_section_local_column_separator_hints() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:sectPr><w:cols w:num="2" w:sep="on"/></w:sectPr></w:pPr>
+                    <w:r><w:t>ending section</w:t></w:r>
+                </w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:num="2" w:sep="true"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.section_column_separators, &[false, true, false]);
+            assert!(hints.final_section_column_separator);
+        });
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
     fn opened_docx_unequal_columns_change_preview_pdf_deterministically() {
         let text = (0..24)
             .map(|index| format!("word{index}"))
@@ -11859,6 +11964,67 @@ mod tests {
         assert_eq!(
             document.layout_pages_with_fonts(&fonts).unwrap(),
             document.layout_pages_with_fonts(&fonts).unwrap()
+        );
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_column_separator_changes_preview_pdf_without_layout_change() {
+        let document_xml = |separator: &str| {
+            format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                    <w:p><w:r><w:t>first column content</w:t></w:r></w:p>
+                    <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/>
+                        <w:cols w:num="2" w:space="400"{separator}/>
+                    </w:sectPr>
+                </w:body></w:document>"#
+            )
+        };
+        let without_separator =
+            Document::open(&minimal_docx(&document_xml(""))).expect("baseline DOCX");
+        let with_separator =
+            Document::open(&minimal_docx(&document_xml(r#" w:sep="1""#))).expect("separated DOCX");
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(without_separator.model(), with_separator.model());
+        assert_eq!(
+            without_separator.layout_pages_with_fonts(&fonts).unwrap(),
+            with_separator.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        let baseline_pdf = without_separator.try_to_pdf_with_fonts(&fonts).unwrap();
+        let separated_pdf = with_separator.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert_eq!(
+            separated_pdf,
+            with_separator.try_to_pdf_with_fonts(&fonts).unwrap()
+        );
+        assert_ne!(baseline_pdf, separated_pdf);
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_one_column_separator_is_paint_inert() {
+        let document_xml = |separator: &str| {
+            format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                    <w:p><w:r><w:t>single column</w:t></w:r></w:p>
+                    <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/>
+                        <w:cols w:num="1"{separator}/>
+                    </w:sectPr>
+                </w:body></w:document>"#
+            )
+        };
+        let baseline = Document::open(&minimal_docx(&document_xml(""))).unwrap();
+        let separated = Document::open(&minimal_docx(&document_xml(r#" w:sep="1""#))).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(baseline.model(), separated.model());
+        assert_eq!(
+            baseline.layout_pages_with_fonts(&fonts).unwrap(),
+            separated.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        assert_eq!(
+            baseline.try_to_pdf_with_fonts(&fonts).unwrap(),
+            separated.try_to_pdf_with_fonts(&fonts).unwrap()
         );
     }
 

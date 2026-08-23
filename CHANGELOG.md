@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Paints section column-separator rules in opened DOCX and legacy `.doc` PDF
+  previews from `w:cols/@w:sep` and `sprmSLBetween`, respectively. DOCX on/off
+  values follow accepted-current Markup Compatibility selection; legacy Bool8
+  values retain the last valid source-order state and malformed SEPX sections
+  remain isolated. Private section-aligned flags reuse each equal, fitting,
+  scaled, or fallback column layout and center a thin rule in every active gap;
+  one-column sections remain paint-inert, and pagination and `LayoutPages` stay
+  unchanged.
 - Applies bounded explicit unequal-width `w:cols` geometry from opened DOCX
   sections to PDF and `LayoutPages` previews through a private section-aligned
   sidecar. An explicit false `w:equalWidth` accepts one through 64 direct
@@ -18,8 +26,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   widths; over-wide sets scale uniformly only while every resulting column
   remains at least the renderer minimum, otherwise the established equal-column
   fallback wins. Pagination places content in each active width, while shaping
-  remains conservatively bounded to the narrowest section column. Separators,
-  RTL column reversal, private-width conversion round-trip, deferred per-column
+  remains conservatively bounded to the narrowest section column. RTL column
+  reversal, private-width conversion round-trip, deferred per-column
   rewrapping, and Word-exact pagination remain outside this bounded path.
 - Applies complete explicit unequal-column geometry from opened legacy `.doc`
   sections to PDF and `LayoutPages` previews through the same private
@@ -30,8 +38,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   values, and incomplete geometry retains the conservative fallback. The
   validated count reaches the shared section model while fitting, scaled, and
   minimum-width fallback behavior reuses the DOCX geometry renderer. Malformed
-  SEPX sections remain isolated. Separator lines, RTL column reversal,
-  private-width conversion round-trip, deferred per-column rewrapping, and
+  SEPX sections remain isolated. RTL column reversal, private-width conversion
+  round-trip, deferred per-column rewrapping, and
   Word-exact pagination remain outside this bounded path.
 - Applies validated legacy `.doc` `sprmSDyaHdrTop` and
   `sprmSDyaHdrBottom` section distances to PDF running surfaces through the
@@ -286,8 +294,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Applies each modeled section's physical page width and height, including
   landscape layouts, plus per-side margins to PDF body shaping and pagination,
   running headers and footers, anchored floating-shape coordinates,
-  top-and-bottom wrap bands, and emitted page media boxes. Column separator
-  lines, RTL physical column reversal, exact per-column rewrapping, and
+  top-and-bottom wrap bands, and emitted page media boxes. RTL physical column
+  reversal, exact per-column rewrapping, and
   Word-exact pagination remain outside this bounded renderer bridge.
 - Prunes an unreferenced internal image relationship and unreachable `word/media/*`
   target when `remove_body_block` removes the last retained reference, while

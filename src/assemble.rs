@@ -83,6 +83,8 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) final_section_column_gap_pt: Option<f32>,
     pub(crate) section_column_layouts: Vec<Option<SectionColumnLayoutHints>>,
     pub(crate) final_section_column_layout: Option<SectionColumnLayoutHints>,
+    pub(crate) section_column_separators: Vec<bool>,
+    pub(crate) final_section_column_separator: bool,
     pub(crate) table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     pub(crate) table_cell_pagination: Vec<TableCellPaginationHints>,
     pub(crate) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
@@ -147,6 +149,8 @@ pub(crate) fn build_model_with_render_hints(
         legacy_section_column_gap_hints(&blocks, &section_spans);
     let (section_column_layouts, final_section_column_layout) =
         legacy_section_column_layout_hints(&blocks, &section_spans);
+    let (section_column_separators, final_section_column_separator) =
+        legacy_section_column_separator_hints(&blocks, &section_spans);
     #[cfg(feature = "render")]
     let running_surface_distances = legacy_running_surface_distance_hints(&section_spans);
     LegacyBuildOutput {
@@ -169,6 +173,8 @@ pub(crate) fn build_model_with_render_hints(
         final_section_column_gap_pt,
         section_column_layouts,
         final_section_column_layout,
+        section_column_separators,
+        final_section_column_separator,
         table_row_pagination,
         table_cell_pagination,
         table_cell_line_spacing,
@@ -227,6 +233,25 @@ fn legacy_section_column_layout_hints(
         .last()
         .and_then(|span| span.column_layout.clone());
     (hints, final_layout)
+}
+
+fn legacy_section_column_separator_hints(
+    blocks: &[Block],
+    section_spans: &[LegacySectionSpan],
+) -> (Vec<bool>, bool) {
+    let mut hints = vec![false; blocks.len()];
+    let mut ending_sections = section_spans.iter();
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            hints[index] = ending_sections
+                .next()
+                .is_some_and(|span| span.column_separator);
+        }
+    }
+    let final_separator = section_spans
+        .last()
+        .is_some_and(|span| span.column_separator);
+    (hints, final_separator)
 }
 
 fn legacy_doc_setup_from_regions(
@@ -599,6 +624,7 @@ const SPRM_S_C_COLUMNS: u16 = 0x500B;
 const SPRM_S_DXA_COLUMNS: u16 = 0x900C;
 const SPRM_S_NFC_PGN: u16 = 0x300E;
 const SPRM_S_F_PGN_RESTART: u16 = 0x3011;
+const SPRM_S_L_BETWEEN: u16 = 0x3019;
 const SPRM_S_DYA_HDR_TOP: u16 = 0xB017;
 const SPRM_S_DYA_HDR_BOTTOM: u16 = 0xB018;
 const SPRM_S_PGN_START_97: u16 = 0x501C;
@@ -812,6 +838,7 @@ struct LegacySectionSpan {
     columns: Option<u16>,
     column_gap_pt: Option<f32>,
     column_layout: Option<SectionColumnLayoutHints>,
+    column_separator: bool,
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
@@ -828,6 +855,7 @@ struct LegacySectionProperties {
     columns: Option<u16>,
     column_gap_pt: Option<f32>,
     column_layout: Option<SectionColumnLayoutHints>,
+    column_separator: bool,
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
@@ -899,6 +927,7 @@ fn parse_legacy_section_spans(
             columns: properties.columns,
             column_gap_pt: properties.column_gap_pt,
             column_layout: properties.column_layout,
+            column_separator: properties.column_separator,
             title_page: properties.title_page,
             page_number_start: properties.page_number_start,
             page_number_format: properties.page_number_format,
@@ -1006,6 +1035,11 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
             SPRM_S_F_PGN_RESTART => match operand.first().copied() {
                 Some(0) => page_number_restart = false,
                 Some(1) => page_number_restart = true,
+                _ => {}
+            },
+            SPRM_S_L_BETWEEN => match operand.first().copied() {
+                Some(0) => properties.column_separator = false,
+                Some(1) => properties.column_separator = true,
                 _ => {}
             },
             SPRM_S_DYA_HDR_TOP => {
@@ -1201,6 +1235,7 @@ fn legacy_section_properties_default() -> LegacySectionProperties {
         columns: None,
         column_gap_pt: None,
         column_layout: None,
+        column_separator: false,
         title_page: false,
         page_number_start: None,
         page_number_format: None,
@@ -3149,6 +3184,51 @@ mod tests {
     }
 
     #[test]
+    fn legacy_sepx_scanner_applies_column_separator_bool8_in_source_order() {
+        let mut grpprl = Vec::new();
+        let push_separator = |grpprl: &mut Vec<u8>, value| {
+            grpprl.extend_from_slice(&SPRM_S_L_BETWEEN.to_le_bytes());
+            grpprl.push(value);
+        };
+
+        assert!(
+            !scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+        push_separator(&mut grpprl, 1);
+        assert!(
+            scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+        push_separator(&mut grpprl, 2);
+        assert!(
+            scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+        push_separator(&mut grpprl, 0);
+        assert!(
+            !scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+        push_separator(&mut grpprl, u8::MAX);
+        assert!(
+            !scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+        push_separator(&mut grpprl, 1);
+        assert!(
+            scan_legacy_section_grpprl(&grpprl)
+                .unwrap()
+                .column_separator
+        );
+    }
+
+    #[test]
     fn legacy_sepx_scanner_recovers_complete_unequal_column_count() {
         let mut grpprl = Vec::new();
         push_test_section_column_count(&mut grpprl, 1);
@@ -3522,6 +3602,7 @@ mod tests {
                     columns: Some(2),
                     column_gap_pt: None,
                     column_layout: None,
+                    column_separator: false,
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,
@@ -3538,6 +3619,7 @@ mod tests {
                     columns: Some(3),
                     column_gap_pt: None,
                     column_layout: None,
+                    column_separator: false,
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,

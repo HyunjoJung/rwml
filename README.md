@@ -409,7 +409,7 @@ content-box/page-height fitting and pagination. Narrow RTL tables reverse logica
 placement and mirror their cells inside the local table box. Page geometry,
 equal-width section columns, bounded explicit unequal-width opened-DOCX and
 legacy `.doc` tracks, explicit opened-DOCX and legacy `.doc` inter-column
-spacing, visible top-level
+spacing and column-separator rules, visible top-level
 opened-DOCX and legacy `.doc` manual column breaks, and per-side margins
 come from the document;
 multi-page tables repeat their header rows without losing outer placement or
@@ -623,9 +623,12 @@ bridges.
 > Content is shaped conservatively to the narrowest active track before
 > pagination places it at each declared origin. Equal-width opened DOCX and
 > legacy `.doc` sections apply explicit `w:cols/@w:space` and
-> `sprmSDxaColumns` values. Incomplete custom legacy geometry, separator lines,
-> RTL column reversal, private-width conversion round-trip, and Word-exact
-> reflow remain outside this bounded bridge.
+> `sprmSDxaColumns` values. Valid opened-DOCX `w:cols/@w:sep` and legacy
+> `sprmSLBetween` flags paint centered rules between every active equal,
+> fitting, scaled, or fallback track without changing pagination; one-column
+> sections remain paint-inert. Incomplete custom legacy geometry, RTL column
+> reversal, private-width conversion round-trip, and Word-exact reflow remain
+> outside this bounded bridge.
 > Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
@@ -1141,7 +1144,9 @@ code points.
   missing width leaves that unequal count unmodeled; a later valid equal-spacing
   selector restores the last valid count. Malformed local SEPX data keeps that
   section's deterministic default without discarding valid neighboring
-  sections.
+  sections. Strict source-order `sprmSLBetween` Bool8 values reach a private
+  section-aligned PDF sidecar; invalid later values preserve the last valid
+  state, and one-column sections emit no rule.
   A visible end-of-column character (`0x0E`) in a top-level main-story
   paragraph advances an opened-document PDF preview to the next active column,
   or to a new page after the final column, through private source-aligned
@@ -1155,8 +1160,8 @@ code points.
   explicit. Table-cell and non-main-story occurrences retain their newline
   representation.
   Continuous/new-column section marks normalize to the shared model's
-  next-page fallback. Incomplete custom column geometry, separator lines, RTL
-  column ordering, gutters/facing pages, header/footer margin-growth semantics,
+  next-page fallback. Incomplete custom column geometry, RTL column ordering,
+  gutters/facing pages, header/footer margin-growth semantics,
   page borders, vertical justification, signed negative document-grid
   character-pitch deltas, negative fixed-position top/bottom semantics,
   display-number effects on physical pagination, and page-number footer
