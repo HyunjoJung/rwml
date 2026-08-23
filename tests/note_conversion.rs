@@ -114,12 +114,12 @@ fn rich_note_tables_docx() -> Vec<u8> {
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="11"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="12"/></w:r></w:p><w:sectPr/></w:body></w:document>"#,
         r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
             <w:footnote w:id="11">
-                <w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>FOOT PREFIX</w:t></w:r></w:p>
+                <w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>FOOT PREFIX A</w:t><w:br w:type="page"/><w:t>FOOT PREFIX B</w:t></w:r></w:p>
                 <w:tbl>
                     <w:tblPr><w:tblW w:w="4000" w:type="pct"/><w:tblInd w:w="720" w:type="dxa"/><w:jc w:val="center"/><w:tblBorders><w:top w:val="double" w:sz="12" w:color="112233"/></w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr>
                     <w:tblGrid><w:gridCol w:w="1200"/><w:gridCol w:w="2400"/></w:tblGrid>
                     <w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>
-                        <w:tc><w:tcPr><w:vMerge w:val="restart"/><w:shd w:fill="DDEEFF"/><w:vAlign w:val="center"/><w:tcW w:w="2500" w:type="pct"/><w:tcMar><w:top w:w="120" w:type="dxa"/><w:right w:w="240" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="260" w:lineRule="exact"/><w:tabs><w:tab w:val="center" w:pos="720" w:leader="hyphen"/></w:tabs></w:pPr><w:r><w:rPr><w:b/><w:highlight w:val="yellow"/></w:rPr><w:t>FOOT TABLE A</w:t><w:tab/><w:t>FOOT TAB</w:t><w:br w:type="column"/><w:t>FOOT TABLE B</w:t></w:r></w:p></w:tc>
+                        <w:tc><w:tcPr><w:vMerge w:val="restart"/><w:shd w:fill="DDEEFF"/><w:vAlign w:val="center"/><w:tcW w:w="2500" w:type="pct"/><w:tcMar><w:top w:w="120" w:type="dxa"/><w:right w:w="240" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="260" w:lineRule="exact"/><w:tabs><w:tab w:val="center" w:pos="720" w:leader="hyphen"/></w:tabs></w:pPr><w:r><w:rPr><w:b/><w:highlight w:val="yellow"/></w:rPr><w:t>FOOT TABLE A</w:t><w:tab/><w:t>FOOT TAB</w:t><w:br w:type="column"/><w:t>FOOT TABLE B</w:t><w:br w:type="page"/><w:t>FOOT TABLE C</w:t></w:r></w:p></w:tc>
                         <w:tc><w:tcPr/><w:p><w:pPr><w:spacing w:line="320" w:lineRule="atLeast"/></w:pPr><w:r><w:rPr><w:i/><w:vertAlign w:val="superscript"/></w:rPr><w:t>FOOT SIDE</w:t></w:r></w:p></w:tc>
                     </w:tr>
                     <w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:r><w:t>DROPPED MERGE TEXT</w:t></w:r></w:p></w:tc><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>FOOT LAST</w:t></w:r></w:p></w:tc></w:tr>
@@ -133,7 +133,7 @@ fn rich_note_tables_docx() -> Vec<u8> {
                 <w:tbl>
                     <w:tblPr><w:tblW w:w="3500" w:type="pct"/><w:bidiVisual/><w:jc w:val="right"/></w:tblPr>
                     <w:tblGrid><w:gridCol w:w="1800"/><w:gridCol w:w="1800"/></w:tblGrid>
-                    <w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:shd w:fill="FFEEDD"/><w:vAlign w:val="bottom"/></w:tcPr><w:p><w:pPr><w:keepNext/><w:widowControl w:val="off"/><w:spacing w:line="280" w:lineRule="atLeast"/><w:tabs><w:tab w:val="right" w:pos="1200" w:leader="dot"/></w:tabs></w:pPr><w:r><w:rPr><w:u w:val="single"/><w:smallCaps/></w:rPr><w:t>END TABLE A</w:t><w:br w:type="column"/><w:t>END TABLE B</w:t><w:tab/><w:t>END TAB</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="3000" w:type="pct"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:spacing w:line="360" w:lineRule="exact"/><w:tabs><w:tab w:val="left" w:pos="600" w:leader="hyphen"/></w:tabs></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>END NESTED A</w:t><w:br w:type="column"/><w:t>END NESTED B</w:t><w:tab/><w:t>END NESTED TAB</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr>
+                    <w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:gridSpan w:val="2"/><w:shd w:fill="FFEEDD"/><w:vAlign w:val="bottom"/></w:tcPr><w:p><w:pPr><w:keepNext/><w:widowControl w:val="off"/><w:spacing w:line="280" w:lineRule="atLeast"/><w:tabs><w:tab w:val="right" w:pos="1200" w:leader="dot"/></w:tabs></w:pPr><w:r><w:rPr><w:u w:val="single"/><w:smallCaps/></w:rPr><w:t>END TABLE A</w:t><w:br w:type="column"/><w:t>END TABLE B</w:t><w:tab/><w:t>END TAB</w:t><w:br w:type="page"/><w:t>END PAGE</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="3000" w:type="pct"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:spacing w:line="360" w:lineRule="exact"/><w:tabs><w:tab w:val="left" w:pos="600" w:leader="hyphen"/></w:tabs></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>END NESTED A</w:t><w:br w:type="column"/><w:t>END NESTED B</w:t><w:tab/><w:t>END NESTED TAB</w:t><w:br w:type="page"/><w:t>END NESTED PAGE</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr>
                 </w:tbl>
                 <w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>END SUFFIX</w:t></w:r></w:p>
             </w:endnote>
@@ -144,7 +144,7 @@ fn rich_note_tables_docx() -> Vec<u8> {
 fn nested_and_relationship_table_note_docx() -> Vec<u8> {
     note_table_docx(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="21"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="22"/></w:r></w:p><w:sectPr/></w:body></w:document>"#,
-        r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="21"><w:tbl><w:tblPr><w:tblW w:w="4000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepNext/><w:spacing w:line="220" w:lineRule="exact"/></w:pPr><w:r><w:t>OUTER TABLE</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="3000" w:type="pct"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="300" w:lineRule="atLeast"/><w:tabs><w:tab w:val="center" w:pos="900" w:leader="dot"/></w:tabs></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>NESTED TABLE A</w:t><w:br w:type="column"/><w:t>NESTED TABLE B</w:t><w:tab/><w:t>NESTED TAB</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:footnote></w:footnotes>"#,
+        r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="21"><w:tbl><w:tblPr><w:tblW w:w="4000" w:type="pct"/></w:tblPr><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepNext/><w:spacing w:line="220" w:lineRule="exact"/></w:pPr><w:r><w:t>OUTER TABLE A</w:t><w:br w:type="page"/><w:t>OUTER TABLE B</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblW w:w="3000" w:type="pct"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr/><w:p><w:pPr><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="300" w:lineRule="atLeast"/><w:tabs><w:tab w:val="center" w:pos="900" w:leader="dot"/></w:tabs></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t>NESTED TABLE A</w:t><w:br w:type="column"/><w:t>NESTED TABLE B</w:t><w:tab/><w:t>NESTED TAB</w:t><w:br w:type="page"/><w:t>NESTED PAGE</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:footnote></w:footnotes>"#,
         r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="22"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com/note-table&quot; "><w:r><w:t>UNSUPPORTED LINK TABLE</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:endnote></w:endnotes>"#,
     )
 }
@@ -267,6 +267,11 @@ fn opened_docx_rich_mixed_note_tables_roundtrip_through_fresh_conversion() {
     let footnote = note_with_marker(footnotes, "footnote", "FOOT TABLE A");
     let endnote = note_with_marker(endnotes, "endnote", "END TABLE A");
 
+    assert_eq!(
+        footnote.matches(r#"<w:br w:type="page"/>"#).count(),
+        2,
+        "{footnote}"
+    );
     let foot_table = footnote.find("<w:tbl>").unwrap();
     assert!(footnote.find("FOOT PREFIX").unwrap() < foot_table);
     assert!(foot_table < footnote.find("FOOT SUFFIX").unwrap());
@@ -282,7 +287,7 @@ fn opened_docx_rich_mixed_note_tables_roundtrip_through_fresh_conversion() {
     assert!(footnote.contains("<w:cantSplit/>"));
     assert!(footnote.contains("<w:tblHeader/>"));
     assert!(footnote.contains("<w:keepNext/>"));
-    assert_eq!(footnote.matches("<w:keepLines/>").count(), 2, "{footnote}");
+    assert_eq!(footnote.matches("<w:keepLines/>").count(), 3, "{footnote}");
     assert!(footnote.contains(r#"<w:widowControl w:val="0"/>"#));
     assert!(footnote.contains(r#"w:line="260" w:lineRule="exact""#));
     assert!(footnote.contains(r#"w:line="320" w:lineRule="atLeast""#));
@@ -294,6 +299,11 @@ fn opened_docx_rich_mixed_note_tables_roundtrip_through_fresh_conversion() {
     assert!(footnote.contains("<w:i/>"));
     assert!(footnote.contains(r#"<w:vertAlign w:val="superscript"/>"#));
 
+    assert_eq!(
+        endnote.matches(r#"<w:br w:type="page"/>"#).count(),
+        2,
+        "{endnote}"
+    );
     let end_table = endnote.find("<w:tbl>").unwrap();
     assert!(endnote.find("END PREFIX").unwrap() < end_table);
     assert!(end_table < endnote.find("END SUFFIX").unwrap());
@@ -338,6 +348,11 @@ fn nested_note_table_roundtrips_without_disabling_supported_sibling() {
     let endnote = note_with_marker(endnotes, "endnote", "UNSUPPORTED LINK TABLE");
 
     assert_eq!(footnote.matches("<w:tbl>").count(), 2, "{footnote}");
+    assert_eq!(
+        footnote.matches(r#"<w:br w:type="page"/>"#).count(),
+        2,
+        "{footnote}"
+    );
     assert_eq!(footnote.matches("<w:cantSplit/>").count(), 2, "{footnote}");
     assert!(footnote.contains("<w:keepNext/>"), "{footnote}");
     assert!(footnote.contains("<w:keepLines/>"), "{footnote}");

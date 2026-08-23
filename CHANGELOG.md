@@ -27,16 +27,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   payload retains block order, modeled table properties and horizontal/vertical
   merges, modeled paragraph and character formatting, row no-split and cell keep/
   widow controls, exact/minimum line rules, explicit tabs and leaders, and visible
-  manual column breaks at every table depth. An unsupported or malformed note
-  body falls back independently to one normalized text paragraph while supported
-  siblings retain their payload; body anchor projection remains all-or-nothing.
-  Both note families, accepted-current paragraph wrappers, nested table
-  pagination metadata, malformed alignment, table-component and break-leaf
-  isolation, deterministic bytes, native reopen and reconversion, public-model
-  equality, and standalone-writer exclusion are covered. Media, relationship-
-  bearing runs, fields, annotations, bookmarks, nested notes, table-cell page
-  breaks, custom marks, source IDs/numbering and separators, and page-bottom
-  placement remain unsupported by this bounded path.
+  manual column breaks at every table depth. Parsed manual page breaks between
+  top-level paragraph fragments and inside table cells at every selected depth
+  are retained through the same ordered payload. An unsupported or malformed
+  note body falls back independently to one normalized text paragraph while
+  supported siblings retain their payload; body anchor projection remains all-
+  or-nothing. Both note families, accepted-current paragraph wrappers, nested
+  table pagination metadata, page-break/tab-slot alignment, malformed alignment,
+  table-component and break-leaf isolation, deterministic bytes, native reopen
+  and reconversion, public-model equality, and standalone-writer exclusion are
+  covered. Media, relationship-bearing runs, fields, annotations, bookmarks,
+  nested notes, custom marks, source IDs/numbering and separators, page-bottom
+  placement, and Word-exact pagination remain unsupported by this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   visible manual column breaks in ordinary top-level paragraphs across all
   default/first/even headers and footers. The private section-aligned six-variant

@@ -1093,16 +1093,19 @@ impl Document {
     /// private payload preserves modeled table properties and merges,
     /// paragraph/run formatting, row no-split and cell keep/widow controls,
     /// exact/minimum line rules, explicit tabs, and visible manual column breaks
-    /// at every table depth. An unsupported opened-DOCX note body falls back
-    /// independently to normalized one-paragraph text.
+    /// at every table depth. Manual page breaks between top-level paragraph
+    /// fragments and inside table cells at every selected depth are also retained.
+    /// An unsupported opened-DOCX note body falls back independently to normalized
+    /// one-paragraph text.
     /// Legacy nested-table descendants and note paragraph layout properties
     /// remain outside these layout-hint paths. Legacy manual breaks in running-
     /// table cells and nested running tables remain unsupported. Settings-defined
-    /// default-tab intervals, table-cell page breaks, and legacy note manual
-    /// breaks also remain outside the bounded paths. Media, relationships,
-    /// fields, annotations, bookmarks, nested notes, source IDs and numbering,
-    /// separators, custom marks, complex anchors, and page-bottom placement remain
-    /// outside the bounded opened-DOCX note path.
+    /// default-tab intervals, body and running-surface table-cell page breaks, and
+    /// legacy note manual breaks also remain outside the bounded paths. Media,
+    /// relationships, fields, annotations, bookmarks, nested notes, source IDs
+    /// and numbering, separators, custom marks, complex anchors, page-bottom
+    /// placement, and Word-exact pagination remain outside the bounded opened-DOCX
+    /// note path.
     /// Standalone [`write_docx`] remains model-only for all of these private
     /// hints.
     /// Available with the default `docx` feature.

@@ -520,9 +520,10 @@ Unselected running stories retain their flattened fallback. Legacy nested-table
 recovery and note paragraph layout properties remain outside these running-
 surface layout-hint paths. Legacy manual breaks in running-table cells and nested
 running tables remain unsupported. Settings-defined default-tab intervals remain
-outside the tab path. Table-cell page breaks and legacy note manual breaks remain
-outside these break-preservation paths; the separate bounded opened-DOCX note
-conversion described below retains supported note column breaks.
+outside the tab path. Table-cell page breaks remain outside the body and running-
+surface break-preservation paths, and legacy note manual breaks remain
+unsupported; the separate bounded opened-DOCX note conversion described below
+retains supported note column and page breaks, including inside table cells.
 Ordinary top-level paragraphs in selected default/first/even running headers
 and footers from opened DOCX and legacy DOC inputs also consume reader-resolved
 explicit tab stops and supported leaders through section-aligned render hints.
@@ -1057,10 +1058,10 @@ tree follows default-surface inheritance, validates each table slot and recursiv
 component independently, and keeps header/footer-local relationships. Legacy
 nested-table descendants and note paragraph layout properties remain outside
 these layout-hint paths. Legacy manual breaks in running-table cells and nested
-running tables remain unsupported. Settings-defined default-tab intervals,
-table-cell page breaks, and legacy note manual breaks also remain outside the
-bounded paths. Opened-DOCX note column breaks use the separate paragraph-only
-bridge described below.
+running tables remain unsupported. Settings-defined default-tab intervals, body
+and running-surface table-cell page breaks, and legacy note manual breaks also
+remain outside the bounded paths. Opened-DOCX note column and page breaks use the
+separate block/tree-aligned bridge described below.
 
 Opened legacy `.doc` inputs additionally promote normalized footnote/endnote
 text into real references and note parts only when nonempty
@@ -1081,12 +1082,13 @@ surviving cell may contain ordinary paragraphs or further nested tables under th
 same constraint. The private ID-keyed payload preserves block order, modeled
 table properties and horizontal/vertical merges, modeled paragraph and character
 formatting, row no-split and cell keep/widow controls, exact/minimum line rules,
-explicit tabs and leaders, and visible manual column breaks at every table depth.
-Unsupported media, relationships, fields, annotations, bookmarks, nested notes,
-or table-cell page breaks degrade only that note to the normalized one-paragraph
+explicit tabs and leaders, visible manual column breaks at every table depth, and
+manual page breaks between top-level paragraph fragments and inside table cells
+at every selected depth. Unsupported media, relationships, fields, annotations,
+bookmarks, or nested notes degrade only that note to the normalized one-paragraph
 text fallback; supported sibling notes remain rich. Source IDs, numbering and
-separators, custom marks, and page-bottom placement are not preserved. Standalone
-`write_docx` and the public model remain unchanged.
+separators, custom marks, page-bottom placement, and Word-exact pagination are not
+preserved. Standalone `write_docx` and the public model remain unchanged.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the

@@ -2819,7 +2819,17 @@ fn read_paragraph_block_batch(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Blo
             }
         })
         .collect();
-    let tab_stops = vec![data.tab_stops; data.blocks.len()];
+    let tab_stops = data
+        .blocks
+        .iter()
+        .map(|block| {
+            if matches!(block, Block::Paragraph(_)) {
+                data.tab_stops.clone()
+            } else {
+                Vec::new()
+            }
+        })
+        .collect();
     BlockBatch {
         blocks: data.blocks,
         pagination,

@@ -2072,7 +2072,7 @@ fn note_write_payload(
     let mut table_pagination = Vec::with_capacity(blocks.len());
     for (local_index, block) in blocks.iter().enumerate() {
         match block {
-            Block::Paragraph(_) => table_pagination.push(None),
+            Block::Paragraph(_) | Block::PageBreak => table_pagination.push(None),
             Block::Table(table) if note_write_table_shape_supported(table) => {
                 let index = block_offset.checked_add(local_index)?;
                 table_pagination.push(Some(crate::model::TablePaginationHints {
@@ -2113,7 +2113,7 @@ fn note_write_table_shape_supported(table: &crate::model::Table) -> bool {
             }
             for block in &cell.blocks {
                 match block {
-                    Block::Paragraph(_) => {}
+                    Block::Paragraph(_) | Block::PageBreak => {}
                     Block::Table(table) => pending.push(table),
                     _ => return false,
                 }
