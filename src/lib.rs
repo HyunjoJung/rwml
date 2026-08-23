@@ -1019,11 +1019,11 @@ impl Document {
     /// column gaps, complete unequal geometry, separator flags, right-to-left
     /// population, and running header/footer distances into the generated
     /// package. Opened legacy documents additionally carry exact/minimum line
-    /// rules for aligned top-level paragraphs and direct paragraph blocks in
-    /// surviving cells of aligned top-level tables, effective keep/widow
-    /// pagination controls for aligned top-level paragraphs, and effective
-    /// no-split state for aligned top-level table rows; standalone [`write_docx`]
-    /// remains model-only for those private hints.
+    /// rules and effective keep/widow pagination controls for aligned top-level
+    /// paragraphs and direct paragraph blocks in surviving cells of aligned
+    /// top-level tables, plus effective no-split state for aligned top-level
+    /// table rows; standalone [`write_docx`] remains model-only for those private
+    /// hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
@@ -1045,6 +1045,7 @@ impl Document {
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
                         table_row_pagination: &assembled.table_row_pagination,
+                        table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
                     },
                 )
@@ -1067,6 +1068,7 @@ impl Document {
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         table_row_pagination: &[],
+                        table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
                     },
                 )
@@ -13602,6 +13604,101 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "docx")]
+    fn legacy_table_cell_pagination_conversion_doc() -> Vec<u8> {
+        const KEEP_LINES: u16 = 0x2405;
+        const KEEP_NEXT: u16 = 0x2406;
+        const PAGE_BREAK_BEFORE: u16 = 0x2407;
+        const WIDOW_CONTROL: u16 = 0x2431;
+
+        let properties = |values: &[(u16, u8)]| {
+            let mut grpprl = Vec::with_capacity(values.len() * 3);
+            for &(sprm, value) in values {
+                grpprl.extend_from_slice(&sprm.to_le_bytes());
+                grpprl.push(value);
+            }
+            grpprl
+        };
+        let style_properties = properties(&[
+            (KEEP_LINES, 1),
+            (KEEP_NEXT, 1),
+            (PAGE_BREAK_BEFORE, 1),
+            (WIDOW_CONTROL, 0),
+        ]);
+        let stylesheet = synthetic_paragraph_stylesheet_grpprl(&style_properties);
+
+        let mut combined = properties(&[
+            (KEEP_LINES, 1),
+            (KEEP_NEXT, 1),
+            (PAGE_BREAK_BEFORE, 1),
+            (WIDOW_CONTROL, 0),
+        ]);
+        push_paragraph_line_spacing(&mut combined, 0xFF9C, 0);
+        let mut style_cleared = vec![0x00, 0x46, 0x01, 0x00];
+        style_cleared.extend(properties(&[
+            (KEEP_LINES, 0),
+            (KEEP_NEXT, 0),
+            (PAGE_BREAK_BEFORE, 0),
+            (WIDOW_CONTROL, 1),
+        ]));
+        let paragraphs = [
+            ("Default", Vec::new()),
+            ("KeepNext", properties(&[(KEEP_NEXT, 1)])),
+            ("KeepLines", properties(&[(KEEP_LINES, 1)])),
+            ("WidowOff", properties(&[(WIDOW_CONTROL, 0)])),
+            ("Combined", combined),
+            ("StyleAll", vec![0x00, 0x46, 0x01, 0x00]),
+            ("StyleCleared", style_cleared),
+        ];
+
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        let paragraph_count = paragraphs.len();
+        for (index, (label, properties)) in paragraphs.into_iter().enumerate() {
+            text.push_str(label);
+            text.push(if index + 1 == paragraph_count {
+                '\u{7}'
+            } else {
+                '\r'
+            });
+            let mut grpprl = vec![0x16, 0x24, 0x01];
+            grpprl.extend(properties);
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        text.push('\u{7}');
+        let text_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        row_grpprl.extend_from_slice(&[0x66, 0x34, 0x01]); // sprmTFCantSplit
+        runs.push(SyntheticPapxRun {
+            cp_lim: text_end,
+            grpprl: row_grpprl,
+        });
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
     #[cfg(feature = "render")]
     #[test]
     fn opened_legacy_doc_layout_uses_inherited_style_pagination_with_direct_off() {
@@ -13853,6 +13950,120 @@ mod tests {
             over_tall_layout.pages > 1,
             "an over-tall kept cell paragraph must split and make progress"
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_table_cell_pagination_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_table_cell_pagination_conversion_doc()).unwrap();
+        let converted = legacy.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        let default = docx_paragraph_with_text(&document_xml, "Default");
+        assert!(!default.contains("<w:keepNext"), "{default}");
+        assert!(!default.contains("<w:keepLines"), "{default}");
+        assert!(!default.contains("<w:widowControl"), "{default}");
+        let keep_next = docx_paragraph_with_text(&document_xml, "KeepNext");
+        assert!(keep_next.contains("<w:keepNext/>"), "{keep_next}");
+        let keep_lines = docx_paragraph_with_text(&document_xml, "KeepLines");
+        assert!(keep_lines.contains("<w:keepLines/>"), "{keep_lines}");
+        let widow_off = docx_paragraph_with_text(&document_xml, "WidowOff");
+        assert!(
+            widow_off.contains(r#"<w:widowControl w:val="0"/>"#),
+            "{widow_off}"
+        );
+        let combined = docx_paragraph_with_text(&document_xml, "Combined");
+        assert!(
+            combined.contains(concat!(
+                "<w:pPr><w:keepNext/><w:keepLines/><w:pageBreakBefore/>",
+                r#"<w:widowControl w:val="0"/>"#,
+                r#"<w:spacing w:before="0" w:after="0" w:line="100" w:lineRule="exact"/>"#,
+            )),
+            "{combined}"
+        );
+        let style_all = docx_paragraph_with_text(&document_xml, "StyleAll");
+        assert!(
+            style_all.contains(concat!(
+                r#"<w:pPr><w:pStyle w:val="Heading1"/><w:keepNext/><w:keepLines/>"#,
+                r#"<w:pageBreakBefore/><w:widowControl w:val="0"/>"#,
+            )),
+            "{style_all}"
+        );
+        let style_cleared = docx_paragraph_with_text(&document_xml, "StyleCleared");
+        assert!(!style_cleared.contains("<w:keepNext"), "{style_cleared}");
+        assert!(!style_cleared.contains("<w:keepLines"), "{style_cleared}");
+        assert!(
+            !style_cleared.contains("<w:pageBreakBefore"),
+            "{style_cleared}"
+        );
+        assert!(
+            !style_cleared.contains("<w:widowControl"),
+            "{style_cleared}"
+        );
+        assert!(
+            document_xml.contains("<w:tr><w:trPr><w:cantSplit/></w:trPr>"),
+            "{document_xml}"
+        );
+        assert_eq!(converted, legacy.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&legacy.model()), "word/document.xml");
+        assert!(!model_only_xml.contains("<w:keepNext"));
+        assert!(!model_only_xml.contains("<w:keepLines"));
+        assert!(!model_only_xml.contains("<w:widowControl"));
+        assert!(!model_only_xml.contains("<w:cantSplit"));
+        assert!(!model_only_xml.contains(r#"w:lineRule="exact""#));
+
+        let docx_backed = Document::open(&converted).unwrap();
+        let docx_backed_xml = docx_part(&docx_backed.to_docx(), "word/document.xml");
+        assert!(!docx_backed_xml.contains("<w:keepNext"));
+        assert!(!docx_backed_xml.contains("<w:keepLines"));
+        assert!(!docx_backed_xml.contains("<w:widowControl"));
+        assert!(!docx_backed_xml.contains("<w:cantSplit"));
+        assert!(!docx_backed_xml.contains(r#"w:lineRule="exact""#));
+
+        #[cfg(feature = "render")]
+        {
+            let Backend::Docx(state) = docx_backed.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            let hints = state
+                .table_cell_pagination
+                .into_iter()
+                .find(|table| !table.is_empty())
+                .and_then(|table| table.first().cloned())
+                .and_then(|row| row.first().cloned())
+                .expect("converted table-cell pagination hints");
+            let widow_on = crate::model::PaginationHint {
+                widow_control: true,
+                ..crate::model::PaginationHint::default()
+            };
+            assert_eq!(
+                hints,
+                vec![
+                    Some(widow_on),
+                    Some(crate::model::PaginationHint {
+                        keep_next: true,
+                        ..widow_on
+                    }),
+                    Some(crate::model::PaginationHint {
+                        keep_lines: true,
+                        ..widow_on
+                    }),
+                    Some(crate::model::PaginationHint::default()),
+                    Some(crate::model::PaginationHint {
+                        keep_next: true,
+                        keep_lines: true,
+                        widow_control: false,
+                    }),
+                    Some(crate::model::PaginationHint {
+                        keep_next: true,
+                        keep_lines: true,
+                        widow_control: false,
+                    }),
+                    Some(widow_on),
+                ]
+            );
+        }
     }
 
     #[cfg(feature = "docx")]

@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Preserves resolved legacy-DOC `keepNext`, `keepLines`, and widow-off semantics
+  when `Document::to_docx()` freshly converts aligned direct paragraph blocks in
+  surviving cells of top-level tables. The source-only bridge validates block,
+  row, cell, and cell-block alignment independently from row and line-spacing
+  sidecars, rejects non-paragraph hints, and preserves modeled page breaks in
+  CT_PPr order. Direct/style precedence, deterministic bytes, native reopen,
+  merge-owner alignment, malformed-sidecar isolation, and unchanged standalone,
+  DOCX-backed, nested-table, and non-body writing are covered.
 - Preserves resolved legacy-DOC exact and minimum line spacing when
   `Document::to_docx()` freshly converts aligned direct paragraph blocks in
   surviving cells of top-level tables. The source-only writer bridge validates
@@ -31,7 +39,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and keeps the existing modeled `pageBreakBefore` in CT_PPr schema order before
   numbering. Style/direct on/off precedence, deterministic bytes, native reopen,
   and unchanged standalone model writing are covered. DOCX-backed conversion,
-  table-cell and row controls, non-body stories, and the public model remain
+  nested-table descendants, non-body stories, and the public model remain
   unchanged.
 - Preserves resolved legacy-DOC exact and minimum line spacing when
   `Document::to_docx()` freshly converts aligned top-level paragraphs. The
@@ -39,8 +47,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `exact` or `atLeast` while preserving public before/after spacing and leaving
   proportional rules unchanged. Style/direct precedence, direct-zero clearing,
   deterministic bytes, native reopen, and strict misalignment fallback are
-  covered. Standalone model writing, DOCX-backed source hints, table-cell and
-  running-surface conversion, and the public model remain unchanged.
+  covered. Standalone model writing, DOCX-backed source hints,
+  nested-table-descendant and running-surface conversion, and the public model
+  remain unchanged.
 - Preserves source-defined section-local running header and footer distances
   when `Document::to_docx()` freshly converts an opened DOCX or legacy `.doc`.
   The shared writer bridge consumes strictly section-aligned private hints,

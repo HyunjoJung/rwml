@@ -465,11 +465,11 @@ paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
 render hints to the public `DocModel`. Legacy-backed fresh conversion now
 serializes the effective keep controls and widow-off state for aligned top-level
-paragraphs plus effective no-split state for aligned top-level table rows;
-table-cell paragraph pagination, nested-table rows, and non-body controls remain
-source-render-only. Aligned direct paragraph blocks in surviving cells of legacy
-top-level tables also carry resolved exact/minimum line rules into fresh DOCX
-conversion. Resolved LTR tab stops in ordinary and
+paragraphs and aligned direct paragraph blocks in surviving cells of top-level
+tables, plus effective no-split state for aligned top-level table rows.
+Nested-table descendants and non-body controls remain source-render-only.
+Those direct legacy table-cell paragraphs also carry resolved exact/minimum line
+rules into fresh DOCX conversion. Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
 justified-aligned paragraphs use that path when the resolved stop is reachable.
@@ -938,12 +938,11 @@ retains validated source-only section column gaps, complete unequal geometry,
 separator flags, and right-to-left population without exposing them in the
 public model. Legacy-backed conversion also retains validated exact/minimum line
 rules plus effective `keepNext`, `keepLines`, and widow-off state for aligned
-top-level paragraphs, and effective no-split state for aligned top-level table
-rows. Resolved exact/minimum rules also survive for aligned direct paragraph
-blocks in surviving cells of top-level legacy tables. Standalone model writing
-remains proportional-only and does not consume private pagination hints;
-DOCX-backed conversion and nested-table descendants do not consume the legacy
-cell line-rule sidecar.
+top-level paragraphs and aligned direct paragraph blocks in surviving cells of
+top-level tables, plus effective no-split state for aligned top-level table rows.
+Standalone model writing remains proportional-only and consumes no private
+pagination hints. DOCX-backed conversion, nested-table descendants, and non-body
+stories consume neither legacy direct-cell sidecar.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the
