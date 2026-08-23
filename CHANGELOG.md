@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Fresh `Document::to_docx()` conversion of opened legacy DOC inputs now
+  preserves visible manual column breaks in ordinary top-level paragraphs across
+  all default/first/even headers and footers. A paragraph-aligned source-story
+  sidecar maps all six variants per section with first-owner and unindexed-header
+  fallback semantics, then reuses the existing section/variant/leaf-validating
+  writer. Two sections and all twelve running stories, body projection,
+  deterministic bytes, native reopen and reconversion, public-model immutability,
+  model-only writer exclusion, and malformed writer hints are covered. Legacy
+  manual breaks in running-table cells and nested running tables, legacy note
+  breaks, and PDF distinction between running line and column breaks remain
+  outside this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   paragraph-only real footnote and endnote bodies when the exact body-reference
   contract succeeds. An ID-keyed, run-aligned private payload retains multiple
@@ -30,9 +41,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   inherited defaults, multiple runs, accepted-current wrappers, a local
   hyperlink, malformed outer/variant/leaf data, coexistence with running-table
   breaks, deterministic bytes, native reopen, and standalone-writer exclusion are
-  covered. Legacy running-story manual breaks, note paragraph properties and
-  breaks, table-cell page breaks, and PDF distinction between running line and
-  column breaks remain outside this bounded conversion path.
+  covered. Legacy running-table cell and nested running-table breaks, note
+  paragraph properties and breaks, table-cell page breaks, and PDF distinction
+  between running line and column breaks remain outside this bounded conversion
+  path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   visible manual column breaks in direct paragraphs of top-level running-table
   cells and recursively preserves row no-split state, cell-paragraph keep/widow
@@ -44,10 +56,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   wrappers, vertical-merge continuation exclusion, all six variants, inherited
   defaults, malformed outer/slot/child data, malformed break leaves,
   deterministic bytes, native reopen, parser depth limits, and standalone-writer
-  exclusion are covered. Legacy nested running tables, legacy running-story
-  manual breaks, note paragraph properties, table-cell page breaks, and PDF
-  consumption of nested running-table layout hints remain outside this bounded
-  conversion path.
+  exclusion are covered. Legacy nested running tables and their manual breaks,
+  legacy running-table cell breaks, note paragraph properties, table-cell page
+  breaks, and PDF consumption of nested running-table layout hints remain outside
+  this bounded conversion path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now recursively
   preserves source-only row no-split state, direct cell-paragraph keep/widow
   controls, exact/minimum line rules, explicit tab stops, and visible manual

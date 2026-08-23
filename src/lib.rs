@@ -599,6 +599,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
             running_line_spacing_hints: _running_line_spacing_hints,
         #[cfg(feature = "docx")]
             running_pagination_hints: _running_pagination_hints,
+        #[cfg(feature = "docx")]
+            running_column_break_offsets: _running_column_break_offsets,
         #[cfg(any(feature = "docx", feature = "render"))]
             running_tab_stops: _running_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
@@ -1063,11 +1065,13 @@ impl Document {
     /// effective `keepNext`, `keepLines`, and widow-off state on direct top-level
     /// paragraphs and direct paragraphs in surviving cells of top-level tables,
     /// plus effective no-split state for aligned top-level table rows. Opened DOCX
-    /// inputs also carry visible manual column breaks in ordinary top-level
-    /// paragraphs across those six running variants through a separately
-    /// validated section/variant/paragraph-aligned bridge that follows default-
-    /// surface inheritance and keeps local relationships. They carry visible
-    /// manual column breaks in direct paragraphs of top-level running-table cells
+    /// and legacy DOC inputs also carry visible manual column breaks in ordinary
+    /// top-level paragraphs across those six running variants through a separately
+    /// validated section/variant/paragraph-aligned bridge. Legacy source-story
+    /// offsets follow the same six-slot section ownership used by the other
+    /// running-surface hints; opened DOCX hints follow default-surface inheritance
+    /// and keep local relationships. Opened DOCX inputs carry visible manual
+    /// column breaks in direct paragraphs of top-level running-table cells
     /// and recursively carry row no-split state,
     /// cell-paragraph keep/widow controls, exact/minimum line rules, explicit
     /// tabs, and visible column breaks through nested running-table descendants
@@ -1088,8 +1092,8 @@ impl Document {
     /// explicit tabs, and visible manual column breaks. An unsupported opened-
     /// DOCX note body falls back independently to normalized one-paragraph text.
     /// Legacy nested-table descendants and note paragraph layout properties
-    /// remain outside these layout-hint paths. Legacy nested running tables and
-    /// legacy running-story manual breaks remain unsupported. Settings-defined
+    /// remain outside these layout-hint paths. Legacy manual breaks in running-
+    /// table cells and nested running tables remain unsupported. Settings-defined
     /// default-tab intervals, table-cell page breaks, and legacy note manual
     /// breaks also remain outside the bounded paths. Note tables, media,
     /// relationships, fields, annotations, bookmarks, nested notes, source IDs
@@ -1122,7 +1126,7 @@ impl Document {
                         running_tab_stops: &assembled.running_tab_stops,
                         running_table_cell_tab_stops: &assembled.running_table_cell_tab_stops,
                         running_table_layout: &[],
-                        running_column_break_offsets: &[],
+                        running_column_break_offsets: &assembled.running_column_break_offsets,
                         note_payloads: &[],
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
@@ -6504,6 +6508,35 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "docx")]
+    fn two_section_legacy_running_column_break_doc() -> Vec<u8> {
+        let mut text = "ABCDEabcde".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut story_ends = Vec::with_capacity(12);
+        for marker in [
+            "E0", "O0", "e0", "o0", "F0", "f0", "E1", "O1", "e1", "o1", "F1", "f1",
+        ] {
+            text.push_str(marker);
+            text.push('A');
+            text.push('\u{000e}');
+            text.push_str(marker);
+            text.push('B');
+            text.push('\r');
+            story_ends.push(text.encode_utf16().count() as u32 - main_len);
+        }
+
+        let mut plcf_hdd = vec![0u32; 7];
+        plcf_hdd.extend_from_slice(&story_ends);
+        plcf_hdd.push(*story_ends.last().unwrap());
+        synth_doc_with_ccp_plcfhdd_and_plcfsed(
+            &text,
+            [main_len, 0, *story_ends.last().unwrap(), 0, 0, 0],
+            &plcf_hdd,
+            &[0, 5, 10],
+            None,
+        )
+    }
+
     #[cfg(any(feature = "docx", feature = "render"))]
     fn legacy_running_surface_absolute_spacing_doc(
         story_position: usize,
@@ -10775,6 +10808,47 @@ mod tests {
             header_xml.iter().any(|xml| xml.contains(">O1<")),
             "final section odd header part missing: {header_xml:?}"
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_paragraph_column_breaks_roundtrip_to_docx() {
+        let document = Document::open(&two_section_legacy_running_column_break_doc()).unwrap();
+        let source_model = document.model();
+        let converted = document.to_docx();
+        assert_eq!(converted, document.to_docx());
+        assert_eq!(document.model(), source_model);
+
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let parts = docx_running_parts(&converted);
+        assert_eq!(parts.len(), 12, "{parts:?}");
+        for marker in [
+            "E0", "O0", "e0", "o0", "F0", "f0", "E1", "O1", "e1", "o1", "F1", "f1",
+        ] {
+            assert!(!document_xml.contains(&format!(">{marker}A</w:t>")));
+            let selected = parts
+                .iter()
+                .filter(|(_, xml)| xml.contains(&format!(">{marker}A</w:t>")))
+                .collect::<Vec<_>>();
+            assert_eq!(selected.len(), 1, "{marker}: {parts:?}");
+            assert_eq!(
+                selected[0].1.matches(r#"<w:br w:type="column"/>"#).count(),
+                1,
+                "{marker}: {}",
+                selected[0].1
+            );
+            assert!(!selected[0].1.contains("<w:br/>"), "{}", selected[0].1);
+        }
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(reopened.to_docx(), converted);
+
+        let model_only = write_docx(&source_model);
+        let model_only_parts = docx_running_parts(&model_only);
+        assert_eq!(model_only_parts.len(), 12, "{model_only_parts:?}");
+        assert!(model_only_parts.iter().all(|(_, xml)| {
+            !xml.contains(r#"<w:br w:type="column"/>"#) && xml.matches("<w:br/>").count() == 1
+        }));
     }
 
     #[test]

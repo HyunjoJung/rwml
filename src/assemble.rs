@@ -25,7 +25,8 @@ use crate::model::{
 };
 #[cfg(feature = "docx")]
 use crate::model::{
-    RunningBlockPaginationHints, RunningSurfacePaginationHints, TableCellColumnBreakHints,
+    RunningBlockPaginationHints, RunningSurfaceColumnBreakHints, RunningSurfacePaginationHints,
+    TableCellColumnBreakHints,
 };
 #[cfg(any(feature = "docx", feature = "render"))]
 use crate::model::{
@@ -116,6 +117,8 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) running_line_spacing_hints: Vec<RunningSurfaceLineSpacingHints>,
     #[cfg(feature = "docx")]
     pub(crate) running_pagination_hints: Vec<RunningSurfacePaginationHints>,
+    #[cfg(feature = "docx")]
+    pub(crate) running_column_break_offsets: Vec<RunningSurfaceColumnBreakHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
     pub(crate) running_tab_stops: Vec<RunningSurfaceTabStopHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
@@ -183,6 +186,8 @@ pub(crate) fn build_model_with_render_hints(
         note_table_cell_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
         running_tab_regions,
+        #[cfg(feature = "docx")]
+        running_column_break_regions,
         text_start: _,
     } = build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
     #[cfg(any(feature = "docx", feature = "render"))]
@@ -200,6 +205,9 @@ pub(crate) fn build_model_with_render_hints(
         &table_row_pagination,
         &table_cell_pagination,
     );
+    #[cfg(feature = "docx")]
+    let running_column_break_offsets =
+        legacy_running_column_breaks_from_regions(&blocks, &running_column_break_regions);
     clear_legacy_running_layout_hints(
         &blocks,
         &regions,
@@ -277,6 +285,8 @@ pub(crate) fn build_model_with_render_hints(
         running_line_spacing_hints,
         #[cfg(feature = "docx")]
         running_pagination_hints,
+        #[cfg(feature = "docx")]
+        running_column_break_offsets,
         #[cfg(any(feature = "docx", feature = "render"))]
         running_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
@@ -716,6 +726,13 @@ fn push_legacy_region(
         tab_stops: std::mem::take(&mut region_output.tab_stops),
         table_cell_tab_stops: std::mem::take(&mut region_output.table_cell_tab_stops),
     });
+    #[cfg(feature = "docx")]
+    let running_column_break_region = (kind == SourceRegionKind::HeaderFooter
+        && !region_output.blocks.is_empty())
+    .then(|| LegacyRunningColumnBreakRegion {
+        source_story_index,
+        column_break_offsets: std::mem::take(&mut region_output.column_break_offsets),
+    });
     #[cfg(any(feature = "docx", feature = "render"))]
     if kind != SourceRegionKind::Main {
         region_output.tab_stops = vec![Vec::new(); region_output.blocks.len()];
@@ -775,6 +792,10 @@ fn push_legacy_region(
     if let Some(region) = running_tab_region {
         output.running_tab_regions.push(region);
     }
+    #[cfg(feature = "docx")]
+    if let Some(region) = running_column_break_region {
+        output.running_column_break_regions.push(region);
+    }
     let block_end = output.blocks.len();
 
     if source_len_cp > 0 || include_empty {
@@ -817,6 +838,8 @@ struct LegacyRegionOutput {
     note_table_cell_tab_stops: Vec<TableCellTabStopHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
     running_tab_regions: Vec<LegacyRunningTabRegion>,
+    #[cfg(feature = "docx")]
+    running_column_break_regions: Vec<LegacyRunningColumnBreakRegion>,
     text_start: usize,
 }
 
@@ -825,6 +848,12 @@ struct LegacyRunningTabRegion {
     source_story_index: Option<usize>,
     tab_stops: Vec<Vec<TabStop>>,
     table_cell_tab_stops: Vec<TableCellTabStopHints>,
+}
+
+#[cfg(feature = "docx")]
+struct LegacyRunningColumnBreakRegion {
+    source_story_index: Option<usize>,
+    column_break_offsets: Vec<Vec<usize>>,
 }
 
 #[cfg(feature = "render")]
@@ -1026,6 +1055,88 @@ fn legacy_running_pagination_section_slot(
     hints: &mut RunningSurfacePaginationHints,
     story_index: Option<usize>,
 ) -> Option<&mut RunningBlockPaginationHints> {
+    match legacy_header_footer_story_position(story_index)? {
+        0 => Some(&mut hints.even_header),
+        1 => Some(&mut hints.header),
+        2 => Some(&mut hints.even_footer),
+        3 => Some(&mut hints.footer),
+        4 => Some(&mut hints.first_header),
+        _ => Some(&mut hints.first_footer),
+    }
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_column_breaks_from_regions(
+    blocks: &[Block],
+    regions: &[LegacyRunningColumnBreakRegion],
+) -> Vec<RunningSurfaceColumnBreakHints> {
+    let section_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count()
+        .saturating_add(1);
+    let mut sections = vec![RunningSurfaceColumnBreakHints::default(); section_count];
+
+    for region in regions
+        .iter()
+        .filter(|region| !region.column_break_offsets.is_empty())
+    {
+        if section_count == 1 {
+            let slot =
+                legacy_running_column_break_slot(&mut sections[0], region.source_story_index);
+            if slot.is_empty() {
+                *slot = region.column_break_offsets.clone();
+            }
+            continue;
+        }
+        if region.source_story_index.is_none() {
+            for section in &mut sections {
+                if section.header.is_empty() {
+                    section.header = region.column_break_offsets.clone();
+                }
+            }
+            continue;
+        }
+        let Some(section_index) = legacy_header_footer_section_index(region.source_story_index)
+        else {
+            continue;
+        };
+        let Some(section) = sections.get_mut(section_index) else {
+            continue;
+        };
+        let Some(slot) =
+            legacy_running_column_break_section_slot(section, region.source_story_index)
+        else {
+            continue;
+        };
+        if slot.is_empty() {
+            *slot = region.column_break_offsets.clone();
+        }
+    }
+
+    sections
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_column_break_slot(
+    hints: &mut RunningSurfaceColumnBreakHints,
+    story_index: Option<usize>,
+) -> &mut Vec<Vec<usize>> {
+    match legacy_header_footer_story_position(story_index) {
+        Some(0) => &mut hints.even_header,
+        Some(1) | None => &mut hints.header,
+        Some(2) => &mut hints.even_footer,
+        Some(3) => &mut hints.footer,
+        Some(4) => &mut hints.first_header,
+        _ => &mut hints.first_footer,
+    }
+}
+
+#[cfg(feature = "docx")]
+fn legacy_running_column_break_section_slot(
+    hints: &mut RunningSurfaceColumnBreakHints,
+    story_index: Option<usize>,
+) -> Option<&mut Vec<Vec<usize>>> {
     match legacy_header_footer_story_position(story_index)? {
         0 => Some(&mut hints.even_header),
         1 => Some(&mut hints.header),
@@ -4664,6 +4775,68 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_running_column_breaks_map_six_story_slots_per_section_and_keep_first_owner() {
+        let blocks = vec![
+            Block::PageBreak,
+            Block::SectionBreak(SectionSetup::default()),
+            Block::PageBreak,
+        ];
+        let mut regions = (0..12)
+            .map(|story_offset| LegacyRunningColumnBreakRegion {
+                source_story_index: Some(HEADER_FOOTER_STORY_BASE + story_offset),
+                column_break_offsets: vec![vec![story_offset + 1]],
+            })
+            .collect::<Vec<_>>();
+        regions.push(LegacyRunningColumnBreakRegion {
+            source_story_index: Some(HEADER_FOOTER_STORY_BASE),
+            column_break_offsets: vec![vec![999]],
+        });
+
+        let mapped = legacy_running_column_breaks_from_regions(&blocks, &regions);
+        let values = |hints: &RunningSurfaceColumnBreakHints| {
+            [
+                &hints.even_header,
+                &hints.header,
+                &hints.even_footer,
+                &hints.footer,
+                &hints.first_header,
+                &hints.first_footer,
+            ]
+            .map(|blocks| blocks[0][0])
+        };
+
+        assert_eq!(mapped.len(), 2);
+        assert_eq!(values(&mapped[0]), [1, 2, 3, 4, 5, 6]);
+        assert_eq!(values(&mapped[1]), [7, 8, 9, 10, 11, 12]);
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_running_column_breaks_repeat_unindexed_header_fallback() {
+        let blocks = vec![
+            Block::SectionBreak(SectionSetup::default()),
+            Block::PageBreak,
+        ];
+        let regions = [LegacyRunningColumnBreakRegion {
+            source_story_index: None,
+            column_break_offsets: vec![vec![4]],
+        }];
+
+        let mapped = legacy_running_column_breaks_from_regions(&blocks, &regions);
+
+        assert_eq!(mapped.len(), 2);
+        for section in mapped {
+            assert_eq!(section.header, vec![vec![4]]);
+            assert!(section.even_header.is_empty());
+            assert!(section.first_header.is_empty());
+            assert!(section.footer.is_empty());
+            assert!(section.even_footer.is_empty());
+            assert!(section.first_footer.is_empty());
+        }
+    }
+
     #[cfg(any(feature = "docx", feature = "render"))]
     #[test]
     fn legacy_running_tabs_map_six_story_slots_per_section_and_keep_first_owner() {
@@ -4866,6 +5039,8 @@ mod tests {
             note_table_cell_tab_stops,
             #[cfg(any(feature = "docx", feature = "render"))]
             running_tab_regions,
+            #[cfg(feature = "docx")]
+            running_column_break_regions,
             text_start: _,
         } = build_legacy_region_blocks(&src, &mut numberer, &fib, &plcf_hdd, &[]);
         assert_eq!(pagination_hints.len(), blocks.len());
@@ -4914,7 +5089,16 @@ mod tests {
             );
         }
         #[cfg(feature = "docx")]
-        assert_eq!(note_reference_anchors, vec![Vec::new(); blocks.len()]);
+        {
+            assert_eq!(note_reference_anchors, vec![Vec::new(); blocks.len()]);
+            assert_eq!(running_column_break_regions.len(), 1);
+            assert_eq!(running_column_break_regions[0].source_story_index, None);
+            assert_eq!(
+                running_column_break_regions[0].column_break_offsets.len(),
+                1
+            );
+            assert!(running_column_break_regions[0].column_break_offsets[0].is_empty());
+        }
 
         let header_region = regions
             .iter()
