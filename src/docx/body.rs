@@ -85,6 +85,7 @@ pub(super) struct PaginationCapture {
     section_column_gap_pt: Vec<Option<f32>>,
     section_column_layouts: Vec<Option<SectionColumnLayoutHints>>,
     section_column_separators: Vec<bool>,
+    section_column_rtl: Vec<bool>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
     table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
@@ -103,6 +104,7 @@ pub(super) struct BodyRenderHints {
     pub(super) section_column_gap_pt: Vec<Option<f32>>,
     pub(super) section_column_layouts: Vec<Option<SectionColumnLayoutHints>>,
     pub(super) section_column_separators: Vec<bool>,
+    pub(super) section_column_rtl: Vec<bool>,
     pub(super) table_rows: Vec<Vec<TableRowPaginationHint>>,
     pub(super) table_cells: Vec<TableCellPaginationHints>,
     pub(super) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
@@ -115,6 +117,7 @@ struct BlockSectionColumnHints<'a> {
     gap_pt: Option<f32>,
     layout: Option<&'a SectionColumnLayoutHints>,
     separator: bool,
+    rtl: bool,
 }
 
 /// Resolved supplementary tables, passed down the descent.
@@ -196,6 +199,7 @@ impl Ctx<'_> {
                 section_column_gap_pt: capture.section_column_gap_pt,
                 section_column_layouts: capture.section_column_layouts,
                 section_column_separators: capture.section_column_separators,
+                section_column_rtl: capture.section_column_rtl,
                 table_rows: capture.table_row_pagination,
                 table_cells: capture.table_cell_pagination,
                 table_cell_line_spacing: capture.table_cell_line_spacing,
@@ -240,6 +244,7 @@ impl Ctx<'_> {
                 capture
                     .section_column_separators
                     .push(section_columns.separator);
+                capture.section_column_rtl.push(section_columns.rtl);
                 capture.table_row_pagination.push(Vec::new());
                 capture.table_cell_pagination.push(Vec::new());
                 capture.table_cell_line_spacing.push(Vec::new());
@@ -259,6 +264,7 @@ impl Ctx<'_> {
                 capture.section_column_gap_pt.push(None);
                 capture.section_column_layouts.push(None);
                 capture.section_column_separators.push(false);
+                capture.section_column_rtl.push(false);
                 capture.table_row_pagination.push(table.rows.clone());
                 capture.table_cell_pagination.push(table.cells.clone());
                 capture
@@ -293,6 +299,7 @@ impl Ctx<'_> {
                     .flatten();
                 let column_separator =
                     matches!(block, Block::SectionBreak(_)) && data.section_column_separator;
+                let column_rtl = matches!(block, Block::SectionBreak(_)) && data.section_column_rtl;
                 self.capture_block_hints(
                     PaginationHint::default(),
                     None,
@@ -301,6 +308,7 @@ impl Ctx<'_> {
                         gap_pt: column_gap,
                         layout: column_layout,
                         separator: column_separator,
+                        rtl: column_rtl,
                     },
                     &[],
                 );
@@ -753,6 +761,26 @@ pub(crate) fn scan_section_column_separator(xml: &str) -> bool {
     separator
 }
 
+/// Scan whether the final/body section populates text columns right to left.
+#[cfg(feature = "render")]
+pub(crate) fn scan_section_column_rtl(xml: &str) -> bool {
+    let mut r = Reader::from_str(xml);
+    let mut rtl = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                rtl = read_section_column_rtl(&mut r);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                rtl = false;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    rtl
+}
+
 /// Scan the final/body section properties for text flow direction.
 pub(crate) fn scan_section_text_direction(xml: &str) -> Option<TextDirection> {
     let mut r = Reader::from_str(xml);
@@ -1035,6 +1063,28 @@ fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
     text_direction
 }
 
+#[cfg(feature = "render")]
+fn read_section_column_rtl(r: &mut Xml<'_>) -> bool {
+    let mut rtl = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_section_setup_alternate_content(r).column_rtl {
+                    rtl = value;
+                }
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"bidi" => {
+                rtl = toggle_on(attr_local(&e, b"val"));
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    rtl
+}
+
 fn section_text_direction(e: &BytesStart<'_>) -> Option<TextDirection> {
     attr_local(e, b"val").and_then(|value| TextDirection::from_wml_value(&value))
 }
@@ -1102,6 +1152,7 @@ struct SectionSetupScan {
     column_gap_pt: Option<Option<f32>>,
     column_layout: Option<Option<SectionColumnLayoutHints>>,
     column_separator: Option<bool>,
+    column_rtl: Option<bool>,
     text_direction: Option<Option<TextDirection>>,
     doc_grid: Option<Option<DocGrid>>,
     title_page: bool,
@@ -1122,6 +1173,11 @@ fn read_section_setup_alternate_content(r: &mut Xml<'_>) -> SectionSetupScan {
                     }
                     _ => skip_subtree(r),
                 }
+            }
+            Ok(Event::Empty(e))
+                if !took && matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") =>
+            {
+                took = true;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -1168,6 +1224,9 @@ fn merge_section_setup_scan(target: &mut SectionSetupScan, source: SectionSetupS
     if source.column_separator.is_some() {
         target.column_separator = source.column_separator;
     }
+    if source.column_rtl.is_some() {
+        target.column_rtl = source.column_rtl;
+    }
     if source.text_direction.is_some() {
         target.text_direction = source.text_direction;
     }
@@ -1185,6 +1244,10 @@ fn record_section_setup_child(setup: &mut SectionSetupScan, e: &BytesStart<'_>) 
         }
         b"textDirection" => {
             setup.text_direction = Some(section_text_direction(e));
+            true
+        }
+        b"bidi" => {
+            setup.column_rtl = Some(toggle_on(attr_local(e, b"val")));
             true
         }
         b"docGrid" => {
@@ -2651,6 +2714,7 @@ struct ParagraphBlockData {
     section_column_gap_pt: Option<f32>,
     section_column_layout: Option<SectionColumnLayoutHints>,
     section_column_separator: bool,
+    section_column_rtl: bool,
     column_break_offsets: Vec<Vec<usize>>,
 }
 
@@ -2670,6 +2734,7 @@ fn read_paragraph_blocks_data(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Par
     let mut section_column_gap_pt = None;
     let mut section_column_layout = None;
     let mut section_column_separator = false;
+    let mut section_column_rtl = false;
     if let Some(mut section) = section {
         if section.setup.section_break.is_none() {
             section.setup.section_break = Some(SectionBreakKind::NextPage);
@@ -2677,6 +2742,7 @@ fn read_paragraph_blocks_data(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Par
         section_column_gap_pt = section.column_gap_pt;
         section_column_layout = section.column_layout;
         section_column_separator = section.column_separator;
+        section_column_rtl = section.column_rtl;
         split.push(Block::SectionBreak(section.setup), Vec::new());
     }
     ParagraphBlockData {
@@ -2687,6 +2753,7 @@ fn read_paragraph_blocks_data(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Par
         section_column_gap_pt,
         section_column_layout,
         section_column_separator,
+        section_column_rtl,
         column_break_offsets: split.column_break_offsets,
     }
 }
@@ -3856,6 +3923,7 @@ struct ParsedSectionSetup {
     column_gap_pt: Option<f32>,
     column_layout: Option<SectionColumnLayoutHints>,
     column_separator: bool,
+    column_rtl: bool,
 }
 
 fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> ParsedSectionSetup {
@@ -3965,6 +4033,7 @@ fn is_sect_pr_leaf(name: &[u8]) -> bool {
             | b"textDirection"
             | b"docGrid"
             | b"titlePg"
+            | b"bidi"
     )
 }
 
@@ -3997,6 +4066,9 @@ fn apply_sect_pr_child(section: &mut ParsedSectionSetup, e: &BytesStart<'_>) {
         }
         b"titlePg" => {
             section.setup.title_page = true;
+        }
+        b"bidi" => {
+            section.column_rtl = toggle_on(attr_local(e, b"val"));
         }
         _ => {}
     }
@@ -10560,6 +10632,35 @@ mod tests {
         </w:sectPr></w:body></w:document>"#;
         assert_eq!(scan_section_column_layout(malformed), None);
         assert!(scan_section_column_separator(malformed));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn final_section_column_rtl_follows_on_off_source_order_and_selected_mce_branch() {
+        for value in ["1", "true", "on"] {
+            let xml = format!("<w:document><w:body><w:sectPr><w:bidi w:val=\"{value}\"/></w:sectPr></w:body></w:document>");
+            assert!(scan_section_column_rtl(&xml), "{value}");
+        }
+        for value in ["0", "false", "off"] {
+            let xml = format!("<w:document><w:body><w:sectPr><w:bidi w:val=\"{value}\"/></w:sectPr></w:body></w:document>");
+            assert!(!scan_section_column_rtl(&xml), "{value}");
+        }
+        assert!(scan_section_column_rtl(
+            "<w:document><w:body><w:sectPr><w:bidi></w:bidi></w:sectPr></w:body></w:document>"
+        ));
+        assert!(!scan_section_column_rtl(
+            "<w:document><w:body><w:sectPr><w:bidi/><w:bidi w:val=\"0\"/></w:sectPr></w:body></w:document>"
+        ));
+
+        let selected = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:sectPr>
+            <mc:AlternateContent><mc:Choice Requires="w14"><w:bidi/></mc:Choice><mc:Fallback><w:bidi w:val="0"/></mc:Fallback></mc:AlternateContent>
+        </w:sectPr></w:body></w:document>"#;
+        assert!(scan_section_column_rtl(selected));
+
+        let empty_choice = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:sectPr>
+            <mc:AlternateContent><mc:Choice Requires="w14"/><mc:Fallback><w:bidi/></mc:Fallback></mc:AlternateContent>
+        </w:sectPr></w:body></w:document>"#;
+        assert!(!scan_section_column_rtl(empty_choice));
     }
 
     #[test]

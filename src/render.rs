@@ -201,9 +201,11 @@ pub(crate) struct SourceRenderHints<'a> {
     pub(crate) section_column_gap_pt: &'a [Option<f32>],
     pub(crate) section_column_layouts: &'a [Option<SectionColumnLayoutHints>],
     pub(crate) section_column_separators: &'a [bool],
+    pub(crate) section_column_rtl: &'a [bool],
     pub(crate) final_section_column_gap_pt: Option<f32>,
     pub(crate) final_section_column_layout: Option<&'a SectionColumnLayoutHints>,
     pub(crate) final_section_column_separator: bool,
+    pub(crate) final_section_column_rtl: bool,
     pub(crate) default_tab_stop_pt: Option<f32>,
     pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     pub(crate) table_cell_pagination: &'a [TableCellPaginationHints],
@@ -586,6 +588,7 @@ enum FlowItem {
     ColumnBreak,
     SectionColumnGap(f32),
     SectionColumnLayout(Rc<SectionColumnLayoutHints>),
+    SectionColumnRtl,
     SectionBreak(SectionSetup),
     Table {
         rows: Vec<RowLayout>,
@@ -4703,6 +4706,7 @@ struct BlockCollectionOptions<'a> {
     section_columns: Option<&'a [Option<u16>]>,
     section_column_gap_pt: Option<&'a [Option<f32>]>,
     section_column_layouts: Option<&'a [Option<&'a SectionColumnLayoutHints>]>,
+    section_column_rtl: Option<&'a [bool]>,
     section_geometries: Option<&'a [Geom]>,
     pagination_hints: Option<&'a [PaginationHint]>,
     line_spacing_hints: Option<&'a [Option<LineSpacingHint>]>,
@@ -4721,6 +4725,7 @@ struct BodyCollectionSidecars<'a> {
     section_columns: &'a [Option<u16>],
     section_column_gap_pt: &'a [Option<f32>],
     section_column_layouts: &'a [Option<&'a SectionColumnLayoutHints>],
+    section_column_rtl: &'a [bool],
     section_geometries: &'a [Geom],
     pagination_hints: &'a [PaginationHint],
     line_spacing_hints: &'a [Option<LineSpacingHint>],
@@ -4754,6 +4759,7 @@ fn collect_blocks_with_block_anchors(
             section_columns: Some(sidecars.section_columns),
             section_column_gap_pt: Some(sidecars.section_column_gap_pt),
             section_column_layouts: Some(sidecars.section_column_layouts),
+            section_column_rtl: Some(sidecars.section_column_rtl),
             section_geometries: Some(sidecars.section_geometries),
             pagination_hints: Some(sidecars.pagination_hints),
             line_spacing_hints: Some(sidecars.line_spacing_hints),
@@ -4935,6 +4941,14 @@ fn collect_blocks_inner(
                     .flatten()
                 {
                     out.push(FlowItem::SectionColumnLayout(Rc::new(layout.clone())));
+                }
+                if options
+                    .section_column_rtl
+                    .and_then(|directions| directions.get(block_index))
+                    .copied()
+                    .unwrap_or(false)
+                {
+                    out.push(FlowItem::SectionColumnRtl);
                 }
                 out.push(FlowItem::SectionBreak(section.clone()));
             }
@@ -7812,6 +7826,7 @@ fn draw_section_column_separators(
 struct FlowCursor {
     columns: ColumnLayout,
     column_index: usize,
+    rtl: bool,
     y: f32,
     column_nonempty: bool,
 }
@@ -7822,10 +7837,13 @@ impl FlowCursor {
         columns: Option<u16>,
         column_gap_pt: Option<f32>,
         column_layout: Option<&SectionColumnLayoutHints>,
+        rtl: bool,
     ) -> Self {
+        let columns = ColumnLayout::new_with_layout(geom, columns, column_gap_pt, column_layout);
         Self {
-            columns: ColumnLayout::new_with_layout(geom, columns, column_gap_pt, column_layout),
-            column_index: 0,
+            column_index: Self::initial_column_index(columns, rtl),
+            columns,
+            rtl,
             y: geom.top(),
             column_nonempty: false,
         }
@@ -7837,19 +7855,23 @@ impl FlowCursor {
         columns: Option<u16>,
         column_gap_pt: Option<f32>,
         column_layout: Option<&SectionColumnLayoutHints>,
+        rtl: bool,
     ) {
         self.columns = ColumnLayout::new_with_layout(geom, columns, column_gap_pt, column_layout);
-        self.column_index = 0;
+        self.rtl = rtl;
+        self.column_index = Self::initial_column_index(self.columns, self.rtl);
         self.y = geom.top();
         self.column_nonempty = false;
     }
 
     fn advance(&mut self, pages: &mut Pages, geom: Geom) {
-        if self.column_index + 1 < self.columns.count {
+        if self.rtl && self.column_index > 0 {
+            self.column_index -= 1;
+        } else if !self.rtl && self.column_index + 1 < self.columns.count {
             self.column_index += 1;
         } else {
             pages.push(Vec::new());
-            self.column_index = 0;
+            self.column_index = Self::initial_column_index(self.columns, self.rtl);
         }
         self.y = geom.top();
         self.column_nonempty = false;
@@ -7857,9 +7879,17 @@ impl FlowCursor {
 
     fn force_page(&mut self, pages: &mut Pages, geom: Geom) {
         pages.push(Vec::new());
-        self.column_index = 0;
+        self.column_index = Self::initial_column_index(self.columns, self.rtl);
         self.y = geom.top();
         self.column_nonempty = false;
+    }
+
+    fn initial_column_index(columns: ColumnLayout, rtl: bool) -> usize {
+        if rtl {
+            columns.count.saturating_sub(1)
+        } else {
+            0
+        }
     }
 }
 
@@ -8205,6 +8235,24 @@ fn section_column_layouts_by_item(
     layouts
 }
 
+fn section_column_rtl_by_item(items: &[FlowItem], final_rtl: bool) -> Vec<bool> {
+    let mut directions = vec![final_rtl; items.len()];
+    let mut section_start = 0usize;
+    let mut ending_rtl = false;
+    for (index, item) in items.iter().enumerate() {
+        match item {
+            FlowItem::SectionColumnRtl => ending_rtl = true,
+            FlowItem::SectionBreak(_) => {
+                directions[section_start..=index].fill(ending_rtl);
+                section_start = index + 1;
+                ending_rtl = false;
+            }
+            _ => {}
+        }
+    }
+    directions
+}
+
 fn same_section_column_layout(
     left: &Option<Rc<SectionColumnLayoutHints>>,
     right: &Option<Rc<SectionColumnLayoutHints>>,
@@ -8271,6 +8319,7 @@ fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMet
                 | FlowItem::ColumnBreak
                 | FlowItem::SectionColumnGap(_)
                 | FlowItem::SectionColumnLayout(_)
+                | FlowItem::SectionColumnRtl
                 | FlowItem::SectionBreak(_)
                 | FlowItem::Table { .. }
                 | FlowItem::Picture { .. }
@@ -8381,7 +8430,7 @@ fn page_after_section_break(current_page: usize, section_break: Option<SectionBr
 
 #[cfg(test)]
 fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup) -> Pagination {
-    paginate_with_column_gap(items, geom, final_section_setup, None, None)
+    paginate_with_column_gap(items, geom, final_section_setup, None, None, false)
 }
 
 fn paginate_with_column_gap(
@@ -8390,12 +8439,14 @@ fn paginate_with_column_gap(
     final_section_setup: &SectionSetup,
     final_column_gap_pt: Option<f32>,
     final_column_layout: Option<&SectionColumnLayoutHints>,
+    final_column_rtl: bool,
 ) -> Pagination {
     // Paginate flow items top-to-bottom through section columns and then across
     // pages. Tables repeat headers after each break and split oversized rows.
     let columns_by_item = section_columns_by_item(&items, final_section_setup.columns);
     let column_gaps_by_item = section_column_gaps_by_item(&items, final_column_gap_pt);
     let column_layouts_by_item = section_column_layouts_by_item(&items, final_column_layout);
+    let column_rtl_by_item = section_column_rtl_by_item(&items, final_column_rtl);
     let geometries_by_item = section_geometries_by_item(&items, geom);
     let block_metrics = block_pagination_metrics(&items);
     let mut pages: Pages = vec![Vec::new()];
@@ -8417,7 +8468,15 @@ fn paginate_with_column_gap(
         active_columns,
         active_column_gap_pt,
         active_column_layout.as_deref(),
+        column_rtl_by_item
+            .first()
+            .copied()
+            .unwrap_or(final_column_rtl),
     );
+    let mut active_column_rtl = column_rtl_by_item
+        .first()
+        .copied()
+        .unwrap_or(final_column_rtl);
     let mut block_pages = HashMap::new();
     let mut block_line_pages: HashMap<usize, Vec<BlockLinePage>> = HashMap::new();
     let mut pending_block = None;
@@ -8439,10 +8498,12 @@ fn paginate_with_column_gap(
                 columns_by_item[item_index],
                 column_gaps_by_item[item_index],
                 column_layouts_by_item[item_index].as_deref(),
+                column_rtl_by_item[item_index],
             );
             active_columns = columns_by_item[item_index];
             active_column_gap_pt = column_gaps_by_item[item_index];
             active_column_layout = column_layouts_by_item[item_index].clone();
+            active_column_rtl = column_rtl_by_item[item_index];
         }
         let item_columns = columns_by_item[item_index];
         let item_column_gap_pt = column_gaps_by_item[item_index];
@@ -8450,16 +8511,19 @@ fn paginate_with_column_gap(
         if item_columns != active_columns
             || item_column_gap_pt != active_column_gap_pt
             || !same_section_column_layout(item_column_layout, &active_column_layout)
+            || column_rtl_by_item[item_index] != active_column_rtl
         {
             cursor.set_columns(
                 active_geom,
                 item_columns,
                 item_column_gap_pt,
                 item_column_layout.as_deref(),
+                column_rtl_by_item[item_index],
             );
             active_columns = item_columns;
             active_column_gap_pt = item_column_gap_pt;
             active_column_layout = item_column_layout.clone();
+            active_column_rtl = column_rtl_by_item[item_index];
         }
         match item {
             FlowItem::BlockStart {
@@ -8693,6 +8757,7 @@ fn paginate_with_column_gap(
             }
             FlowItem::SectionColumnGap(_) => {}
             FlowItem::SectionColumnLayout(_) => {}
+            FlowItem::SectionColumnRtl => {}
             FlowItem::SectionBreak(section) => {
                 let next_section_page =
                     page_after_section_break(pages.len(), section.section_break);
@@ -8791,6 +8856,7 @@ fn collect_pdf_flow_items(
             section_columns: &body_columns,
             section_column_gap_pt: &body_column_gaps,
             section_column_layouts: &body_column_layouts,
+            section_column_rtl: source_hints.section_column_rtl,
             section_geometries: &body_geometries,
             pagination_hints: source_hints.pagination,
             line_spacing_hints: source_hints.line_spacing,
@@ -9060,6 +9126,7 @@ fn record_page_fields(pages: &Pages, page_fields: &mut [Option<usize>]) {
                 | FlowItem::ColumnBreak
                 | FlowItem::SectionColumnGap(_)
                 | FlowItem::SectionColumnLayout(_)
+                | FlowItem::SectionColumnRtl
                 | FlowItem::SectionBreak(_)
                 | FlowItem::Table { .. }
                 | FlowItem::Picture { .. }
@@ -9112,6 +9179,7 @@ pub(crate) fn layout_pages_with_fonts_and_pagination(
         &final_section_setup,
         source_hints.final_section_column_gap_pt,
         source_hints.final_section_column_layout,
+        source_hints.final_section_column_rtl,
     );
     let mut page_fields = capture.page_fields;
     record_page_fields(&pagination.pages, &mut page_fields);
@@ -9307,6 +9375,7 @@ fn render_pdf(
         &final_section_setup,
         source_hints.final_section_column_gap_pt,
         source_hints.final_section_column_layout,
+        source_hints.final_section_column_rtl,
     );
     let section_column_paint_hints = section_column_paint_hints_by_section(
         &model.blocks,
@@ -9497,6 +9566,7 @@ fn render_pdf(
                 | FlowItem::ColumnBreak
                 | FlowItem::SectionColumnGap(_)
                 | FlowItem::SectionColumnLayout(_)
+                | FlowItem::SectionColumnRtl
                 | FlowItem::SectionBreak(_)
                 | FlowItem::Table { .. } => {}
                 FlowItem::Picture { image, layout } => {
@@ -15095,6 +15165,7 @@ mod tests {
             &setup,
             Some(40.0),
             None,
+            false,
         );
 
         let second_column = pagination.pages[0]
@@ -15268,7 +15339,7 @@ mod tests {
             pagination_line(10.0),
         ];
 
-        let pagination = paginate_with_column_gap(items, geom, &setup, None, Some(&source));
+        let pagination = paginate_with_column_gap(items, geom, &setup, None, Some(&source), false);
         let lines = pagination.pages[0]
             .iter()
             .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
@@ -15279,6 +15350,164 @@ mod tests {
         assert_close(lines[0].width, 60.0);
         assert_close(lines[1].x, 80.0);
         assert_close(lines[1].width, 100.0);
+    }
+
+    #[test]
+    fn rtl_unequal_columns_advance_left_and_reset_right_after_manual_breaks() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate_with_column_gap(items, geom, &setup, None, Some(&source), true);
+        let first_page = pagination.pages[0]
+            .iter()
+            .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .collect::<Vec<_>>();
+        let second_page = pagination.pages[1]
+            .iter()
+            .find(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .expect("line after RTL page reset");
+
+        assert_eq!(first_page.len(), 2);
+        assert_close(first_page[0].x, 80.0);
+        assert_close(first_page[0].width, 100.0);
+        assert_close(first_page[1].x, 0.0);
+        assert_close(first_page[1].width, 60.0);
+        assert_close(second_page.x, 80.0);
+        assert_close(second_page.width, 100.0);
+    }
+
+    #[test]
+    fn rtl_columns_advance_left_on_overflow_and_reset_right_on_new_page() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 60.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let lines_per_column = ((geom.bottom() - geom.top()) / 10.0).floor() as usize;
+        let pagination = paginate_with_column_gap(
+            (0..lines_per_column * 2 + 1)
+                .map(|_| pagination_line(10.0))
+                .collect(),
+            geom,
+            &setup,
+            Some(20.0),
+            None,
+            true,
+        );
+        let page_xs = pagination
+            .pages
+            .iter()
+            .map(|page| {
+                page.iter()
+                    .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+                    .map(|placed| placed.x)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(page_xs.len(), 2);
+        assert_eq!(page_xs[0].len(), lines_per_column * 2);
+        for x in &page_xs[0][..lines_per_column] {
+            assert_close(*x, 100.0);
+        }
+        for x in &page_xs[0][lines_per_column..] {
+            assert_close(*x, 0.0);
+        }
+        assert_close(page_xs[1][0], 100.0);
+    }
+
+    #[test]
+    fn section_column_direction_state_resets_at_each_boundary() {
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::SectionColumnRtl,
+            FlowItem::SectionBreak(setup.clone()),
+            pagination_line(10.0),
+            FlowItem::SectionBreak(setup.clone()),
+            pagination_line(10.0),
+        ];
+
+        assert_eq!(
+            super::section_column_rtl_by_item(&items, true),
+            vec![true, true, true, false, false, true]
+        );
+
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate_with_column_gap(items, geom, &setup, None, None, true);
+        let first_line_x = |page: &[super::PlacedItem]| {
+            page.iter()
+                .find(|placed| matches!(&placed.item, FlowItem::Line(_)))
+                .map(|placed| placed.x)
+                .expect("section line")
+        };
+
+        assert_eq!(pagination.pages.len(), 3);
+        assert!(first_line_x(&pagination.pages[0]) > 90.0);
+        assert_close(first_line_x(&pagination.pages[1]), 0.0);
+        assert!(first_line_x(&pagination.pages[2]) > 90.0);
+    }
+
+    #[test]
+    fn one_column_layout_is_invariant_under_section_rtl() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(1),
+            ..SectionSetup::default()
+        };
+        let ltr =
+            paginate_with_column_gap(vec![pagination_line(10.0)], geom, &setup, None, None, false);
+        let rtl =
+            paginate_with_column_gap(vec![pagination_line(10.0)], geom, &setup, None, None, true);
+
+        assert_eq!(ltr.pages.len(), rtl.pages.len());
+        assert_close(ltr.pages[0][0].x, rtl.pages[0][0].x);
+        assert_close(ltr.pages[0][0].width, rtl.pages[0][0].width);
     }
 
     #[test]
@@ -16885,7 +17114,8 @@ mod tests {
             .filter(|item| matches!(item, FlowItem::Line(_)))
             .count();
         let setup = SectionSetup::from(&model.setup);
-        let pagination = paginate_with_column_gap(explicit_items, geom, &setup, Some(40.0), None);
+        let pagination =
+            paginate_with_column_gap(explicit_items, geom, &setup, Some(40.0), None, false);
 
         assert!(explicit_lines > default_lines);
         assert!(pagination.pages[0].iter().any(|placed| {

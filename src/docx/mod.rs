@@ -236,6 +236,9 @@ pub(crate) struct DocxState {
     /// Renderer-only column-separator flags aligned to body model blocks.
     #[cfg(feature = "render")]
     pub section_column_separators: Vec<bool>,
+    /// Renderer-only right-to-left column population aligned to body model blocks.
+    #[cfg(feature = "render")]
+    pub section_column_rtl: Vec<bool>,
     /// Renderer-only explicit equal-column gap for the final body section.
     #[cfg(feature = "render")]
     pub final_section_column_gap_pt: Option<f32>,
@@ -245,6 +248,9 @@ pub(crate) struct DocxState {
     /// Renderer-only column-separator flag for the final body section.
     #[cfg(feature = "render")]
     pub final_section_column_separator: bool,
+    /// Renderer-only right-to-left population for the final body section.
+    #[cfg(feature = "render")]
+    pub final_section_column_rtl: bool,
     /// Renderer-only effective table-row pagination controls aligned to body model blocks.
     #[cfg(feature = "render")]
     pub table_row_pagination: Vec<Vec<crate::model::TableRowPaginationHint>>,
@@ -479,6 +485,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         section_column_gap_pt,
         section_column_layouts,
         section_column_separators,
+        section_column_rtl,
         table_rows: table_row_pagination,
         table_cells: table_cell_pagination,
         table_cell_line_spacing,
@@ -750,11 +757,15 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         #[cfg(feature = "render")]
         section_column_separators,
         #[cfg(feature = "render")]
+        section_column_rtl,
+        #[cfg(feature = "render")]
         final_section_column_gap_pt: body::scan_section_column_gap_pt(&doc_xml),
         #[cfg(feature = "render")]
         final_section_column_layout: body::scan_section_column_layout(&doc_xml),
         #[cfg(feature = "render")]
         final_section_column_separator: body::scan_section_column_separator(&doc_xml),
+        #[cfg(feature = "render")]
+        final_section_column_rtl: body::scan_section_column_rtl(&doc_xml),
         #[cfg(feature = "render")]
         table_row_pagination,
         #[cfg(feature = "render")]

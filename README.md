@@ -409,7 +409,8 @@ content-box/page-height fitting and pagination. Narrow RTL tables reverse logica
 placement and mirror their cells inside the local table box. Page geometry,
 equal-width section columns, bounded explicit unequal-width opened-DOCX and
 legacy `.doc` tracks, explicit opened-DOCX and legacy `.doc` inter-column
-spacing and column-separator rules, visible top-level
+spacing and column-separator rules, source-opened `w:sectPr/w:bidi` and
+`sprmSFBiDi` right-to-left column population, visible top-level
 opened-DOCX and legacy `.doc` manual column breaks, and per-side margins
 come from the document;
 multi-page tables repeat their header rows without losing outer placement or
@@ -531,8 +532,11 @@ not participate in the bounded exclusion. Behind the `render` feature.
 
 Bounded RTL rendering applies `w:bidi` paragraph base direction, `w:rtl` run
 isolation, logical alignment/list placement, and `w:bidiVisual` table column
-mirroring. This improves mixed Arabic/Hebrew documents without claiming
-Word-exact list-level alignment, punctuation, or table typography.
+mirroring. Source-opened DOCX section `w:bidi` and legacy `sprmSFBiDi` also
+populate equal or bounded unequal section columns from right to left without
+forcing paragraph direction. This improves mixed Arabic/Hebrew documents
+without claiming Word-exact list-level alignment, punctuation, or table
+typography.
 `ListInfo` does not retain list-instance identity, source `numId`/`ilfo`,
 restart/start overrides, marker fonts or glyph metadata, or marker
 tabs/alignment/exact hanging indents. Independent or restarted empty-label
@@ -626,9 +630,11 @@ bridges.
 > `sprmSDxaColumns` values. Valid opened-DOCX `w:cols/@w:sep` and legacy
 > `sprmSLBetween` flags paint centered rules between every active equal,
 > fitting, scaled, or fallback track without changing pagination; one-column
-> sections remain paint-inert. Incomplete custom legacy geometry, RTL column
-> reversal, private-width conversion round-trip, and Word-exact reflow remain
-> outside this bounded bridge.
+> sections remain paint-inert. Valid opened-DOCX section `w:bidi` and legacy
+> `sprmSFBiDi` values preserve physical track geometry while starting flow at
+> the rightmost track, advancing left, and resetting right on a new page.
+> Incomplete custom legacy geometry, private-width conversion round-trip, and
+> Word-exact reflow remain outside this bounded bridge.
 > Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
@@ -1147,6 +1153,11 @@ code points.
   sections. Strict source-order `sprmSLBetween` Bool8 values reach a private
   section-aligned PDF sidecar; invalid later values preserve the last valid
   state, and one-column sections emit no rule.
+  Strict source-order `sprmSFBiDi` Bool8 values similarly populate equal or
+  complete unequal section columns from right to left in opened-document PDF
+  previews; invalid later values preserve the last valid state and malformed
+  local SEPX data remains isolated. This section direction does not force
+  paragraph or run bidi behavior.
   A visible end-of-column character (`0x0E`) in a top-level main-story
   paragraph advances an opened-document PDF preview to the next active column,
   or to a new page after the final column, through private source-aligned
@@ -1160,8 +1171,8 @@ code points.
   explicit. Table-cell and non-main-story occurrences retain their newline
   representation.
   Continuous/new-column section marks normalize to the shared model's
-  next-page fallback. Incomplete custom column geometry, RTL column ordering,
-  gutters/facing pages, header/footer margin-growth semantics,
+  next-page fallback. Incomplete custom column geometry, gutters/facing pages,
+  header/footer margin-growth semantics,
   page borders, vertical justification, signed negative document-grid
   character-pitch deltas, negative fixed-position top/bottom semantics,
   display-number effects on physical pagination, and page-number footer

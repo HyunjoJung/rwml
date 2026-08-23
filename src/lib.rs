@@ -576,6 +576,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         final_section_column_layout: _final_section_column_layout,
         section_column_separators: _section_column_separators,
         final_section_column_separator: _final_section_column_separator,
+        section_column_rtl: _section_column_rtl,
+        final_section_column_rtl: _final_section_column_rtl,
         table_row_pagination: _table_row_pagination,
         table_cell_pagination: _table_cell_pagination,
         table_cell_line_spacing: _table_cell_line_spacing,
@@ -2940,9 +2942,11 @@ impl Document {
                         section_column_gap_pt: &assembled.section_column_gap_pt,
                         section_column_layouts: &assembled.section_column_layouts,
                         section_column_separators: &assembled.section_column_separators,
+                        section_column_rtl: &assembled.section_column_rtl,
                         final_section_column_gap_pt: assembled.final_section_column_gap_pt,
                         final_section_column_layout: assembled.final_section_column_layout.as_ref(),
                         final_section_column_separator: assembled.final_section_column_separator,
+                        final_section_column_rtl: assembled.final_section_column_rtl,
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
@@ -2968,9 +2972,11 @@ impl Document {
                         section_column_gap_pt: &d.section_column_gap_pt,
                         section_column_layouts: &d.section_column_layouts,
                         section_column_separators: &d.section_column_separators,
+                        section_column_rtl: &d.section_column_rtl,
                         final_section_column_gap_pt: d.final_section_column_gap_pt,
                         final_section_column_layout: d.final_section_column_layout.as_ref(),
                         final_section_column_separator: d.final_section_column_separator,
+                        final_section_column_rtl: d.final_section_column_rtl,
                         table_row_pagination: &d.table_row_pagination,
                         table_cell_pagination: &d.table_cell_pagination,
                         table_cell_line_spacing: &d.table_cell_line_spacing,
@@ -6190,6 +6196,12 @@ mod tests {
         grpprl.push(separator);
     }
 
+    #[cfg(feature = "render")]
+    fn push_section_column_rtl(grpprl: &mut Vec<u8>, rtl: u8) {
+        grpprl.extend_from_slice(&0x3228u16.to_le_bytes());
+        grpprl.push(rtl);
+    }
+
     fn push_section_title_page(grpprl: &mut Vec<u8>, title_page: u8) {
         grpprl.extend_from_slice(&0x300Au16.to_le_bytes());
         grpprl.push(title_page);
@@ -8082,6 +8094,73 @@ mod tests {
             separated_pdf,
             separated.try_to_pdf_with_fonts(&fonts).unwrap()
         );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_aligns_rtl_columns_and_isolates_malformed_sepx() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_rtl(&mut first, 1);
+        let malformed = [0x03];
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut final_section, 1);
+        push_section_column_rtl(&mut final_section, 1);
+        let document = Document::open(&legacy_doc_with_section_page_grpprls(
+            "AAAAABBBBBCCCCC",
+            &section_cps,
+            &[
+                first.as_slice(),
+                malformed.as_slice(),
+                final_section.as_slice(),
+            ],
+        ))
+        .unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 5);
+            assert_eq!(
+                hints.section_column_rtl,
+                &[false, true, false, false, false]
+            );
+            assert!(hints.final_section_column_rtl);
+        });
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_rtl_section_populates_columns_from_right_without_layout_change() {
+        let text = "legacy right-to-left columns";
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let document = |rtl| {
+            let mut section = section_page_grpprl(4_400, 3_000, 400, 400, 400, 400, false);
+            push_section_column_count(&mut section, 1);
+            if rtl {
+                push_section_column_rtl(&mut section, 1);
+            }
+            Document::open(&legacy_doc_with_section_page_grpprls(
+                text,
+                &section_cps,
+                &[section.as_slice()],
+            ))
+            .unwrap()
+        };
+        let ltr = document(false);
+        let rtl = document(true);
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(ltr.model(), rtl.model());
+        assert_eq!(
+            ltr.layout_pages_with_fonts(&fonts).unwrap(),
+            rtl.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        rtl.with_render_model_and_hints(|_, hints| assert!(hints.final_section_column_rtl));
+        let ltr_pdf = ltr.try_to_pdf_with_fonts(&fonts).unwrap();
+        let rtl_pdf = rtl.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert_ne!(ltr_pdf, rtl_pdf);
+        assert_eq!(rtl_pdf, rtl.try_to_pdf_with_fonts(&fonts).unwrap());
     }
 
     #[test]
@@ -11936,6 +12015,27 @@ mod tests {
 
     #[cfg(all(feature = "docx", feature = "render"))]
     #[test]
+    fn opened_docx_carries_section_local_rtl_column_hints() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:sectPr><w:cols w:num="2"/><w:bidi w:val="off"/><w:bidi/></w:sectPr></w:pPr>
+                    <w:r><w:t>ending section</w:t></w:r>
+                </w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:num="2"/><w:bidi w:val="true"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(hints.section_column_rtl, &[false, true, false]);
+            assert!(hints.final_section_column_rtl);
+        });
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
     fn opened_docx_unequal_columns_change_preview_pdf_deterministically() {
         let text = (0..24)
             .map(|index| format!("word{index}"))
@@ -11998,6 +12098,34 @@ mod tests {
             with_separator.try_to_pdf_with_fonts(&fonts).unwrap()
         );
         assert_ne!(baseline_pdf, separated_pdf);
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_rtl_section_populates_columns_from_right_without_layout_change() {
+        let document_xml = |section_bidi: &str| {
+            format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                    <w:p><w:r><w:t>first logical column</w:t></w:r></w:p>
+                    <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/>
+                        <w:cols w:num="2" w:space="400"/>{section_bidi}
+                    </w:sectPr>
+                </w:body></w:document>"#
+            )
+        };
+        let ltr = Document::open(&minimal_docx(&document_xml(""))).expect("LTR DOCX");
+        let rtl = Document::open(&minimal_docx(&document_xml("<w:bidi/>"))).expect("RTL DOCX");
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(ltr.model(), rtl.model());
+        assert_eq!(
+            ltr.layout_pages_with_fonts(&fonts).unwrap(),
+            rtl.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        let ltr_pdf = ltr.try_to_pdf_with_fonts(&fonts).unwrap();
+        let rtl_pdf = rtl.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert_eq!(rtl_pdf, rtl.try_to_pdf_with_fonts(&fonts).unwrap());
+        assert_ne!(ltr_pdf, rtl_pdf);
     }
 
     #[cfg(all(feature = "docx", feature = "render"))]

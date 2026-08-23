@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Populates opened DOCX and legacy `.doc` section columns from right to left in
+  PDF previews when `w:sectPr/w:bidi` or `sprmSFBiDi` is
+  active. DOCX on/off values follow accepted-current Markup Compatibility
+  selection; legacy Bool8 values retain the last valid source-order state and
+  malformed SEPX sections remain isolated. Private section-aligned flags keep
+  physical equal and unequal track geometry unchanged while the paginator
+  starts at the rightmost track, advances left for overflow and manual column
+  breaks, and resets to the rightmost track on each new page. Paragraph/run
+  direction, table ordering, public models, and page maps remain independent.
 - Paints section column-separator rules in opened DOCX and legacy `.doc` PDF
   previews from `w:cols/@w:sep` and `sprmSLBetween`, respectively. DOCX on/off
   values follow accepted-current Markup Compatibility selection; legacy Bool8
@@ -26,9 +35,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   widths; over-wide sets scale uniformly only while every resulting column
   remains at least the renderer minimum, otherwise the established equal-column
   fallback wins. Pagination places content in each active width, while shaping
-  remains conservatively bounded to the narrowest section column. RTL column
-  reversal, private-width conversion round-trip, deferred per-column
-  rewrapping, and Word-exact pagination remain outside this bounded path.
+  remains conservatively bounded to the narrowest section column. Private-width
+  conversion round-trip, deferred per-column rewrapping, and Word-exact
+  pagination remain outside this bounded path.
 - Applies complete explicit unequal-column geometry from opened legacy `.doc`
   sections to PDF and `LayoutPages` previews through the same private
   section-aligned path. A false `sprmSFEvenlySpaced` selector accepts two
@@ -38,9 +47,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   values, and incomplete geometry retains the conservative fallback. The
   validated count reaches the shared section model while fitting, scaled, and
   minimum-width fallback behavior reuses the DOCX geometry renderer. Malformed
-  SEPX sections remain isolated. RTL column reversal, private-width conversion
-  round-trip, deferred per-column rewrapping, and
-  Word-exact pagination remain outside this bounded path.
+  SEPX sections remain isolated. Private-width conversion round-trip, deferred
+  per-column rewrapping, and Word-exact pagination remain outside this bounded
+  path.
 - Applies validated legacy `.doc` `sprmSDyaHdrTop` and
   `sprmSDyaHdrBottom` section distances to PDF running surfaces through the
   existing private section-aligned renderer sidecar. Unsigned twip operands
@@ -267,8 +276,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to a new page after the final column. Renderer-only character offsets retain
   the newline-backed public model, preserve marker-only progress, and exclude
   hidden characters, table cells, and non-main stories. Fresh conversion,
-  manual page breaks, RTL column ordering, and Word-exact pagination remain
-  outside this bounded path.
+  manual page breaks, and Word-exact pagination remain outside this bounded
+  path.
 - Flows visible top-level body `w:br w:type="column"` markers from opened DOCX
   files into the next active PDF preview column, advancing to a new page after
   the final column. Renderer-only character offsets preserve the existing
@@ -294,9 +303,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Applies each modeled section's physical page width and height, including
   landscape layouts, plus per-side margins to PDF body shaping and pagination,
   running headers and footers, anchored floating-shape coordinates,
-  top-and-bottom wrap bands, and emitted page media boxes. RTL physical column
-  reversal, exact per-column rewrapping, and
-  Word-exact pagination remain outside this bounded renderer bridge.
+  top-and-bottom wrap bands, and emitted page media boxes. Exact per-column
+  rewrapping and Word-exact pagination remain outside this bounded renderer
+  bridge.
 - Prunes an unreferenced internal image relationship and unreachable `word/media/*`
   target when `remove_body_block` removes the last retained reference, while
   preserving shared media, other relationship kinds, and unrelated package parts.
