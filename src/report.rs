@@ -629,6 +629,9 @@ fn supports_field_evaluation(field: &Field) -> bool {
     if field.computed_result.is_some() {
         return true;
     }
+    if supports_owned_computed_field_evaluation(field) {
+        return true;
+    }
     if field.kind == FieldKind::Hyperlink {
         return supports_hyperlink_field_evaluation(field);
     }
@@ -647,6 +650,26 @@ fn supports_field_evaluation(field: &Field) -> bool {
         }
     }
     supports_field_kind_evaluation(&field.kind)
+}
+
+fn supports_owned_computed_field_evaluation(field: &Field) -> bool {
+    #[cfg(feature = "docx")]
+    {
+        match &field.kind {
+            FieldKind::Dynamic(kind) if kind == "QUOTE" => {
+                crate::docx::supports_quote_field_syntax(&field.instruction)
+            }
+            FieldKind::Display(kind) if kind == "SYMBOL" => {
+                crate::docx::supports_computed_symbol_field_syntax(&field.instruction)
+            }
+            _ => false,
+        }
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = field;
+        false
+    }
 }
 
 fn supports_hyperlink_field_evaluation(field: &Field) -> bool {
@@ -5049,6 +5072,83 @@ mod tests {
                 count: 1,
             }]
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn model_inventory_recognizes_owned_context_free_computed_fields() {
+        let blocks = vec![Block::Paragraph(Paragraph {
+            runs: vec![
+                Run {
+                    text: "Ready".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"QUOTE "Ready""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "\u{2022}".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r"SYMBOL 183 \f Symbol".to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached quote".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"QUOTE "broken"#.to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached symbol".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r"SYMBOL 66 \f Wingdings".to_string(),
+                    },
+                    field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        })];
+
+        let inventory = super::feature_inventory_for_model(&blocks);
+
+        assert_eq!(inventory.fields, 4);
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![
+                super::FieldKindCount {
+                    kind: FieldKind::Dynamic("QUOTE".to_string()),
+                    count: 1,
+                },
+                super::FieldKindCount {
+                    kind: FieldKind::Display("SYMBOL".to_string()),
+                    count: 1,
+                },
+            ]
+        );
+        assert_eq!(
+            inventory.unsupported_field_reasons,
+            vec![super::FieldEvaluationReasonCount {
+                reason: super::FieldEvaluationReason::UnsupportedSwitch,
+                count: 2,
+            }]
+        );
+
+        #[cfg(feature = "render")]
+        {
+            let render_inventory = super::render_inventory_for_model(&blocks);
+            assert_eq!(
+                render_inventory.unsupported_field_kinds,
+                inventory.unsupported_field_kinds
+            );
+            assert_eq!(
+                render_inventory.unsupported_field_reasons,
+                inventory.unsupported_field_reasons
+            );
+        }
     }
 
     #[cfg(feature = "render")]

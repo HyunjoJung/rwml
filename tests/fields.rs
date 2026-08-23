@@ -12999,10 +12999,17 @@ fn docx_quote_field_computes_literal_text_and_general_text_formats() {
     );
     assert_eq!(
         model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("QUOTE")),
-        vec![(
-            r#"QUOTE "broken literal "#.to_string(),
-            Some(FieldUnsupportedReason::UnsupportedSwitch),
-        )]
+        vec![
+            (r#"QUOTE "literal text""#.to_string(), None),
+            (r#"QUOTE "mixed words" \* Caps"#.to_string(), None),
+            (r#"QUOTE "word" \* Upper"#.to_string(), None),
+            ("QUOTE PlainToken".to_string(), None),
+            (r#"QUOTE plain words \* Upper"#.to_string(), None),
+            (
+                r#"QUOTE "broken literal "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
     );
 
     let main_text = doc.main_text();
@@ -19093,7 +19100,13 @@ fn docx_computed_complex_field_replaces_paragraph_hyperlink_result() {
         panic!("expected one computed run");
     };
     assert_eq!(run.text, "Outer");
-    assert!(matches!(run.field, FieldRole::Other));
+    assert_eq!(
+        run.field,
+        FieldRole::Simple {
+            instruction: r#"QUOTE "Outer""#.to_string(),
+        }
+    );
+    assert_eq!(run.field_unsupported_reason, None);
 }
 
 #[test]

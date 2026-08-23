@@ -3134,6 +3134,7 @@ fn computed_simple_field_run(instruction: String, text: String) -> Run {
 fn preserves_computed_field_instruction(instruction: &str) -> bool {
     preserves_computed_empty_field_instruction(instruction)
         || super::fields::supports_computed_symbol_field_syntax(instruction)
+        || super::fields::supports_quote_field_syntax(instruction)
 }
 
 fn preserves_computed_empty_field_instruction(instruction: &str) -> bool {

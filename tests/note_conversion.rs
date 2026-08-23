@@ -494,6 +494,35 @@ fn symbol_field_note_docx() -> Vec<u8> {
     ])
 }
 
+fn quote_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="211"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="221"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="212"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="222"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:footnoteReference w:id="213"/></w:r><w:r><w:t> BODY F</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="211"><w:p><w:r><w:t xml:space="preserve">FOOT QUOTE BEFORE </w:t></w:r><w:fldSimple w:instr=" QUOTE &quot;fresh foot words&quot; \* Caps "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT QUOTE</w:t></w:r></w:fldSimple><w:r><w:t> FOOT QUOTE AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="212"><w:p><w:fldSimple w:instr=" QUOTE &quot;broken foot "><w:r><w:t>REJECTED MALFORMED QUOTE</w:t></w:r></w:fldSimple><w:r><w:t> FALLBACK</w:t></w:r></w:p></w:footnote><w:footnote w:id="213"><w:p><w:r><w:t xml:space="preserve">SPLIT QUOTE BEFORE </w:t></w:r><w:fldSimple w:instr=" QUOTE &quot;split quote&quot; \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE SPLIT A</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE SPLIT B</w:t></w:r></w:fldSimple><w:r><w:t> SPLIT QUOTE AFTER</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="221"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END QUOTE BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> QUOTE &quot;fresh end words&quot; \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END QUOTE</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END QUOTE AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="222"><w:p><w:r><w:t xml:space="preserve">COMPUTED IF BEFORE </w:t></w:r><w:fldSimple w:instr=" IF 2 &gt; 1 &quot;literal yes&quot; &quot;literal no&quot; "><w:r><w:t>STALE COMPUTED IF</w:t></w:r></w:fldSimple><w:r><w:t> COMPUTED IF AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -1789,6 +1818,132 @@ fn opened_docx_note_symbol_fields_keep_computed_characters_and_instructions() {
             && rejected_eq_text.ends_with(" COMPUTED EQ AFTER")
             && rejected_eq_text.contains("1/2"),
         "computed EQ fallback text changed: {rejected_eq_text:?}"
+    );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_quote_fields_keep_computed_text_and_instructions() {
+    let document = Document::open(&quote_field_note_docx()).expect("QUOTE field notes open");
+    assert_eq!(document.notes().len(), 5, "source note records missing");
+    assert_eq!(document.report().features.fields, 5);
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone QUOTE normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT QUOTE BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END QUOTE BEFORE");
+    let rejected_malformed = note_with_marker(footnotes, "footnote", "REJECTED MALFORMED");
+    let rejected_split = note_with_marker(footnotes, "footnote", "SPLIT QUOTE BEFORE");
+    let rejected_if = note_with_marker(endnotes, "endnote", "COMPUTED IF BEFORE");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote
+            .contains(r#"<w:fldSimple w:instr=" QUOTE &quot;fresh foot words&quot; \* Caps ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains("Fresh Foot Words")
+            && footnote.contains("FOOT QUOTE BEFORE ")
+            && footnote.contains(" FOOT QUOTE AFTER"),
+        "top-level QUOTE field missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT QUOTE"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:fldSimple w:instr=" QUOTE &quot;fresh end words&quot; \* Upper ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains("FRESH END WORDS")
+            && endnote.contains("END QUOTE BEFORE ")
+            && endnote.contains(" END QUOTE AFTER"),
+        "nested QUOTE field missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END QUOTE"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [rejected_malformed, rejected_split, rejected_if] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains(r#"QUOTE &quot;broken foot"#));
+    assert!(!footnotes.contains(r#"QUOTE &quot;split quote&quot;"#));
+    assert!(!endnotes.contains(r#"IF 2 &gt; 1"#));
+    assert!(!footnotes.contains("STALE SPLIT A"));
+    assert!(!footnotes.contains("STALE SPLIT B"));
+    assert!(!endnotes.contains("STALE COMPUTED IF"));
+
+    let reopened = Document::open(&converted).expect("converted QUOTE field notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("QUOTE".to_string()));
+    assert_eq!(fields[0].instruction, r#"QUOTE "fresh foot words" \* Caps"#);
+    assert_eq!(fields[0].result, "Fresh Foot Words");
+    assert_eq!(
+        fields[0].computed_result.as_deref(),
+        Some("Fresh Foot Words")
+    );
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("QUOTE".to_string()));
+    assert_eq!(fields[1].instruction, r#"QUOTE "fresh end words" \* Upper"#);
+    assert_eq!(fields[1].result, "FRESH END WORDS");
+    assert_eq!(
+        fields[1].computed_result.as_deref(),
+        Some("FRESH END WORDS")
+    );
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 4] {
+        assert_eq!(reopened_model.blocks[index], normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_malformed) = &reopened_model.blocks[2] else {
+        panic!("rejected malformed-QUOTE fallback paragraph")
+    };
+    assert_eq!(
+        rejected_malformed.text(),
+        "REJECTED MALFORMED QUOTE FALLBACK"
+    );
+    let Block::Paragraph(rejected_split) = &reopened_model.blocks[3] else {
+        panic!("rejected split-result QUOTE fallback paragraph")
+    };
+    assert_eq!(
+        rejected_split.text(),
+        "SPLIT QUOTE BEFORE SPLIT QUOTE SPLIT QUOTE AFTER"
+    );
+    let Block::Paragraph(rejected_if) = &reopened_model.blocks[5] else {
+        panic!("rejected computed-IF fallback paragraph")
+    };
+    assert_eq!(
+        rejected_if.text(),
+        "COMPUTED IF BEFORE literal yes COMPUTED IF AFTER"
     );
     assert_eq!(reopened.to_docx(), converted);
 

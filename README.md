@@ -1125,6 +1125,10 @@ Parser-validated, non-dirty `SYMBOL` instructions that actually compute one
 character likewise survive as normalized simple fields with modeled formatting;
 stale cached characters stay replaced by the deterministic result. Malformed or
 unmapped symbols and other display/action fields remain excluded.
+Parser-validated, non-dirty literal `QUOTE` instructions with one modeled result
+run likewise survive as normalized simple fields with computed text, supported
+text-format switches, and modeled formatting. Malformed or split-result `QUOTE`
+fields and other dynamic fields remain excluded.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names

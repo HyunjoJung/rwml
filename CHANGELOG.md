@@ -9,6 +9,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty literal `QUOTE` fields with one modeled result run
+  in exact real footnote and endnote payloads. Normalized instructions, computed
+  text and supported text-format switches, source order, and modeled formatting
+  survive at the top level and through recursively nested table cells; one-result-
+  run complex source fields normalize to non-dirty `w:fldSimple`, and stale
+  cached text stays replaced. Malformed or split-result `QUOTE` fields and other
+  dynamic fields still trigger note-local plain-text fallback; this does not
+  broaden prompt, control, bookmark, formula, conditional, relationship, or
+  field-update behavior.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   parser-validated, non-dirty `SYMBOL` fields whose instructions deterministically
   compute one character in exact real footnote and endnote payloads with nonempty
   visible text. Normalized instructions, computed characters, source order, and
