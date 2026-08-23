@@ -471,6 +471,15 @@ top-level table rows. The same direct body subset carries resolved exact/minimum
 line rules and explicit tab stops into fresh DOCX conversion. Nested-table
 descendants, notes, running surfaces, settings-defined default-tab intervals,
 and manual column breaks remain outside fresh conversion.
+Ordinary top-level paragraphs in selected default/first/even running headers
+and footers from an opened DOCX also consume reader-resolved explicit tab stops
+and supported leaders through section-aligned render hints. Default-surface
+inheritance, page-variant selection, and a positive settings-defined default-tab
+interval use the same bounded paragraph shaper without changing the public
+model; running-table-cell tabs remain independently aligned. Real-note
+paragraphs, legacy-DOC running stories, fresh conversion of running surfaces,
+post-tab field containment, and Word-exact tab reflow and pagination remain
+outside this path.
 Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and

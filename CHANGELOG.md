@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies reader-resolved explicit paragraph tab stops to ordinary top-level
+  paragraphs in selected default/first/even running headers and footers when an
+  opened DOCX is rendered to PDF. A private six-story sidecar follows
+  section-local default-surface inheritance and page-variant selection while
+  preserving the public model; supported leaders and a positive
+  `w:defaultTabStop` interval use the established paragraph shaper. Running
+  table-cell tab hints remain independently aligned. Real-note paragraphs,
+  legacy-DOC running stories, fresh conversion, post-tab field containment,
+  and Word-exact tab reflow and pagination remain outside this bounded path.
 - Preserves reader-resolved explicit DOCX paragraph tab stops when
   `Document::to_docx()` freshly converts aligned top-level body paragraphs and
   direct paragraph blocks in surviving cells of top-level tables. The bounded

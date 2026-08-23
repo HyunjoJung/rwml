@@ -213,6 +213,9 @@ pub(crate) struct DocxState {
     /// Renderer-only exact/minimum line spacing for section running surfaces.
     #[cfg(feature = "render")]
     pub running_line_spacing_hints: Vec<crate::render::RunningSurfaceLineSpacingHints>,
+    /// Renderer-only explicit paragraph tab stops for section running surfaces.
+    #[cfg(feature = "render")]
+    pub running_tab_stops: Vec<crate::render::RunningSurfaceTabStopHints>,
     /// Renderer-only table-cell tab stops for section running surfaces.
     #[cfg(feature = "render")]
     pub running_table_cell_tab_stops: Vec<crate::render::RunningSurfaceTableCellTabStopHints>,
@@ -574,6 +577,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let running_line_spacing_hints =
         running_line_spacing_by_model_section(&blocks, &section_header_footers);
     #[cfg(feature = "render")]
+    let running_tab_stops = running_tab_stops_by_model_section(&blocks, &section_header_footers);
+    #[cfg(feature = "render")]
     let running_table_cell_tab_stops =
         running_table_cell_tab_stops_by_model_section(&blocks, &section_header_footers);
     let running_surface_distances =
@@ -728,6 +733,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         #[cfg(feature = "render")]
         running_line_spacing_hints,
         #[cfg(feature = "render")]
+        running_tab_stops,
+        #[cfg(feature = "render")]
         running_table_cell_tab_stops,
         running_surface_distances,
         tab_stops,
@@ -783,6 +790,8 @@ struct SectionHeaderFooter {
     #[cfg(feature = "render")]
     line_spacing: crate::render::RunningSurfaceLineSpacingHints,
     #[cfg(feature = "render")]
+    tab_stops: crate::render::RunningSurfaceTabStopHints,
+    #[cfg(feature = "render")]
     table_cell_tab_stops: crate::render::RunningSurfaceTableCellTabStopHints,
     distances: crate::model::RunningSurfaceDistanceHints,
 }
@@ -813,6 +822,14 @@ struct HeaderFooterTableCellTabStops {
     even: Vec<crate::model::TableCellTabStopHints>,
 }
 
+#[cfg(feature = "render")]
+#[derive(Default)]
+struct HeaderFooterTabStops {
+    default: Vec<Vec<crate::model::TabStop>>,
+    first: Vec<Vec<crate::model::TabStop>>,
+    even: Vec<Vec<crate::model::TabStop>>,
+}
+
 struct HeaderFooterRead {
     sections: Vec<SectionHeaderFooter>,
     final_section: SectionHeaderFooter,
@@ -828,6 +845,8 @@ struct HeaderFooterPartRead {
     blocks: HeaderFooterBlocks,
     #[cfg(feature = "render")]
     line_spacing: HeaderFooterLineSpacing,
+    #[cfg(feature = "render")]
+    tab_stops: HeaderFooterTabStops,
     #[cfg(feature = "render")]
     table_cell_tab_stops: HeaderFooterTableCellTabStops,
     records: Vec<HeaderFooter>,
@@ -889,11 +908,15 @@ fn read_headers_footers(
     #[cfg(feature = "render")]
     let mut inherited_header_line_spacing = Vec::new();
     #[cfg(feature = "render")]
+    let mut inherited_header_tab_stops = Vec::new();
+    #[cfg(feature = "render")]
     let mut inherited_header_table_cell_line_spacing = Vec::new();
     #[cfg(feature = "render")]
     let mut inherited_header_table_cell_tab_stops = Vec::new();
     #[cfg(feature = "render")]
     let mut inherited_footer_line_spacing = Vec::new();
+    #[cfg(feature = "render")]
+    let mut inherited_footer_tab_stops = Vec::new();
     #[cfg(feature = "render")]
     let mut inherited_footer_table_cell_line_spacing = Vec::new();
     #[cfg(feature = "render")]
@@ -914,6 +937,8 @@ fn read_headers_footers(
             blocks: header_blocks,
             #[cfg(feature = "render")]
                 line_spacing: header_line_spacing,
+            #[cfg(feature = "render")]
+                tab_stops: header_tab_stops,
             #[cfg(feature = "render")]
                 table_cell_tab_stops: header_table_cell_tab_stops,
             records: header_records,
@@ -939,6 +964,8 @@ fn read_headers_footers(
         #[cfg(feature = "render")]
         let mut header_spacing = header_line_spacing.default;
         #[cfg(feature = "render")]
+        let mut header_tabs = header_tab_stops.default;
+        #[cfg(feature = "render")]
         let mut header_table_cell_spacing = header_line_spacing.default_table_cells;
         #[cfg(feature = "render")]
         let mut header_table_cell_tabs = header_table_cell_tab_stops.default;
@@ -949,6 +976,7 @@ fn read_headers_footers(
             #[cfg(feature = "render")]
             {
                 header_spacing = inherited_header_line_spacing.clone();
+                header_tabs = inherited_header_tab_stops.clone();
                 header_table_cell_spacing = inherited_header_table_cell_line_spacing.clone();
                 header_table_cell_tabs = inherited_header_table_cell_tab_stops.clone();
             }
@@ -958,6 +986,7 @@ fn read_headers_footers(
             #[cfg(feature = "render")]
             {
                 inherited_header_line_spacing = header_spacing.clone();
+                inherited_header_tab_stops = header_tabs.clone();
                 inherited_header_table_cell_line_spacing = header_table_cell_spacing.clone();
                 inherited_header_table_cell_tab_stops = header_table_cell_tabs.clone();
             }
@@ -967,6 +996,8 @@ fn read_headers_footers(
             blocks: footer_blocks,
             #[cfg(feature = "render")]
                 line_spacing: footer_line_spacing,
+            #[cfg(feature = "render")]
+                tab_stops: footer_tab_stops,
             #[cfg(feature = "render")]
                 table_cell_tab_stops: footer_table_cell_tab_stops,
             records: footer_records,
@@ -992,6 +1023,8 @@ fn read_headers_footers(
         #[cfg(feature = "render")]
         let mut footer_spacing = footer_line_spacing.default;
         #[cfg(feature = "render")]
+        let mut footer_tabs = footer_tab_stops.default;
+        #[cfg(feature = "render")]
         let mut footer_table_cell_spacing = footer_line_spacing.default_table_cells;
         #[cfg(feature = "render")]
         let mut footer_table_cell_tabs = footer_table_cell_tab_stops.default;
@@ -1001,6 +1034,7 @@ fn read_headers_footers(
             #[cfg(feature = "render")]
             {
                 footer_spacing = inherited_footer_line_spacing.clone();
+                footer_tabs = inherited_footer_tab_stops.clone();
                 footer_table_cell_spacing = inherited_footer_table_cell_line_spacing.clone();
                 footer_table_cell_tabs = inherited_footer_table_cell_tab_stops.clone();
             }
@@ -1010,6 +1044,7 @@ fn read_headers_footers(
             #[cfg(feature = "render")]
             {
                 inherited_footer_line_spacing = footer_spacing.clone();
+                inherited_footer_tab_stops = footer_tabs.clone();
                 inherited_footer_table_cell_line_spacing = footer_table_cell_spacing.clone();
                 inherited_footer_table_cell_tab_stops = footer_table_cell_tabs.clone();
             }
@@ -1035,6 +1070,15 @@ fn read_headers_footers(
                 first_footer_table_cells: footer_line_spacing.first_table_cells,
                 even_footer: footer_line_spacing.even,
                 even_footer_table_cells: footer_line_spacing.even_table_cells,
+            },
+            #[cfg(feature = "render")]
+            tab_stops: crate::render::RunningSurfaceTabStopHints {
+                header: header_tabs,
+                first_header: header_tab_stops.first,
+                even_header: header_tab_stops.even,
+                footer: footer_tabs,
+                first_footer: footer_tab_stops.first,
+                even_footer: footer_tab_stops.even,
             },
             #[cfg(feature = "render")]
             table_cell_tab_stops: crate::render::RunningSurfaceTableCellTabStopHints {
@@ -1159,6 +1203,30 @@ fn running_line_spacing_by_model_section(
 }
 
 #[cfg(feature = "render")]
+fn running_tab_stops_by_model_section(
+    blocks: &[Block],
+    sections: &[SectionHeaderFooter],
+) -> Vec<crate::render::RunningSurfaceTabStopHints> {
+    let section_break_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count();
+    let mut aligned =
+        vec![crate::render::RunningSurfaceTabStopHints::default(); section_break_count + 1];
+    for (target, source) in aligned
+        .iter_mut()
+        .take(section_break_count)
+        .zip(sections.iter())
+    {
+        *target = source.tab_stops.clone();
+    }
+    if let (Some(target), Some(source)) = (aligned.last_mut(), sections.last()) {
+        *target = source.tab_stops.clone();
+    }
+    aligned
+}
+
+#[cfg(feature = "render")]
 fn running_table_cell_tab_stops_by_model_section(
     blocks: &[Block],
     sections: &[SectionHeaderFooter],
@@ -1241,6 +1309,8 @@ fn read_hf_parts(
     let mut blocks = HeaderFooterBlocks::default();
     #[cfg(feature = "render")]
     let mut line_spacing = HeaderFooterLineSpacing::default();
+    #[cfg(feature = "render")]
+    let mut tab_stops = HeaderFooterTabStops::default();
     #[cfg(feature = "render")]
     let mut table_cell_tab_stops = HeaderFooterTableCellTabStops::default();
     let mut records = Vec::new();
@@ -1450,6 +1520,7 @@ fn read_hf_parts(
                     #[cfg(feature = "render")]
                     {
                         line_spacing.first.extend(part_render_hints.line_spacing);
+                        tab_stops.first.extend(part_render_hints.tab_stops);
                         line_spacing
                             .first_table_cells
                             .extend(part_render_hints.table_cell_line_spacing);
@@ -1463,6 +1534,7 @@ fn read_hf_parts(
                     #[cfg(feature = "render")]
                     {
                         line_spacing.even.extend(part_render_hints.line_spacing);
+                        tab_stops.even.extend(part_render_hints.tab_stops);
                         line_spacing
                             .even_table_cells
                             .extend(part_render_hints.table_cell_line_spacing);
@@ -1476,6 +1548,7 @@ fn read_hf_parts(
                     #[cfg(feature = "render")]
                     {
                         line_spacing.default.extend(part_render_hints.line_spacing);
+                        tab_stops.default.extend(part_render_hints.tab_stops);
                         line_spacing
                             .default_table_cells
                             .extend(part_render_hints.table_cell_line_spacing);
@@ -1502,6 +1575,8 @@ fn read_hf_parts(
         blocks,
         #[cfg(feature = "render")]
         line_spacing,
+        #[cfg(feature = "render")]
+        tab_stops,
         #[cfg(feature = "render")]
         table_cell_tab_stops,
         records,

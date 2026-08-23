@@ -177,6 +177,16 @@ pub(crate) struct RunningSurfaceLineSpacingHints {
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct RunningSurfaceTabStopHints {
+    pub(crate) header: Vec<Vec<TabStop>>,
+    pub(crate) first_header: Vec<Vec<TabStop>>,
+    pub(crate) even_header: Vec<Vec<TabStop>>,
+    pub(crate) footer: Vec<Vec<TabStop>>,
+    pub(crate) first_footer: Vec<Vec<TabStop>>,
+    pub(crate) even_footer: Vec<Vec<TabStop>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct RunningSurfaceTableCellTabStopHints {
     pub(crate) header: Vec<TableCellTabStopHints>,
     pub(crate) first_header: Vec<TableCellTabStopHints>,
@@ -207,6 +217,7 @@ pub(crate) struct SourceRenderHints<'a> {
     pub(crate) table_nested_pagination: &'a [TableCellNestedPaginationHints],
     pub(crate) table_cell_tab_stops: &'a [TableCellTabStopHints],
     pub(crate) running_line_spacing: &'a [RunningSurfaceLineSpacingHints],
+    pub(crate) running_tab_stops: &'a [RunningSurfaceTabStopHints],
     pub(crate) running_table_cell_tab_stops: &'a [RunningSurfaceTableCellTabStopHints],
     pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
 }
@@ -4093,15 +4104,21 @@ enum RunningSurfaceItem {
     },
 }
 
+#[derive(Clone, Copy, Default)]
+struct RunningSurfaceLayoutHints<'a> {
+    line_spacing: &'a [Option<LineSpacingHint>],
+    tab_stops: &'a [Vec<TabStop>],
+    table_cell_line_spacing: &'a [TableCellLineSpacingHints],
+    table_cell_tab_stops: &'a [TableCellTabStopHints],
+    default_tab_stop_pt: Option<f32>,
+}
+
 /// Lay out compact running-surface content while retaining paragraph gaps,
 /// decoded pictures, model-authored charts, and modeled table rows. Pagination
 /// controls remain outside this bounded margin-band path.
 fn layout_running_surface_items(
     blocks: &[Block],
-    line_spacing_hints: &[Option<LineSpacingHint>],
-    table_cell_line_spacing: &[TableCellLineSpacingHints],
-    table_cell_tab_stops: &[TableCellTabStopHints],
-    default_tab_stop_pt: Option<f32>,
+    hints: RunningSurfaceLayoutHints<'_>,
     geom: Geom,
     cx: &mut TextCx<'_>,
 ) -> Vec<RunningSurfaceItem> {
@@ -4114,10 +4131,11 @@ fn layout_running_surface_items(
         cx,
         &mut capture,
         BlockCollectionOptions {
-            line_spacing_hints: Some(line_spacing_hints),
-            table_cell_line_spacing: Some(table_cell_line_spacing),
-            table_cell_tab_stops: Some(table_cell_tab_stops),
-            default_tab_stop_pt,
+            line_spacing_hints: Some(hints.line_spacing),
+            tab_stops: Some(hints.tab_stops),
+            table_cell_line_spacing: Some(hints.table_cell_line_spacing),
+            table_cell_tab_stops: Some(hints.table_cell_tab_stops),
+            default_tab_stop_pt: hints.default_tab_stop_pt,
             ..BlockCollectionOptions::default()
         },
     );
@@ -4514,6 +4532,21 @@ fn running_surface_line_spacing(
     variant: RunningSurfaceVariant,
     header: bool,
 ) -> &[Option<LineSpacingHint>] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header,
+        (true, RunningSurfaceVariant::First) => &hints.first_header,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header,
+        (false, RunningSurfaceVariant::Default) => &hints.footer,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer,
+    }
+}
+
+fn running_surface_tab_stops(
+    hints: &RunningSurfaceTabStopHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[Vec<TabStop>] {
     match (header, variant) {
         (true, RunningSurfaceVariant::Default) => &hints.header,
         (true, RunningSurfaceVariant::First) => &hints.first_header,
@@ -9439,6 +9472,9 @@ fn render_pdf(
         let running_spacing = source_hints
             .running_line_spacing
             .get(page_section.section_index);
+        let running_tabs = source_hints
+            .running_tab_stops
+            .get(page_section.section_index);
         let running_table_tabs = source_hints
             .running_table_cell_tab_stops
             .get(page_section.section_index);
@@ -9452,6 +9488,12 @@ fn render_pdf(
             .unwrap_or_default();
         let footer_spacing = running_spacing
             .map(|hints| running_surface_line_spacing(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_tabs = running_tabs
+            .map(|hints| running_surface_tab_stops(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_tabs = running_tabs
+            .map(|hints| running_surface_tab_stops(hints, footer_variant, false))
             .unwrap_or_default();
         let header_table_cell_spacing = running_spacing
             .map(|hints| running_surface_table_cell_line_spacing(hints, header_variant, true))
@@ -9467,19 +9509,25 @@ fn render_pdf(
             .unwrap_or_default();
         let header_items = layout_running_surface_items(
             header_blocks,
-            header_spacing,
-            header_table_cell_spacing,
-            header_table_cell_tabs,
-            source_hints.default_tab_stop_pt,
+            RunningSurfaceLayoutHints {
+                line_spacing: header_spacing,
+                tab_stops: header_tabs,
+                table_cell_line_spacing: header_table_cell_spacing,
+                table_cell_tab_stops: header_table_cell_tabs,
+                default_tab_stop_pt: source_hints.default_tab_stop_pt,
+            },
             page_geom,
             &mut tcx,
         );
         let mut footer_items = layout_running_surface_items(
             footer_blocks,
-            footer_spacing,
-            footer_table_cell_spacing,
-            footer_table_cell_tabs,
-            source_hints.default_tab_stop_pt,
+            RunningSurfaceLayoutHints {
+                line_spacing: footer_spacing,
+                tab_stops: footer_tabs,
+                table_cell_line_spacing: footer_table_cell_spacing,
+                table_cell_tab_stops: footer_table_cell_tabs,
+                default_tab_stop_pt: source_hints.default_tab_stop_pt,
+            },
             page_geom,
             &mut tcx,
         );
@@ -9661,10 +9709,10 @@ mod tests {
         layout_table, layout_table_with_row_pagination, page_field_text, paginate,
         paginate_with_column_gap, push_clipped_page_link, render_pdf, rgb,
         running_footer_vertical_bounds, running_header_footer_blocks_for_page,
-        running_header_vertical_bounds, shape, shape_cell, split_row,
+        running_header_vertical_bounds, running_surface_tab_stops, shape, shape_cell, split_row,
         unsupported_placeholder_texts, ColumnLayout, FlowItem, Geom, LayoutCapture, LineLayout,
-        RunningSurfaceDistanceHints, SourceRenderHints, StyledText, TablePaginationView, TextCx,
-        DEFAULT_TAB_STOP_PT,
+        RunningSurfaceDistanceHints, RunningSurfaceTabStopHints, RunningSurfaceVariant,
+        SourceRenderHints, StyledText, TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Chart, ChartSeries, Color, DocModel, FieldRole,
@@ -9695,6 +9743,36 @@ mod tests {
             (actual - expected).abs() < 0.001,
             "expected {expected}, got {actual}"
         );
+    }
+
+    #[test]
+    fn running_surface_tab_selector_keeps_six_stories_independent() {
+        let stops = |position_pt| {
+            vec![vec![TabStop {
+                position_pt,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            }]]
+        };
+        let hints = RunningSurfaceTabStopHints {
+            header: stops(1.0),
+            first_header: stops(2.0),
+            even_header: stops(3.0),
+            footer: stops(4.0),
+            first_footer: stops(5.0),
+            even_footer: stops(6.0),
+        };
+
+        for (header, variant, expected) in [
+            (true, RunningSurfaceVariant::Default, &hints.header),
+            (true, RunningSurfaceVariant::First, &hints.first_header),
+            (true, RunningSurfaceVariant::Even, &hints.even_header),
+            (false, RunningSurfaceVariant::Default, &hints.footer),
+            (false, RunningSurfaceVariant::First, &hints.first_footer),
+            (false, RunningSurfaceVariant::Even, &hints.even_footer),
+        ] {
+            assert_eq!(running_surface_tab_stops(&hints, variant, header), expected);
+        }
     }
 
     #[test]
