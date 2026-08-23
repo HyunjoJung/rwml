@@ -2,7 +2,7 @@
 
 use std::io::{Read, Write};
 
-use rwml::Document;
+use rwml::{Block, Chart, ChartKind, ChartSeries, DocModel, Document};
 
 fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
     docx_fixture_with_media(parts, &[])
@@ -53,6 +53,55 @@ fn source_inline_drawing(rel_id: &str, alt: &str, rotation: i64) -> String {
     format!(
         r#"<w:r><w:drawing><wp:inline><wp:extent cx="19050" cy="28575"/><wp:docPr id="1" name="Source image" descr="{alt}"/><a:graphic><a:graphicData><pic:pic><pic:blipFill><a:blip r:embed="{rel_id}"/></pic:blipFill><pic:spPr><a:xfrm rot="{rotation}"/></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#
     )
+}
+
+fn source_chart_drawing(rel_id: &str, tag: &str, uri: &str, alt: &str) -> String {
+    format!(
+        r#"<w:r><w:drawing><wp:inline><wp:extent cx="3810000" cy="2286000"/><wp:docPr id="1" name="Source chart" descr="{alt}"/><a:graphic><a:graphicData uri="{uri}"><{tag} r:id="{rel_id}"/></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#
+    )
+}
+
+fn native_chart_xml() -> (String, String) {
+    let model = DocModel {
+        blocks: vec![
+            Block::Chart(Chart {
+                kind: ChartKind::Bar,
+                title: Some("Core source".to_string()),
+                categories: vec!["North".to_string(), "South".to_string()],
+                series: vec![ChartSeries {
+                    name: "Core values".to_string(),
+                    values: vec![12.0, 18.0],
+                    bubble_sizes: Vec::new(),
+                }],
+                width_px: Some(400),
+                height_px: Some(240),
+                ..Chart::default()
+            }),
+            Block::Chart(Chart {
+                kind: ChartKind::Waterfall,
+                title: Some("Extended source".to_string()),
+                categories: vec!["Start".to_string(), "Delta".to_string()],
+                series: vec![ChartSeries {
+                    name: "Extended values".to_string(),
+                    values: vec![30.0, -7.0],
+                    bubble_sizes: Vec::new(),
+                }],
+                width_px: Some(400),
+                height_px: Some(240),
+                ..Chart::default()
+            }),
+        ],
+        ..DocModel::default()
+    };
+    let parts = unzip_parts(&rwml::write_docx(&model));
+    let mut core = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let external_start = core.find("<c:externalData").unwrap();
+    let external_end = external_start
+        + core[external_start..].find("</c:externalData>").unwrap()
+        + "</c:externalData>".len();
+    core.replace_range(external_start..external_end, "");
+    let extended = String::from_utf8(parts["word/charts/chartEx2.xml"].clone()).unwrap();
+    (core, extended)
 }
 
 fn exact_note_paragraphs_docx() -> Vec<u8> {
@@ -263,6 +312,68 @@ fn raster_note_docx() -> Vec<u8> {
             ("word/media/rejected.png", png.as_slice()),
         ],
     )
+}
+
+fn chart_note_docx() -> Vec<u8> {
+    let (core_chart, extended_chart) = native_chart_xml();
+    let core_uri = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+    let extended_uri = "http://schemas.microsoft.com/office/drawing/2014/chartex";
+    let body_chart = source_chart_drawing("rBodyChart", "c:chart", core_uri, "Body chart");
+    let foot_one_chart =
+        source_chart_drawing("rFootChartOne", "c:chart", core_uri, "Foot &lt;chart&gt;");
+    let foot_two_chart =
+        source_chart_drawing("rFootChartTwo", "c:chart", core_uri, "Foot nested chart");
+    let end_one_chart = source_chart_drawing(
+        "rEndChartOne",
+        "cx:chart",
+        extended_uri,
+        "End extended chart",
+    );
+    let end_two_chart =
+        source_chart_drawing("rEndChartTwo", "cx:chart", extended_uri, "End nested chart");
+    let rejected_chart =
+        source_chart_drawing("rRejectedChart", "c:chart", core_uri, "Rejected chart");
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><w:body><w:p>{body_chart}</w:p><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="71"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="81"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="72"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="82"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:endnoteReference w:id="83"/></w:r></w:p><w:sectPr/></w:body></w:document>"#
+    );
+    let footnotes_xml = format!(
+        r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><w:footnote w:id="71"><w:p><w:r><w:t>FOOT CHART ONE</w:t></w:r></w:p><w:p>{foot_one_chart}</w:p></w:footnote><w:footnote w:id="72"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>FOOT NESTED CHART</w:t></w:r></w:p><w:p>{foot_two_chart}</w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:footnote></w:footnotes>"#
+    );
+    let endnotes_xml = format!(
+        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:cx="http://schemas.microsoft.com/office/drawing/2014/chartex"><w:endnote w:id="81"><w:p><w:r><w:t>END CHART ONE</w:t></w:r></w:p><w:p>{end_one_chart}</w:p></w:endnote><w:endnote w:id="82"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t>END NESTED CHART</w:t></w:r></w:p><w:p>{end_two_chart}</w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="83"><w:p><w:r><w:t>REJECTED CHART</w:t></w:r><w:fldSimple w:instr=" MERGEFIELD Client "><w:r><w:t> UNSUPPORTED FIELD</w:t></w:r></w:fldSimple></w:p><w:p>{rejected_chart}</w:p></w:endnote></w:endnotes>"#
+    );
+
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/><Override PartName="/word/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/><Override PartName="/word/charts/chart2.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/><Override PartName="/word/charts/chart3.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/><Override PartName="/word/charts/chartEx4.xml" ContentType="application/vnd.ms-office.chartex+xml"/><Override PartName="/word/charts/chartEx5.xml" ContentType="application/vnd.ms-office.chartex+xml"/><Override PartName="/word/charts/chart6.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/><Relationship Id="rBodyChart" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="charts/chart1.xml"/></Relationships>"#,
+        ),
+        ("word/document.xml", document_xml.as_str()),
+        ("word/footnotes.xml", footnotes_xml.as_str()),
+        (
+            "word/_rels/footnotes.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rFootChartOne" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="charts/chart2.xml"/><Relationship Id="rFootChartTwo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="charts/chart3.xml"/></Relationships>"#,
+        ),
+        ("word/endnotes.xml", endnotes_xml.as_str()),
+        (
+            "word/_rels/endnotes.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rEndChartOne" Type="http://schemas.microsoft.com/office/2014/relationships/chartEx" Target="charts/chartEx4.xml"/><Relationship Id="rEndChartTwo" Type="http://schemas.microsoft.com/office/2014/relationships/chartEx" Target="charts/chartEx5.xml"/><Relationship Id="rRejectedChart" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="charts/chart6.xml"/></Relationships>"#,
+        ),
+        ("word/charts/chart1.xml", core_chart.as_str()),
+        ("word/charts/chart2.xml", core_chart.as_str()),
+        ("word/charts/chart3.xml", core_chart.as_str()),
+        ("word/charts/chartEx4.xml", extended_chart.as_str()),
+        ("word/charts/chartEx5.xml", extended_chart.as_str()),
+        ("word/charts/chart6.xml", core_chart.as_str()),
+    ])
 }
 
 fn note_with_marker<'a>(xml: &'a str, item: &str, marker: &str) -> &'a str {
@@ -643,6 +754,140 @@ fn opened_docx_note_inline_rasters_keep_media_and_relationship_ownership() {
         &reopened_model.blocks[..reopened_model.blocks.len() - 1],
         &normalized_model.blocks[..normalized_model.blocks.len() - 1]
     );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_modeled_charts_keep_package_and_relationship_ownership() {
+    let document = Document::open(&chart_note_docx()).expect("modeled chart notes open");
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone chart normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    let document_rels = std::str::from_utf8(&parts["word/_rels/document.xml.rels"]).unwrap();
+    let footnote_rels = std::str::from_utf8(&parts["word/_rels/footnotes.xml.rels"]).unwrap();
+    let endnote_rels = std::str::from_utf8(&parts["word/_rels/endnotes.xml.rels"]).unwrap();
+    let content_types = std::str::from_utf8(&parts["[Content_Types].xml"]).unwrap();
+
+    let foot_one = note_with_marker(footnotes, "footnote", "FOOT CHART ONE");
+    let foot_two = note_with_marker(footnotes, "footnote", "FOOT NESTED CHART");
+    let end_one = note_with_marker(endnotes, "endnote", "END CHART ONE");
+    let end_two = note_with_marker(endnotes, "endnote", "END NESTED CHART");
+    let rejected = note_with_marker(endnotes, "endnote", "REJECTED CHART");
+    for namespace in ["xmlns:r=", "xmlns:wp=", "xmlns:a=", "xmlns:c="] {
+        assert!(footnotes.contains(namespace), "{footnotes}");
+    }
+    assert!(!footnotes.contains("xmlns:cx="), "{footnotes}");
+    for namespace in ["xmlns:r=", "xmlns:wp=", "xmlns:a=", "xmlns:cx="] {
+        assert!(endnotes.contains(namespace), "{endnotes}");
+    }
+    assert!(!endnotes.contains("xmlns:c="), "{endnotes}");
+    assert!(foot_one.contains(r#"<c:chart r:id="rId1"/>"#));
+    assert!(foot_one.contains(r#"descr="Foot &lt;chart&gt;""#));
+    assert!(foot_one.contains(r#"<wp:extent cx="3810000" cy="2286000"/>"#));
+    assert!(foot_two.contains(r#"<c:chart r:id="rId2"/>"#));
+    assert_eq!(foot_two.matches("<w:tbl>").count(), 2, "{foot_two}");
+    assert!(end_one.contains(r#"<cx:chart r:id="rId1"/>"#));
+    assert!(end_two.contains(r#"<cx:chart r:id="rId2"/>"#));
+    assert_eq!(end_two.matches("<w:tbl>").count(), 2, "{end_two}");
+    assert!(!rejected.contains("<w:drawing>"), "{rejected}");
+    assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+    assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+
+    assert!(document_rels.contains(r#"Target="charts/chart1.xml""#));
+    for target in ["chart2.xml", "chartEx3.xml", "chart4.xml", "chartEx5.xml"] {
+        assert!(!document_rels.contains(target), "{document_rels}");
+    }
+    assert!(footnote_rels.contains(r#"Id="rId1""#));
+    assert!(footnote_rels.contains(r#"Target="charts/chart2.xml""#));
+    assert!(footnote_rels.contains(r#"Id="rId2""#));
+    assert!(footnote_rels.contains(r#"Target="charts/chart4.xml""#));
+    assert!(endnote_rels.contains(r#"Id="rId1""#));
+    assert!(endnote_rels.contains(r#"Target="charts/chartEx3.xml""#));
+    assert!(endnote_rels.contains(r#"Id="rId2""#));
+    assert!(endnote_rels.contains(r#"Target="charts/chartEx5.xml""#));
+    assert!(!endnote_rels.contains("chart6"));
+
+    let chart_paths = parts
+        .keys()
+        .filter(|name| name.starts_with("word/charts/chart") && name.ends_with(".xml"))
+        .cloned()
+        .collect::<Vec<_>>();
+    assert_eq!(
+        chart_paths,
+        [
+            "word/charts/chart1.xml",
+            "word/charts/chart2.xml",
+            "word/charts/chart4.xml",
+            "word/charts/chartEx3.xml",
+            "word/charts/chartEx5.xml",
+        ]
+    );
+    assert!(!parts.contains_key("word/charts/chart6.xml"));
+    for index in [1, 2, 4] {
+        let chart = std::str::from_utf8(&parts[&format!("word/charts/chart{index}.xml")]).unwrap();
+        assert!(chart.contains("<a:t>Core source</a:t>"), "{chart}");
+        assert!(chart.contains("<c:v>Core values</c:v>"), "{chart}");
+        assert!(chart.contains("<c:v>18</c:v>"), "{chart}");
+        assert!(parts.contains_key(&format!("word/charts/_rels/chart{index}.xml.rels")));
+        assert!(parts.contains_key(&format!(
+            "word/embeddings/Microsoft_Excel_Worksheet{index}.xlsx"
+        )));
+    }
+    for index in [3, 5] {
+        let chart =
+            std::str::from_utf8(&parts[&format!("word/charts/chartEx{index}.xml")]).unwrap();
+        assert!(chart.contains(r#"layoutId="waterfall""#), "{chart}");
+        assert!(chart.contains("<a:t>Extended source</a:t>"), "{chart}");
+        assert!(chart.contains("<cx:v>Extended values</cx:v>"), "{chart}");
+        assert!(chart.contains("<cx:v>-7</cx:v>"), "{chart}");
+        assert!(!parts.contains_key(&format!("word/charts/_rels/chartEx{index}.xml.rels")));
+        assert!(!parts.contains_key(&format!(
+            "word/embeddings/Microsoft_Excel_Worksheet{index}.xlsx"
+        )));
+    }
+    assert_eq!(
+        content_types
+            .matches("application/vnd.openxmlformats-officedocument.drawingml.chart+xml")
+            .count(),
+        3
+    );
+    assert_eq!(
+        content_types
+            .matches("application/vnd.ms-office.chartex+xml")
+            .count(),
+        2
+    );
+
+    let reopened = Document::open(&converted).expect("converted chart notes reopen");
+    let reopened_model = reopened.model();
+    assert_eq!(
+        reopened_model.blocks.len() + 1,
+        normalized_model.blocks.len()
+    );
+    let supported_end = reopened_model.blocks.len() - 1;
+    assert_eq!(
+        &reopened_model.blocks[..supported_end],
+        &normalized_model.blocks[..supported_end]
+    );
+    let Block::Paragraph(rejected_fallback) = &reopened_model.blocks[supported_end] else {
+        panic!("rejected chart note fallback paragraph")
+    };
+    assert_eq!(rejected_fallback.text(), "REJECTED CHART UNSUPPORTED FIELD");
     assert_eq!(reopened.to_docx(), converted);
 
     let standalone = unzip_parts(&standalone_bytes);

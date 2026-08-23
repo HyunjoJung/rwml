@@ -1096,11 +1096,17 @@ by the corresponding footnote or endnote part; simple HYPERLINK field syntax may
 normalize to a `w:hyperlink` element. Complete nonempty extracted PNG, JPEG, GIF,
 BMP, TIFF, and WebP inline runs likewise survive at every supported paragraph
 depth, including under an external hyperlink, with globally unique media names
-and relationships owned by the corresponding note part. Missing or empty bytes,
-unknown or raw-RGBA MIME data, floating and block images, image-only notes,
-charts, vector metafiles, internal-anchor links, other fields, annotations,
-bookmarks, or nested notes degrade only that note to the normalized one-paragraph
-text fallback without leaving orphan media or relationships; supported sibling
+and relationships owned by the corresponding note part. Parser-modeled native
+literal-cache core and ChartEx chart blocks in chart-only sibling paragraphs also
+survive at the top level or any supported table depth. Their relationships remain
+note-local, chart/drawing IDs remain globally unique, core chart data receives a
+fresh embedded XLSX workbook, and ChartEx literal data remains native. Missing or
+empty image bytes, unknown or raw-RGBA MIME data, floating and block images,
+image-only or chart-only notes, arbitrary Office chart grammars, source chart
+styling/formulas/external data, exact floating chart placement, vector metafiles,
+internal-anchor links, other fields, annotations, bookmarks, or nested notes
+degrade only that note to the normalized one-paragraph text fallback without
+leaving orphan media, charts, workbooks, or relationships; supported sibling
 notes remain rich. Source IDs, numbering and separators, custom marks, page-
 bottom placement, and Word-exact pagination are not preserved. Standalone
 `write_docx` and the public model remain unchanged.

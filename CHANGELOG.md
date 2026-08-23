@@ -9,6 +9,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-modeled native literal-cache core and ChartEx chart blocks in exact real
+  footnote and endnote payloads that also contain visible text. Note-part-local
+  chart relationships coexist with globally unique body/note chart and drawing
+  IDs; core charts receive regenerated embedded XLSX workbooks and chart
+  relationship parts, while ChartEx charts retain native literal data. Both note
+  families, top-level and recursively nested table-cell charts, escaped alt text,
+  dimensions, titles/data, conditional `c`/`cx` namespaces, deterministic bytes,
+  native reopen/reconversion, source-model immutability, standalone model writing,
+  and atomic fallback without orphan charts, workbooks, or relationships are
+  covered. Chart-only notes, arbitrary Office chart grammars and source part
+  bytes, themes/styling, formulas, external data, exact floating placement,
+  page-bottom composition, and Word-exact pagination remain outside this bounded
+  normalization path.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   complete extracted inline PNG, JPEG, GIF, BMP, TIFF, and WebP runs in exact
   real footnote and endnote payloads. Note-local image relationships coexist with
   optional external hyperlink wrappers, while media names and drawing IDs remain
@@ -18,7 +32,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reconversion, source-model immutability, standalone model writing, and atomic
   fallback without orphan media or relationships are covered. Missing or empty
   bytes, unknown or raw-RGBA MIME data, floating and block images, image-only
-  notes, charts, vector metafiles, page-bottom placement, and Word-exact
+  notes, vector metafiles, page-bottom placement, and Word-exact
   pagination remain outside this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   relationship-backed external hyperlinks in exact real footnote and endnote
@@ -30,7 +44,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   standalone-writer exclusion, and all-or-nothing fallback without orphan
   relationships are covered. Simple HYPERLINK field syntax may normalize to a
   `w:hyperlink` element. Internal-anchor links, unsupported raster classes,
-  charts, other fields, annotations, bookmarks, nested notes, page-bottom
+  other fields, annotations, bookmarks, nested notes, page-bottom
   placement, and Word-exact pagination remain outside this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs retains typed
   manual page breaks in direct and recursively nested body and running-surface
@@ -73,11 +87,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and reconversion, public-model equality, and standalone-writer exclusion are
   covered. Relationship-backed external hyperlink runs are retained with
   note-part-local relationships. Complete encoded inline raster runs use the same
-  boundary and retain note-local image relationships. Missing/empty, unknown-MIME,
-  raw-RGBA, floating, block, or image-only raster cases, charts, internal-anchor
-  links, other fields, annotations, bookmarks, nested notes, custom marks, source
-  IDs/numbering and separators, page-bottom placement, and Word-exact pagination
-  remain unsupported by this bounded path.
+  boundary and retain note-local image relationships. Parser-modeled native
+  literal-cache core and ChartEx blocks retain note-local chart relationships and
+  fresh chart package parts. Missing/empty, unknown-MIME, raw-RGBA, floating,
+  block, or image-only raster cases, chart-only notes, arbitrary Office chart
+  grammars, internal-anchor links, other fields, annotations, bookmarks, nested
+  notes, custom marks, source IDs/numbering and separators, page-bottom placement,
+  and Word-exact pagination remain unsupported by this bounded path.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   visible manual column breaks in ordinary top-level paragraphs across all
   default/first/even headers and footers. The private section-aligned six-variant

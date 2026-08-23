@@ -2073,6 +2073,7 @@ fn note_write_payload(
     for (local_index, block) in blocks.iter().enumerate() {
         match block {
             Block::Paragraph(_) | Block::PageBreak => table_pagination.push(None),
+            Block::Chart(chart) if note_write_chart_supported(chart) => table_pagination.push(None),
             Block::Table(table) if note_write_table_shape_supported(table) => {
                 let index = block_offset.checked_add(local_index)?;
                 table_pagination.push(Some(crate::model::TablePaginationHints {
@@ -2114,6 +2115,7 @@ fn note_write_table_shape_supported(table: &crate::model::Table) -> bool {
             for block in &cell.blocks {
                 match block {
                     Block::Paragraph(_) | Block::PageBreak => {}
+                    Block::Chart(chart) if note_write_chart_supported(chart) => {}
                     Block::Table(table) => pending.push(table),
                     _ => return false,
                 }
@@ -2124,6 +2126,15 @@ fn note_write_table_shape_supported(table: &crate::model::Table) -> bool {
         }
     }
     true
+}
+
+pub(crate) fn note_write_chart_supported(chart: &crate::model::Chart) -> bool {
+    !chart.series.is_empty()
+        && chart.series.iter().all(|series| {
+            !series.values.is_empty()
+                && series.values.iter().all(|value| value.is_finite())
+                && series.bubble_sizes.iter().all(|value| value.is_finite())
+        })
 }
 
 fn read_text_boxes(

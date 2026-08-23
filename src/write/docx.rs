@@ -3009,6 +3009,7 @@ fn source_note_payload_is_supported(note: &AuthoredNote, payload: &NoteWritePayl
     payload.blocks.iter().all(|block| match block {
         Block::Paragraph(paragraph) => source_note_paragraph_is_supported(paragraph),
         Block::Table(table) => source_note_table_is_supported(table),
+        Block::Chart(chart) => crate::docx::note_write_chart_supported(chart),
         Block::PageBreak => true,
         _ => false,
     })
@@ -3069,6 +3070,7 @@ fn source_note_table_is_supported(table: &Table) -> bool {
                 match block {
                     Block::Paragraph(paragraph)
                         if source_note_paragraph_is_supported(paragraph) => {}
+                    Block::Chart(chart) if crate::docx::note_write_chart_supported(chart) => {}
                     Block::Table(table) => pending.push(table),
                     Block::PageBreak => {}
                     _ => return false,
@@ -3091,8 +3093,26 @@ fn notes_xml(root: &str, item: &str, notes: &[WrittenNote], has_relationships: b
             .is_some_and(|xml| xml.contains("<w:drawing>"))
     });
     if has_drawing {
+        let chart_ns = if notes.iter().any(|note| {
+            note.body_xml
+                .as_deref()
+                .is_some_and(|xml| xml.contains("<c:chart"))
+        }) {
+            format!(r#" xmlns:c="{C_NS}""#)
+        } else {
+            String::new()
+        };
+        let chart_ex_ns = if notes.iter().any(|note| {
+            note.body_xml
+                .as_deref()
+                .is_some_and(|xml| xml.contains("<cx:chart"))
+        }) {
+            format!(r#" xmlns:cx="{CX_NS}""#)
+        } else {
+            String::new()
+        };
         s.push_str(&format!(
-            r#"<w:{root} xmlns:w="{W_NS}" xmlns:r="{R_NS}" xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:pic="{PIC_NS}">"#
+            r#"<w:{root} xmlns:w="{W_NS}" xmlns:r="{R_NS}" xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:pic="{PIC_NS}"{chart_ns}{chart_ex_ns}>"#
         ));
     } else if has_relationships {
         s.push_str(&format!(r#"<w:{root} xmlns:w="{W_NS}" xmlns:r="{R_NS}">"#));
@@ -5027,19 +5047,21 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
 mod tests {
     use super::{
         render_body, section_columns_xml, source_column_break_offsets, source_line_spacing,
-        source_tab_stops_xml, SectionColumnWriteHint, SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
+        source_note_payload_is_supported, source_tab_stops_xml, SectionColumnWriteHint,
+        SourceWriteHints, REL_HYPERLINK, REL_IMAGE,
     };
     use crate::model::{
         Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
-        Cell, CharProps, DocModel, DocSetup, FieldRole, Image, LineSpacingHint, ListInfo,
-        NoteWritePayload, PaginationHint, ParaProps, Paragraph, Row, Run,
-        RunningBlockPaginationHints, RunningSurfaceColumnBreakHints, RunningSurfaceDistanceHints,
-        RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints, RunningSurfaceTabStopHints,
-        RunningSurfaceTableCellTabStopHints, RunningSurfaceTableLayoutHints,
-        RunningTableLayoutHints, SectionColumnHint, SectionColumnLayoutHints, SectionSetup,
-        TabAlignment, TabLeader, TabStop, Table, TableCellColumnBreakHints,
-        TableCellLineSpacingHints, TableCellNestedPaginationHints, TableCellPaginationHints,
-        TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, MAX_TAB_STOPS,
+        Cell, CharProps, Chart, ChartKind, ChartSeries, DocModel, DocSetup, FieldRole, Image,
+        LineSpacingHint, ListInfo, NoteWritePayload, PaginationHint, ParaProps, Paragraph, Row,
+        Run, RunningBlockPaginationHints, RunningSurfaceColumnBreakHints,
+        RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints,
+        RunningSurfaceTabStopHints, RunningSurfaceTableCellTabStopHints,
+        RunningSurfaceTableLayoutHints, RunningTableLayoutHints, SectionColumnHint,
+        SectionColumnLayoutHints, SectionSetup, TabAlignment, TabLeader, TabStop, Table,
+        TableCellColumnBreakHints, TableCellLineSpacingHints, TableCellNestedPaginationHints,
+        TableCellPaginationHints, TableCellTabStopHints, TablePaginationHints,
+        TableRowPaginationHint, MAX_TAB_STOPS,
     };
     use crate::{Document, NoteKind};
 
@@ -6707,6 +6729,36 @@ mod tests {
             floating_offset_emu: Some((1, 2)),
             ..Image::default()
         });
+
+        let Block::Paragraph(model_paragraph) = &model.blocks[0] else {
+            panic!("body paragraph")
+        };
+        let note = model_paragraph.runs[0].note.as_ref().unwrap();
+        let mut chart_payload = valid[0][0].clone().unwrap();
+        chart_payload.blocks.push(Block::Chart(Chart {
+            kind: ChartKind::Bar,
+            categories: vec!["A".to_string()],
+            series: vec![ChartSeries {
+                name: "Values".to_string(),
+                values: vec![1.0],
+                bubble_sizes: Vec::new(),
+            }],
+            ..Chart::default()
+        }));
+        assert!(source_note_payload_is_supported(note, &chart_payload));
+
+        if let Block::Chart(chart) = chart_payload.blocks.last_mut().unwrap() {
+            chart.series[0].values.clear();
+        }
+        assert!(!source_note_payload_is_supported(note, &chart_payload));
+        if let Block::Chart(chart) = chart_payload.blocks.last_mut().unwrap() {
+            chart.series[0].values.push(f64::NAN);
+        }
+        assert!(!source_note_payload_is_supported(note, &chart_payload));
+        if let Block::Chart(chart) = chart_payload.blocks.last_mut().unwrap() {
+            chart.series.clear();
+        }
+        assert!(!source_note_payload_is_supported(note, &chart_payload));
     }
 
     #[test]

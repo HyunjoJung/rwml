@@ -1103,6 +1103,11 @@ impl Document {
     /// runs also retain globally unique media parts and relationships owned by
     /// the corresponding note part, including through nested tables and under
     /// an external hyperlink.
+    /// Parser-modeled native literal-cache core and ChartEx chart blocks in
+    /// chart-only sibling paragraphs retain note-local relationships, globally
+    /// unique chart/drawing IDs, and fresh chart package parts at the top level
+    /// or through nested tables. Core chart data receives a regenerated embedded
+    /// XLSX workbook; ChartEx literal data remains native.
     /// An unsupported opened-DOCX note body falls back independently to normalized
     /// one-paragraph text.
     /// Legacy nested-table descendants and note paragraph layout properties
@@ -1114,10 +1119,12 @@ impl Document {
     /// conversion through the ordered public block tree across all six selected
     /// running variants; preview table fragmentation and Word-exact pagination
     /// are not claimed. Missing/empty, unknown-MIME, raw-RGBA, floating, block,
-    /// or image-only raster cases, charts, vector metafiles, internal-anchor
-    /// links, other fields, annotations, bookmarks, nested notes, source IDs and
-    /// numbering, separators, custom marks, complex anchors, and page-bottom
-    /// placement remain outside the bounded opened-DOCX note path.
+    /// or image-only raster cases, chart-only notes, arbitrary Office chart
+    /// grammars, source chart styling/formulas/external data, exact floating chart
+    /// placement, vector metafiles, internal-anchor links, other fields,
+    /// annotations, bookmarks, nested notes, source IDs and numbering, separators,
+    /// custom marks, complex anchors, and page-bottom placement remain outside the
+    /// bounded opened-DOCX note path.
     /// Standalone [`write_docx`] remains model-only for all of these private
     /// hints.
     /// Available with the default `docx` feature.
