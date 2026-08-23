@@ -21,7 +21,7 @@ use crate::model::{
     ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, LineSpacingHint,
     PaginationHint, ParaProps, Paragraph, ParagraphStyle, RunningSurfaceDistanceHints,
     SectionBreakKind, SectionColumnLayoutHints, SectionSetup, Spacing, Table, TableBorderSide,
-    TableBorderStyle, VertAlign, WebExtensionTaskPane,
+    TableBorderStyle, TableRowPaginationHint, VertAlign, WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -88,6 +88,7 @@ pub(crate) struct SourceWriteHints<'a> {
     pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
     pub(crate) paragraph_line_spacing: &'a [Option<LineSpacingHint>],
     pub(crate) paragraph_pagination: &'a [PaginationHint],
+    pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
 }
 
 impl<'a> SourceWriteHints<'a> {
@@ -105,6 +106,13 @@ impl<'a> SourceWriteHints<'a> {
 
     fn aligned_paragraph_pagination(self, block_count: usize) -> Option<&'a [PaginationHint]> {
         (self.paragraph_pagination.len() == block_count).then_some(self.paragraph_pagination)
+    }
+
+    fn aligned_table_row_pagination(
+        self,
+        block_count: usize,
+    ) -> Option<&'a [Vec<TableRowPaginationHint>]> {
+        (self.table_row_pagination.len() == block_count).then_some(self.table_row_pagination)
     }
 
     fn for_block(
@@ -844,11 +852,13 @@ impl Ctx {
         section_hints: SectionWriteHint<'_>,
         line_spacing: Option<LineSpacingHint>,
         pagination: Option<PaginationHint>,
+        row_pagination: Option<&[TableRowPaginationHint]>,
     ) {
         match block {
             Block::Paragraph(paragraph) => {
                 self.write_paragraph_with_source_hints(out, paragraph, line_spacing, pagination)
             }
+            Block::Table(table) => self.write_table_with_row_pagination(out, table, row_pagination),
             Block::SectionBreak(setup) => self.write_section_break(out, setup, section_hints),
             _ => self.write_block(out, block),
         }
@@ -864,7 +874,7 @@ impl Ctx {
                 }
                 out.push_str("</w:p>");
             }
-            Block::Table(t) => self.write_table_inner(out, t, Some(rels)),
+            Block::Table(t) => self.write_table_inner(out, t, Some(rels), None),
             Block::Image(img) => {
                 out.push_str("<w:p>");
                 self.write_hf_image_or_placeholder(out, img, rels);
@@ -1509,7 +1519,17 @@ impl Ctx {
     /// Write a table, reconstructing the full grid (re-inserting the `vMerge`
     /// continuation cells the reader dropped) so merges round-trip.
     fn write_table(&mut self, out: &mut String, t: &Table) {
-        self.write_table_inner(out, t, None);
+        self.write_table_inner(out, t, None, None);
+    }
+
+    fn write_table_with_row_pagination(
+        &mut self,
+        out: &mut String,
+        table: &Table,
+        row_pagination: Option<&[TableRowPaginationHint]>,
+    ) {
+        let row_pagination = row_pagination.filter(|hints| hints.len() == table.rows.len());
+        self.write_table_inner(out, table, None, row_pagination);
     }
 
     fn write_table_inner(
@@ -1517,6 +1537,7 @@ impl Ctx {
         out: &mut String,
         t: &Table,
         mut hf_rels: Option<&mut Vec<Rel>>,
+        row_pagination: Option<&[TableRowPaginationHint]>,
     ) {
         struct Active {
             col: usize,
@@ -1529,6 +1550,9 @@ impl Ctx {
 
         for (ri, row) in t.rows.iter().enumerate() {
             let is_header = ri < t.header_rows;
+            let cant_split = row_pagination
+                .and_then(|hints| hints.get(ri))
+                .is_some_and(|hint| hint.cant_split);
             let mut row_xml = String::new();
             let mut col = 0usize;
             let mut ci = 0usize;
@@ -1613,8 +1637,15 @@ impl Ctx {
             active.sort_by_key(|a| a.col);
 
             rows_xml.push_str("<w:tr>");
-            if is_header {
-                rows_xml.push_str("<w:trPr><w:tblHeader/></w:trPr>");
+            if cant_split || is_header {
+                rows_xml.push_str("<w:trPr>");
+                if cant_split {
+                    rows_xml.push_str("<w:cantSplit/>");
+                }
+                if is_header {
+                    rows_xml.push_str("<w:tblHeader/>");
+                }
+                rows_xml.push_str("</w:trPr>");
             }
             rows_xml.push_str(&row_xml);
             rows_xml.push_str("</w:tr>");
@@ -3682,6 +3713,8 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         source_hints.and_then(|hints| hints.aligned_paragraph_line_spacing(model.blocks.len()));
     let paragraph_pagination =
         source_hints.and_then(|hints| hints.aligned_paragraph_pagination(model.blocks.len()));
+    let table_row_pagination =
+        source_hints.and_then(|hints| hints.aligned_table_row_pagination(model.blocks.len()));
     let mut section_index = 0;
     for (index, block) in model.blocks.iter().enumerate() {
         ctx.write_top_level_block(
@@ -3697,6 +3730,9 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
             paragraph_pagination
                 .and_then(|hints| hints.get(index))
                 .copied(),
+            table_row_pagination
+                .and_then(|hints| hints.get(index))
+                .map(Vec::as_slice),
         );
         if matches!(block, Block::SectionBreak(_)) {
             section_index += 1;
@@ -3842,7 +3878,7 @@ mod tests {
     use crate::model::{
         Align, Block, Cell, CharProps, DocModel, FieldRole, Image, LineSpacingHint, ListInfo,
         PaginationHint, ParaProps, Paragraph, Row, Run, RunningSurfaceDistanceHints,
-        SectionColumnHint, SectionColumnLayoutHints, SectionSetup, Table,
+        SectionColumnHint, SectionColumnLayoutHints, SectionSetup, Table, TableRowPaginationHint,
     };
     use crate::Document;
 
@@ -3937,6 +3973,7 @@ mod tests {
                 running_surface_distances: &distances,
                 paragraph_line_spacing: &[],
                 paragraph_pagination: &[],
+                table_row_pagination: &[],
             }),
         );
         let document_xml = String::from_utf8(rendered.document_xml).unwrap();
@@ -3979,6 +4016,7 @@ mod tests {
                 running_surface_distances: &distances,
                 paragraph_line_spacing: &line_spacing,
                 paragraph_pagination: &[],
+                table_row_pagination: &[],
             }),
         );
         let document_xml = String::from_utf8(rendered.document_xml).unwrap();
@@ -4046,6 +4084,7 @@ mod tests {
                         running_surface_distances: &distances,
                         paragraph_line_spacing: &[],
                         paragraph_pagination,
+                        table_row_pagination: &[],
                     }),
                 )
                 .document_xml,
@@ -4064,6 +4103,66 @@ mod tests {
                 "<w:keepNext/><w:keepLines/><w:pageBreakBefore/>",
                 r#"<w:widowControl w:val="0"/><w:numPr>"#,
             )),
+            "{aligned}"
+        );
+    }
+
+    #[test]
+    fn source_table_row_pagination_writer_rejects_misalignment_and_orders_controls() {
+        let model = DocModel {
+            blocks: vec![Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![cell("header")],
+                }],
+                header_rows: 1,
+                ..Table::default()
+            })],
+            ..DocModel::default()
+        };
+        let gaps = [None];
+        let layouts = [None];
+        let separators = [false];
+        let rtl = [false];
+        let distances = [RunningSurfaceDistanceHints::default()];
+        let hint = TableRowPaginationHint { cant_split: true };
+        let render = |table_row_pagination: &[Vec<TableRowPaginationHint>]| {
+            String::from_utf8(
+                render_body(
+                    &model,
+                    Some(SourceWriteHints {
+                        gaps: &gaps,
+                        layouts: &layouts,
+                        separators: &separators,
+                        rtl: &rtl,
+                        final_gap: None,
+                        final_layout: None,
+                        final_separator: false,
+                        final_rtl: false,
+                        running_surface_distances: &distances,
+                        paragraph_line_spacing: &[],
+                        paragraph_pagination: &[],
+                        table_row_pagination,
+                    }),
+                )
+                .document_xml,
+            )
+            .unwrap()
+        };
+
+        let outer_misaligned = render(&[vec![hint], vec![hint]]);
+        assert!(
+            !outer_misaligned.contains("<w:cantSplit"),
+            "{outer_misaligned}"
+        );
+        let inner_misaligned = render(&[vec![hint, hint]]);
+        assert!(
+            !inner_misaligned.contains("<w:cantSplit"),
+            "{inner_misaligned}"
+        );
+
+        let aligned = render(&[vec![hint]]);
+        assert!(
+            aligned.contains("<w:tr><w:trPr><w:cantSplit/><w:tblHeader/></w:trPr>"),
             "{aligned}"
         );
     }

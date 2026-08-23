@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Preserves resolved legacy-DOC table-row no-split semantics when
+  `Document::to_docx()` freshly converts aligned top-level tables. Modern
+  `sprmTFCantSplit` values override compatibility `sprmTFCantSplit90` values in
+  source order, effective true emits `w:cantSplit`, and effective false remains
+  omitted. The source-only writer bridge rejects misaligned block or row vectors,
+  keeps `w:cantSplit` before `w:tblHeader` in CT_TrPr order, and leaves standalone
+  model writing, DOCX-backed conversion, nested tables, and non-body tables
+  unchanged. Deterministic bytes and native reopen are covered.
 - Preserves resolved legacy-DOC `keepNext`, `keepLines`, and default-on
   `widowControl` semantics when `Document::to_docx()` freshly converts aligned
   top-level paragraphs. The source-only writer bridge rejects a misaligned

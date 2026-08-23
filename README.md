@@ -465,7 +465,8 @@ paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
 render hints to the public `DocModel`. Legacy-backed fresh conversion now
 serializes the effective keep controls and widow-off state for aligned top-level
-paragraphs; table-cell, row, and non-body pagination controls remain
+paragraphs plus effective no-split state for aligned top-level table rows;
+table-cell paragraph pagination, nested-table rows, and non-body controls remain
 source-render-only. Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
@@ -934,8 +935,10 @@ retains validated source-only section column gaps, complete unequal geometry,
 separator flags, and right-to-left population without exposing them in the
 public model. Legacy-backed conversion also retains validated exact/minimum line
 rules plus effective `keepNext`, `keepLines`, and widow-off state for aligned
-top-level paragraphs. Standalone model writing remains proportional-only and
-does not consume private pagination hints.
+top-level paragraphs, and effective no-split state for aligned top-level table
+rows. Standalone model writing remains proportional-only and does not consume
+private pagination hints; DOCX-backed conversion and nested-table rows do not
+consume the legacy row sidecar.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the

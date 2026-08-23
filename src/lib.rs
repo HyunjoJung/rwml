@@ -1020,8 +1020,9 @@ impl Document {
     /// population, and running header/footer distances into the generated
     /// package. Opened legacy documents additionally carry exact/minimum line
     /// rules and effective keep/widow pagination controls for aligned top-level
-    /// paragraphs; standalone [`write_docx`] remains model-only for those
-    /// private hints.
+    /// paragraphs, plus effective no-split state for aligned top-level table
+    /// rows; standalone [`write_docx`] remains model-only for those private
+    /// hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
@@ -1042,6 +1043,7 @@ impl Document {
                         running_surface_distances: &assembled.running_surface_distances,
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
+                        table_row_pagination: &assembled.table_row_pagination,
                     },
                 )
             }
@@ -1062,6 +1064,7 @@ impl Document {
                         running_surface_distances: &state.running_surface_distances,
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
+                        table_row_pagination: &[],
                     },
                 )
             }
@@ -13244,7 +13247,7 @@ mod tests {
         stylesheet
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn push_legacy_pagination_fixture_spacing(grpprl: &mut Vec<u8>) {
         push_paragraph_spacing_twips(grpprl, 0xA414, 120);
         push_paragraph_line_spacing(grpprl, 324, 1);
@@ -13315,7 +13318,7 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn legacy_row_pagination_doc(row_properties: &[(u16, u8)]) -> Vec<u8> {
         let mut text = String::new();
         for index in 0..32 {
@@ -13775,6 +13778,53 @@ mod tests {
             over_tall_layout.pages > 1,
             "an over-tall kept cell paragraph must split and make progress"
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_row_no_split_roundtrips_to_docx() {
+        let convert = |properties: &[(u16, u8)]| {
+            let legacy = Document::open(&legacy_row_pagination_doc(properties)).unwrap();
+            let converted = legacy.to_docx();
+            let document_xml = docx_part(&converted, "word/document.xml");
+            (legacy, converted, document_xml)
+        };
+        let (modern, modern_docx, modern_xml) = convert(&[(0x3466, 1)]);
+        assert!(
+            modern_xml.contains("<w:tr><w:trPr><w:cantSplit/></w:trPr>"),
+            "{modern_xml}"
+        );
+        assert_eq!(modern_docx, modern.to_docx());
+
+        let (_, _, compatibility_xml) = convert(&[(0x3403, 1)]);
+        assert!(
+            compatibility_xml.contains("<w:tr><w:trPr><w:cantSplit/></w:trPr>"),
+            "{compatibility_xml}"
+        );
+        let (modern_off, modern_off_docx, modern_off_xml) = convert(&[(0x3403, 1), (0x3466, 0)]);
+        assert!(!modern_off_xml.contains("<w:cantSplit"), "{modern_off_xml}");
+        assert_eq!(modern_off_docx, modern_off.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&modern.model()), "word/document.xml");
+        assert!(!model_only_xml.contains("<w:cantSplit"));
+
+        #[cfg(feature = "render")]
+        {
+            let reopened_hint = |bytes: &[u8]| {
+                let reopened = Document::open(bytes).unwrap();
+                let Backend::Docx(state) = reopened.backend else {
+                    panic!("converted document must use the DOCX backend");
+                };
+                state
+                    .table_row_pagination
+                    .into_iter()
+                    .find(|rows| !rows.is_empty())
+                    .and_then(|rows| rows.first().copied())
+                    .expect("converted table row hint")
+            };
+            assert!(reopened_hint(&modern_docx).cant_split);
+            assert!(!reopened_hint(&modern_off_docx).cant_split);
+        }
     }
 
     #[cfg(feature = "render")]
