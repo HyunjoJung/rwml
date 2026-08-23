@@ -581,7 +581,7 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         table_row_pagination: _table_row_pagination,
         table_cell_pagination: _table_cell_pagination,
         table_cell_line_spacing: _table_cell_line_spacing,
-        #[cfg(feature = "render")]
+        #[cfg(any(feature = "docx", feature = "render"))]
             running_line_spacing_hints: _running_line_spacing_hints,
         running_surface_distances: _running_surface_distances,
     } = legacy_build_output_from_doc_state(state);
@@ -1030,15 +1030,16 @@ impl Document {
     /// carry reader-resolved explicit tab stops through section-aligned private
     /// hints. Direct paragraph blocks in surviving cells of top-level tables on
     /// those running surfaces use a companion block/row/surviving-cell/paragraph-
-    /// aligned bridge for explicit tabs and reader-resolved exact/minimum line
-    /// rules. Direct top-level running paragraphs also carry exact/minimum line
-    /// rules through a section-aligned source-only bridge. Nested-table
-    /// descendants and notes remain outside these fresh-conversion paths, and all
-    /// running surfaces remain outside pagination conversion; legacy-DOC running
-    /// stories and nested running-table descendants remain outside tab and line-
-    /// rule conversion. Settings-defined default-tab intervals remain outside
-    /// the tab path, and table-cell, note, running-surface, and nested-content
-    /// manual breaks remain outside the column-break path.
+    /// aligned bridge for explicit tabs. Opened DOCX and legacy DOC inputs both
+    /// retain reader-resolved exact/minimum line rules on those direct table-cell
+    /// paragraphs and on direct top-level running paragraphs through section-
+    /// aligned source-only hints. Nested-table descendants and notes remain
+    /// outside these fresh-conversion paths, and all running surfaces remain
+    /// outside pagination conversion; legacy-DOC running stories remain outside
+    /// tab conversion, while nested running-table descendants remain outside
+    /// both tab and line-rule conversion. Settings-defined default-tab intervals
+    /// remain outside the tab path, and table-cell, note, running-surface, and
+    /// nested-content manual breaks remain outside the column-break path.
     /// Standalone [`write_docx`] remains model-only for all of these private
     /// hints.
     /// Available with the default `docx` feature.
@@ -1059,7 +1060,7 @@ impl Document {
                         final_separator: assembled.final_section_column_separator,
                         final_rtl: assembled.final_section_column_rtl,
                         running_surface_distances: &assembled.running_surface_distances,
-                        running_line_spacing: &[],
+                        running_line_spacing: &assembled.running_line_spacing_hints,
                         running_tab_stops: &[],
                         running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &assembled.line_spacing_hints,
@@ -6023,7 +6024,7 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn legacy_running_surface_absolute_spacing_doc(
         story_position: usize,
         line_spacing: (u16, u16),
@@ -6104,7 +6105,7 @@ mod tests {
         )
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn legacy_running_table_absolute_spacing_doc(
         story_position: usize,
         line_spacing: (u16, u16),
@@ -6187,7 +6188,7 @@ mod tests {
         })
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn legacy_running_spacing_at(
         hints: &model::RunningSurfaceLineSpacingHints,
         story_position: usize,
@@ -6202,7 +6203,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn legacy_running_table_spacing_at(
         hints: &model::RunningSurfaceLineSpacingHints,
         story_position: usize,
@@ -6369,6 +6370,55 @@ mod tests {
         let mut out = String::new();
         file.read_to_string(&mut out).unwrap();
         out
+    }
+
+    #[cfg(feature = "docx")]
+    fn docx_running_parts(bytes: &[u8]) -> Vec<(String, String)> {
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let mut parts = Vec::new();
+        for index in 0..zip.len() {
+            let mut file = zip.by_index(index).unwrap();
+            let name = file.name().to_string();
+            if (name.starts_with("word/header") || name.starts_with("word/footer"))
+                && name.ends_with(".xml")
+            {
+                let mut xml = String::new();
+                file.read_to_string(&mut xml).unwrap();
+                parts.push((name, xml));
+            }
+        }
+        parts
+    }
+
+    #[cfg(feature = "docx")]
+    fn assert_single_running_line_rule(bytes: &[u8], marker: &str, expected: &str) {
+        let parts = docx_running_parts(bytes);
+        let selected = parts
+            .iter()
+            .filter(|(_, xml)| xml.contains(marker))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            selected.len(),
+            1,
+            "expected one generated running part containing {marker:?}: {parts:?}"
+        );
+        assert!(
+            selected[0].1.contains(expected),
+            "missing {expected:?} in {}: {}",
+            selected[0].0,
+            selected[0].1
+        );
+        assert_eq!(
+            parts
+                .iter()
+                .map(|(_, xml)| {
+                    xml.matches(r#"w:lineRule="exact""#).count()
+                        + xml.matches(r#"w:lineRule="atLeast""#).count()
+                })
+                .sum::<usize>(),
+            1,
+            "unexpected generated running absolute line rule: {parts:?}"
+        );
     }
 
     #[cfg(feature = "docx")]
@@ -7175,6 +7225,79 @@ mod tests {
         assert_eq!(first_footer.text(), "FF");
     }
 
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_surfaces_roundtrip_absolute_line_spacing_to_docx() {
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+        let variants = ["EH", "OH", "EF", "OF", "FH", "FF"];
+
+        for (story_position, marker) in variants.into_iter().enumerate() {
+            let exact = Document::open(&legacy_running_surface_absolute_spacing_doc(
+                story_position,
+                (EXACT_FIVE_POINTS, 0),
+            ))
+            .unwrap();
+            let minimum = Document::open(&legacy_running_surface_absolute_spacing_doc(
+                story_position,
+                (800, 0),
+            ))
+            .unwrap();
+            let exact_model = exact.model();
+            let minimum_model = minimum.model();
+
+            assert_eq!(
+                exact_model, minimum_model,
+                "legacy {marker} absolute spacing must remain outside the public model"
+            );
+
+            let exact_converted = exact.to_docx();
+            let minimum_converted = minimum.to_docx();
+            assert_eq!(exact_converted, exact.to_docx());
+            assert_eq!(minimum_converted, minimum.to_docx());
+            assert_ne!(exact_converted, minimum_converted);
+            assert_single_running_line_rule(
+                &exact_converted,
+                &format!(">{marker}</w:t>"),
+                r#"w:line="100" w:lineRule="exact""#,
+            );
+            assert_single_running_line_rule(
+                &minimum_converted,
+                &format!(">{marker}</w:t>"),
+                r#"w:line="800" w:lineRule="atLeast""#,
+            );
+
+            let exact_reopened = Document::open(&exact_converted).unwrap();
+            let minimum_reopened = Document::open(&minimum_converted).unwrap();
+            let Backend::Docx(exact_state) = &exact_reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            let Backend::Docx(minimum_state) = &minimum_reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(exact_state.running_line_spacing_hints.len(), 1);
+            assert_eq!(minimum_state.running_line_spacing_hints.len(), 1);
+            assert_eq!(
+                legacy_running_spacing_at(
+                    &exact_state.running_line_spacing_hints[0],
+                    story_position,
+                ),
+                &[Some(crate::model::LineSpacingHint::Exact(5.0))]
+            );
+            assert_eq!(
+                legacy_running_spacing_at(
+                    &minimum_state.running_line_spacing_hints[0],
+                    story_position,
+                ),
+                &[Some(crate::model::LineSpacingHint::AtLeast(40.0))]
+            );
+
+            assert!(docx_running_parts(&write_docx(&exact_model))
+                .iter()
+                .all(|(_, xml)| !xml.contains(r#"w:lineRule="exact""#)
+                    && !xml.contains(r#"w:lineRule="atLeast""#)));
+        }
+    }
+
     #[cfg(feature = "render")]
     #[test]
     fn opened_legacy_doc_running_surfaces_consume_absolute_line_spacing() {
@@ -7239,6 +7362,82 @@ mod tests {
                 minimum_pdf,
                 render_opened_document_without_body_line_spacing(&minimum, &fonts)
             );
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_table_cells_roundtrip_absolute_line_spacing_to_docx() {
+        const EXACT_FIVE_POINTS: u16 = 0xFF9C;
+
+        for story_position in 0..6 {
+            let exact = Document::open(&legacy_running_table_absolute_spacing_doc(
+                story_position,
+                (EXACT_FIVE_POINTS, 0),
+            ))
+            .unwrap();
+            let minimum = Document::open(&legacy_running_table_absolute_spacing_doc(
+                story_position,
+                (800, 0),
+            ))
+            .unwrap();
+            let exact_model = exact.model();
+            let minimum_model = minimum.model();
+
+            assert_eq!(
+                exact_model, minimum_model,
+                "legacy running table {story_position} absolute spacing must remain outside the public model"
+            );
+
+            let exact_converted = exact.to_docx();
+            let minimum_converted = minimum.to_docx();
+            assert_eq!(exact_converted, exact.to_docx());
+            assert_eq!(minimum_converted, minimum.to_docx());
+            assert_ne!(exact_converted, minimum_converted);
+            assert_single_running_line_rule(
+                &exact_converted,
+                ">T</w:t>",
+                r#"w:line="100" w:lineRule="exact""#,
+            );
+            assert_single_running_line_rule(
+                &minimum_converted,
+                ">T</w:t>",
+                r#"w:line="800" w:lineRule="atLeast""#,
+            );
+
+            let exact_reopened = Document::open(&exact_converted).unwrap();
+            let minimum_reopened = Document::open(&minimum_converted).unwrap();
+            let Backend::Docx(exact_state) = &exact_reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            let Backend::Docx(minimum_state) = &minimum_reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(exact_state.running_line_spacing_hints.len(), 1);
+            assert_eq!(minimum_state.running_line_spacing_hints.len(), 1);
+            assert_eq!(
+                legacy_running_table_spacing_at(
+                    &exact_state.running_line_spacing_hints[0],
+                    story_position,
+                ),
+                &[vec![vec![vec![Some(
+                    crate::model::LineSpacingHint::Exact(5.0)
+                )]]]]
+            );
+            assert_eq!(
+                legacy_running_table_spacing_at(
+                    &minimum_state.running_line_spacing_hints[0],
+                    story_position,
+                ),
+                &[vec![vec![vec![Some(
+                    crate::model::LineSpacingHint::AtLeast(40.0)
+                )]]]]
+            );
+
+            assert!(docx_running_parts(&write_docx(&exact_model))
+                .iter()
+                .all(|(_, xml)| !xml.contains(r#"w:lineRule="exact""#)
+                    && !xml.contains(r#"w:lineRule="atLeast""#)));
         }
     }
 

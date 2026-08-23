@@ -51,9 +51,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   All six variants, both section positions, malformed section/variant and
   numeric-value isolation, coexistence with tabs, table-cell tabs, distances,
   local relationships, generated page numbering, deterministic bytes, and
-  native reopen/model equality are covered. Standalone model writing and
-  legacy-DOC conversion remain unchanged; running pagination controls and fresh
-  note conversion remain outside this direct-paragraph bridge.
+  native reopen/model equality are covered. Standalone model writing remains
+  unchanged; legacy-DOC conversion uses the separate bounded bridge below.
+  Running pagination controls and fresh note conversion remain outside this
+  direct-paragraph bridge.
 - Preserves reader-resolved exact and minimum line spacing when
   `Document::to_docx()` freshly converts direct paragraph blocks in surviving
   cells of top-level tables in selected default/first/even headers and footers
@@ -65,8 +66,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sibling tables, coexistence with direct spacing and both tab bridges,
   distances, local relationships, generated page numbering, deterministic
   bytes, and native reopen/model equality are covered. Standalone model writing
-  and legacy-DOC conversion remain unchanged; nested running tables, running
-  pagination controls, and fresh note conversion remain outside this bridge.
+  remains unchanged, while legacy-DOC conversion uses the separate bounded
+  bridge below; nested running tables, running pagination controls, and fresh
+  note conversion remain outside this bridge.
+- Preserves parsed legacy-DOC exact and minimum line spacing when
+  `Document::to_docx()` freshly converts direct top-level paragraphs and direct
+  paragraph blocks in surviving cells of top-level tables in selected
+  default/first/even headers and footers. The existing renderer sidecar is now
+  retained by default DOCX builds, keeps its section-aligned six-story mapping,
+  and reuses the independently validated direct-paragraph and table-cell writer
+  paths. All six variants, exact/minimum isolation, two-section mapping,
+  unindexed default-header fallback, deterministic bytes, public-model
+  exclusion, native reopen of the private rules, and unchanged standalone model
+  writing are covered. Legacy running-story tabs, nested running tables,
+  running pagination controls, fresh note conversion, and the legacy-only build
+  remain unchanged.
 - Applies opened-DOCX table-cell tab stops in top-level real footnote and endnote
   tables through the existing table shaper. A private block/row/surviving-cell/
   paragraph tree follows visible note blocks in footnote-then-endnote order,

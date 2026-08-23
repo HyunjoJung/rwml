@@ -474,14 +474,15 @@ strictly validated source-offset bridge. Direct top-level paragraphs in selected
 default/first/even running headers and footers from an opened DOCX also retain
 reader-resolved explicit tab stops through a section-aligned six-variant bridge.
 Direct paragraph blocks in surviving cells of top-level tables on those same
-running surfaces retain explicit tabs and reader-resolved exact/minimum line
-rules through independently validated companion block/row/surviving-cell/
-paragraph-aligned bridges. Direct top-level running paragraphs also retain
-reader-resolved exact/minimum line rules through a section-aligned source-only
-bridge. Nested-table descendants and notes remain outside these fresh-conversion
-paths, and all running surfaces remain outside pagination conversion; legacy-DOC
-running stories and nested running-table descendants remain outside tab and
-line-rule conversion.
+running surfaces retain explicit tabs through an independently validated
+companion block/row/surviving-cell/paragraph-aligned bridge. For opened DOCX and
+legacy DOC inputs alike, those direct table-cell paragraphs also retain reader-
+resolved exact/minimum line rules, while direct top-level running paragraphs
+retain the same rules through a section-aligned source-only bridge. Nested-table
+descendants and notes remain outside these fresh-conversion paths, and all
+running surfaces remain outside pagination conversion; legacy-DOC running
+stories remain outside tab conversion, while nested running-table descendants
+remain outside both tab and line-rule conversion.
 Settings-defined default-tab intervals remain outside the tab path, and table-
 cell, note, running-surface, and nested-content manual breaks remain outside the
 column-break path.
@@ -614,17 +615,19 @@ line spacing; supported values survive shared-model use, `.docx`
 conversion/reopen, and top-level or table-cell PDF preview layout.
 Opened legacy documents additionally retain positive non-multiple LSPD as a
 minimum line box and negative encoded LSPD as an exact line box through private
-hints. Aligned top-level paragraphs and direct paragraph blocks in surviving
-cells of aligned top-level tables carry those rules into fresh `.docx`
-conversion/reopen, while PDF previews also apply them to ordinary main-story
-table-cell paragraphs and ordinary top-level or table-cell paragraphs in
-section-linked even/default/first headers and footers. Exact boxes use the same
-centered or bottom-aligned baseline and vertical clipping behavior as opened
-DOCX. The hints survive promoted manual page-break fragments, remain aligned
-through horizontal cell folds and surviving vertical-merge owners, and mirror
-the existing six-story legacy running-surface mapping, non-table block
-positions, and unindexed default-header fallback. Exact running-surface content
-is clipped to its margin-band line box or visible table-row fragment.
+hints. Aligned top-level body paragraphs, direct paragraph blocks in surviving
+cells of aligned top-level body tables, direct top-level running paragraphs, and
+direct paragraph blocks in surviving cells of top-level running tables carry
+those rules into fresh `.docx` conversion/reopen. PDF previews also apply them
+to ordinary main-story table-cell paragraphs and ordinary top-level or table-
+cell paragraphs in section-linked even/default/first headers and footers. Exact
+boxes use the same centered or bottom-aligned baseline and vertical clipping
+behavior as opened DOCX. The hints survive promoted manual page-break fragments,
+remain aligned through horizontal cell folds and surviving vertical-merge
+owners, and mirror the existing six-story legacy running-surface mapping, non-
+table block positions, and unindexed default-header fallback. Exact running-
+surface content is clipped to its margin-band line box or visible table-row
+fragment.
 Direct and paragraph-style `sprmPShd80` and `sprmPShd` paragraph shading also
 reaches the shared model, `.docx` conversion/reopen, and PDF preview when the
 source result collapses exactly to one explicit RGB fill: clear uses its
@@ -640,8 +643,8 @@ direct shading.
 At-least/exact and explicit zero proportional LSPD values clear an inherited
 multiplier but remain unset in the shared model because it has no corresponding
 line-rule representation. The absolute line-rule sidecar does not enter the
-shared model; nested-table-descendant, note, and running-surface rules are not
-yet carried through fresh `.docx` conversion.
+shared model; nested-table-descendant and note rules are not yet carried through
+fresh `.docx` conversion.
 Paragraph direction does not imply table mirroring. Opened
 legacy tables preserve strict direct row-mark
 `sprmTFBiDi` and compatibility
@@ -984,12 +987,13 @@ layout hints. Direct top-level paragraphs in selected default/first/even running
 headers and footers from an opened DOCX also retain reader-resolved explicit tab
 stops through section-aligned private hints. Direct paragraph blocks in
 surviving cells of top-level tables on those running surfaces use a companion
-block/row/surviving-cell/paragraph-aligned bridge for explicit tabs and reader-
-resolved exact/minimum line rules. Direct top-level running paragraphs also
-retain exact/minimum line rules through a section-aligned source-only bridge.
-Nested-table descendants and notes remain outside these fresh-conversion paths,
-and all running surfaces remain outside pagination conversion; legacy-DOC
-running stories and nested running-table descendants remain outside tab and
+block/row/surviving-cell/paragraph-aligned bridge for explicit tabs. Opened DOCX
+and legacy DOC inputs both retain reader-resolved exact/minimum line rules on
+those direct table-cell paragraphs and on direct top-level running paragraphs
+through section-aligned source-only hints. Nested-table descendants and notes
+remain outside these fresh-conversion paths, and all running surfaces remain
+outside pagination conversion; legacy-DOC running stories remain outside tab
+conversion, while nested running-table descendants remain outside both tab and
 line-rule conversion. Settings-defined default-tab
 intervals remain outside the tab path, and table-cell, note, running-surface,
 and nested-content manual breaks remain outside the column-break path.

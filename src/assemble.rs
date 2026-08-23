@@ -15,7 +15,7 @@ use crate::chpx::{highlight_name, Chp, ChpxTable, PcdPrm1Patch};
 use crate::clx::Piece;
 use crate::fib::{self, Fib};
 use crate::list::Numberer;
-#[cfg(feature = "render")]
+#[cfg(any(feature = "docx", feature = "render"))]
 use crate::model::RunningSurfaceLineSpacingHints;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocGrid, DocGridType, DocMeta, DocModel,
@@ -91,7 +91,7 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     pub(crate) table_cell_pagination: Vec<TableCellPaginationHints>,
     pub(crate) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     pub(crate) running_line_spacing_hints: Vec<RunningSurfaceLineSpacingHints>,
     pub(crate) running_surface_distances: Vec<RunningSurfaceDistanceHints>,
 }
@@ -137,7 +137,7 @@ pub(crate) fn build_model_with_render_hints(
         table_cell_line_spacing,
         text_start: _,
     } = build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     let running_line_spacing_hints = legacy_running_line_spacing_from_regions(
         &blocks,
         &regions,
@@ -183,7 +183,7 @@ pub(crate) fn build_model_with_render_hints(
         table_row_pagination,
         table_cell_pagination,
         table_cell_line_spacing,
-        #[cfg(feature = "render")]
+        #[cfg(any(feature = "docx", feature = "render"))]
         running_line_spacing_hints,
         running_surface_distances,
     }
@@ -703,7 +703,7 @@ fn legacy_header_footer_section_index(story_index: Option<usize>) -> Option<usiz
         .map(|index| index / 6)
 }
 
-#[cfg(feature = "render")]
+#[cfg(any(feature = "docx", feature = "render"))]
 fn legacy_running_line_spacing_from_regions(
     blocks: &[Block],
     regions: &[SourceRegion],
@@ -779,7 +779,7 @@ fn legacy_running_line_spacing_from_regions(
     sections
 }
 
-#[cfg(feature = "render")]
+#[cfg(any(feature = "docx", feature = "render"))]
 fn legacy_running_line_spacing_slots(
     hints: &mut RunningSurfaceLineSpacingHints,
     story_index: Option<usize>,
@@ -800,7 +800,7 @@ fn legacy_running_line_spacing_slots(
     }
 }
 
-#[cfg(feature = "render")]
+#[cfg(any(feature = "docx", feature = "render"))]
 fn legacy_running_line_spacing_section_slots(
     hints: &mut RunningSurfaceLineSpacingHints,
     story_index: Option<usize>,
@@ -3756,7 +3756,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     #[test]
     fn legacy_running_line_spacing_maps_six_story_slots_per_section() {
         let mut blocks = vec![
@@ -3861,7 +3861,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     #[test]
     fn legacy_running_line_spacing_repeats_unindexed_header_fallback() {
         let blocks = vec![
