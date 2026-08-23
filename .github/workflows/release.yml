@@ -83,10 +83,17 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/rwml-release-tools"
           "$RUNNER_TEMP/rwml-release-tools/bin/pip" install --disable-pip-version-check --no-cache-dir PyMuPDF Pillow
           mkdir -p dist
+          set +e
           "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/render_validate.py \
             --json --soffice local --manifest corpus/public/RENDER_MANIFEST.tsv \
             --recall-min 0.97 --min-mean-recall 0.90 --max-skipped 0 --verify-oracle \
             > dist/render-validation.json
+          render_status=$?
+          set -e
+          cat dist/render-validation.json
+          if [[ "$render_status" -ne 0 ]]; then
+            exit "$render_status"
+          fi
           cargo build --release --example extract --locked
           "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/bench_vs_mature.py \
             --corpus corpus/public/benchmark --json \

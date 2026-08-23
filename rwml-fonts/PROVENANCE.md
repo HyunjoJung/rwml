@@ -8,29 +8,50 @@ is packaged.
 
 Packaged files:
 
-- `fonts/NotoSansKR-rwml-subset.ttf`: slim KS X 1001 Hangul subset, 478,940
-  bytes, SHA-256
-  `e928aaee9e585e209b82ca7a59e3a843440f134104ee8eb2e084cf44c72a7087`.
-- `fonts/NotoSansKR-rwml-subset-full.ttf`: hanja-inclusive subset, 1,983,952
-  bytes, SHA-256
-  `9a39382a3f7bab6fa8295830609b9b3a4d5162e575461f8fdd1e55c94b42bcf9`.
+- `fonts/NotoSansKR-rwml-subset.ttf`: slim KS X 1001 Hangul subset, 479,248
+  bytes, 2,798 glyphs, 2,722 cmap codepoints, SHA-256
+  `5e90c39a6222113aa261b3d40efdbff7e3a3e09868854232295bac7a636d556b`.
+- `fonts/NotoSansKR-rwml-subset-full.ttf`: hanja-inclusive subset, 1,984,256
+  bytes, 7,419 glyphs, 7,607 cmap codepoints, SHA-256
+  `2291c987b64cdc579a4a450149487e742aa497e23d6fc811b7904845f254bf07`.
 
 Source:
 
-- URL: <https://github.com/google/fonts/raw/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf>
+- Google Fonts revision: `4efc2774c63917927efe769ca845def6bd6debae`.
+- URL: <https://raw.githubusercontent.com/google/fonts/4efc2774c63917927efe769ca845def6bd6debae/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf>
 - Variable font size: 10,414,588 bytes.
 - Variable font SHA-256:
   `194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252`.
-- Staged: 2026-07-03 with the then-current FontTools from pip.
+- Static regular intermediate SHA-256:
+  `4609a7b62a6da24cae3a8b73ecde7003581b8f60662d60cc8f55a3793de07763`.
+- Generated 2026-08-24 with FontTools `4.63.0` and
+  `--no-recalc-timestamp`.
 
 The slim subset includes the 2,350 KS X 1001 wansung Hangul syllables, Basic
 Latin, Latin-1, common punctuation, Hangul compatibility jamo, and related
-punctuation. The full subset adds 4,885 of the 4,888 KS X 1001 hanja; three
+punctuation. Both subsets explicitly include rwml's `U+2022`, `U+25AA`,
+`U+25CB`, and `U+25E6` default list markers. The full subset adds 4,885 of the
+4,888 KS X 1001 hanja; three
 compatibility ideographs are absent from upstream Noto Sans KR. See
-`scripts/make_font_subset.py` for the exact legacy regeneration process.
+`scripts/make_font_subset.py` for the exact deterministic regeneration process.
 
 The retained `OFL.txt` is the upstream license. Its only Reserved Font Name is
 `Source`, inherited from Source Han Sans; `Noto Sans KR` is not reserved.
+
+## Noto Sans KR Regeneration
+
+Create an isolated environment with the pinned tool, then run the packaged
+script:
+
+```sh
+python3 -m venv /tmp/rwml-fonttools
+/tmp/rwml-fonttools/bin/pip install 'fonttools==4.63.0'
+/tmp/rwml-fonttools/bin/python scripts/make_font_subset.py
+```
+
+The script downloads only into `target/fontprep`, verifies the source,
+intermediate, and output hashes, and writes only the two final subset fonts into
+the packaged tree.
 
 ## RTL Subsets
 

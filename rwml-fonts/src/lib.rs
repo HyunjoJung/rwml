@@ -7,7 +7,7 @@
 //!
 //! `noto_sans_kr_subset` is the slim subset: KS X 1001 wansung Hangul (2,350
 //! syllables), Hangul compatibility jamo, Basic Latin, Latin-1, and common
-//! punctuation.
+//! punctuation, including rwml's four default list markers.
 //!
 //! `noto_sans_kr_subset_with_hanja` adds KS X 1001 hanja coverage. It maps
 //! 4,885 of the 4,888 KS X 1001 hanja characters; 3 compatibility ideographs
@@ -180,6 +180,18 @@ mod tests {
     fn noto_sans_kr_subset_stays_under_package_ceiling() {
         assert!(crate::noto_sans_kr_subset().len() <= 600_000);
         assert!(crate::noto_sans_kr_subset_with_hanja().len() <= 2_200_000);
+    }
+
+    #[test]
+    fn kr_subsets_cover_renderer_list_markers() {
+        for font in [
+            crate::noto_sans_kr_subset(),
+            crate::noto_sans_kr_subset_with_hanja(),
+        ] {
+            for codepoint in [0x2022, 0x25AA, 0x25CB, 0x25E6] {
+                assert!(cmap_contains(font, codepoint), "missing U+{codepoint:04X}");
+            }
+        }
     }
 
     #[test]

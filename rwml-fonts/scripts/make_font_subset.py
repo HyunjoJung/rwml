@@ -8,18 +8,27 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
+import sys
 import urllib.request
 from pathlib import Path
 
+import fontTools
 
+
+FONTTOOLS_VERSION = "4.63.0"
+GOOGLE_FONTS_REVISION = "4efc2774c63917927efe769ca845def6bd6debae"
 SOURCE_URL = (
-    "https://github.com/google/fonts/raw/main/ofl/notosanskr/"
-    "NotoSansKR%5Bwght%5D.ttf"
+    "https://raw.githubusercontent.com/google/fonts/"
+    f"{GOOGLE_FONTS_REVISION}/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf"
 )
 UPSTREAM_SHA256 = "194018e6b2b293a7964f037b25c0249ce1418bc9ab3c971060a03aa57861e252"
-SUBSET_SHA256 = "e928aaee9e585e209b82ca7a59e3a843440f134104ee8eb2e084cf44c72a7087"
-FULL_SUBSET_SHA256 = "9a39382a3f7bab6fa8295830609b9b3a4d5162e575461f8fdd1e55c94b42bcf9"
-UNICODE_RANGES = "U+0020-007E,U+00A0-00FF,U+2010-2027,U+20A9,U+3000-303F,U+3130-318F"
+STATIC_SHA256 = "4609a7b62a6da24cae3a8b73ecde7003581b8f60662d60cc8f55a3793de07763"
+SUBSET_SHA256 = "5e90c39a6222113aa261b3d40efdbff7e3a3e09868854232295bac7a636d556b"
+FULL_SUBSET_SHA256 = "2291c987b64cdc579a4a450149487e742aa497e23d6fc811b7904845f254bf07"
+UNICODE_RANGES = (
+    "U+0020-007E,U+00A0-00FF,U+2010-2027,U+20A9,"
+    "U+25AA,U+25CB,U+25E6,U+3000-303F,U+3130-318F"
+)
 
 
 def sha256(path: Path) -> str:
@@ -58,6 +67,11 @@ def ksx1001_hanja_text() -> str:
 
 
 def main() -> int:
+    if fontTools.__version__ != FONTTOOLS_VERSION:
+        raise RuntimeError(
+            f"FontTools {FONTTOOLS_VERSION} required, found {fontTools.__version__}"
+        )
+
     crate_root = Path(__file__).resolve().parents[1]
     work_dir = crate_root / "target" / "fontprep"
     fonts_dir = crate_root / "fonts"
@@ -79,16 +93,21 @@ def main() -> int:
 
     run(
         [
-            "fonttools",
-            "varLib.instancer",
+            sys.executable,
+            "-m",
+            "fontTools.varLib.instancer",
             "NotoSansKR[wght].ttf",
             "wght=400",
             "--update-name-table",
+            "--no-recalc-timestamp",
             "-o",
             "NotoSansKR-static.ttf",
         ],
         work_dir,
     )
+    static_hash = sha256(static_font)
+    if static_hash != STATIC_SHA256:
+        raise RuntimeError(f"static font sha256 mismatch: {static_hash}")
     hangul_text = ksx1001_wansung_text()
     hanja_text = ksx1001_hanja_text()
     ksx1001.write_text(hangul_text, encoding="utf-8")
@@ -96,27 +115,31 @@ def main() -> int:
     ksx1001_full.write_text(hangul_text + hanja_text, encoding="utf-8")
     run(
         [
-            "pyftsubset",
+            sys.executable,
+            "-m",
+            "fontTools.subset",
             "NotoSansKR-static.ttf",
             "--text-file=ksx1001.txt",
             f"--unicodes={UNICODE_RANGES}",
             "--name-IDs=*",
             "--notdef-outline",
-            "--output-file",
-            str(subset),
+            "--no-recalc-timestamp",
+            f"--output-file={subset}",
         ],
         work_dir,
     )
     run(
         [
-            "pyftsubset",
+            sys.executable,
+            "-m",
+            "fontTools.subset",
             "NotoSansKR-static.ttf",
             "--text-file=ksx1001-full.txt",
             f"--unicodes={UNICODE_RANGES}",
             "--name-IDs=*",
             "--notdef-outline",
-            "--output-file",
-            str(full_subset),
+            "--no-recalc-timestamp",
+            f"--output-file={full_subset}",
         ],
         work_dir,
     )
