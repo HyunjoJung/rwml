@@ -132,6 +132,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
         text = WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn("fetch-depth: 0", text)
+        self.assertIn("dtolnay/rust-toolchain@1.92.0", text)
+        self.assertNotIn("dtolnay/rust-toolchain@stable", text)
         self.assertIn(
             "cargo install cargo-semver-checks --version 0.48.0 --locked", text
         )

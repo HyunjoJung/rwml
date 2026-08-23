@@ -21,7 +21,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
+      # cargo-semver-checks 0.48.0 supports rustdoc JSON through v57;
+      # Rust 1.92 emits v56 while moving stable may emit a newer schema.
+      - uses: dtolnay/rust-toolchain@1.92.0
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2

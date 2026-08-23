@@ -16,7 +16,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
+      # Keep rustdoc JSON compatible with the pinned cargo-semver-checks.
+      - uses: dtolnay/rust-toolchain@1.92.0
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
