@@ -4237,6 +4237,62 @@ mod tests {
     }
 
     #[test]
+    fn source_body_paragraph_hints_exclude_running_surfaces() {
+        let mut header = para("header");
+        header.props.spacing.line_pct = Some(1.5);
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(para("body"))],
+            setup: DocSetup {
+                header: vec![Block::Paragraph(header)],
+                ..DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let rendered = render_body(
+            &model,
+            Some(SourceWriteHints {
+                gaps: &[None],
+                layouts: &[None],
+                separators: &[false],
+                rtl: &[false],
+                final_gap: None,
+                final_layout: None,
+                final_separator: false,
+                final_rtl: false,
+                running_surface_distances: &[RunningSurfaceDistanceHints::default()],
+                paragraph_line_spacing: &[Some(LineSpacingHint::Exact(12.0))],
+                paragraph_pagination: &[PaginationHint {
+                    keep_next: true,
+                    widow_control: true,
+                    ..PaginationHint::default()
+                }],
+                table_row_pagination: &[],
+                table_cell_pagination: &[],
+                table_cell_line_spacing: &[],
+            }),
+        );
+        let document_xml = String::from_utf8(rendered.document_xml).unwrap();
+        assert!(document_xml.contains("<w:keepNext/>"), "{document_xml}");
+        assert!(
+            document_xml.contains(r#"w:line="240" w:lineRule="exact""#),
+            "{document_xml}"
+        );
+
+        let header_xml = rendered
+            .hf_parts
+            .iter()
+            .find(|(path, _, _)| path.starts_with("word/header"))
+            .map(|(_, _, bytes)| String::from_utf8_lossy(bytes))
+            .expect("generated running header");
+        assert!(!header_xml.contains("<w:keepNext"));
+        assert!(!header_xml.contains(r#"w:lineRule="exact""#));
+        assert!(
+            header_xml.contains(r#"w:line="360" w:lineRule="auto""#),
+            "{header_xml}"
+        );
+    }
+
+    #[test]
     fn source_table_row_pagination_writer_rejects_misalignment_and_orders_controls() {
         let model = DocModel {
             blocks: vec![Block::Table(Table {

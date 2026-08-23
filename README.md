@@ -463,13 +463,14 @@ overrides; and source-aligned `keepNext`,
 `keepLines`, and default-on `widowControl` pagination hints in top-level body
 paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
-render hints to the public `DocModel`. Legacy-backed fresh conversion now
-serializes the effective keep controls and widow-off state for aligned top-level
-paragraphs and aligned direct paragraph blocks in surviving cells of top-level
-tables, plus effective no-split state for aligned top-level table rows.
-Nested-table descendants and non-body controls remain source-render-only.
-Those direct legacy table-cell paragraphs also carry resolved exact/minimum line
-rules into fresh DOCX conversion. Resolved LTR tab stops in ordinary and
+layout hints to the public `DocModel`. Fresh conversion of an opened legacy or
+DOCX document serializes the effective keep controls and widow-off state for
+aligned top-level body paragraphs and aligned direct paragraph blocks in
+surviving cells of top-level tables, plus effective no-split state for aligned
+top-level table rows. The same direct body subset carries resolved exact/minimum
+line rules into fresh DOCX conversion. Nested-table descendants, notes, running
+surfaces, source tab stops, and manual column breaks remain source-render-only.
+Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
 justified-aligned paragraphs use that path when the resolved stop is reachable.
@@ -486,9 +487,9 @@ section-specific default-surface inheritance, page-variant selection, and
 non-table block positions before a running table. Exact running-surface content
 is clipped to its margin-band line or visible row fragment. Notes retain the
 preview renderer's flattened end-of-flow placement; page-bottom note
-composition, model-authored exact/minimum paragraph rules, and DOCX-backed,
-note, nested-table-descendant, or running-surface fresh conversion remain
-outside this absolute-spacing path.
+composition, model-authored exact/minimum paragraph rules, and note,
+nested-table-descendant, or running-surface fresh conversion remain outside
+this absolute-spacing path.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
 center/end/decimal stops. Supported LTR and RTL dot, hyphen, underscore,
 heavy, and middle-dot leaders plus bar tabs now paint through the same bounded
@@ -936,13 +937,14 @@ file and a structurally-broken original. To author/convert from a `DocModel`, us
 Converting an opened `.doc` or `.docx` through `Document::to_docx()` additionally
 retains validated source-only section column gaps, complete unequal geometry,
 separator flags, and right-to-left population without exposing them in the
-public model. Legacy-backed conversion also retains validated exact/minimum line
-rules plus effective `keepNext`, `keepLines`, and widow-off state for aligned
-top-level paragraphs and aligned direct paragraph blocks in surviving cells of
-top-level tables, plus effective no-split state for aligned top-level table rows.
-Standalone model writing remains proportional-only and consumes no private
-pagination hints. DOCX-backed conversion, nested-table descendants, and non-body
-stories consume neither legacy direct-cell sidecar.
+public model. Legacy- and DOCX-backed conversion also retain validated
+exact/minimum line rules plus effective `keepNext`, `keepLines`, and widow-off
+state for aligned top-level body paragraphs and aligned direct paragraph blocks
+in surviving cells of top-level tables, plus effective no-split state for
+aligned top-level table rows. Standalone model writing remains proportional-only
+and consumes no private pagination hints. Nested-table descendants, notes,
+running surfaces, source tab stops, and manual column breaks remain outside this
+fresh-conversion bridge.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the

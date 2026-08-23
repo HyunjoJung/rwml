@@ -1018,12 +1018,14 @@ impl Document {
     /// Opened legacy and DOCX documents also carry validated source-only section
     /// column gaps, complete unequal geometry, separator flags, right-to-left
     /// population, and running header/footer distances into the generated
-    /// package. Opened legacy documents additionally carry exact/minimum line
-    /// rules and effective keep/widow pagination controls for aligned top-level
-    /// paragraphs and direct paragraph blocks in surviving cells of aligned
-    /// top-level tables, plus effective no-split state for aligned top-level
-    /// table rows; standalone [`write_docx`] remains model-only for those private
-    /// hints.
+    /// package. Opened legacy and DOCX documents additionally carry
+    /// exact/minimum line rules and effective keep/widow pagination controls for
+    /// aligned top-level body paragraphs and direct paragraph blocks in surviving
+    /// cells of aligned top-level tables, plus effective no-split state for
+    /// aligned top-level table rows. Nested-table descendants, notes, running
+    /// surfaces, source tab stops, and manual column breaks remain outside this
+    /// fresh-conversion bridge; standalone [`write_docx`] remains model-only for
+    /// all of these private hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
@@ -1065,11 +1067,11 @@ impl Document {
                         final_separator: state.final_section_column_separator,
                         final_rtl: state.final_section_column_rtl,
                         running_surface_distances: &state.running_surface_distances,
-                        paragraph_line_spacing: &[],
-                        paragraph_pagination: &[],
-                        table_row_pagination: &[],
-                        table_cell_pagination: &[],
-                        table_cell_line_spacing: &[],
+                        paragraph_line_spacing: &state.line_spacing_hints,
+                        paragraph_pagination: &state.pagination_hints,
+                        table_row_pagination: &state.table_row_pagination,
+                        table_cell_pagination: &state.table_cell_pagination,
+                        table_cell_line_spacing: &state.table_cell_line_spacing,
                     },
                 )
             }
@@ -11759,7 +11761,7 @@ mod tests {
 
         let docx_backed = Document::open(&exact_docx).unwrap();
         let docx_backed_xml = docx_part(&docx_backed.to_docx(), "word/document.xml");
-        assert!(!docx_backed_xml.contains(r#"w:lineRule="exact""#));
+        assert_eq!(docx_backed_xml.matches(r#"w:lineRule="exact""#).count(), 2);
         assert!(!docx_backed_xml.contains(r#"w:lineRule="atLeast""#));
 
         #[cfg(feature = "render")]
@@ -14015,11 +14017,11 @@ mod tests {
 
         let docx_backed = Document::open(&converted).unwrap();
         let docx_backed_xml = docx_part(&docx_backed.to_docx(), "word/document.xml");
-        assert!(!docx_backed_xml.contains("<w:keepNext"));
-        assert!(!docx_backed_xml.contains("<w:keepLines"));
-        assert!(!docx_backed_xml.contains("<w:widowControl"));
-        assert!(!docx_backed_xml.contains("<w:cantSplit"));
-        assert!(!docx_backed_xml.contains(r#"w:lineRule="exact""#));
+        assert_eq!(docx_backed_xml.matches("<w:keepNext").count(), 3);
+        assert_eq!(docx_backed_xml.matches("<w:keepLines").count(), 3);
+        assert_eq!(docx_backed_xml.matches("<w:widowControl").count(), 3);
+        assert_eq!(docx_backed_xml.matches("<w:cantSplit").count(), 1);
+        assert_eq!(docx_backed_xml.matches(r#"w:lineRule="exact""#).count(), 1);
 
         #[cfg(feature = "render")]
         {
@@ -14064,6 +14066,89 @@ mod tests {
                 ]
             );
         }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_body_layout_hints_roundtrip_through_fresh_conversion() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:tabs><w:tab w:val="left" w:pos="720"/></w:tabs><w:spacing w:line="200" w:lineRule="exact"/></w:pPr><w:r><w:t>top</w:t></w:r></w:p>
+                <w:tbl><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>
+                    <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/><w:spacing w:line="400" w:lineRule="atLeast"/></w:pPr><w:r><w:t>cell</w:t></w:r></w:p>
+                    <w:tbl><w:tr><w:tc><w:p><w:pPr><w:keepNext/><w:spacing w:line="600" w:lineRule="exact"/></w:pPr><w:r><w:t>nested</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                </w:tc></w:tr></w:tbl>
+                <w:sectPr/>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let top = docx_paragraph_with_text(&document_xml, "top");
+
+        assert!(top.contains("<w:keepNext/>"), "{top}");
+        assert!(top.contains("<w:keepLines/>"), "{top}");
+        assert!(top.contains(r#"<w:widowControl w:val="0"/>"#), "{top}");
+        assert!(top.contains(r#"w:line="200" w:lineRule="exact""#), "{top}");
+        assert!(document_xml.contains("<w:cantSplit/>"), "{document_xml}");
+        let cell = docx_paragraph_with_text(&document_xml, "cell");
+        assert!(cell.contains("<w:keepNext/>"), "{cell}");
+        assert!(cell.contains("<w:keepLines/>"), "{cell}");
+        assert!(cell.contains(r#"<w:widowControl w:val="0"/>"#), "{cell}");
+        assert!(
+            cell.contains(r#"w:line="400" w:lineRule="atLeast""#),
+            "{cell}"
+        );
+        let nested = docx_paragraph_with_text(&document_xml, "nested");
+        assert!(!nested.contains("<w:keepNext"), "{nested}");
+        assert!(!nested.contains(r#"w:lineRule="exact""#), "{nested}");
+        assert!(!document_xml.contains("<w:tabs>"), "{document_xml}");
+        assert_eq!(converted, opened.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&opened.model()), "word/document.xml");
+        assert!(!model_only_xml.contains("<w:keepNext"));
+        assert!(!model_only_xml.contains("<w:keepLines"));
+        assert!(!model_only_xml.contains("<w:widowControl"));
+        assert!(!model_only_xml.contains("<w:cantSplit"));
+        assert!(!model_only_xml.contains(r#"w:lineRule="exact""#));
+        assert!(!model_only_xml.contains(r#"w:lineRule="atLeast""#));
+        assert!(!model_only_xml.contains("<w:tabs>"));
+
+        let reopened = Document::open(&converted).unwrap();
+        let Backend::Docx(state) = reopened.backend else {
+            panic!("converted document must use the DOCX backend");
+        };
+        assert_eq!(
+            state.pagination_hints[0],
+            crate::model::PaginationHint {
+                keep_next: true,
+                keep_lines: true,
+                widow_control: false,
+            }
+        );
+        assert_eq!(
+            state.line_spacing_hints[0],
+            Some(crate::model::LineSpacingHint::Exact(10.0))
+        );
+        let table_index = state
+            .model
+            .blocks
+            .iter()
+            .position(|block| matches!(block, Block::Table(_)))
+            .expect("converted top-level table");
+        assert!(state.table_row_pagination[table_index][0].cant_split);
+        assert_eq!(
+            state.table_cell_pagination[table_index][0][0][0],
+            Some(crate::model::PaginationHint {
+                keep_next: true,
+                keep_lines: true,
+                widow_control: false,
+            })
+        );
+        assert_eq!(
+            state.table_cell_line_spacing[table_index][0][0][0],
+            Some(crate::model::LineSpacingHint::AtLeast(20.0))
+        );
     }
 
     #[cfg(feature = "docx")]

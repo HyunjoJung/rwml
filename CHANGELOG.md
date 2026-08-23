@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Extends source-aware body layout conversion to DOCX-backed
+  `Document::to_docx()`. Default builds now retain the reader-resolved
+  exact/minimum line rules and effective `keepNext`, `keepLines`, and widow-off
+  state for aligned top-level body paragraphs and direct paragraph blocks in
+  surviving cells of top-level tables, plus effective no-split state for aligned
+  top-level table rows. The existing validated writer bridge preserves those
+  five source-only families deterministically through native reopen while
+  standalone model writing remains unchanged. Nested-table descendants, notes,
+  running surfaces, source tab stops, manual column breaks, package-preserving
+  `save()`, and the public model remain outside this bounded bridge.
 - Preserves resolved legacy-DOC `keepNext`, `keepLines`, and widow-off semantics
   when `Document::to_docx()` freshly converts aligned direct paragraph blocks in
   surviving cells of top-level tables. The source-only bridge validates block,
@@ -15,7 +25,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sidecars, rejects non-paragraph hints, and preserves modeled page breaks in
   CT_PPr order. Direct/style precedence, deterministic bytes, native reopen,
   merge-owner alignment, malformed-sidecar isolation, and unchanged standalone,
-  DOCX-backed, nested-table, and non-body writing are covered.
+  nested-table, and non-body writing are covered; DOCX-backed inputs now use the
+  bounded bridge above.
 - Preserves resolved legacy-DOC exact and minimum line spacing when
   `Document::to_docx()` freshly converts aligned direct paragraph blocks in
   surviving cells of top-level tables. The source-only writer bridge validates
@@ -23,33 +34,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   non-paragraph hint, and reuses the bounded positive `exact`/`atLeast` formatter
   while preserving modeled before/after spacing and proportional fallback.
   Deterministic bytes, native reopen, merge-owner alignment, and unchanged
-  standalone, DOCX-backed, nested-table, and non-body writing are covered.
+  standalone, nested-table, and non-body writing are covered; DOCX-backed inputs
+  now use the bounded bridge above.
 - Preserves resolved legacy-DOC table-row no-split semantics when
   `Document::to_docx()` freshly converts aligned top-level tables. Modern
   `sprmTFCantSplit` values override compatibility `sprmTFCantSplit90` values in
   source order, effective true emits `w:cantSplit`, and effective false remains
   omitted. The source-only writer bridge rejects misaligned block or row vectors,
   keeps `w:cantSplit` before `w:tblHeader` in CT_TrPr order, and leaves standalone
-  model writing, DOCX-backed conversion, nested tables, and non-body tables
-  unchanged. Deterministic bytes and native reopen are covered.
+  model writing, nested tables, and non-body tables unchanged. DOCX-backed inputs
+  now use the bounded bridge above; deterministic bytes and native reopen are
+  covered.
 - Preserves resolved legacy-DOC `keepNext`, `keepLines`, and default-on
   `widowControl` semantics when `Document::to_docx()` freshly converts aligned
   top-level paragraphs. The source-only writer bridge rejects a misaligned
   pagination vector, emits effective keep controls, writes widow-off explicitly,
   and keeps the existing modeled `pageBreakBefore` in CT_PPr schema order before
   numbering. Style/direct on/off precedence, deterministic bytes, native reopen,
-  and unchanged standalone model writing are covered. DOCX-backed conversion,
-  nested-table descendants, non-body stories, and the public model remain
-  unchanged.
+  and unchanged standalone model writing are covered. Nested-table descendants,
+  non-body stories, and the public model remain unchanged; DOCX-backed inputs now
+  use the bounded bridge above.
 - Preserves resolved legacy-DOC exact and minimum line spacing when
   `Document::to_docx()` freshly converts aligned top-level paragraphs. The
   existing private block sidecar now emits bounded positive `w:line` values with
   `exact` or `atLeast` while preserving public before/after spacing and leaving
   proportional rules unchanged. Style/direct precedence, direct-zero clearing,
   deterministic bytes, native reopen, and strict misalignment fallback are
-  covered. Standalone model writing, DOCX-backed source hints,
-  nested-table-descendant and running-surface conversion, and the public model
-  remain unchanged.
+  covered. Standalone model writing, nested-table-descendant and running-surface
+  conversion, and the public model remain unchanged; DOCX-backed inputs now use
+  the bounded bridge above.
 - Preserves source-defined section-local running header and footer distances
   when `Document::to_docx()` freshly converts an opened DOCX or legacy `.doc`.
   The shared writer bridge consumes strictly section-aligned private hints,
@@ -286,15 +299,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exact LSPD into ordinary main-story table-cell paragraphs. A row/cell/block-
   aligned private render sidecar follows paragraph content through horizontal
   folds and retains only surviving vertical-merge owners; exact over-tall
-  content uses the existing vertical line clip. The public model, shared-model
-  conversion, and fresh DOCX output remain unchanged.
+  content uses the existing vertical line clip. The public model and standalone
+  shared-model conversion remain unchanged; aligned direct cells now use the
+  fresh-conversion bridge above, while nested-table descendants remain excluded.
 - Applies opened legacy-DOC positive non-multiple LSPD as minimum line spacing
   and negative encoded LSPD as exact line spacing in top-level main-story PDF
   preview paragraphs. Style and direct-PAPX cascading retains the distinct
   source forms in a block-aligned private render sidecar, including both
   fragments around a promoted manual page break; exact over-tall content uses
-  the existing vertical line clip. The public model, shared-model conversion,
-  and fresh DOCX output remain unchanged.
+  the existing vertical line clip. The public model and standalone shared-model
+  conversion remain unchanged; opened-document fresh conversion now uses the
+  bounded bridge above.
 - Applies opened-DOCX `exact` and `atLeast` paragraph line spacing to ordinary
   paragraphs in referenced default/first/even running header and footer parts.
   Section-aligned private render hints mirror default-surface inheritance and
@@ -314,17 +329,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   private render hints. Explicit page-break fragments preserve their source
   rule; selected compatibility wrappers and nested tables retain recursive
   alignment; exact over-tall content is vertically clipped to its cell line
-  box; and at-least values only expand shorter natural lines. Table content in
-  running headers/footers, model-authored content, fresh conversion, nested
-  grid geometry, and nesting beyond the renderer's existing 32-level flattening
-  bound remain unchanged.
+  box; and at-least values only expand shorter natural lines. Aligned direct
+  cells now use the fresh-conversion bridge above. Table content in running
+  headers/footers, model-authored content, nested-table-descendant conversion,
+  nested grid geometry, and nesting beyond the renderer's existing 32-level
+  flattening bound remain unchanged.
 - Applies resolved `w:spacing` `exact` and `atLeast` line rules to top-level
   body paragraphs in opened-DOCX PDF previews through block-aligned private
   render hints. Values use twentieths of a point after style/direct cascading;
   exact boxes center fitting text and bottom-align with vertical clipping when
   undersized, while at-least boxes only expand shorter natural lines. Explicit
-  page-break splits retain alignment. The public model, authored content, and
-  fresh conversion remain unchanged.
+  page-break splits retain alignment. The public model and authored content
+  remain unchanged; opened-document fresh conversion now uses the bounded bridge
+  above.
 - Computes `NOTEREF`/`FTNREF` fields that target a `w:customMarkFollows`
   footnote or endnote when its non-empty literal mark immediately follows the
   reference inside the bookmark. Ambiguous marks retain cached field text, and

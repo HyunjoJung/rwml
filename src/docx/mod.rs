@@ -203,11 +203,9 @@ pub(crate) struct DocxState {
     pub text_boxes: Vec<TextBox>,
     /// Floating shape geometry parsed from body/note/header/footer `wp:anchor` drawing markup.
     pub floating_shapes: Vec<FloatingShape>,
-    /// Renderer-only paragraph pagination controls aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only paragraph pagination controls aligned to body model blocks.
     pub pagination_hints: Vec<crate::model::PaginationHint>,
-    /// Renderer-only exact/minimum line spacing aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only exact/minimum line spacing aligned to body model blocks.
     pub line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
     /// Renderer-only exact/minimum line spacing aligned to `notes` blocks.
     #[cfg(feature = "render")]
@@ -242,14 +240,11 @@ pub(crate) struct DocxState {
     pub final_section_column_separator: bool,
     /// Source-only right-to-left population for the final body section.
     pub final_section_column_rtl: bool,
-    /// Renderer-only effective table-row pagination controls aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only effective table-row pagination controls aligned to body model blocks.
     pub table_row_pagination: Vec<Vec<crate::model::TableRowPaginationHint>>,
-    /// Renderer-only direct table-cell paragraph controls aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only direct table-cell paragraph controls aligned to body model blocks.
     pub table_cell_pagination: Vec<crate::model::TableCellPaginationHints>,
-    /// Renderer-only table-cell exact/minimum line spacing aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only table-cell exact/minimum line spacing aligned to body model blocks.
     pub table_cell_line_spacing: Vec<crate::model::TableCellLineSpacingHints>,
     /// Renderer-only recursive nested-table controls aligned to body model blocks.
     #[cfg(feature = "render")]
@@ -466,7 +461,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         pagination_capture: Default::default(),
     };
     ctx.begin_section_column_capture();
-    #[cfg(feature = "render")]
     ctx.begin_pagination_capture();
     let mut blocks = body::parse_document(&doc_xml, &ctx); // body only
     let body::BodySectionColumnHints {
@@ -475,18 +469,20 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         separators: section_column_separators,
         rtl: section_column_rtl,
     } = ctx.take_section_column_hints();
+    let body_hints = ctx.take_layout_hints();
+    let pagination_hints = body_hints.pagination;
+    let line_spacing_hints = body_hints.line_spacing;
+    let table_row_pagination = body_hints.table_rows;
+    let table_cell_pagination = body_hints.table_cells;
+    let table_cell_line_spacing = body_hints.table_cell_line_spacing;
     #[cfg(feature = "render")]
-    let body::BodyRenderHints {
-        pagination: pagination_hints,
-        line_spacing: line_spacing_hints,
-        tab_stops,
-        column_break_offsets,
-        table_rows: table_row_pagination,
-        table_cells: table_cell_pagination,
-        table_cell_line_spacing,
-        table_nested: table_nested_pagination,
-        table_cell_tabs: table_cell_tab_stops,
-    } = ctx.take_render_hints();
+    let tab_stops = body_hints.tab_stops;
+    #[cfg(feature = "render")]
+    let column_break_offsets = body_hints.column_break_offsets;
+    #[cfg(feature = "render")]
+    let table_nested_pagination = body_hints.table_nested;
+    #[cfg(feature = "render")]
+    let table_cell_tab_stops = body_hints.table_cell_tabs;
     // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
     // (not appended into `model.blocks`); their parts are preserved verbatim on save.
     // They are re-joined for the read/text views below and in `Document::model()`.
@@ -729,9 +725,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         note_records: note_part.records,
         text_boxes,
         floating_shapes,
-        #[cfg(feature = "render")]
         pagination_hints,
-        #[cfg(feature = "render")]
         line_spacing_hints,
         #[cfg(feature = "render")]
         note_line_spacing_hints: note_part.line_spacing,
@@ -752,11 +746,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         final_section_column_layout: final_section_columns.layout,
         final_section_column_separator: final_section_columns.separator,
         final_section_column_rtl: final_section_columns.rtl,
-        #[cfg(feature = "render")]
         table_row_pagination,
-        #[cfg(feature = "render")]
         table_cell_pagination,
-        #[cfg(feature = "render")]
         table_cell_line_spacing,
         #[cfg(feature = "render")]
         table_nested_pagination,
@@ -1457,7 +1448,7 @@ fn read_hf_parts(
         hf_ctx.begin_pagination_capture();
         let part_blocks = body::parse_hdrftr(&xml, &hf_ctx);
         #[cfg(feature = "render")]
-        let part_render_hints = hf_ctx.take_render_hints();
+        let part_render_hints = hf_ctx.take_layout_hints();
         if seen_blocks.insert((path.clone(), type_name.to_string())) {
             match type_name {
                 "first" => {
@@ -1755,7 +1746,7 @@ fn read_notes(
     ctx.begin_pagination_capture();
     let note_entries = body::parse_note_entries(&xml, &ctx, tag);
     #[cfg(feature = "render")]
-    let line_spacing = ctx.take_render_hints().line_spacing;
+    let line_spacing = ctx.take_layout_hints().line_spacing;
     for (id, note_blocks) in note_entries {
         let text = blocks_text(&note_blocks);
         records.push(Note {
