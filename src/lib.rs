@@ -3026,6 +3026,8 @@ impl Document {
                 line_spacing.extend_from_slice(&d.note_line_spacing_hints);
                 let mut tab_stops = d.tab_stops.clone();
                 tab_stops.extend_from_slice(&d.note_tab_stops);
+                let mut table_cell_tab_stops = d.table_cell_tab_stops.clone();
+                table_cell_tab_stops.extend_from_slice(&d.note_table_cell_tab_stops);
                 render_document(
                     &model,
                     render::SourceRenderHints {
@@ -3045,7 +3047,7 @@ impl Document {
                         table_cell_pagination: &d.table_cell_pagination,
                         table_cell_line_spacing: &d.table_cell_line_spacing,
                         table_nested_pagination: &d.table_nested_pagination,
-                        table_cell_tab_stops: &d.table_cell_tab_stops,
+                        table_cell_tab_stops: &table_cell_tab_stops,
                         running_line_spacing: &d.running_line_spacing_hints,
                         running_tab_stops: &d.running_tab_stops,
                         running_table_cell_tab_stops: &d.running_table_cell_tab_stops,

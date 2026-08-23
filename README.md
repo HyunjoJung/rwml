@@ -483,10 +483,12 @@ Ordinary top-level real footnote and endnote paragraphs from an opened DOCX
 likewise consume reader-resolved explicit tab stops, supported leaders, and a
 positive settings-defined default-tab interval. Their private hints retain
 footnote-then-endnote block order across skipped separator records and preceding
-non-paragraph blocks without changing the public model. Note-table-cell tabs,
-legacy-note tabs, fresh note conversion, post-tab field containment, page-bottom
-note composition, and Word-exact tab reflow and pagination remain outside this
-path.
+non-paragraph blocks without changing the public model. Direct paragraphs in
+cells of top-level real footnote and endnote tables use the same bounded tab
+path through a block/row/surviving-cell/paragraph-aligned private tree, including
+vertical-merge owner indexing. Nested note tables, legacy-note tabs, fresh note
+conversion, post-tab field containment, page-bottom note composition, and
+Word-exact tab reflow and pagination remain outside this path.
 Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and

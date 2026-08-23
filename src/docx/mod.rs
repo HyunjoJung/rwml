@@ -213,6 +213,9 @@ pub(crate) struct DocxState {
     /// Renderer-only explicit paragraph tab stops aligned to `notes` blocks.
     #[cfg(feature = "render")]
     pub note_tab_stops: Vec<Vec<crate::model::TabStop>>,
+    /// Renderer-only table-cell tab stops aligned to `notes` blocks.
+    #[cfg(feature = "render")]
+    pub note_table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
     /// Renderer-only exact/minimum line spacing for section running surfaces.
     #[cfg(feature = "render")]
     pub running_line_spacing_hints: Vec<crate::render::RunningSurfaceLineSpacingHints>,
@@ -513,6 +516,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     note_part.line_spacing.extend(endnote_part.line_spacing);
     #[cfg(feature = "render")]
     note_part.tab_stops.extend(endnote_part.tab_stops);
+    #[cfg(feature = "render")]
+    note_part
+        .table_cell_tab_stops
+        .extend(endnote_part.table_cell_tab_stops);
     note_part.records.append(&mut endnote_part.records);
     note_part.revisions.extend(endnote_part.revisions);
     note_part
@@ -737,6 +744,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         note_line_spacing_hints: note_part.line_spacing,
         #[cfg(feature = "render")]
         note_tab_stops: note_part.tab_stops,
+        #[cfg(feature = "render")]
+        note_table_cell_tab_stops: note_part.table_cell_tab_stops,
         #[cfg(feature = "render")]
         running_line_spacing_hints,
         #[cfg(feature = "render")]
@@ -1631,6 +1640,8 @@ struct NotePartRead {
     line_spacing: Vec<Option<crate::model::LineSpacingHint>>,
     #[cfg(feature = "render")]
     tab_stops: Vec<Vec<crate::model::TabStop>>,
+    #[cfg(feature = "render")]
+    table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
     records: Vec<Note>,
     comment_anchors: HashMap<String, TextAnchor>,
     revisions: Vec<Revision>,
@@ -1841,6 +1852,8 @@ fn read_notes(
         line_spacing: layout_hints.line_spacing,
         #[cfg(feature = "render")]
         tab_stops: layout_hints.tab_stops,
+        #[cfg(feature = "render")]
+        table_cell_tab_stops: layout_hints.table_cell_tabs,
         records,
         comment_anchors,
         revisions,

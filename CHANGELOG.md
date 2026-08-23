@@ -8,15 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies opened-DOCX table-cell tab stops in top-level real footnote and endnote
+  tables through the existing table shaper. A private block/row/surviving-cell/
+  paragraph tree follows visible note blocks in footnote-then-endnote order,
+  skips boilerplate note records before capture, and preserves vertical-merge
+  owner indexing. Supported leaders and a positive `w:defaultTabStop` interval
+  remain source-only and deterministic. Nested note tables, legacy-note tabs,
+  fresh note conversion, post-tab field containment, page-bottom note
+  composition, and Word-exact tab reflow and pagination remain outside this path.
 - Applies reader-resolved explicit paragraph tab stops to ordinary top-level
   real footnote and endnote paragraphs when an opened DOCX is rendered to PDF.
   A private block-aligned vector is concatenated in the same footnote-then-endnote
   order as the visible note blocks, skips boilerplate note records before
   capture, and preserves empty slots for non-paragraph blocks. Supported leaders
   and a positive `w:defaultTabStop` interval reuse the established paragraph
-  shaper without changing the public model. Note table-cell tabs, legacy-note
-  tabs, fresh note conversion, post-tab field containment, page-bottom note
-  composition, and Word-exact tab reflow and pagination remain outside this path.
+  shaper without changing the public model. Legacy-note tabs, fresh note
+  conversion, post-tab field containment, page-bottom note composition, and
+  Word-exact tab reflow and pagination remain outside this path.
 - Applies reader-resolved explicit paragraph tab stops to ordinary top-level
   paragraphs in selected default/first/even running headers and footers when an
   opened DOCX is rendered to PDF. A private six-story sidecar follows
