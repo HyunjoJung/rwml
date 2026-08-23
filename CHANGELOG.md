@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Fresh `Document::to_docx()` conversion now promotes normalized legacy `.doc`
+  footnotes and endnotes into real references and note parts when nonempty
+  `PlcffndRef`/`PlcfendRef` tables, recovered records, and visible Main-story
+  markers match one-to-one at ordinary top-level paragraph offsets. The exact
+  block/id/offset contract also preserves that normalized subset when the
+  generated DOCX is reopened and freshly converted again, without changing the
+  public model or standalone writer. Missing, truncated, duplicate, mismatched,
+  or unsupported anchors keep the complete historical flattened fallback. Rich
+  note formatting, tables, media, source numbering and separators, custom marks,
+  table-cell/manual-break anchors, and page-bottom placement remain unsupported.
 - Opened legacy `.doc` Footnote and Endnote source stories now apply resolved
   common custom tabs to ordinary top-level paragraphs and direct paragraph
   blocks in surviving cells of top-level note tables during PDF preview. A

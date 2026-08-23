@@ -1509,12 +1509,51 @@ pub(crate) fn scan_note_ref_anchors(
     tag: &[u8],
     ctx: &super::fields::FieldResolutionContext<'_>,
 ) -> HashMap<String, String> {
-    let mut r = Reader::from_str(xml);
     let mut anchors = HashMap::new();
+    for reference in scan_note_ref_positions(xml, tag, ctx).references {
+        anchors
+            .entry(reference.id)
+            .or_insert_with(|| text::finalize(&reference.block_text));
+    }
+    anchors
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NoteRefPosition {
+    pub(crate) id: String,
+    pub(crate) block_index: usize,
+    pub(crate) block_text: String,
+    pub(crate) text_offset: usize,
+    pub(crate) paragraph: bool,
+    pub(crate) custom_mark: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct NoteRefPositionScan {
+    pub(crate) block_count: usize,
+    pub(crate) references: Vec<NoteRefPosition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PendingNoteRef {
+    id: String,
+    text_offset: usize,
+    custom_mark: bool,
+}
+
+pub(crate) fn scan_note_ref_positions(
+    xml: &str,
+    tag: &[u8],
+    ctx: &super::fields::FieldResolutionContext<'_>,
+) -> NoteRefPositionScan {
+    let mut r = Reader::from_str(xml);
+    let mut scan = NoteRefPositionScan::default();
     let mut in_body = false;
     let mut body_depth = 0usize;
     let mut body_block_candidate_depths = vec![0usize];
     let mut current_block_depth = None;
+    let mut current_block_index = None;
+    let mut current_block_is_paragraph = false;
     let mut current_block_text = String::new();
     let mut current_block_refs = Vec::new();
     let mut complex_field = NoteAnchorComplexField::default();
@@ -1538,8 +1577,11 @@ pub(crate) fn scan_note_ref_anchors(
                     body_block_candidate_depths.clear();
                     body_block_candidate_depths.push(0);
                     current_block_depth = None;
+                    current_block_index = None;
+                    current_block_is_paragraph = false;
                     current_block_text.clear();
                     current_block_refs.clear();
+                    scan.block_count = 0;
                     field_state.clear();
                     continue;
                 }
@@ -1555,6 +1597,9 @@ pub(crate) fn scan_note_ref_anchors(
                         && is_note_anchor_body_block(name)
                     {
                         current_block_depth = Some(body_depth + 1);
+                        current_block_index = Some(scan.block_count);
+                        current_block_is_paragraph = name == b"p";
+                        scan.block_count = scan.block_count.saturating_add(1);
                         current_block_text.clear();
                         current_block_refs.clear();
                         complex_field = NoteAnchorComplexField::default();
@@ -1567,8 +1612,8 @@ pub(crate) fn scan_note_ref_anchors(
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
                     } else if name == tag {
-                        if let Some(id) = attr_local_trimmed(&e, b"id") {
-                            current_block_refs.push(id);
+                        if let Some(reference) = pending_note_ref(&e, &current_block_text) {
+                            current_block_refs.push(reference);
                         }
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
@@ -1647,8 +1692,8 @@ pub(crate) fn scan_note_ref_anchors(
                 let name = local(qname.as_ref());
                 if current_block_depth.is_some() {
                     if name == tag {
-                        if let Some(id) = attr_local_trimmed(&e, b"id") {
-                            current_block_refs.push(id);
+                        if let Some(reference) = pending_note_ref(&e, &current_block_text) {
+                            current_block_refs.push(reference);
                         }
                     } else if name == b"fldChar" {
                         if let Some(text) = complex_field.apply_field_char(&e, &mut field_state) {
@@ -1679,6 +1724,8 @@ pub(crate) fn scan_note_ref_anchors(
                     body_block_candidate_depths.clear();
                     body_block_candidate_depths.push(0);
                     current_block_depth = None;
+                    current_block_index = None;
+                    current_block_is_paragraph = false;
                     current_block_text.clear();
                     current_block_refs.clear();
                     complex_field = NoteAnchorComplexField::default();
@@ -1689,9 +1736,11 @@ pub(crate) fn scan_note_ref_anchors(
                     let ending_current_block = current_block_depth == Some(body_depth);
                     if ending_current_block {
                         insert_note_anchor_block(
-                            &mut anchors,
+                            &mut scan.references,
                             &current_block_refs,
                             &current_block_text,
+                            current_block_index.unwrap_or_default(),
+                            current_block_is_paragraph,
                         );
                     }
                     if body_block_candidate_depths.last().copied() == Some(body_depth) {
@@ -1700,6 +1749,8 @@ pub(crate) fn scan_note_ref_anchors(
                     body_depth = body_depth.saturating_sub(1);
                     if ending_current_block {
                         current_block_depth = None;
+                        current_block_index = None;
+                        current_block_is_paragraph = false;
                         current_block_text.clear();
                         current_block_refs.clear();
                         complex_field = NoteAnchorComplexField::default();
@@ -1711,7 +1762,7 @@ pub(crate) fn scan_note_ref_anchors(
             _ => {}
         }
     }
-    anchors
+    scan
 }
 
 #[derive(Default)]
@@ -1926,7 +1977,7 @@ fn append_note_anchor_alternate_content(
     r: &mut Xml<'_>,
     tag: &[u8],
     text: &mut String,
-    refs: &mut Vec<String>,
+    refs: &mut Vec<PendingNoteRef>,
     complex_field: &mut NoteAnchorComplexField,
     field_state: &mut ContextlessFieldState<'_>,
     depth: u32,
@@ -1963,7 +2014,7 @@ fn append_note_anchor_content(
     r: &mut Xml<'_>,
     tag: &[u8],
     text: &mut String,
-    refs: &mut Vec<String>,
+    refs: &mut Vec<PendingNoteRef>,
     complex_field: &mut NoteAnchorComplexField,
     field_state: &mut ContextlessFieldState<'_>,
     depth: u32,
@@ -1978,8 +2029,8 @@ fn append_note_anchor_content(
                 let qname = e.name();
                 let name = local(qname.as_ref());
                 if name == tag {
-                    if let Some(id) = attr_local_trimmed(&e, b"id") {
-                        refs.push(id);
+                    if let Some(reference) = pending_note_ref(&e, text) {
+                        refs.push(reference);
                     }
                     skip_subtree(r);
                 } else if name == b"fldChar" {
@@ -2075,8 +2126,8 @@ fn append_note_anchor_content(
                 let qname = e.name();
                 let name = local(qname.as_ref());
                 if name == tag {
-                    if let Some(id) = attr_local_trimmed(&e, b"id") {
-                        refs.push(id);
+                    if let Some(reference) = pending_note_ref(&e, text) {
+                        refs.push(reference);
                     }
                 } else if name == b"fldChar" {
                     if let Some(computed) = complex_field.apply_field_char(&e, field_state) {
@@ -2103,17 +2154,34 @@ fn append_note_anchor_content(
     }
 }
 
+fn pending_note_ref(e: &BytesStart<'_>, text: &str) -> Option<PendingNoteRef> {
+    Some(PendingNoteRef {
+        id: attr_local_trimmed(e, b"id")?,
+        text_offset: text.chars().count(),
+        custom_mark: attr_local(e, b"customMarkFollows")
+            .is_some_and(|value| toggle_on(Some(value))),
+    })
+}
+
 fn insert_note_anchor_block(
-    anchors: &mut HashMap<String, String>,
-    refs: &[String],
+    anchors: &mut Vec<NoteRefPosition>,
+    refs: &[PendingNoteRef],
     raw_text: &str,
+    block_index: usize,
+    paragraph: bool,
 ) {
     if refs.is_empty() {
         return;
     }
-    let text = text::finalize(raw_text);
-    for id in refs {
-        anchors.entry(id.clone()).or_insert_with(|| text.clone());
+    for reference in refs {
+        anchors.push(NoteRefPosition {
+            id: reference.id.clone(),
+            block_index,
+            block_text: raw_text.to_string(),
+            text_offset: reference.text_offset,
+            paragraph,
+            custom_mark: reference.custom_mark,
+        });
     }
 }
 

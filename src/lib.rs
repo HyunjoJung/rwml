@@ -573,6 +573,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
             tab_stops: _tab_stops,
         #[cfg(feature = "render")]
             render_tab_stops: _render_tab_stops,
+        #[cfg(feature = "docx")]
+            note_reference_anchors: _note_reference_anchors,
         column_break_offsets: _column_break_offsets,
         section_column_gap_pt: _section_column_gap_pt,
         final_section_column_gap_pt: _final_section_column_gap_pt,
@@ -1046,13 +1048,20 @@ impl Document {
     /// legacy DOC inputs both
     /// retain reader-resolved exact/minimum line rules on those direct table-cell
     /// paragraphs and on direct top-level running paragraphs through section-
-    /// aligned source-only hints. Nested-table descendants and notes remain
-    /// outside these fresh-conversion paths, and all running surfaces remain
-    /// outside pagination conversion, while nested running-table descendants
-    /// remain outside both tab and line-rule conversion. Settings-defined
-    /// default-tab intervals
-    /// remain outside the tab path, and table-cell, note, running-surface, and
-    /// nested-content manual breaks remain outside the column-break path.
+    /// aligned source-only hints. Opened legacy DOC inputs with exact nonempty
+    /// `PlcffndRef`/`PlcfendRef` tables, one-to-one Main-story markers, and
+    /// ordinary top-level paragraph anchors promote normalized footnote/endnote
+    /// text into real references and note parts. Reopened DOCX inputs retain that
+    /// normalized subset through an exact private block/id/offset bridge.
+    /// Nested-table descendants and note paragraph layout properties remain
+    /// outside these layout-hint paths, and all running surfaces remain outside
+    /// pagination conversion, while nested running-table descendants remain
+    /// outside both tab and line-rule conversion. Settings-defined default-tab
+    /// intervals remain outside the tab path, and table-cell, note, running-
+    /// surface, and nested-content manual breaks remain outside the column-break
+    /// path. Rich note formatting, tables, media, source IDs and numbering,
+    /// separators, custom marks, complex anchors, and page-bottom placement
+    /// remain outside the normalized note path.
     /// Standalone [`write_docx`] remains model-only for all of these private
     /// hints.
     /// Available with the default `docx` feature.
@@ -1060,7 +1069,8 @@ impl Document {
     pub fn to_docx(&self) -> Vec<u8> {
         match &self.backend {
             Backend::Doc(state) => {
-                let assembled = legacy_build_output_from_doc_state(state);
+                let mut assembled = legacy_build_output_from_doc_state(state);
+                legacy_promote_exact_notes_for_fresh_conversion(state, &mut assembled);
                 write::to_docx_with_source_hints(
                     &assembled.model,
                     write::SourceWriteHints {
@@ -1089,7 +1099,11 @@ impl Document {
             }
             Backend::Docx(state) => {
                 let mut model = state.model.clone();
-                model.blocks.extend(state.notes.iter().cloned());
+                if let Some(blocks) = &state.fresh_conversion_note_blocks {
+                    model.blocks = blocks.clone();
+                } else {
+                    model.blocks.extend(state.notes.iter().cloned());
+                }
                 write::to_docx_with_source_hints(
                     &model,
                     write::SourceWriteHints {
@@ -3482,6 +3496,269 @@ fn legacy_doc_notes_from_state(state: &DocState) -> Vec<Note> {
         attach_legacy_doc_endnote_marker_anchors(&mut notes, state);
     }
     notes
+}
+
+#[cfg(feature = "docx")]
+fn legacy_promote_exact_notes_for_fresh_conversion(
+    state: &DocState,
+    assembled: &mut assemble::LegacyBuildOutput,
+) -> bool {
+    let Some((model, body_block_end)) = legacy_model_with_exact_promoted_notes(state, assembled)
+    else {
+        return false;
+    };
+
+    assembled.model = model;
+    assembled.pagination_hints.truncate(body_block_end);
+    assembled.line_spacing_hints.truncate(body_block_end);
+    assembled.tab_stops.truncate(body_block_end);
+    #[cfg(feature = "render")]
+    assembled.render_tab_stops.truncate(body_block_end);
+    assembled.note_reference_anchors.truncate(body_block_end);
+    assembled.column_break_offsets.truncate(body_block_end);
+    assembled.section_column_gap_pt.truncate(body_block_end);
+    assembled.section_column_layouts.truncate(body_block_end);
+    assembled.section_column_separators.truncate(body_block_end);
+    assembled.section_column_rtl.truncate(body_block_end);
+    assembled.table_row_pagination.truncate(body_block_end);
+    assembled.table_cell_pagination.truncate(body_block_end);
+    assembled.table_cell_line_spacing.truncate(body_block_end);
+    assembled.table_cell_tab_stops.truncate(body_block_end);
+    #[cfg(feature = "render")]
+    assembled
+        .render_table_cell_tab_stops
+        .truncate(body_block_end);
+    true
+}
+
+#[cfg(feature = "docx")]
+fn legacy_model_with_exact_promoted_notes(
+    state: &DocState,
+    assembled: &assemble::LegacyBuildOutput,
+) -> Option<(DocModel, usize)> {
+    if [SourceRegionKind::Annotation, SourceRegionKind::TextBox]
+        .into_iter()
+        .any(|kind| legacy_region_kind_has_text(&assembled.model, kind))
+    {
+        return None;
+    }
+
+    let footnote_refs = legacy_doc_note_reference_cps_from_state(state, FIB_FCLCB_PLCFFND_REF);
+    let endnote_refs = legacy_doc_note_reference_cps_from_state(state, FIB_FCLCB_PLCFEND_REF);
+    if footnote_refs.is_empty() && endnote_refs.is_empty() {
+        return None;
+    }
+
+    let mut expected = legacy_exact_note_family(
+        &assembled.model,
+        SourceRegionKind::Footnote,
+        NoteKind::Footnote,
+        "legacy-doc-footnote",
+        &footnote_refs,
+    )?;
+    expected.extend(legacy_exact_note_family(
+        &assembled.model,
+        SourceRegionKind::Endnote,
+        NoteKind::Endnote,
+        "legacy-doc-endnote",
+        &endnote_refs,
+    )?);
+    if expected.is_empty() {
+        return None;
+    }
+    expected.sort_by_key(|(source_cp, _)| *source_cp);
+    if expected.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+        return None;
+    }
+
+    let body_block_end = assembled
+        .model
+        .source_regions(SourceRegionKind::Main)
+        .map(|region| region.block_end)
+        .max()?
+        .min(assembled.model.blocks.len());
+    if body_block_end == 0 || assembled.note_reference_anchors.len() != assembled.model.blocks.len()
+    {
+        return None;
+    }
+
+    let mut captured = assembled
+        .note_reference_anchors
+        .iter()
+        .enumerate()
+        .flat_map(|(block_index, anchors)| {
+            anchors
+                .iter()
+                .map(move |anchor| (anchor.source_cp, block_index, anchor.text_offset))
+        })
+        .collect::<Vec<_>>();
+    captured.sort_by_key(|(source_cp, _, _)| *source_cp);
+    if captured.len() != expected.len() || captured.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+        return None;
+    }
+
+    let mut notes_by_block = (0..body_block_end)
+        .map(|_| Vec::<(usize, AuthoredNote)>::new())
+        .collect::<Vec<_>>();
+    for ((expected_cp, note), (captured_cp, block_index, text_offset)) in
+        expected.into_iter().zip(captured)
+    {
+        if expected_cp != captured_cp || block_index >= body_block_end {
+            return None;
+        }
+        notes_by_block[block_index].push((text_offset, note));
+    }
+
+    let mut model = assembled.model.clone();
+    for (block_index, notes) in notes_by_block.into_iter().enumerate() {
+        if notes.is_empty() {
+            continue;
+        }
+        let Some(Block::Paragraph(paragraph)) = model.blocks.get_mut(block_index) else {
+            return None;
+        };
+        if !attach_authored_notes_to_paragraph(paragraph, notes) {
+            return None;
+        }
+    }
+
+    model.blocks.truncate(body_block_end);
+    model.regions.retain(|region| {
+        region.kind == SourceRegionKind::Main && region.block_end <= body_block_end
+    });
+    model.meta.stats = assemble::compute_stats(&model.blocks);
+    Some((model, body_block_end))
+}
+
+#[cfg(feature = "docx")]
+fn legacy_exact_note_family(
+    model: &DocModel,
+    region_kind: SourceRegionKind,
+    note_kind: NoteKind,
+    id_prefix: &str,
+    reference_cps: &[usize],
+) -> Option<Vec<(usize, AuthoredNote)>> {
+    let has_note_text = legacy_region_kind_has_text(model, region_kind);
+    if reference_cps.is_empty() {
+        return (!has_note_text).then(Vec::new);
+    }
+    if !has_note_text {
+        return None;
+    }
+    let records = legacy_doc_note_records_for_reference_count(
+        model,
+        region_kind,
+        note_kind,
+        id_prefix,
+        reference_cps.len(),
+    )?;
+    if records.len() != reference_cps.len() {
+        return None;
+    }
+    reference_cps
+        .iter()
+        .copied()
+        .zip(records)
+        .map(|(source_cp, note)| {
+            (!note.text.is_empty()).then_some((
+                source_cp,
+                AuthoredNote {
+                    kind: note.kind,
+                    text: note.text,
+                },
+            ))
+        })
+        .collect()
+}
+
+#[cfg(feature = "docx")]
+fn legacy_region_kind_has_text(model: &DocModel, kind: SourceRegionKind) -> bool {
+    model
+        .source_regions(kind)
+        .any(|region| !model.source_region_text(region).is_empty())
+}
+
+#[cfg(feature = "docx")]
+pub(crate) fn attach_authored_notes_to_paragraph(
+    paragraph: &mut Paragraph,
+    mut notes: Vec<(usize, AuthoredNote)>,
+) -> bool {
+    notes.sort_by_key(|(offset, _)| *offset);
+    if notes.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+        return false;
+    }
+    let text_chars = paragraph
+        .runs
+        .iter()
+        .map(|run| run.text.chars().count())
+        .sum::<usize>();
+    if notes.last().is_some_and(|(offset, _)| *offset > text_chars) {
+        return false;
+    }
+
+    for (offset, note) in notes.into_iter().rev() {
+        if !attach_authored_note_at_text_offset(paragraph, offset, note) {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(feature = "docx")]
+fn attach_authored_note_at_text_offset(
+    paragraph: &mut Paragraph,
+    offset: usize,
+    note: AuthoredNote,
+) -> bool {
+    let mut char_start = 0usize;
+    let mut target = None;
+    for (run_index, run) in paragraph.runs.iter().enumerate() {
+        let run_chars = run.text.chars().count();
+        let char_end = char_start.saturating_add(run_chars);
+        if run_chars > 0 && offset > char_start && offset <= char_end {
+            target = Some((run_index, offset - char_start, run_chars));
+            break;
+        }
+        if offset == 0 && run_chars > 0 {
+            target = Some((run_index, 0, run_chars));
+            break;
+        }
+        char_start = char_end;
+    }
+    let Some((run_index, local_offset, run_chars)) = target else {
+        return false;
+    };
+    let run = &paragraph.runs[run_index];
+    if run.image.is_some()
+        || !matches!(run.field, FieldRole::None)
+        || run.comment.is_some()
+        || run.revision.is_some()
+        || run.content_control.is_some()
+        || run.bookmark.is_some()
+        || (local_offset == run_chars && run.note.is_some())
+    {
+        return false;
+    }
+
+    let split_byte = if local_offset == run_chars {
+        run.text.len()
+    } else {
+        let Some((byte, _)) = run.text.char_indices().nth(local_offset) else {
+            return false;
+        };
+        byte
+    };
+    let mut before = run.clone();
+    let mut after = run.clone();
+    before.text = run.text[..split_byte].to_string();
+    before.note = Some(note);
+    after.text = run.text[split_byte..].to_string();
+    let mut replacement = vec![before];
+    if !after.text.is_empty() {
+        replacement.push(after);
+    }
+    paragraph.runs.splice(run_index..=run_index, replacement);
+    true
 }
 
 fn legacy_doc_text_boxes_from_model(model: &DocModel) -> Vec<TextBox> {
@@ -7102,6 +7379,12 @@ mod tests {
             notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
             Some("BODY")
         );
+        #[cfg(feature = "docx")]
+        {
+            let body = docx_part(&doc.to_docx(), "word/document.xml");
+            assert!(!body.contains("footnoteReference"));
+            assert!(body.contains("FTN"));
+        }
     }
 
     #[test]
@@ -7227,6 +7510,12 @@ mod tests {
             notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
             Some("BODY")
         );
+        #[cfg(feature = "docx")]
+        {
+            let body = docx_part(&doc.to_docx(), "word/document.xml");
+            assert!(!body.contains("footnoteReference"));
+            assert!(body.contains("FTN"));
+        }
     }
 
     #[test]
@@ -7247,6 +7536,383 @@ mod tests {
             notes[1].anchor.as_ref().map(|anchor| anchor.id.as_str()),
             Some("legacy-doc-endnote-0@cp8+3")
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_exact_notes_roundtrip_through_fresh_conversion() {
+        let main = "AA\u{0002}BB\rCC\u{0002}DD\r";
+        let bytes = synth_doc_with_note_reference_tables(
+            &format!("{main}FOOT\rEND\r"),
+            [12, 5, 0, 0, 4, 0],
+            Some(&[2]),
+            None,
+            Some(&[8]),
+            None,
+        );
+        let document = Document::open(&bytes).unwrap();
+        let public_model = document.model();
+        assert_eq!(document.main_text(), "AABBCCDD");
+        let state = match &document.backend {
+            Backend::Doc(state) => state,
+            Backend::Docx(_) => panic!("synthetic legacy document must use the DOC backend"),
+        };
+        let assembled = legacy_build_output_from_doc_state(state);
+        assert_eq!(
+            assembled.note_reference_anchors.len(),
+            assembled.model.blocks.len()
+        );
+        assert_eq!(
+            assembled
+                .note_reference_anchors
+                .iter()
+                .enumerate()
+                .flat_map(|(block_index, anchors)| anchors
+                    .iter()
+                    .map(move |anchor| { (block_index, anchor.source_cp, anchor.text_offset) }))
+                .collect::<Vec<_>>(),
+            vec![(0, 2, 2), (1, 8, 2)]
+        );
+        assert_eq!(
+            document
+                .notes()
+                .into_iter()
+                .map(|note| (note.kind, note.text))
+                .collect::<Vec<_>>(),
+            vec![
+                (NoteKind::Footnote, "FOOT".to_string()),
+                (NoteKind::Endnote, "END".to_string()),
+            ]
+        );
+
+        let converted = document.to_docx();
+        assert_eq!(converted, document.to_docx());
+        let body = docx_part(&converted, "word/document.xml");
+        assert!(
+            body.contains(r#"<w:footnoteReference w:id="1"/>"#),
+            "missing promoted footnote reference: {body}"
+        );
+        assert!(
+            body.contains(r#"<w:endnoteReference w:id="1"/>"#),
+            "missing promoted endnote reference: {body}"
+        );
+        let mut cursor = 0;
+        for needle in [
+            ">AA</w:t>",
+            "<w:footnoteReference",
+            ">BB</w:t>",
+            ">CC</w:t>",
+            "<w:endnoteReference",
+            ">DD</w:t>",
+        ] {
+            let relative = body[cursor..]
+                .find(needle)
+                .unwrap_or_else(|| panic!("missing ordered fragment {needle:?}: {body}"));
+            cursor += relative + needle.len();
+        }
+        assert!(!body.contains("FOOT"));
+        assert!(!body.contains("END"));
+        assert!(docx_part(&converted, "word/footnotes.xml").contains("FOOT"));
+        assert!(docx_part(&converted, "word/endnotes.xml").contains("END"));
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(reopened.main_text(), "AABB\nCCDD");
+        assert_eq!(
+            reopened
+                .notes()
+                .into_iter()
+                .map(|note| (note.kind, note.text))
+                .collect::<Vec<_>>(),
+            vec![
+                (NoteKind::Footnote, "FOOT".to_string()),
+                (NoteKind::Endnote, "END".to_string()),
+            ]
+        );
+        assert!(
+            !docx_part(&write_docx(&reopened.model()), "word/document.xml")
+                .contains("footnoteReference")
+        );
+        assert_eq!(converted, reopened.to_docx());
+        assert_eq!(document.model(), public_model);
+        assert!(!docx_part(&write_docx(&public_model), "word/document.xml")
+            .contains("footnoteReference"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn reopened_docx_custom_note_mark_keeps_flattened_fresh_conversion_fallback() {
+        let bytes = synth_doc_with_note_reference_tables(
+            "A\u{0002}B\rNOTE\r",
+            [4, 5, 0, 0, 0, 0],
+            Some(&[1]),
+            None,
+            None,
+            None,
+        );
+        let converted = Document::open(&bytes).unwrap().to_docx();
+        let mut package = opc::Package::from_zip(&converted).unwrap();
+        let document_xml = String::from_utf8(package.part("word/document.xml").unwrap())
+            .unwrap()
+            .replace(
+                r#"<w:footnoteReference w:id="1"/>"#,
+                r#"<w:footnoteReference w:id="1" w:customMarkFollows="1"/>"#,
+            );
+        package.set_part(
+            "word/document.xml",
+            document_xml.into_bytes(),
+            Some(CT_DOCUMENT_MAIN),
+        );
+
+        let custom_mark = Document::open(&package.to_zip().unwrap()).unwrap();
+        assert_eq!(custom_mark.notes().len(), 1);
+        let body = docx_part(&custom_mark.to_docx(), "word/document.xml");
+        assert!(!body.contains("footnoteReference"));
+        assert!(body.contains("NOTE"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_note_conversion_fails_closed_across_note_families() {
+        let main = "AA\u{0002}BB\rCC\u{0002}DD\r";
+        let bytes = synth_doc_with_note_reference_tables(
+            &format!("{main}FOOT\rEND\r"),
+            [12, 5, 0, 0, 4, 0],
+            Some(&[2]),
+            None,
+            None,
+            None,
+        );
+        let document = Document::open(&bytes).unwrap();
+        assert_eq!(document.notes().len(), 2);
+
+        let converted = document.to_docx();
+        let body = docx_part(&converted, "word/document.xml");
+        assert!(!body.contains("footnoteReference"));
+        assert!(!body.contains("endnoteReference"));
+        assert!(body.contains("FOOT"));
+        assert!(body.contains("END"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_note_conversion_rejects_marker_and_record_mismatches() {
+        let extra_marker = synth_doc_with_note_reference_tables(
+            "A\u{0002}B\u{0002}C\rNOTE\r",
+            [6, 5, 0, 0, 0, 0],
+            Some(&[1]),
+            None,
+            None,
+            None,
+        );
+        let duplicate_reference = synth_doc_with_note_reference_tables(
+            "A\u{0002}B\rONE\r",
+            [4, 4, 0, 0, 0, 0],
+            Some(&[1, 1]),
+            None,
+            None,
+            None,
+        );
+
+        for (label, bytes, note_text) in [
+            ("extra marker", extra_marker, "NOTE"),
+            (
+                "duplicate reference and record-count mismatch",
+                duplicate_reference,
+                "ONE",
+            ),
+        ] {
+            let body = docx_part(
+                &Document::open(&bytes).unwrap().to_docx(),
+                "word/document.xml",
+            );
+            assert!(
+                !body.contains("footnoteReference"),
+                "{label} must preserve the complete flattened fallback: {body}"
+            );
+            assert!(body.contains(note_text), "{label}: {body}");
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_note_conversion_rejects_unsupported_body_contexts() {
+        let note = "NOTE\r";
+
+        let manual_main = "A\u{0002}B\u{000c}C\r";
+        let manual = synth_doc_with_note_reference_tables(
+            &format!("{manual_main}{note}"),
+            [
+                manual_main.encode_utf16().count() as u32,
+                note.encode_utf16().count() as u32,
+                0,
+                0,
+                0,
+                0,
+            ],
+            Some(&[1]),
+            None,
+            None,
+            None,
+        );
+
+        let side_table_main = "A\u{0002}B\r";
+        let annotation = "ANN\r";
+        let text_box = "BOX\r";
+        let side_tables = synth_doc_with_note_reference_tables(
+            &format!("{side_table_main}{note}{annotation}{text_box}"),
+            [
+                side_table_main.encode_utf16().count() as u32,
+                note.encode_utf16().count() as u32,
+                0,
+                annotation.encode_utf16().count() as u32,
+                0,
+                text_box.encode_utf16().count() as u32,
+            ],
+            Some(&[1]),
+            None,
+            None,
+            None,
+        );
+
+        let table_main = "A\u{0002}B\u{0007}\u{0007}";
+        let table_main_len = table_main.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        let table_text = format!("{table_main}{note}");
+        let table_runs = vec![
+            SyntheticPapxRun {
+                cp_lim: 4,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: table_main_len,
+                grpprl: row_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: table_text.encode_utf16().count() as u32,
+                grpprl: Vec::new(),
+            },
+        ];
+        let table_cell = synth_doc_with_ccp_and_tables(
+            &table_text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [
+                table_main_len,
+                note.encode_utf16().count() as u32,
+                0,
+                0,
+                0,
+                0,
+            ],
+            SyntheticDocTables {
+                footnote_ref_cps: Some(&[1]),
+                papx_runs: Some(&table_runs),
+                ..SyntheticDocTables::default()
+            },
+        );
+
+        for (label, bytes, extra_text) in [
+            ("manual page break", manual, None),
+            ("annotation and text box", side_tables, Some(("ANN", "BOX"))),
+            ("table cell", table_cell, None),
+        ] {
+            let body = docx_part(
+                &Document::open(&bytes).unwrap().to_docx(),
+                "word/document.xml",
+            );
+            assert!(
+                !body.contains("footnoteReference"),
+                "{label} must preserve the complete flattened fallback: {body}"
+            );
+            assert!(body.contains("NOTE"), "{label}: {body}");
+            if let Some((first, second)) = extra_text {
+                assert!(body.contains(first), "{label}: {body}");
+                assert!(body.contains(second), "{label}: {body}");
+            }
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_note_run_splitting_preserves_order_and_rejects_ambiguity() {
+        let authored = |kind, text: &str| AuthoredNote {
+            kind,
+            text: text.to_string(),
+        };
+        let mut paragraph = Paragraph {
+            runs: vec![Run {
+                text: "AABBCC".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        assert!(attach_authored_notes_to_paragraph(
+            &mut paragraph,
+            vec![
+                (2, authored(NoteKind::Footnote, "FOOT")),
+                (4, authored(NoteKind::Endnote, "END")),
+            ]
+        ));
+        assert_eq!(
+            paragraph
+                .runs
+                .iter()
+                .map(|run| {
+                    (
+                        run.text.as_str(),
+                        run.note
+                            .as_ref()
+                            .map(|note| (note.kind, note.text.as_str())),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                ("AA", Some((NoteKind::Footnote, "FOOT"))),
+                ("BB", Some((NoteKind::Endnote, "END"))),
+                ("CC", None),
+            ]
+        );
+
+        let duplicate_original = Paragraph {
+            runs: vec![Run {
+                text: "AB".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let mut duplicate = duplicate_original.clone();
+        assert!(!attach_authored_notes_to_paragraph(
+            &mut duplicate,
+            vec![
+                (1, authored(NoteKind::Footnote, "ONE")),
+                (1, authored(NoteKind::Endnote, "TWO")),
+            ]
+        ));
+        assert_eq!(duplicate, duplicate_original);
+
+        let wrapped_original = Paragraph {
+            runs: vec![Run {
+                text: "AB".to_string(),
+                field: FieldRole::Other,
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let mut wrapped = wrapped_original.clone();
+        assert!(!attach_authored_notes_to_paragraph(
+            &mut wrapped,
+            vec![(1, authored(NoteKind::Footnote, "NOTE"))]
+        ));
+        assert_eq!(wrapped, wrapped_original);
     }
 
     #[test]

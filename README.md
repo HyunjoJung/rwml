@@ -491,9 +491,9 @@ companion block/row/surviving-cell/paragraph-aligned bridge. For opened DOCX and
 legacy DOC inputs alike, those direct table-cell paragraphs also retain reader-
 resolved exact/minimum line rules, while direct top-level running paragraphs
 retain the same rules through a section-aligned source-only bridge. Nested-table
-descendants and notes remain outside these fresh-conversion paths, and all
-running surfaces remain outside pagination conversion, while nested
-running-table descendants remain outside both tab and line-rule conversion.
+descendants and note paragraph layout properties remain outside these layout-
+hint paths, and all running surfaces remain outside pagination conversion, while
+nested running-table descendants remain outside both tab and line-rule conversion.
 Settings-defined default-tab intervals remain outside the tab path, and table-
 cell, note, running-surface, and nested-content manual breaks remain outside the
 column-break path.
@@ -516,10 +516,11 @@ path through a block/row/surviving-cell/paragraph-aligned private tree, includin
 vertical-merge owner indexing. Opened legacy `.doc` Footnote and Endnote source
 stories apply their resolved common custom tabs to the equivalent direct
 paragraph and top-level table-cell subset through a strictly aligned render-only
-overlay; writer-facing sidecars remain blank. Nested note tables, fresh note
-conversion, settings-defined legacy default-tab intervals, post-tab field
-containment, page-bottom note composition, and Word-exact tab reflow and
-pagination remain outside this path.
+overlay; writer-facing tab sidecars remain blank. Nested note tables, rich note-
+body conversion, note custom-tab and absolute-line-rule conversion, settings-
+defined legacy default-tab intervals, post-tab field containment, page-bottom
+note composition, and Word-exact tab reflow and pagination remain outside this
+path.
 Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
@@ -1008,12 +1009,25 @@ surfaces use a companion
 block/row/surviving-cell/paragraph-aligned bridge for explicit tabs. Opened DOCX
 and legacy DOC inputs both retain reader-resolved exact/minimum line rules on
 those direct table-cell paragraphs and on direct top-level running paragraphs
-through section-aligned source-only hints. Nested-table descendants and notes
-remain outside these fresh-conversion paths, and all running surfaces remain
-outside pagination conversion, while nested running-table descendants remain
-outside both tab and line-rule conversion. Settings-defined default-tab
-intervals remain outside the tab path, and table-cell, note, running-surface,
-and nested-content manual breaks remain outside the column-break path.
+through section-aligned source-only hints. Nested-table descendants and note
+paragraph layout properties remain outside these layout-hint paths, and all
+running surfaces remain outside pagination conversion, while nested running-
+table descendants remain outside both tab and line-rule conversion. Settings-
+defined default-tab intervals remain outside the tab path, and table-cell, note,
+running-surface, and nested-content manual breaks remain outside the column-
+break path.
+
+Opened legacy `.doc` inputs additionally promote normalized footnote/endnote
+text into real references and note parts only when nonempty
+`PlcffndRef`/`PlcfendRef` tables, recovered records, and dropped Main-story
+markers match one-to-one at ordinary top-level paragraph offsets. Reopened DOCX
+inputs retain that normalized subset through the same exact private block/id/
+offset contract for stable fresh reconversion. Any missing, truncated, count-,
+ID-, offset-, or context-mismatch keeps the complete historical flattened
+fallback; standalone `write_docx` and the public model are unchanged. Rich note
+formatting, tables, media, source IDs and numbering, separators, note tabs and
+absolute line rules, custom marks, table-cell/manual-break anchors, and page-
+bottom placement remain outside this normalized path.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the
@@ -1215,6 +1229,13 @@ code points.
   are exposed through `notes()` as best-effort recovered note records. A single
   unambiguous legacy footnote or endnote marker anchors to its containing body
   text; broader ambiguous note/endnote cases keep source-region anchors.
+  When usable `PlcffndRef`/`PlcfendRef` tables and every visible Main-story
+  marker match recovered nonempty notes one-to-one in ordinary top-level
+  paragraphs, `Document::to_docx()` emits real normalized note references and
+  note parts. Missing, truncated, or count-mismatched tables; extra or duplicate
+  markers; unsupported table-cell, manual-break, or rich anchors; nonempty
+  annotation/text-box coexistence; or one invalid note family keep the complete
+  flattened fallback.
   Text-box regions are exposed through `text_boxes()` as best-effort recovered
   text-box records with source-region anchors.
   Header/footer regions are exposed through `header_footers()` as best-effort
@@ -1282,9 +1303,10 @@ code points.
   character-pitch deltas, negative fixed-position top/bottom semantics,
   display-number effects on physical pagination, and page-number footer
   inference remain outside this bounded reader path.
-  Exact multi-note/endnote reference markers and exact text-box shape anchors
-  are not yet fully promoted, so non-body regions still remain in the flat
-  block stream;
+  The shared public legacy model intentionally retains non-body regions in the
+  flat block stream even when the private exact normalized-note conversion
+  bridge activates; exact text-box shape promotion and rich or arbitrary note
+  promotion remain incomplete.
   `Document::report()` emits `LegacyDocFlattenedSubdocuments` when FIB
   subdocument counts show that promotion is still incomplete.
 - *`.docx` read only:* an original-view `DocModel` (accepted-current is the only

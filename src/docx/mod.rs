@@ -26,7 +26,7 @@ use crate::annotation::{
 };
 use crate::assemble;
 use crate::error::{Error, Result};
-use crate::model::{Block, Chart, Color, CustomXmlItem, DocMeta, DocModel, Image};
+use crate::model::{AuthoredNote, Block, Chart, Color, CustomXmlItem, DocMeta, DocModel, Image};
 use crate::text;
 use crate::CoreProperties;
 
@@ -195,6 +195,9 @@ pub(crate) struct DocxState {
     /// Footnote/endnote blocks, kept separate from `model.blocks` (their `.docx`
     /// parts are preserved on save, never inlined into the body).
     pub notes: Vec<Block>,
+    /// Conversion-only body blocks with exact normalized note references attached.
+    /// `None` keeps the historical flattened-note fallback.
+    pub fresh_conversion_note_blocks: Option<Vec<Block>>,
     /// Footnote/endnote side-table records parsed from `word/footnotes.xml` and
     /// `word/endnotes.xml`.
     pub note_records: Vec<Note>,
@@ -642,6 +645,12 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         toc_entries: &toc_entries,
         bookmark_names: &bookmark_names,
     };
+    let fresh_conversion_note_blocks = exact_fresh_conversion_note_blocks(
+        &blocks,
+        &note_part.records,
+        &doc_xml,
+        &field_resolution_context,
+    );
     let mut comment_anchors = comments::parse_anchors(&doc_xml, &field_resolution_context);
     extend_missing_comment_anchors(&mut comment_anchors, note_part.comment_anchors);
     extend_missing_comment_anchors(&mut comment_anchors, header_footer_comment_anchors);
@@ -722,6 +731,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     Ok(DocxState {
         model,
         notes: note_part.blocks,
+        fresh_conversion_note_blocks,
         text,
         main_text,
         package,
@@ -4418,6 +4428,97 @@ fn blocks_text(blocks: &[Block]) -> String {
     let mut raw = String::new();
     flatten(blocks, &mut raw);
     text::finalize(&raw)
+}
+
+fn exact_fresh_conversion_note_blocks(
+    blocks: &[Block],
+    notes: &[Note],
+    doc_xml: &str,
+    ctx: &fields::FieldResolutionContext<'_>,
+) -> Option<Vec<Block>> {
+    if notes.is_empty() {
+        return None;
+    }
+    let footnotes = body::scan_note_ref_positions(doc_xml, b"footnoteReference", ctx);
+    let endnotes = body::scan_note_ref_positions(doc_xml, b"endnoteReference", ctx);
+    if footnotes.block_count != blocks.len() || endnotes.block_count != blocks.len() {
+        return None;
+    }
+
+    let mut note_by_key = HashMap::new();
+    for note in notes {
+        if note.text.is_empty()
+            || note_by_key
+                .insert((note_kind_key(note.kind), note.id.as_str()), note)
+                .is_some()
+        {
+            return None;
+        }
+    }
+
+    let mut references = footnotes
+        .references
+        .into_iter()
+        .map(|reference| (NoteKind::Footnote, reference))
+        .chain(
+            endnotes
+                .references
+                .into_iter()
+                .map(|reference| (NoteKind::Endnote, reference)),
+        )
+        .collect::<Vec<_>>();
+    if references.len() != notes.len() {
+        return None;
+    }
+    references.sort_by_key(|(_, reference)| (reference.block_index, reference.text_offset));
+
+    let mut seen = HashSet::new();
+    let mut notes_by_block = (0..blocks.len())
+        .map(|_| Vec::<(usize, AuthoredNote)>::new())
+        .collect::<Vec<_>>();
+    for (kind, reference) in references {
+        if reference.custom_mark
+            || !reference.paragraph
+            || !seen.insert((note_kind_key(kind), reference.id.clone()))
+        {
+            return None;
+        }
+        let note = note_by_key.get(&(note_kind_key(kind), reference.id.as_str()))?;
+        let Some(Block::Paragraph(paragraph)) = blocks.get(reference.block_index) else {
+            return None;
+        };
+        if paragraph.text() != reference.block_text {
+            return None;
+        }
+        notes_by_block[reference.block_index].push((
+            reference.text_offset,
+            AuthoredNote {
+                kind,
+                text: note.text.clone(),
+            },
+        ));
+    }
+
+    let mut promoted = blocks.to_vec();
+    for (block_index, notes) in notes_by_block.into_iter().enumerate() {
+        if notes.is_empty() {
+            continue;
+        }
+        let Block::Paragraph(paragraph) = &mut promoted[block_index] else {
+            return None;
+        };
+        if !crate::attach_authored_notes_to_paragraph(paragraph, notes) {
+            return None;
+        }
+    }
+    Some(promoted)
+}
+
+fn note_kind_key(kind: NoteKind) -> u8 {
+    match kind {
+        NoteKind::Footnote => 0,
+        NoteKind::Endnote => 1,
+    }
 }
 
 fn attach_note_reference_anchors(
