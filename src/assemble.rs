@@ -84,6 +84,8 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) line_spacing_hints: Vec<Option<LineSpacingHint>>,
     #[cfg(any(feature = "docx", feature = "render"))]
     pub(crate) tab_stops: Vec<Vec<TabStop>>,
+    #[cfg(feature = "render")]
+    pub(crate) render_tab_stops: Vec<Vec<TabStop>>,
     pub(crate) column_break_offsets: Vec<Vec<usize>>,
     pub(crate) section_column_gap_pt: Vec<Option<f32>>,
     pub(crate) final_section_column_gap_pt: Option<f32>,
@@ -98,6 +100,8 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
     pub(crate) table_cell_tab_stops: Vec<TableCellTabStopHints>,
+    #[cfg(feature = "render")]
+    pub(crate) render_table_cell_tab_stops: Vec<TableCellTabStopHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
     pub(crate) running_line_spacing_hints: Vec<RunningSurfaceLineSpacingHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
@@ -144,12 +148,16 @@ pub(crate) fn build_model_with_render_hints(
         line_spacing_hints,
         #[cfg(any(feature = "docx", feature = "render"))]
         tab_stops,
+        #[cfg(feature = "render")]
+        note_tab_stops,
         column_break_offsets,
         table_row_pagination,
         table_cell_pagination,
         table_cell_line_spacing,
         #[cfg(any(feature = "docx", feature = "render"))]
         table_cell_tab_stops,
+        #[cfg(feature = "render")]
+        note_table_cell_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
         running_tab_regions,
         text_start: _,
@@ -164,6 +172,11 @@ pub(crate) fn build_model_with_render_hints(
     #[cfg(any(feature = "docx", feature = "render"))]
     let (running_tab_stops, running_table_cell_tab_stops) =
         legacy_running_tab_stops_from_regions(&blocks, &running_tab_regions);
+    #[cfg(feature = "render")]
+    let render_tab_stops = overlay_aligned_nonempty(&tab_stops, &note_tab_stops);
+    #[cfg(feature = "render")]
+    let render_table_cell_tab_stops =
+        overlay_aligned_nonempty(&table_cell_tab_stops, &note_table_cell_tab_stops);
     let mut blocks = blocks;
     let stats = compute_stats(&blocks);
     let setup = legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
@@ -193,6 +206,8 @@ pub(crate) fn build_model_with_render_hints(
         line_spacing_hints,
         #[cfg(any(feature = "docx", feature = "render"))]
         tab_stops,
+        #[cfg(feature = "render")]
+        render_tab_stops,
         column_break_offsets,
         section_column_gap_pt,
         final_section_column_gap_pt,
@@ -207,6 +222,8 @@ pub(crate) fn build_model_with_render_hints(
         table_cell_line_spacing,
         #[cfg(any(feature = "docx", feature = "render"))]
         table_cell_tab_stops,
+        #[cfg(feature = "render")]
+        render_table_cell_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
         running_line_spacing_hints,
         #[cfg(any(feature = "docx", feature = "render"))]
@@ -530,12 +547,16 @@ fn push_legacy_main_section_regions(
             output.line_spacing_hints.push(None);
             #[cfg(any(feature = "docx", feature = "render"))]
             output.tab_stops.push(Vec::new());
+            #[cfg(feature = "render")]
+            output.note_tab_stops.push(Vec::new());
             output.column_break_offsets.push(Vec::new());
             output.table_row_pagination.push(Vec::new());
             output.table_cell_pagination.push(Vec::new());
             output.table_cell_line_spacing.push(Vec::new());
             #[cfg(any(feature = "docx", feature = "render"))]
             output.table_cell_tab_stops.push(Vec::new());
+            #[cfg(feature = "render")]
+            output.note_table_cell_tab_stops.push(Vec::new());
         }
     }
 }
@@ -599,6 +620,20 @@ fn push_legacy_region(
     if kind == SourceRegionKind::Main {
         region_output = promote_legacy_manual_page_breaks(region_output);
     }
+    #[cfg(feature = "render")]
+    let mut note_tab_stops =
+        if matches!(kind, SourceRegionKind::Footnote | SourceRegionKind::Endnote) {
+            std::mem::take(&mut region_output.tab_stops)
+        } else {
+            vec![Vec::new(); region_output.blocks.len()]
+        };
+    #[cfg(feature = "render")]
+    let mut note_table_cell_tab_stops =
+        if matches!(kind, SourceRegionKind::Footnote | SourceRegionKind::Endnote) {
+            std::mem::take(&mut region_output.table_cell_tab_stops)
+        } else {
+            vec![Vec::new(); region_output.blocks.len()]
+        };
     #[cfg(any(feature = "docx", feature = "render"))]
     let running_tab_region = (kind == SourceRegionKind::HeaderFooter
         && !region_output.blocks.is_empty())
@@ -626,6 +661,8 @@ fn push_legacy_region(
         .append(&mut region_output.line_spacing_hints);
     #[cfg(any(feature = "docx", feature = "render"))]
     output.tab_stops.append(&mut region_output.tab_stops);
+    #[cfg(feature = "render")]
+    output.note_tab_stops.append(&mut note_tab_stops);
     output
         .column_break_offsets
         .append(&mut column_break_offsets);
@@ -642,6 +679,10 @@ fn push_legacy_region(
     output
         .table_cell_tab_stops
         .append(&mut region_output.table_cell_tab_stops);
+    #[cfg(feature = "render")]
+    output
+        .note_table_cell_tab_stops
+        .append(&mut note_table_cell_tab_stops);
     #[cfg(any(feature = "docx", feature = "render"))]
     if let Some(region) = running_tab_region {
         output.running_tab_regions.push(region);
@@ -672,12 +713,16 @@ struct LegacyRegionOutput {
     line_spacing_hints: Vec<Option<LineSpacingHint>>,
     #[cfg(any(feature = "docx", feature = "render"))]
     tab_stops: Vec<Vec<TabStop>>,
+    #[cfg(feature = "render")]
+    note_tab_stops: Vec<Vec<TabStop>>,
     column_break_offsets: Vec<Vec<usize>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
     table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
     table_cell_tab_stops: Vec<TableCellTabStopHints>,
+    #[cfg(feature = "render")]
+    note_table_cell_tab_stops: Vec<TableCellTabStopHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
     running_tab_regions: Vec<LegacyRunningTabRegion>,
     text_start: usize,
@@ -688,6 +733,23 @@ struct LegacyRunningTabRegion {
     source_story_index: Option<usize>,
     tab_stops: Vec<Vec<TabStop>>,
     table_cell_tab_stops: Vec<TableCellTabStopHints>,
+}
+
+#[cfg(feature = "render")]
+fn overlay_aligned_nonempty<T: Clone>(base: &[Vec<T>], overlay: &[Vec<T>]) -> Vec<Vec<T>> {
+    if base.len() != overlay.len() {
+        return base.to_vec();
+    }
+    base.iter()
+        .zip(overlay)
+        .map(|(base, overlay)| {
+            if overlay.is_empty() {
+                base.clone()
+            } else {
+                overlay.clone()
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4339,6 +4401,22 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "render")]
+    #[test]
+    fn legacy_note_tab_overlay_requires_exact_alignment() {
+        let base = vec![vec![1], vec![2], vec![3]];
+        let overlay = vec![Vec::new(), vec![20], Vec::new()];
+        assert_eq!(
+            overlay_aligned_nonempty(&base, &overlay),
+            vec![vec![1], vec![20], vec![3]]
+        );
+        assert_eq!(
+            overlay_aligned_nonempty(&base, &overlay[..2]),
+            base,
+            "a truncated note sidecar must not shift any value"
+        );
+    }
+
     #[test]
     fn field_without_separator_does_not_swallow_following_text() {
         // 0x13 "AB" 0x15 (field begin, instruction, end — NO 0x14 separator),
@@ -4393,12 +4471,16 @@ mod tests {
             line_spacing_hints,
             #[cfg(any(feature = "docx", feature = "render"))]
             tab_stops,
+            #[cfg(feature = "render")]
+            note_tab_stops,
             column_break_offsets,
             table_row_pagination,
             table_cell_pagination,
             table_cell_line_spacing,
             #[cfg(any(feature = "docx", feature = "render"))]
             table_cell_tab_stops,
+            #[cfg(feature = "render")]
+            note_table_cell_tab_stops,
             #[cfg(any(feature = "docx", feature = "render"))]
             running_tab_regions,
             text_start: _,
@@ -4436,6 +4518,14 @@ mod tests {
             assert_eq!(
                 running_table_tabs[0].header,
                 running_tab_regions[0].table_cell_tab_stops
+            );
+        }
+        #[cfg(feature = "render")]
+        {
+            assert_eq!(note_tab_stops, vec![Vec::new(); blocks.len()]);
+            assert_eq!(
+                note_table_cell_tab_stops,
+                vec![TableCellTabStopHints::new(); blocks.len()]
             );
         }
 

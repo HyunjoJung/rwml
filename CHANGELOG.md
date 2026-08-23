@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Opened legacy `.doc` Footnote and Endnote source stories now apply resolved
+  common custom tabs to ordinary top-level paragraphs and direct paragraph
+  blocks in surviving cells of top-level note tables during PDF preview. A
+  render-only full-model overlay requires exact block alignment and leaves every
+  writer-facing note tab slot blank. Footnote/endnote and direct/table isolation,
+  exact private sidecars, deterministic and distinct PDF bytes, public-model
+  equality, unchanged fresh DOCX bytes, render-without-DOCX compilation, and
+  non-note isolation are covered. Nested note tables, fresh note conversion,
+  settings-defined legacy default-tab intervals, post-tab field containment,
+  page-bottom composition, and Word-exact reflow remain outside this path.
 - Opened legacy `.doc` direct top-level paragraphs and direct paragraph blocks
   in surviving cells of top-level tables across all six running header/footer
   variants now retain bounded STSH/PAPX custom tabs in deterministic PDF output

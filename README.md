@@ -513,9 +513,13 @@ footnote-then-endnote block order across skipped separator records and preceding
 non-paragraph blocks without changing the public model. Direct paragraphs in
 cells of top-level real footnote and endnote tables use the same bounded tab
 path through a block/row/surviving-cell/paragraph-aligned private tree, including
-vertical-merge owner indexing. Nested note tables, legacy-note tabs, fresh note
-conversion, post-tab field containment, page-bottom note composition, and
-Word-exact tab reflow and pagination remain outside this path.
+vertical-merge owner indexing. Opened legacy `.doc` Footnote and Endnote source
+stories apply their resolved common custom tabs to the equivalent direct
+paragraph and top-level table-cell subset through a strictly aligned render-only
+overlay; writer-facing sidecars remain blank. Nested note tables, fresh note
+conversion, settings-defined legacy default-tab intervals, post-tab field
+containment, page-bottom note composition, and Word-exact tab reflow and
+pagination remain outside this path.
 Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and

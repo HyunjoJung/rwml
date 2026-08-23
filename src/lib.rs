@@ -571,6 +571,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         line_spacing_hints: _line_spacing_hints,
         #[cfg(any(feature = "docx", feature = "render"))]
             tab_stops: _tab_stops,
+        #[cfg(feature = "render")]
+            render_tab_stops: _render_tab_stops,
         column_break_offsets: _column_break_offsets,
         section_column_gap_pt: _section_column_gap_pt,
         final_section_column_gap_pt: _final_section_column_gap_pt,
@@ -585,6 +587,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         table_cell_line_spacing: _table_cell_line_spacing,
         #[cfg(any(feature = "docx", feature = "render"))]
             table_cell_tab_stops: _table_cell_tab_stops,
+        #[cfg(feature = "render")]
+            render_table_cell_tab_stops: _render_table_cell_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
             running_line_spacing_hints: _running_line_spacing_hints,
         #[cfg(any(feature = "docx", feature = "render"))]
@@ -3043,8 +3047,8 @@ impl Document {
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
-                        tab_stops: &assembled.tab_stops,
-                        table_cell_tab_stops: &assembled.table_cell_tab_stops,
+                        tab_stops: &assembled.render_tab_stops,
+                        table_cell_tab_stops: &assembled.render_table_cell_tab_stops,
                         running_line_spacing: &assembled.running_line_spacing_hints,
                         running_tab_stops: &assembled.running_tab_stops,
                         running_table_cell_tab_stops: &assembled.running_table_cell_tab_stops,
@@ -6264,6 +6268,78 @@ mod tests {
     }
 
     #[cfg(feature = "render")]
+    fn legacy_note_tabs_doc(kind: SourceRegionKind, in_table: bool, include_tabs: bool) -> Vec<u8> {
+        assert!(matches!(
+            kind,
+            SourceRegionKind::Footnote | SourceRegionKind::Endnote
+        ));
+        let mut text = "BODY\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: main_len,
+            grpprl: Vec::new(),
+        }];
+
+        if in_table {
+            text.push_str("T\tX");
+            text.push('\u{7}');
+            let mut cell_grpprl = vec![
+                0x16, 0x24, 0x01, // sprmPFInTable
+            ];
+            if include_tabs {
+                push_legacy_tab_change(&mut cell_grpprl, 0xC60D, &[], &[(1200, 0x0A)]);
+            }
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl: cell_grpprl,
+            });
+
+            text.push('\u{7}');
+            let mut row_grpprl = vec![
+                0x16, 0x24, 0x01, // sprmPFInTable
+                0x17, 0x24, 0x01, // sprmPFTtp
+                0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+                0x01, // one cell
+                0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+            ];
+            row_grpprl.extend_from_slice(&[0u8; 20]);
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl: row_grpprl,
+            });
+        } else {
+            text.push_str("N\tX\r");
+            let mut grpprl = Vec::new();
+            if include_tabs {
+                push_legacy_tab_change(&mut grpprl, 0xC615, &[], &[(1080, 0x1B)]);
+            }
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+
+        let note_len = text.encode_utf16().count() as u32 - main_len;
+        let ccp = match kind {
+            SourceRegionKind::Footnote => [main_len, note_len, 0, 0, 0, 0],
+            SourceRegionKind::Endnote => [main_len, 0, 0, 0, note_len, 0],
+            _ => unreachable!(),
+        };
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            ccp,
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
     fn render_opened_document_without_body_line_spacing(
         document: &Document,
         fonts: &[Vec<u8>],
@@ -6339,6 +6415,74 @@ mod tests {
             3 => &hints.footer,
             4 => &hints.first_header,
             _ => &hints.first_footer,
+        }
+    }
+
+    #[cfg(feature = "render")]
+    fn assert_legacy_note_tab_overlay(document: &Document, kind: SourceRegionKind, in_table: bool) {
+        let state = match &document.backend {
+            Backend::Doc(state) => state,
+            #[cfg(feature = "docx")]
+            Backend::Docx(_) => panic!("synthetic legacy document must use the DOC backend"),
+        };
+        let assembled = legacy_build_output_from_doc_state(state);
+        assert_eq!(assembled.tab_stops.len(), assembled.model.blocks.len());
+        assert_eq!(
+            assembled.table_cell_tab_stops.len(),
+            assembled.model.blocks.len()
+        );
+        assert!(assembled.tab_stops.iter().all(Vec::is_empty));
+        assert!(assembled.table_cell_tab_stops.iter().all(Vec::is_empty));
+        assert_eq!(
+            assembled.render_tab_stops.len(),
+            assembled.model.blocks.len()
+        );
+        assert_eq!(
+            assembled.render_table_cell_tab_stops.len(),
+            assembled.model.blocks.len()
+        );
+
+        let region = assembled.model.source_regions(kind).next().unwrap();
+        assert_eq!(region.block_end, region.block_start + 1);
+        if in_table {
+            assert!(assembled.render_tab_stops.iter().all(Vec::is_empty));
+            assert_eq!(
+                assembled
+                    .render_table_cell_tab_stops
+                    .iter()
+                    .filter(|tabs| !tabs.is_empty())
+                    .count(),
+                1
+            );
+            assert_eq!(
+                assembled.render_table_cell_tab_stops[region.block_start],
+                vec![vec![vec![vec![crate::model::TabStop {
+                    position_pt: 60.0,
+                    alignment: crate::model::TabAlignment::Right,
+                    leader: crate::model::TabLeader::Dot,
+                }]]]]
+            );
+        } else {
+            assert!(assembled
+                .render_table_cell_tab_stops
+                .iter()
+                .all(Vec::is_empty));
+            assert_eq!(
+                assembled
+                    .render_tab_stops
+                    .iter()
+                    .filter(|tabs| !tabs.is_empty())
+                    .count(),
+                1
+            );
+            assert_eq!(
+                assembled.render_tab_stops[region.block_start],
+                vec![crate::model::TabStop {
+                    position_pt: 54.0,
+                    alignment: crate::model::TabAlignment::Decimal,
+                    leader: crate::model::TabLeader::Underscore,
+                }]
+            );
         }
     }
 
@@ -7800,6 +7944,52 @@ mod tests {
                 );
                 assert_eq!(rendered, tabbed.to_pdf_with_fonts(&fonts));
             }
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_note_paragraph_tabs_change_preview_without_conversion() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        for kind in [SourceRegionKind::Footnote, SourceRegionKind::Endnote] {
+            let tabbed = Document::open(&legacy_note_tabs_doc(kind, false, true)).unwrap();
+            let control = Document::open(&legacy_note_tabs_doc(kind, false, false)).unwrap();
+            assert_eq!(tabbed.model(), control.model());
+            assert_legacy_note_tab_overlay(&tabbed, kind, false);
+            #[cfg(feature = "docx")]
+            assert_eq!(tabbed.to_docx(), control.to_docx());
+
+            let rendered = tabbed.to_pdf_with_fonts(&fonts);
+            let control_rendered = control.to_pdf_with_fonts(&fonts);
+            assert!(rendered.starts_with(b"%PDF-"));
+            assert_ne!(
+                rendered, control_rendered,
+                "legacy {kind:?} paragraph tabs were ignored"
+            );
+            assert_eq!(rendered, tabbed.to_pdf_with_fonts(&fonts));
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_note_table_tabs_change_preview_without_conversion() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        for kind in [SourceRegionKind::Footnote, SourceRegionKind::Endnote] {
+            let tabbed = Document::open(&legacy_note_tabs_doc(kind, true, true)).unwrap();
+            let control = Document::open(&legacy_note_tabs_doc(kind, true, false)).unwrap();
+            assert_eq!(tabbed.model(), control.model());
+            assert_legacy_note_tab_overlay(&tabbed, kind, true);
+            #[cfg(feature = "docx")]
+            assert_eq!(tabbed.to_docx(), control.to_docx());
+
+            let rendered = tabbed.to_pdf_with_fonts(&fonts);
+            let control_rendered = control.to_pdf_with_fonts(&fonts);
+            assert!(rendered.starts_with(b"%PDF-"));
+            assert_ne!(
+                rendered, control_rendered,
+                "legacy {kind:?} table-cell tabs were ignored"
+            );
+            assert_eq!(rendered, tabbed.to_pdf_with_fonts(&fonts));
         }
     }
 
