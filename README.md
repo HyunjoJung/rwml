@@ -514,11 +514,12 @@ conversion emits an exact HeaderFooter source range only in its generated
 running part when that range populated a selected section slot; it validates and
 remaps every body sidecar before removing the duplicate from `word/document.xml`.
 Unselected running stories retain their flattened fallback. Legacy nested-table
-recovery and note paragraph layout properties remain outside these layout-hint
-paths. Legacy nested running tables and legacy running-story manual breaks remain
-unsupported. Settings-defined default-tab intervals remain outside the tab path.
-Table-cell page breaks and note manual breaks also
-remain outside the break-preservation paths.
+recovery and note paragraph layout properties remain outside these running-
+surface layout-hint paths. Legacy nested running tables and legacy running-story
+manual breaks remain unsupported. Settings-defined default-tab intervals remain
+outside the tab path. Table-cell page breaks and legacy note manual breaks remain
+outside these break-preservation paths; the separate paragraph-only opened-DOCX
+note conversion described below retains supported note column breaks.
 Ordinary top-level paragraphs in selected default/first/even running headers
 and footers from opened DOCX and legacy DOC inputs also consume reader-resolved
 explicit tab stops and supported leaders through section-aligned render hints.
@@ -539,10 +540,9 @@ vertical-merge owner indexing. Opened legacy `.doc` Footnote and Endnote source
 stories apply their resolved common custom tabs to the equivalent direct
 paragraph and top-level table-cell subset through a strictly aligned render-only
 overlay; writer-facing tab sidecars remain blank. Nested note tables, rich note-
-body conversion, note custom-tab and absolute-line-rule conversion, settings-
-defined legacy default-tab intervals, post-tab field containment, page-bottom
-note composition, and Word-exact tab reflow and pagination remain outside this
-path.
+body conversion from legacy inputs, settings-defined legacy default-tab
+intervals, post-tab field containment, page-bottom note composition, and Word-
+exact tab reflow and pagination remain outside this path.
 Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
@@ -561,8 +561,8 @@ non-table block positions before a running table. Exact running-surface content
 is clipped to its margin-band line or visible row fragment. Notes retain the
 preview renderer's flattened end-of-flow placement; page-bottom note
 composition, model-authored exact/minimum paragraph rules, note paragraph-
-property conversion, and PDF consumption of nested-running-table descendant
-exact/minimum rules remain outside this absolute-spacing path.
+property conversion from legacy inputs, and PDF consumption of nested-running-
+table descendant exact/minimum rules remain outside this absolute-spacing path.
 Direct top-level opened-DOCX running paragraphs and direct paragraphs in
 surviving cells of their top-level running tables use the bounded fresh-
 conversion bridges described above.
@@ -1053,8 +1053,9 @@ component independently, and keeps header/footer-local relationships. Legacy
 nested-table descendants and note paragraph layout properties remain outside
 these layout-hint paths. Legacy nested running tables and legacy running-story
 manual breaks remain unsupported. Settings-defined default-tab intervals,
-table-cell page breaks, and note manual breaks also remain outside the
-bounded paths.
+table-cell page breaks, and legacy note manual breaks also remain outside the
+bounded paths. Opened-DOCX note column breaks use the separate paragraph-only
+bridge described below.
 
 Opened legacy `.doc` inputs additionally promote normalized footnote/endnote
 text into real references and note parts only when nonempty
@@ -1064,10 +1065,20 @@ inputs retain that normalized subset through the same exact private block/id/
 offset contract for stable fresh reconversion. Any missing, truncated, count-,
 ID-, offset-, or context-mismatch keeps the complete historical note fallback;
 the independently promoted running ranges described below may still be removed
-from the generated body. Standalone `write_docx` and the public model are
-unchanged. Rich note formatting, tables, media, source IDs and numbering,
-separators, note tabs and absolute line rules, custom marks, table-cell/manual-
-break anchors, and page-bottom placement remain outside this normalized path.
+from the generated body. Rich legacy note formatting, tables, media, source IDs
+and numbering, separators, custom marks, table-cell/manual-break anchors, and
+page-bottom placement remain outside that normalized legacy path.
+
+When the exact body note-reference contract succeeds for an opened DOCX, fresh
+conversion separately retains paragraph-only real footnote and endnote bodies.
+The private ID-keyed payload preserves multiple paragraphs, modeled paragraph
+and character formatting, keep/widow controls, exact/minimum line rules, explicit
+tabs and leaders, and visible manual column breaks. Unsupported table, media,
+relationship, field, annotation, bookmark, or nested-note content degrades only
+that note to the normalized one-paragraph text fallback; supported sibling notes
+remain rich. Source IDs, numbering and separators, custom marks, and page-bottom
+placement are not preserved. Standalone `write_docx` and the public model remain
+unchanged.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the

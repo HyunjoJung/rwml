@@ -9,6 +9,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
+  paragraph-only real footnote and endnote bodies when the exact body-reference
+  contract succeeds. An ID-keyed, run-aligned private payload retains multiple
+  paragraphs, modeled paragraph and character formatting, keep/widow controls,
+  exact/minimum line rules, explicit tabs and leaders, and visible manual column
+  breaks. An unsupported or malformed note body falls back independently to one
+  normalized text paragraph while supported siblings retain their payload; body
+  anchor projection remains all-or-nothing. Both note families, accepted-current
+  paragraph wrappers, malformed alignment and component isolation, deterministic
+  bytes, native reopen and reconversion, public-model equality, and standalone-
+  writer exclusion are covered. Tables, media, relationship-bearing runs, fields,
+  annotations, bookmarks, nested notes, custom marks, source IDs/numbering and
+  separators, and page-bottom placement remain unsupported by this bounded path.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now preserves
   visible manual column breaks in ordinary top-level paragraphs across all
   default/first/even headers and footers. The private section-aligned six-variant
   offsets follow default-surface inheritance, retain header/footer-local

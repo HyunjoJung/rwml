@@ -188,6 +188,11 @@ pub(crate) fn is_zip(bytes: &[u8]) -> bool {
 
 /// A parsed `.docx`: the rich model (built eagerly — XML parsing is cheap, so
 /// there is no lazy split like the `.doc` path) plus the derived flat text.
+pub(crate) struct FreshConversionNotes {
+    pub(crate) body_blocks: Vec<Block>,
+    pub(crate) payloads: Vec<Vec<Option<crate::model::NoteWritePayload>>>,
+}
+
 pub(crate) struct DocxState {
     /// The **body-only** model (no footnote/endnote blocks). `Document::model()`
     /// re-appends `notes` for the read view; the lossy model is read/render only.
@@ -195,9 +200,9 @@ pub(crate) struct DocxState {
     /// Footnote/endnote blocks, kept separate from `model.blocks` (their `.docx`
     /// parts are preserved on save, never inlined into the body).
     pub notes: Vec<Block>,
-    /// Conversion-only body blocks with exact normalized note references attached.
+    /// Conversion-only body blocks and exact note-paragraph payloads.
     /// `None` keeps the historical flattened-note fallback.
-    pub fresh_conversion_note_blocks: Option<Vec<Block>>,
+    pub fresh_conversion_notes: Option<FreshConversionNotes>,
     /// Footnote/endnote side-table records parsed from `word/footnotes.xml` and
     /// `word/endnotes.xml`.
     pub note_records: Vec<Note>,
@@ -517,6 +522,9 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         part_env,
     );
     note_part.blocks.extend(endnote_part.blocks);
+    note_part
+        .source_entries
+        .append(&mut endnote_part.source_entries);
     #[cfg(feature = "render")]
     note_part.line_spacing.extend(endnote_part.line_spacing);
     #[cfg(feature = "render")]
@@ -658,9 +666,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         toc_entries: &toc_entries,
         bookmark_names: &bookmark_names,
     };
-    let fresh_conversion_note_blocks = exact_fresh_conversion_note_blocks(
+    let fresh_conversion_notes = exact_fresh_conversion_notes(
         &blocks,
         &note_part.records,
+        &note_part.source_entries,
         &doc_xml,
         &field_resolution_context,
     );
@@ -744,7 +753,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     Ok(DocxState {
         model,
         notes: note_part.blocks,
-        fresh_conversion_note_blocks,
+        fresh_conversion_notes,
         text,
         main_text,
         package,
@@ -1807,6 +1816,7 @@ fn header_footer_kind(part_kind: HeaderFooterPartKind, type_name: &str) -> Heade
 #[derive(Default)]
 struct NotePartRead {
     blocks: Vec<Block>,
+    source_entries: Vec<NoteSourceEntry>,
     #[cfg(feature = "render")]
     line_spacing: Vec<Option<crate::model::LineSpacingHint>>,
     #[cfg(feature = "render")]
@@ -1819,6 +1829,12 @@ struct NotePartRead {
     floating_shapes: Vec<FloatingShape>,
     text_boxes: Vec<TextBox>,
     fields: Vec<Field>,
+}
+
+struct NoteSourceEntry {
+    id: String,
+    kind: NoteKind,
+    payload: Option<crate::model::NoteWritePayload>,
 }
 
 /// Read a footnotes/endnotes part (if present) into its real notes' blocks, with
@@ -2002,13 +2018,20 @@ fn read_notes(
         },
         preserve_legacy_form_cache,
     );
-    #[cfg(feature = "render")]
     ctx.begin_pagination_capture();
     let note_entries = body::parse_note_entries(&xml, &ctx, tag);
-    #[cfg(feature = "render")]
     let layout_hints = ctx.take_layout_hints();
+    let mut source_entries = Vec::with_capacity(note_entries.len());
+    let mut block_offset = 0usize;
     for (id, note_blocks) in note_entries {
         let text = blocks_text(&note_blocks);
+        let payload = note_write_payload(kind, &text, &note_blocks, &layout_hints, block_offset);
+        block_offset = block_offset.saturating_add(note_blocks.len());
+        source_entries.push(NoteSourceEntry {
+            id: id.clone(),
+            kind,
+            payload,
+        });
         records.push(Note {
             id,
             kind,
@@ -2019,6 +2042,7 @@ fn read_notes(
     }
     NotePartRead {
         blocks,
+        source_entries,
         #[cfg(feature = "render")]
         line_spacing: layout_hints.line_spacing,
         #[cfg(feature = "render")]
@@ -2032,6 +2056,41 @@ fn read_notes(
         text_boxes,
         fields,
     }
+}
+
+fn note_write_payload(
+    kind: NoteKind,
+    text: &str,
+    blocks: &[Block],
+    hints: &body::BodyLayoutHints,
+    block_offset: usize,
+) -> Option<crate::model::NoteWritePayload> {
+    if blocks.is_empty()
+        || !blocks
+            .iter()
+            .all(|block| matches!(block, Block::Paragraph(_)))
+    {
+        return None;
+    }
+    let block_end = block_offset.checked_add(blocks.len())?;
+    Some(crate::model::NoteWritePayload {
+        kind,
+        text: text.to_string(),
+        paragraphs: blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Paragraph(paragraph) => Some(paragraph.clone()),
+                _ => None,
+            })
+            .collect(),
+        pagination: hints.pagination.get(block_offset..block_end)?.to_vec(),
+        line_spacing: hints.line_spacing.get(block_offset..block_end)?.to_vec(),
+        tab_stops: hints.tab_stops.get(block_offset..block_end)?.to_vec(),
+        column_break_offsets: hints
+            .column_break_offsets
+            .get(block_offset..block_end)?
+            .to_vec(),
+    })
 }
 
 fn read_text_boxes(
@@ -4671,12 +4730,13 @@ fn blocks_text(blocks: &[Block]) -> String {
     text::finalize(&raw)
 }
 
-fn exact_fresh_conversion_note_blocks(
+fn exact_fresh_conversion_notes(
     blocks: &[Block],
     notes: &[Note],
+    source_entries: &[NoteSourceEntry],
     doc_xml: &str,
     ctx: &fields::FieldResolutionContext<'_>,
-) -> Option<Vec<Block>> {
+) -> Option<FreshConversionNotes> {
     if notes.is_empty() {
         return None;
     }
@@ -4692,6 +4752,15 @@ fn exact_fresh_conversion_note_blocks(
             || note_by_key
                 .insert((note_kind_key(note.kind), note.id.as_str()), note)
                 .is_some()
+        {
+            return None;
+        }
+    }
+    let mut source_by_key = HashMap::new();
+    for entry in source_entries {
+        if source_by_key
+            .insert((note_kind_key(entry.kind), entry.id.as_str()), entry)
+            .is_some()
         {
             return None;
         }
@@ -4715,7 +4784,7 @@ fn exact_fresh_conversion_note_blocks(
 
     let mut seen = HashSet::new();
     let mut notes_by_block = (0..blocks.len())
-        .map(|_| Vec::<(usize, AuthoredNote)>::new())
+        .map(|_| Vec::<(usize, AuthoredNote, Option<crate::model::NoteWritePayload>)>::new())
         .collect::<Vec<_>>();
     for (kind, reference) in references {
         if reference.custom_mark
@@ -4725,6 +4794,7 @@ fn exact_fresh_conversion_note_blocks(
             return None;
         }
         let note = note_by_key.get(&(note_kind_key(kind), reference.id.as_str()))?;
+        let source = source_by_key.get(&(note_kind_key(kind), reference.id.as_str()))?;
         let Some(Block::Paragraph(paragraph)) = blocks.get(reference.block_index) else {
             return None;
         };
@@ -4737,22 +4807,53 @@ fn exact_fresh_conversion_note_blocks(
                 kind,
                 text: note.text.clone(),
             },
+            source.payload.clone(),
         ));
     }
 
     let mut promoted = blocks.to_vec();
-    for (block_index, notes) in notes_by_block.into_iter().enumerate() {
+    let mut payloads = Vec::with_capacity(promoted.len());
+    for (block_index, mut notes) in notes_by_block.into_iter().enumerate() {
         if notes.is_empty() {
+            payloads.push(match &promoted[block_index] {
+                Block::Paragraph(paragraph) => vec![None; paragraph.runs.len()],
+                _ => Vec::new(),
+            });
             continue;
         }
+        notes.sort_by_key(|(offset, _, _)| *offset);
         let Block::Paragraph(paragraph) = &mut promoted[block_index] else {
             return None;
         };
-        if !crate::attach_authored_notes_to_paragraph(paragraph, notes) {
+        let authored = notes
+            .iter()
+            .map(|(offset, note, _)| (*offset, note.clone()))
+            .collect::<Vec<_>>();
+        if !crate::attach_authored_notes_to_paragraph(paragraph, authored) {
             return None;
         }
+        let mut expected = notes.into_iter();
+        let mut run_payloads = Vec::with_capacity(paragraph.runs.len());
+        for run in &paragraph.runs {
+            let Some(attached) = &run.note else {
+                run_payloads.push(None);
+                continue;
+            };
+            let (_, expected_note, payload) = expected.next()?;
+            if attached != &expected_note {
+                return None;
+            }
+            run_payloads.push(payload);
+        }
+        if expected.next().is_some() {
+            return None;
+        }
+        payloads.push(run_payloads);
     }
-    Some(promoted)
+    Some(FreshConversionNotes {
+        body_blocks: promoted,
+        payloads,
+    })
 }
 
 fn note_kind_key(kind: NoteKind) -> u8 {

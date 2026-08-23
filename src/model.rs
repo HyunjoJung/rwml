@@ -483,6 +483,18 @@ pub(crate) struct RunningSurfaceColumnBreakHints {
 }
 
 #[cfg(feature = "docx")]
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NoteWritePayload {
+    pub(crate) kind: NoteKind,
+    pub(crate) text: String,
+    pub(crate) paragraphs: Vec<Paragraph>,
+    pub(crate) pagination: Vec<PaginationHint>,
+    pub(crate) line_spacing: Vec<Option<LineSpacingHint>>,
+    pub(crate) tab_stops: Vec<Vec<TabStop>>,
+    pub(crate) column_break_offsets: Vec<Vec<usize>>,
+}
+
+#[cfg(feature = "docx")]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct RunningTableLayoutHints {
     pub(crate) cell_column_breaks: Vec<TableCellColumnBreakHints>,

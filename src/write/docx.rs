@@ -19,14 +19,15 @@ use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
     ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, LineSpacingHint,
-    PaginationHint, ParaProps, Paragraph, ParagraphStyle, RunningBlockPaginationHints,
-    RunningSurfaceColumnBreakHints, RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints,
-    RunningSurfacePaginationHints, RunningSurfaceTabStopHints, RunningSurfaceTableCellTabStopHints,
-    RunningSurfaceTableLayoutHints, RunningTableLayoutHints, SectionBreakKind,
-    SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
-    TableBorderSide, TableBorderStyle, TableCellColumnBreakHints, TableCellLineSpacingHints,
-    TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
-    TablePaginationHints, TableRowPaginationHint, VertAlign, WebExtensionTaskPane, MAX_TAB_STOPS,
+    NoteWritePayload, PaginationHint, ParaProps, Paragraph, ParagraphStyle,
+    RunningBlockPaginationHints, RunningSurfaceColumnBreakHints, RunningSurfaceDistanceHints,
+    RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints, RunningSurfaceTabStopHints,
+    RunningSurfaceTableCellTabStopHints, RunningSurfaceTableLayoutHints, RunningTableLayoutHints,
+    SectionBreakKind, SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader,
+    TabStop, Table, TableBorderSide, TableBorderStyle, TableCellColumnBreakHints,
+    TableCellLineSpacingHints, TableCellNestedPaginationHints, TableCellPaginationHints,
+    TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, VertAlign,
+    WebExtensionTaskPane, MAX_TAB_STOPS,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -128,6 +129,7 @@ struct ParagraphWriteHints<'a> {
     pagination: Option<PaginationHint>,
     tab_stops: Option<&'a [TabStop]>,
     column_break_offsets: Option<&'a [usize]>,
+    note_payloads: Option<&'a [Option<NoteWritePayload>]>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -166,6 +168,7 @@ pub(crate) struct SourceWriteHints<'a> {
     pub(crate) running_table_cell_tab_stops: &'a [RunningSurfaceTableCellTabStopHints],
     pub(crate) running_table_layout: &'a [RunningSurfaceTableLayoutHints],
     pub(crate) running_column_break_offsets: &'a [RunningSurfaceColumnBreakHints],
+    pub(crate) note_payloads: &'a [Vec<Option<NoteWritePayload>>],
     pub(crate) paragraph_line_spacing: &'a [Option<LineSpacingHint>],
     pub(crate) paragraph_pagination: &'a [PaginationHint],
     pub(crate) paragraph_tab_stops: &'a [Vec<TabStop>],
@@ -245,6 +248,30 @@ impl<'a> SourceWriteHints<'a> {
 
     fn aligned_column_break_offsets(self, block_count: usize) -> Option<&'a [Vec<usize>]> {
         (self.column_break_offsets.len() == block_count).then_some(self.column_break_offsets)
+    }
+
+    fn aligned_note_payloads(
+        self,
+        blocks: &[Block],
+    ) -> Option<&'a [Vec<Option<NoteWritePayload>>]> {
+        if self.note_payloads.len() != blocks.len() {
+            return None;
+        }
+        blocks
+            .iter()
+            .zip(self.note_payloads)
+            .all(|(block, payloads)| match block {
+                Block::Paragraph(paragraph) => {
+                    payloads.len() == paragraph.runs.len()
+                        && paragraph
+                            .runs
+                            .iter()
+                            .zip(payloads)
+                            .all(|(run, payload)| payload.is_none() || run.note.is_some())
+                }
+                _ => payloads.is_empty(),
+            })
+            .then_some(self.note_payloads)
     }
 
     fn aligned_table_row_pagination(
@@ -1167,6 +1194,7 @@ struct WrittenComment {
 struct WrittenNote {
     id: String,
     text: String,
+    body_xml: Option<String>,
 }
 
 fn non_empty_trimmed(value: Option<&str>) -> Option<&str> {
@@ -1571,8 +1599,18 @@ impl Ctx {
         let column_break_offsets =
             source_column_break_offsets(p, hints.column_break_offsets).unwrap_or(&[]);
         let mut column_breaks = ColumnBreakCursor::new(column_break_offsets);
-        for r in &p.runs {
-            self.write_run_with_column_breaks(out, r, &mut column_breaks);
+        let note_payloads = hints
+            .note_payloads
+            .filter(|payloads| payloads.len() == p.runs.len());
+        for (index, r) in p.runs.iter().enumerate() {
+            self.write_run_with_column_breaks(
+                out,
+                r,
+                &mut column_breaks,
+                note_payloads
+                    .and_then(|payloads| payloads.get(index))
+                    .and_then(Option::as_ref),
+            );
         }
         out.push_str("</w:p>");
     }
@@ -1696,6 +1734,7 @@ impl Ctx {
         out: &mut String,
         r: &crate::model::Run,
         column_breaks: &mut ColumnBreakCursor<'_>,
+        note_payload: Option<&NoteWritePayload>,
     ) {
         let comment_id = self.begin_comment(out, r.comment.as_ref());
         let deleted = matches!(
@@ -1734,7 +1773,7 @@ impl Ctx {
         let run_xml = self.bookmark_wrapper(r.bookmark.as_deref(), &run_xml);
         self.write_revision_wrapper(out, r.revision.as_ref(), &run_xml);
         self.end_comment(out, comment_id);
-        self.write_note_reference(out, r.note.as_ref());
+        self.write_note_reference(out, r.note.as_ref(), note_payload);
     }
 
     fn begin_comment(
@@ -1761,10 +1800,57 @@ impl Ctx {
         }
     }
 
-    fn write_note_reference(&mut self, out: &mut String, note: Option<&AuthoredNote>) {
+    fn render_note_payload(
+        &mut self,
+        note: &AuthoredNote,
+        payload: &NoteWritePayload,
+    ) -> Option<String> {
+        if !source_note_payload_is_supported(note, payload) {
+            return None;
+        }
+        let paragraph_count = payload.paragraphs.len();
+        let pagination =
+            (payload.pagination.len() == paragraph_count).then_some(payload.pagination.as_slice());
+        let line_spacing = (payload.line_spacing.len() == paragraph_count)
+            .then_some(payload.line_spacing.as_slice());
+        let tab_stops =
+            (payload.tab_stops.len() == paragraph_count).then_some(payload.tab_stops.as_slice());
+        let column_break_offsets = (payload.column_break_offsets.len() == paragraph_count)
+            .then_some(payload.column_break_offsets.as_slice());
+        let mut body = String::new();
+        for (index, paragraph) in payload.paragraphs.iter().enumerate() {
+            self.write_paragraph_with_source_hints(
+                &mut body,
+                paragraph,
+                ParagraphWriteHints {
+                    line_spacing: line_spacing
+                        .and_then(|hints| hints.get(index))
+                        .copied()
+                        .flatten(),
+                    pagination: pagination.and_then(|hints| hints.get(index)).copied(),
+                    tab_stops: tab_stops
+                        .and_then(|hints| hints.get(index))
+                        .map(Vec::as_slice),
+                    column_break_offsets: column_break_offsets
+                        .and_then(|hints| hints.get(index))
+                        .map(Vec::as_slice),
+                    note_payloads: None,
+                },
+            );
+        }
+        Some(body)
+    }
+
+    fn write_note_reference(
+        &mut self,
+        out: &mut String,
+        note: Option<&AuthoredNote>,
+        payload: Option<&NoteWritePayload>,
+    ) {
         let Some(note) = note else {
             return;
         };
+        let body_xml = payload.and_then(|payload| self.render_note_payload(note, payload));
         let (tag, notes) = match note.kind {
             NoteKind::Footnote => ("footnoteReference", &mut self.footnotes),
             NoteKind::Endnote => ("endnoteReference", &mut self.endnotes),
@@ -1773,6 +1859,7 @@ impl Ctx {
         notes.push(WrittenNote {
             id: id.clone(),
             text: note.text.clone(),
+            body_xml,
         });
         out.push_str(&format!(r#"<w:r><w:{tag} w:id="{id}"/></w:r>"#));
     }
@@ -2069,6 +2156,7 @@ impl Ctx {
                             .column_break_offsets
                             .and_then(|hints| hints.get(index))
                             .map(Vec::as_slice),
+                        note_payloads: None,
                     },
                 ),
                 Block::Table(table) => {
@@ -2876,6 +2964,37 @@ fn comment_para_id_for_id(comments: &[WrittenComment], id: &str) -> Option<Strin
         .map(comment_para_id)
 }
 
+fn source_note_payload_is_supported(note: &AuthoredNote, payload: &NoteWritePayload) -> bool {
+    if payload.kind != note.kind
+        || payload.text.is_empty()
+        || payload.text != note.text
+        || payload.paragraphs.is_empty()
+        || source_note_payload_text(&payload.paragraphs) != payload.text
+    {
+        return false;
+    }
+    payload.paragraphs.iter().all(|paragraph| {
+        paragraph.runs.iter().all(|run| {
+            run.image.is_none()
+                && matches!(&run.field, FieldRole::None)
+                && run.comment.is_none()
+                && run.revision.is_none()
+                && run.content_control.is_none()
+                && run.bookmark.is_none()
+                && run.note.is_none()
+        })
+    })
+}
+
+fn source_note_payload_text(paragraphs: &[Paragraph]) -> String {
+    let mut raw = String::new();
+    for paragraph in paragraphs {
+        raw.push_str(&paragraph.text());
+        raw.push('\n');
+    }
+    crate::text::finalize(&raw)
+}
+
 fn notes_xml(root: &str, item: &str, notes: &[WrittenNote]) -> Vec<u8> {
     let mut s = String::new();
     s.push_str(XML_DECL);
@@ -2888,12 +3007,15 @@ fn notes_xml(root: &str, item: &str, notes: &[WrittenNote]) -> Vec<u8> {
         item = item
     ));
     for note in notes {
-        s.push_str(&format!(
-            r#"<w:{item} w:id="{}"><w:p><w:r>"#,
-            esc_attr(&note.id)
-        ));
-        write_run_text(&mut s, &note.text);
-        s.push_str(&format!("</w:r></w:p></w:{item}>"));
+        s.push_str(&format!(r#"<w:{item} w:id="{}">"#, esc_attr(&note.id)));
+        if let Some(body_xml) = &note.body_xml {
+            s.push_str(body_xml);
+        } else {
+            s.push_str("<w:p><w:r>");
+            write_run_text(&mut s, &note.text);
+            s.push_str("</w:r></w:p>");
+        }
+        s.push_str(&format!("</w:{item}>"));
     }
     s.push_str(&format!("</w:{root}>"));
     s.into_bytes()
@@ -4593,6 +4715,7 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         source_hints.and_then(|hints| hints.aligned_paragraph_tab_stops(model.blocks.len()));
     let column_break_offsets =
         source_hints.and_then(|hints| hints.aligned_column_break_offsets(model.blocks.len()));
+    let note_payloads = source_hints.and_then(|hints| hints.aligned_note_payloads(&model.blocks));
     let table_row_pagination =
         source_hints.and_then(|hints| hints.aligned_table_row_pagination(model.blocks.len()));
     let table_cell_pagination =
@@ -4625,6 +4748,9 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
                     .and_then(|hints| hints.get(index))
                     .map(Vec::as_slice),
                 column_break_offsets: column_break_offsets
+                    .and_then(|hints| hints.get(index))
+                    .map(Vec::as_slice),
+                note_payloads: note_payloads
                     .and_then(|hints| hints.get(index))
                     .map(Vec::as_slice),
             },
@@ -4782,18 +4908,18 @@ mod tests {
         source_tab_stops_xml, SectionColumnWriteHint, SourceWriteHints,
     };
     use crate::model::{
-        Align, AuthoredComment, AuthoredContentControl, AuthoredRevision, Block, Cell, CharProps,
-        DocModel, DocSetup, FieldRole, Image, LineSpacingHint, ListInfo, PaginationHint, ParaProps,
-        Paragraph, Row, Run, RunningBlockPaginationHints, RunningSurfaceColumnBreakHints,
-        RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints,
-        RunningSurfaceTabStopHints, RunningSurfaceTableCellTabStopHints,
-        RunningSurfaceTableLayoutHints, RunningTableLayoutHints, SectionColumnHint,
-        SectionColumnLayoutHints, SectionSetup, TabAlignment, TabLeader, TabStop, Table,
-        TableCellColumnBreakHints, TableCellLineSpacingHints, TableCellNestedPaginationHints,
-        TableCellPaginationHints, TableCellTabStopHints, TablePaginationHints,
-        TableRowPaginationHint, MAX_TAB_STOPS,
+        Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
+        Cell, CharProps, DocModel, DocSetup, FieldRole, Image, LineSpacingHint, ListInfo,
+        NoteWritePayload, PaginationHint, ParaProps, Paragraph, Row, Run,
+        RunningBlockPaginationHints, RunningSurfaceColumnBreakHints, RunningSurfaceDistanceHints,
+        RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints, RunningSurfaceTabStopHints,
+        RunningSurfaceTableCellTabStopHints, RunningSurfaceTableLayoutHints,
+        RunningTableLayoutHints, SectionColumnHint, SectionColumnLayoutHints, SectionSetup,
+        TabAlignment, TabLeader, TabStop, Table, TableCellColumnBreakHints,
+        TableCellLineSpacingHints, TableCellNestedPaginationHints, TableCellPaginationHints,
+        TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, MAX_TAB_STOPS,
     };
-    use crate::Document;
+    use crate::{Document, NoteKind};
 
     fn para(text: &str) -> Paragraph {
         Paragraph {
@@ -4827,6 +4953,17 @@ mod tests {
         let end = text_offset
             + xml[text_offset..].find("</w:p>").expect("paragraph end")
             + "</w:p>".len();
+        &xml[start..end]
+    }
+
+    fn written_note_with_text<'a>(xml: &'a str, item: &str, text: &str) -> &'a str {
+        let text_offset = xml.find(text).expect("note text");
+        let start_marker = format!("<w:{item} w:id=");
+        let start = xml[..text_offset].rfind(&start_marker).expect("note start");
+        let end_marker = format!("</w:{item}>");
+        let end = text_offset
+            + xml[text_offset..].find(&end_marker).expect("note end")
+            + end_marker.len();
         &xml[start..end]
     }
 
@@ -4922,6 +5059,7 @@ mod tests {
                 running_table_cell_tab_stops: &[],
                 running_table_layout: &[],
                 running_column_break_offsets: &[],
+                note_payloads: &[],
                 paragraph_line_spacing: &[],
                 paragraph_pagination: &[],
                 paragraph_tab_stops: &[],
@@ -4978,6 +5116,7 @@ mod tests {
                 running_table_cell_tab_stops: &[],
                 running_table_layout: &[],
                 running_column_break_offsets: &[],
+                note_payloads: &[],
                 paragraph_line_spacing: &line_spacing,
                 paragraph_pagination: &[],
                 paragraph_tab_stops: &[],
@@ -5095,6 +5234,7 @@ mod tests {
                         running_table_cell_tab_stops: &[],
                         running_table_layout: &[],
                         running_column_break_offsets: &[],
+                        note_payloads: &[],
                         paragraph_line_spacing: &line_spacing,
                         paragraph_pagination: &pagination,
                         paragraph_tab_stops,
@@ -5249,6 +5389,7 @@ mod tests {
                     running_table_cell_tab_stops: &running_table_tabs,
                     running_table_layout: &[],
                     running_column_break_offsets: &[],
+                    note_payloads: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -5396,6 +5537,7 @@ mod tests {
                     running_table_cell_tab_stops: &[],
                     running_table_layout: &[],
                     running_column_break_offsets: &[],
+                    note_payloads: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -5525,6 +5667,7 @@ mod tests {
                     running_table_cell_tab_stops: &[],
                     running_table_layout: &[],
                     running_column_break_offsets: &[],
+                    note_payloads: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -5851,6 +5994,7 @@ mod tests {
                     running_table_cell_tab_stops: table_tabs,
                     running_table_layout: &[],
                     running_column_break_offsets: &[],
+                    note_payloads: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -6121,6 +6265,186 @@ mod tests {
     }
 
     #[test]
+    fn source_note_payloads_validate_alignment_components_and_siblings() {
+        let footnote_text = "FOOT\nBREAK\nSECOND";
+        let endnote_text = "END";
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(Paragraph {
+                runs: vec![
+                    Run {
+                        text: "A".to_string(),
+                        note: Some(AuthoredNote {
+                            kind: NoteKind::Footnote,
+                            text: footnote_text.to_string(),
+                        }),
+                        ..Run::default()
+                    },
+                    Run {
+                        text: "B".to_string(),
+                        note: Some(AuthoredNote {
+                            kind: NoteKind::Endnote,
+                            text: endnote_text.to_string(),
+                        }),
+                        ..Run::default()
+                    },
+                ],
+                ..Paragraph::default()
+            })],
+            ..DocModel::default()
+        };
+        let mut footnote_first = para("FOOT\nBREAK");
+        footnote_first.props.align = Align::Center;
+        let valid = vec![vec![
+            Some(NoteWritePayload {
+                kind: NoteKind::Footnote,
+                text: footnote_text.to_string(),
+                paragraphs: vec![footnote_first, para("SECOND")],
+                pagination: vec![
+                    PaginationHint {
+                        keep_next: true,
+                        widow_control: false,
+                        ..PaginationHint::default()
+                    },
+                    PaginationHint {
+                        widow_control: true,
+                        ..PaginationHint::default()
+                    },
+                ],
+                line_spacing: vec![
+                    Some(LineSpacingHint::Exact(12.0)),
+                    Some(LineSpacingHint::AtLeast(15.0)),
+                ],
+                tab_stops: vec![
+                    vec![tab(36.0, TabAlignment::Center, TabLeader::Dot)],
+                    Vec::new(),
+                ],
+                column_break_offsets: vec![vec![4], Vec::new()],
+            }),
+            Some(NoteWritePayload {
+                kind: NoteKind::Endnote,
+                text: endnote_text.to_string(),
+                paragraphs: vec![para(endnote_text)],
+                pagination: vec![PaginationHint {
+                    widow_control: true,
+                    ..PaginationHint::default()
+                }],
+                line_spacing: vec![Some(LineSpacingHint::Exact(20.0))],
+                tab_stops: vec![Vec::new()],
+                column_break_offsets: vec![Vec::new()],
+            }),
+        ]];
+        let render = |note_payloads: &[Vec<Option<NoteWritePayload>>]| {
+            let rendered = render_body(
+                &model,
+                Some(SourceWriteHints {
+                    gaps: &[None],
+                    layouts: &[None],
+                    separators: &[false],
+                    rtl: &[false],
+                    final_gap: None,
+                    final_layout: None,
+                    final_separator: false,
+                    final_rtl: false,
+                    running_surface_distances: &[RunningSurfaceDistanceHints::default()],
+                    running_line_spacing: &[],
+                    running_pagination: &[],
+                    running_tab_stops: &[],
+                    running_table_cell_tab_stops: &[],
+                    running_table_layout: &[],
+                    running_column_break_offsets: &[],
+                    note_payloads,
+                    paragraph_line_spacing: &[],
+                    paragraph_pagination: &[],
+                    paragraph_tab_stops: &[],
+                    column_break_offsets: &[],
+                    table_cell_column_break_offsets: &[],
+                    table_row_pagination: &[],
+                    table_cell_pagination: &[],
+                    table_cell_line_spacing: &[],
+                    table_nested_pagination: &[],
+                    table_cell_tab_stops: &[],
+                }),
+            );
+            (
+                String::from_utf8(rendered.footnotes_xml.expect("footnotes part")).unwrap(),
+                String::from_utf8(rendered.endnotes_xml.expect("endnotes part")).unwrap(),
+            )
+        };
+        let counts = |xml: &str, item: &str, text: &str| {
+            let note = written_note_with_text(xml, item, text);
+            (
+                note.matches("<w:p>").count(),
+                note.matches(r#"<w:br w:type="column"/>"#).count(),
+                note.matches("<w:br/>").count(),
+                note.matches("<w:keepNext/>").count(),
+                note.matches("w:lineRule=").count(),
+                note.matches("<w:tabs>").count(),
+            )
+        };
+        let render_counts = |payloads: &[Vec<Option<NoteWritePayload>>]| {
+            let (footnotes, endnotes) = render(payloads);
+            (
+                counts(&footnotes, "footnote", "FOOT"),
+                counts(&endnotes, "endnote", "END"),
+            )
+        };
+
+        assert_eq!(
+            render_counts(&valid),
+            ((2, 1, 0, 1, 2, 1), (1, 0, 0, 0, 1, 0))
+        );
+        assert_eq!(render_counts(&[]), ((1, 0, 2, 0, 0, 0), (1, 0, 0, 0, 0, 0)));
+
+        let bad_outer = [valid[0].clone(), Vec::new()];
+        assert_eq!(
+            render_counts(&bad_outer),
+            ((1, 0, 2, 0, 0, 0), (1, 0, 0, 0, 0, 0))
+        );
+
+        let mut bad_run_shape = valid.clone();
+        bad_run_shape[0].pop();
+        assert_eq!(
+            render_counts(&bad_run_shape),
+            ((1, 0, 2, 0, 0, 0), (1, 0, 0, 0, 0, 0))
+        );
+
+        let mut bad_identity = valid.clone();
+        bad_identity[0][0].as_mut().unwrap().text = "WRONG".to_string();
+        assert_eq!(
+            render_counts(&bad_identity),
+            ((1, 0, 2, 0, 0, 0), (1, 0, 0, 0, 1, 0))
+        );
+
+        let mut bad_line_component = valid.clone();
+        bad_line_component[0][0]
+            .as_mut()
+            .unwrap()
+            .line_spacing
+            .pop();
+        assert_eq!(
+            render_counts(&bad_line_component),
+            ((2, 1, 0, 1, 0, 1), (1, 0, 0, 0, 1, 0))
+        );
+
+        let mut bad_break_leaf = valid.clone();
+        bad_break_leaf[0][0].as_mut().unwrap().column_break_offsets[0] = vec![4, 4];
+        assert_eq!(
+            render_counts(&bad_break_leaf),
+            ((2, 0, 1, 1, 2, 1), (1, 0, 0, 0, 1, 0))
+        );
+
+        let mut relationship_bearing = valid.clone();
+        relationship_bearing[0][0].as_mut().unwrap().paragraphs[0].runs[0].field =
+            FieldRole::Hyperlink {
+                url: "https://example.com/note".to_string(),
+            };
+        assert_eq!(
+            render_counts(&relationship_bearing),
+            ((1, 0, 2, 0, 0, 0), (1, 0, 0, 0, 1, 0))
+        );
+    }
+
+    #[test]
     fn source_column_break_writer_validates_offsets_and_preserves_wrappers() {
         let paragraph = Paragraph {
             props: ParaProps::default(),
@@ -6187,6 +6511,7 @@ mod tests {
                         running_table_cell_tab_stops: &[],
                         running_table_layout: &[],
                         running_column_break_offsets: &[],
+                        note_payloads: &[],
                         paragraph_line_spacing: &line_spacing,
                         paragraph_pagination: &pagination,
                         paragraph_tab_stops: &tabs,
@@ -6347,6 +6672,7 @@ mod tests {
                         running_table_cell_tab_stops: &[],
                         running_table_layout: &[],
                         running_column_break_offsets: &[],
+                        note_payloads: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
@@ -6446,6 +6772,7 @@ mod tests {
                         running_table_cell_tab_stops: &[],
                         running_table_layout: &[],
                         running_column_break_offsets: &[],
+                        note_payloads: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination,
                         paragraph_tab_stops: &[],
@@ -6509,6 +6836,7 @@ mod tests {
                 running_table_cell_tab_stops: &[],
                 running_table_layout: &[],
                 running_column_break_offsets: &[],
+                note_payloads: &[],
                 paragraph_line_spacing: &[Some(LineSpacingHint::Exact(12.0))],
                 paragraph_pagination: &[PaginationHint {
                     keep_next: true,
@@ -6590,6 +6918,7 @@ mod tests {
                         running_table_cell_tab_stops: &[],
                         running_table_layout: &[],
                         running_column_break_offsets: &[],
+                        note_payloads: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
@@ -6669,6 +6998,7 @@ mod tests {
                         running_table_cell_tab_stops: &[],
                         running_table_layout: &[],
                         running_column_break_offsets: &[],
+                        note_payloads: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
@@ -6759,6 +7089,7 @@ mod tests {
                         running_table_cell_tab_stops: &[],
                         running_table_layout: &[],
                         running_column_break_offsets: &[],
+                        note_payloads: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
@@ -6884,6 +7215,7 @@ mod tests {
                         running_table_cell_tab_stops: &[],
                         running_table_layout: &[],
                         running_column_break_offsets: &[],
+                        note_payloads: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],
@@ -6998,6 +7330,7 @@ mod tests {
                     running_table_cell_tab_stops: &[],
                     running_table_layout: &[],
                     running_column_break_offsets: &[],
+                    note_payloads: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -7081,6 +7414,7 @@ mod tests {
                     running_table_cell_tab_stops: &[],
                     running_table_layout: &[],
                     running_column_break_offsets: &[],
+                    note_payloads: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -7166,6 +7500,7 @@ mod tests {
                     running_table_cell_tab_stops: &[],
                     running_table_layout: &[],
                     running_column_break_offsets: &[],
+                    note_payloads: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -7291,6 +7626,7 @@ mod tests {
                 running_table_cell_tab_stops: &[],
                 running_table_layout: &[],
                 running_column_break_offsets: &[],
+                note_payloads: &[],
                 paragraph_line_spacing: &[],
                 paragraph_pagination: &[],
                 paragraph_tab_stops: &[],
@@ -7396,6 +7732,7 @@ mod tests {
                     running_table_cell_tab_stops: &[],
                     running_table_layout: &table_layout,
                     running_column_break_offsets: column_breaks,
+                    note_payloads: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -7521,6 +7858,7 @@ mod tests {
                     running_table_cell_tab_stops: &[],
                     running_table_layout: table_layout,
                     running_column_break_offsets: &[],
+                    note_payloads: &[],
                     paragraph_line_spacing: &[],
                     paragraph_pagination: &[],
                     paragraph_tab_stops: &[],
@@ -7657,6 +7995,7 @@ mod tests {
                         running_table_cell_tab_stops: &[],
                         running_table_layout: &[],
                         running_column_break_offsets: &[],
+                        note_payloads: &[],
                         paragraph_line_spacing: &[],
                         paragraph_pagination: &[],
                         paragraph_tab_stops: &[],

@@ -1082,15 +1082,19 @@ impl Document {
     /// `PlcffndRef`/`PlcfendRef` tables, one-to-one Main-story markers, and
     /// ordinary top-level paragraph anchors promote normalized footnote/endnote
     /// text into real references and note parts. Reopened DOCX inputs retain that
-    /// normalized subset through an exact private block/id/offset bridge.
+    /// exact body-reference subset through a private block/id/offset bridge and,
+    /// for paragraph-only real notes, also retain multiple paragraphs, modeled
+    /// paragraph/run formatting, keep/widow controls, exact/minimum line rules,
+    /// explicit tabs, and visible manual column breaks. An unsupported opened-
+    /// DOCX note body falls back independently to normalized one-paragraph text.
     /// Legacy nested-table descendants and note paragraph layout properties
     /// remain outside these layout-hint paths. Legacy nested running tables and
-    /// legacy running-story manual breaks remain unsupported.
-    /// Settings-defined default-tab intervals, table-cell page breaks, and note
-    /// manual breaks also remain outside the bounded paths. Rich note formatting,
-    /// tables, media, source IDs and numbering,
-    /// separators, custom marks, complex anchors, and page-bottom placement
-    /// remain outside the normalized note path.
+    /// legacy running-story manual breaks remain unsupported. Settings-defined
+    /// default-tab intervals, table-cell page breaks, and legacy note manual
+    /// breaks also remain outside the bounded paths. Note tables, media,
+    /// relationships, fields, annotations, bookmarks, nested notes, source IDs
+    /// and numbering, separators, custom marks, complex anchors, and page-bottom
+    /// placement remain outside the paragraph-only opened-DOCX note path.
     /// Standalone [`write_docx`] remains model-only for all of these private
     /// hints.
     /// Available with the default `docx` feature.
@@ -1119,6 +1123,7 @@ impl Document {
                         running_table_cell_tab_stops: &assembled.running_table_cell_tab_stops,
                         running_table_layout: &[],
                         running_column_break_offsets: &[],
+                        note_payloads: &[],
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
                         paragraph_tab_stops: &assembled.tab_stops,
@@ -1134,11 +1139,13 @@ impl Document {
             }
             Backend::Docx(state) => {
                 let mut model = state.model.clone();
-                if let Some(blocks) = &state.fresh_conversion_note_blocks {
-                    model.blocks = blocks.clone();
+                let note_payloads = if let Some(notes) = &state.fresh_conversion_notes {
+                    model.blocks = notes.body_blocks.clone();
+                    notes.payloads.as_slice()
                 } else {
                     model.blocks.extend(state.notes.iter().cloned());
-                }
+                    &[]
+                };
                 write::to_docx_with_source_hints(
                     &model,
                     write::SourceWriteHints {
@@ -1157,6 +1164,7 @@ impl Document {
                         running_table_cell_tab_stops: &state.running_table_cell_tab_stops,
                         running_table_layout: &state.running_table_layout_hints,
                         running_column_break_offsets: &state.running_column_break_offsets,
+                        note_payloads,
                         paragraph_line_spacing: &state.line_spacing_hints,
                         paragraph_pagination: &state.pagination_hints,
                         paragraph_tab_stops: &state.tab_stops,
