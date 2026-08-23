@@ -20,14 +20,14 @@ use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::annotation::{filename_field_syntax, merge_field_syntax};
 use crate::docx::{
-    computed_preserved_note_local_ref_result, computed_preserved_sequence_reset_result,
-    computed_span_free_table_formula_result, preserved_note_local_ref_target,
-    supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
-    supports_context_free_fill_in_field_syntax, supports_context_free_formula_field_syntax,
-    supports_context_free_if_compare_field_syntax, supports_formula_field_syntax,
-    supports_preserved_document_info_field_syntax, supports_quote_field_syntax,
-    supports_reference_index_marker_syntax, supports_revision_number_field_syntax,
-    supports_toc_entry_field_syntax,
+    computed_preserved_listnum_start_result, computed_preserved_note_local_ref_result,
+    computed_preserved_sequence_reset_result, computed_span_free_table_formula_result,
+    preserved_note_local_ref_target, supports_computed_symbol_field_syntax,
+    supports_context_free_display_field_syntax, supports_context_free_fill_in_field_syntax,
+    supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
+    supports_formula_field_syntax, supports_preserved_document_info_field_syntax,
+    supports_quote_field_syntax, supports_reference_index_marker_syntax,
+    supports_revision_number_field_syntax, supports_toc_entry_field_syntax,
 };
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
@@ -3225,6 +3225,11 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                         && computed_preserved_sequence_reset_result(instruction).as_deref()
                             == Some(run.text.as_str())
                 }
+                FieldKind::Numbering(kind) if kind == "LISTNUM" => {
+                    run.field_unsupported_reason.is_none()
+                        && computed_preserved_listnum_start_result(instruction).as_deref()
+                            == Some(run.text.as_str())
+                }
                 FieldKind::Compatibility(_)
                 | FieldKind::InsertedContent(_)
                 | FieldKind::MailMerge(_)
@@ -5546,6 +5551,21 @@ mod tests {
             Some(FieldUnsupportedReason::NoComputedResult);
         let mut mismatched_sequence_reset = sequence_reset.clone();
         mismatched_sequence_reset.text = "1E".to_string();
+        let listnum_start = Run {
+            text: "1F".to_string(),
+            field: FieldRole::Simple {
+                instruction: r#"LISTNUM LegalDefault \l1 \s31 \* Hex"#.to_string(),
+            },
+            ..Run::default()
+        };
+        assert!(source_note_field_is_supported(&listnum_start));
+        let mut dirty_listnum_start = listnum_start.clone();
+        dirty_listnum_start.field_dirty = true;
+        let mut reasoned_listnum_start = listnum_start.clone();
+        reasoned_listnum_start.field_unsupported_reason =
+            Some(FieldUnsupportedReason::NoComputedResult);
+        let mut mismatched_listnum_start = listnum_start.clone();
+        mismatched_listnum_start.text = "1E".to_string();
 
         let mut dirty = cached("PRIVATE legacy-data");
         dirty.field_dirty = true;
@@ -5579,6 +5599,9 @@ mod tests {
             dirty_sequence_reset,
             reasoned_sequence_reset,
             mismatched_sequence_reset,
+            dirty_listnum_start,
+            reasoned_listnum_start,
+            mismatched_listnum_start,
             malformed,
             malformed_merge,
             malformed_filename,
@@ -5614,6 +5637,11 @@ mod tests {
             marker(r#"SEQ Figure \s 1"#),
             marker(r#"SEQ Figure \r 7 \h"#),
             marker(r#"SEQ Figure \r -1"#),
+            marker("LISTNUM NumberDefault"),
+            marker(r#"LISTNUM NumberDefault \l 2 \s 4"#),
+            marker(r#"LISTNUM NumberDefault \s -1"#),
+            marker(r#"LISTNUM NumberDefault \s 4 \s 5"#),
+            marker(r#"AUTONUM \* ROMAN"#),
             marker(r#"DOCPROPERTY "Broken Name"#),
             marker(r#"MACROBUTTON RunReport "Run""#),
             marker(r#"INDEX \e " - ""#),

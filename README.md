@@ -1193,7 +1193,15 @@ fresh empty-state evaluation. Supported number and text formats, normalized
 instructions, deterministic counter assignment, and modeled formatting are
 retained. Ordinary increment/current fields, heading resets, hidden output,
 cross-note sequence state, malformed, dirty, mismatched-result, or split-result
-cases remain excluded. This does not add field updates, AUTONUM/LISTNUM transport,
+cases remain excluded. This does not add field updates, ordinary source-order
+numbering transport, relationships, or layout behavior.
+Parser-validated, non-dirty `LISTNUM` fields with an explicit nonnegative `\s`
+start and one modeled result run likewise survive when the result matches a fresh
+empty-state evaluation. Optional `NumberDefault`/`LegalDefault` names, level one,
+supported number and text formats, normalized instructions, and modeled formatting
+are retained. Ordinary LISTNUM increments, levels above one, custom list names,
+AUTONUM-family fields, cross-note numbering state, malformed, dirty, mismatched-
+result, or split-result cases remain excluded. This does not add field updates,
 relationships, or layout behavior.
 Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline runs
 likewise survive at every supported paragraph

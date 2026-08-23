@@ -640,6 +640,23 @@ fn explicit_reset_sequence_field_note_docx() -> Vec<u8> {
     )
 }
 
+fn explicit_start_listnum_field_note_docx() -> Vec<u8> {
+    note_table_docx(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="391"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="401"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="392"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="402"/></w:r><w:r><w:t> BODY E</w:t></w:r><w:r><w:footnoteReference w:id="393"/></w:r><w:r><w:t> BODY F</w:t></w:r><w:r><w:endnoteReference w:id="403"/></w:r><w:r><w:t> BODY G</w:t></w:r><w:r><w:footnoteReference w:id="394"/></w:r><w:r><w:t> BODY H</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:footnote w:id="391"><w:p><w:r><w:t xml:space="preserve">FOOT LISTNUM BEFORE </w:t></w:r><w:fldSimple w:instr=" LISTNUM NumberDefault \s 21 \* DollarText \* Upper "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT LISTNUM</w:t></w:r></w:fldSimple><w:r><w:t> FOOT LISTNUM AFTER</w:t></w:r></w:p></w:footnote>
+            <w:footnote w:id="392"><w:p><w:r><w:t xml:space="preserve">ORDINARY LISTNUM BEFORE </w:t></w:r><w:fldSimple w:instr=" LISTNUM NumberDefault "><w:r><w:t>STALE ORDINARY LISTNUM</w:t></w:r></w:fldSimple><w:r><w:t> ORDINARY LISTNUM AFTER</w:t></w:r></w:p></w:footnote>
+            <w:footnote w:id="393"><w:p><w:r><w:t xml:space="preserve">LEVEL TWO BEFORE </w:t></w:r><w:fldSimple w:instr=" LISTNUM NumberDefault \l 2 "><w:r><w:t>CACHED LEVEL TWO</w:t></w:r></w:fldSimple><w:r><w:t> LEVEL TWO AFTER</w:t></w:r></w:p></w:footnote>
+            <w:footnote w:id="394"><w:p><w:r><w:t xml:space="preserve">SPLIT LISTNUM BEFORE </w:t></w:r><w:fldSimple w:instr=" LISTNUM NumberDefault \s 9 "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE SPLIT LISTNUM A</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE SPLIT LISTNUM B</w:t></w:r></w:fldSimple><w:r><w:t> SPLIT LISTNUM AFTER</w:t></w:r></w:p></w:footnote>
+        </w:footnotes>"#,
+        r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:endnote w:id="401"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:r><w:t xml:space="preserve">END LISTNUM BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> LISTNUM LegalDefault \l1 \s31 \* Hex </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END LISTNUM</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END LISTNUM AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote>
+            <w:endnote w:id="402"><w:p><w:r><w:t xml:space="preserve">AUTONUM BEFORE </w:t></w:r><w:fldSimple w:instr=" AUTONUM "><w:r><w:t>STALE AUTONUM</w:t></w:r></w:fldSimple><w:r><w:t> AUTONUM AFTER</w:t></w:r></w:p></w:endnote>
+            <w:endnote w:id="403"><w:p><w:r><w:t xml:space="preserve">NEGATIVE START BEFORE </w:t></w:r><w:fldSimple w:instr=" LISTNUM NumberDefault \s -1 "><w:r><w:t>CACHED NEGATIVE START</w:t></w:r></w:fldSimple><w:r><w:t> NEGATIVE START AFTER</w:t></w:r></w:p></w:endnote>
+        </w:endnotes>"#,
+    )
+}
+
 fn fill_in_field_note_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2851,6 +2868,201 @@ fn opened_docx_note_explicit_reset_sequence_fields_keep_results_and_instructions
     ] {
         let Block::Paragraph(rejected) = &reopened_model.blocks[index] else {
             panic!("SEQ fallback block {index} was not a paragraph")
+        };
+        assert_eq!(rejected.text(), expected, "fallback block {index}");
+    }
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_explicit_start_listnum_fields_keep_results_and_instructions() {
+    let document = Document::open(&explicit_start_listnum_field_note_docx())
+        .expect("explicit-start LISTNUM notes open");
+    assert_eq!(document.notes().len(), 7, "source note records missing");
+    assert_eq!(document.report().features.fields, 7);
+    assert_eq!(
+        document.report().features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
+    );
+    let source_fields = document.fields();
+    for (instruction, result) in [
+        (
+            "LISTNUM NumberDefault \\s 21 \\* DollarText \\* Upper",
+            "TWENTY-ONE AND 00/100",
+        ),
+        ("LISTNUM LegalDefault \\l1 \\s31 \\* Hex", "1F"),
+    ] {
+        let field = source_fields
+            .iter()
+            .find(|field| field.instruction == instruction)
+            .unwrap_or_else(|| panic!("missing source field {instruction:?}"));
+        assert_eq!(field.kind, FieldKind::Numbering("LISTNUM".to_string()));
+        assert_eq!(field.computed_result.as_deref(), Some(result));
+    }
+    for (instruction, kind, result) in [
+        (
+            "LISTNUM NumberDefault",
+            FieldKind::Numbering("LISTNUM".to_string()),
+            Some("22"),
+        ),
+        (
+            "AUTONUM",
+            FieldKind::Numbering("AUTONUM".to_string()),
+            Some("1"),
+        ),
+        (
+            "LISTNUM NumberDefault \\l 2",
+            FieldKind::Numbering("LISTNUM".to_string()),
+            None,
+        ),
+        (
+            "LISTNUM NumberDefault \\s -1",
+            FieldKind::Numbering("LISTNUM".to_string()),
+            None,
+        ),
+        (
+            "LISTNUM NumberDefault \\s 9",
+            FieldKind::Numbering("LISTNUM".to_string()),
+            Some("9"),
+        ),
+    ] {
+        let field = source_fields
+            .iter()
+            .find(|field| field.instruction == instruction)
+            .unwrap_or_else(|| panic!("missing source field {instruction:?}"));
+        assert_eq!(field.kind, kind, "{instruction}");
+        assert_eq!(field.computed_result.as_deref(), result, "{instruction}");
+    }
+
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone explicit-start LISTNUM normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT LISTNUM BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END LISTNUM BEFORE");
+    let rejected_ordinary = note_with_marker(footnotes, "footnote", "ORDINARY LISTNUM BEFORE");
+    let rejected_level = note_with_marker(footnotes, "footnote", "LEVEL TWO BEFORE");
+    let rejected_split = note_with_marker(footnotes, "footnote", "SPLIT LISTNUM BEFORE");
+    let rejected_autonum = note_with_marker(endnotes, "endnote", "AUTONUM BEFORE");
+    let rejected_negative = note_with_marker(endnotes, "endnote", "NEGATIVE START BEFORE");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(
+            r#"<w:fldSimple w:instr=" LISTNUM NumberDefault \s 21 \* DollarText \* Upper ">"#
+        ) && footnote.contains("<w:b/>")
+            && footnote.contains(">TWENTY-ONE AND 00/100</w:t>")
+            && footnote.contains("FOOT LISTNUM BEFORE ")
+            && footnote.contains(" FOOT LISTNUM AFTER"),
+        "top-level explicit start missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT LISTNUM"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:fldSimple w:instr=" LISTNUM LegalDefault \l1 \s31 \* Hex ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains(">1F</w:t>")
+            && endnote.contains("END LISTNUM BEFORE ")
+            && endnote.contains(" END LISTNUM AFTER"),
+        "nested explicit start missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END LISTNUM"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [
+        rejected_ordinary,
+        rejected_level,
+        rejected_split,
+        rejected_autonum,
+        rejected_negative,
+    ] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains("STALE ORDINARY LISTNUM"), "{footnotes}");
+    assert!(footnotes.contains("CACHED LEVEL TWO"), "{footnotes}");
+    assert!(!footnotes.contains("STALE SPLIT LISTNUM"), "{footnotes}");
+    assert!(!endnotes.contains("STALE AUTONUM"), "{endnotes}");
+    assert!(endnotes.contains("CACHED NEGATIVE START"), "{endnotes}");
+
+    let reopened =
+        Document::open(&converted).expect("converted explicit-start LISTNUM notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    for (field, instruction, result) in [
+        (
+            &fields[0],
+            "LISTNUM NumberDefault \\s 21 \\* DollarText \\* Upper",
+            "TWENTY-ONE AND 00/100",
+        ),
+        (&fields[1], "LISTNUM LegalDefault \\l1 \\s31 \\* Hex", "1F"),
+    ] {
+        assert_eq!(field.kind, FieldKind::Numbering("LISTNUM".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, result);
+        assert_eq!(field.computed_result.as_deref(), Some(result));
+    }
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), 8);
+    assert_eq!(normalized_model.blocks.len(), 8);
+    assert_eq!(reopened_model.blocks[0], normalized_model.blocks[0]);
+    for index in [1, 5] {
+        let mut normalized_ownership = reopened_model.blocks[index].clone();
+        clear_simple_field_ownership(&mut normalized_ownership);
+        assert_eq!(normalized_ownership, normalized_model.blocks[index]);
+    }
+    for (index, expected) in [
+        (2, "ORDINARY LISTNUM BEFORE 22 ORDINARY LISTNUM AFTER"),
+        (3, "LEVEL TWO BEFORE CACHED LEVEL TWO LEVEL TWO AFTER"),
+        (4, "SPLIT LISTNUM BEFORE 9 SPLIT LISTNUM AFTER"),
+        (6, "AUTONUM BEFORE 1 AUTONUM AFTER"),
+        (
+            7,
+            "NEGATIVE START BEFORE CACHED NEGATIVE START NEGATIVE START AFTER",
+        ),
+    ] {
+        let Block::Paragraph(rejected) = &reopened_model.blocks[index] else {
+            panic!("LISTNUM fallback block {index} was not a paragraph")
         };
         assert_eq!(rejected.text(), expected, "fallback block {index}");
     }

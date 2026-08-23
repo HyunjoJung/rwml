@@ -2691,10 +2691,14 @@ pub(crate) fn supports_numbering_field_syntax(instruction: &str) -> bool {
     numbering_field_syntax(instruction)
 }
 
-pub(crate) fn computed_listnum_result(
-    instruction: &str,
-    listnum_counter: &mut i64,
-) -> Option<String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ListNumInstruction {
+    reset_start: Option<i64>,
+    number_format: Option<PageNumberFormat>,
+    text_format: Option<FieldTextFormat>,
+}
+
+fn listnum_instruction(instruction: &str) -> Option<ListNumInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
     let kind = parts.next()?;
@@ -2748,10 +2752,37 @@ pub(crate) fn computed_listnum_result(
         }
         list_name_seen = true;
     }
-    let value = reset_start.unwrap_or(*listnum_counter + 1);
-    let text = format_sequence_number(value, number_format)?;
+    Some(ListNumInstruction {
+        reset_start,
+        number_format,
+        text_format,
+    })
+}
+
+fn computed_listnum_instruction_result(
+    instruction: ListNumInstruction,
+    listnum_counter: &mut i64,
+) -> Option<String> {
+    let value = match instruction.reset_start {
+        Some(value) => value,
+        None => listnum_counter.checked_add(1)?,
+    };
+    let text = format_sequence_number(value, instruction.number_format)?;
     *listnum_counter = value;
-    Some(apply_field_text_format(text, text_format))
+    Some(apply_field_text_format(text, instruction.text_format))
+}
+
+pub(crate) fn computed_listnum_result(
+    instruction: &str,
+    listnum_counter: &mut i64,
+) -> Option<String> {
+    computed_listnum_instruction_result(listnum_instruction(instruction)?, listnum_counter)
+}
+
+pub(crate) fn computed_preserved_listnum_start_result(instruction: &str) -> Option<String> {
+    let instruction = listnum_instruction(instruction)?;
+    instruction.reset_start?;
+    computed_listnum_instruction_result(instruction, &mut 0)
 }
 
 fn accept_listnum_level_switch(part: &str, level_seen: &mut bool) -> Option<()> {
@@ -2841,12 +2872,12 @@ mod tests {
         cardinal_page_number_text, computed_action_result, computed_ask_result,
         computed_display_result, computed_dynamic_result, computed_listnum_result,
         computed_numbering_result, computed_preserved_document_info_result,
-        computed_preserved_note_local_ref_result, computed_preserved_revision_number_result,
-        computed_preserved_sequence_reset_result, computed_reference_index_result,
-        computed_sequence_result, computed_set_result, computed_toc_entry_result,
-        direct_bookmark_ref_instruction, document_info_instruction, format_page_number,
-        note_ref_context, note_ref_instruction, ordinal_page_number_text, page_ref_context,
-        page_ref_instruction, preserved_note_local_ref_target, ref_instruction,
+        computed_preserved_listnum_start_result, computed_preserved_note_local_ref_result,
+        computed_preserved_revision_number_result, computed_preserved_sequence_reset_result,
+        computed_reference_index_result, computed_sequence_result, computed_set_result,
+        computed_toc_entry_result, direct_bookmark_ref_instruction, document_info_instruction,
+        format_page_number, note_ref_context, note_ref_instruction, ordinal_page_number_text,
+        page_ref_context, page_ref_instruction, preserved_note_local_ref_target, ref_instruction,
         ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
         supports_action_field_syntax, supports_compare_field_syntax,
         supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
@@ -3547,6 +3578,13 @@ mod tests {
             None
         );
         assert_eq!(counter, 0);
+
+        let mut counter = i64::MAX;
+        assert_eq!(
+            computed_listnum_result("LISTNUM NumberDefault", &mut counter),
+            None
+        );
+        assert_eq!(counter, i64::MAX);
     }
 
     #[test]
@@ -3808,6 +3846,44 @@ mod tests {
         ] {
             assert_eq!(
                 computed_preserved_sequence_reset_result(instruction),
+                None,
+                "{instruction}"
+            );
+        }
+    }
+
+    #[test]
+    fn preserved_listnum_starts_are_explicit_and_context_free() {
+        for (instruction, result) in [
+            (r#"LISTNUM \s 7"#, "7"),
+            (r#"LISTNUM NumberDefault \s "4""#, "4"),
+            (r#"LISTNUM NumberDefault \s4 \* ROMAN"#, "IV"),
+            (
+                r#"LISTNUM NumberDefault \l "1" \s 21 \* DollarText \* Upper"#,
+                "TWENTY-ONE AND 00/100",
+            ),
+            (r#"LISTNUM LegalDefault \l1 \s31 \* Hex"#, "1F"),
+        ] {
+            assert_eq!(
+                computed_preserved_listnum_start_result(instruction).as_deref(),
+                Some(result),
+                "{instruction}"
+            );
+        }
+
+        for instruction in [
+            "LISTNUM",
+            "LISTNUM NumberDefault",
+            "AUTONUM",
+            r#"LISTNUM CustomList \s 4"#,
+            r#"LISTNUM NumberDefault \l 2 \s 4"#,
+            r#"LISTNUM NumberDefault \s 4 \s 5"#,
+            r#"LISTNUM NumberDefault \s -1"#,
+            r#"LISTNUM NumberDefault \s"#,
+            r#"LISTNUM NumberDefault \s 4 \x"#,
+        ] {
+            assert_eq!(
+                computed_preserved_listnum_start_result(instruction),
                 None,
                 "{instruction}"
             );
