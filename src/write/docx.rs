@@ -14,10 +14,13 @@
 //!   relationship + `<w:hyperlink r:id>`; internal hyperlink →
 //!   `<w:hyperlink w:anchor>`.
 
+use std::collections::HashMap;
+
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::annotation::{filename_field_syntax, merge_field_syntax};
 use crate::docx::{
+    computed_preserved_note_local_ref_result, preserved_note_local_ref_target,
     supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
     supports_context_free_fill_in_field_syntax, supports_context_free_formula_field_syntax,
     supports_context_free_if_compare_field_syntax, supports_preserved_document_info_field_syntax,
@@ -3068,7 +3071,55 @@ fn source_note_payload_is_supported(note: &AuthoredNote, payload: &NoteWritePayl
         Block::Chart(chart) => crate::docx::note_write_chart_supported(chart),
         Block::PageBreak => true,
         _ => false,
-    })
+    }) && source_note_local_ref_fields_are_supported(&payload.blocks)
+}
+
+fn source_note_local_ref_fields_are_supported(blocks: &[Block]) -> bool {
+    let mut bookmarks: HashMap<String, Option<String>> = HashMap::new();
+    visit_source_note_runs(blocks, &mut |run| {
+        let Some(name) = run.bookmark.as_deref() else {
+            return;
+        };
+        let target =
+            (!run.text.is_empty() && run.image.is_none() && matches!(&run.field, FieldRole::None))
+                .then(|| run.text.clone());
+        bookmarks
+            .entry(name.to_string())
+            .and_modify(|text| *text = None)
+            .or_insert(target);
+    });
+    let bookmarks = bookmarks
+        .into_iter()
+        .filter_map(|(name, text)| text.map(|text| (name, text)))
+        .collect::<HashMap<_, _>>();
+
+    let mut supported = true;
+    visit_source_note_runs(blocks, &mut |run| {
+        let FieldRole::Simple { instruction } = &run.field else {
+            return;
+        };
+        if FieldKind::from_instruction(instruction) == FieldKind::Ref
+            && computed_preserved_note_local_ref_result(instruction, &bookmarks).as_deref()
+                != Some(run.text.as_str())
+        {
+            supported = false;
+        }
+    });
+    supported
+}
+
+fn visit_source_note_runs(blocks: &[Block], visit: &mut impl FnMut(&crate::model::Run)) {
+    for block in blocks {
+        match block {
+            Block::Paragraph(paragraph) => paragraph.runs.iter().for_each(&mut *visit),
+            Block::Table(table) => {
+                for cell in table.rows.iter().flat_map(|row| &row.cells) {
+                    visit_source_note_runs(&cell.blocks, visit);
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 fn source_note_paragraph_is_supported(paragraph: &Paragraph) -> bool {
@@ -3161,6 +3212,10 @@ fn source_note_field_is_supported(run: &crate::model::Run) -> bool {
                 FieldKind::DocumentStructure(kind) if kind == "REVNUM" => {
                     run.field_unsupported_reason.is_none()
                         && supports_revision_number_field_syntax(instruction)
+                }
+                FieldKind::Ref => {
+                    run.field_unsupported_reason.is_none()
+                        && preserved_note_local_ref_target(instruction).is_some()
                 }
                 FieldKind::Compatibility(_)
                 | FieldKind::InsertedContent(_)
@@ -5336,6 +5391,7 @@ mod tests {
             r#"DOCPROPERTY "Client Name" \* Caps"#,
             r#"TITLE \* Upper"#,
             r#"REVNUM \* Caps"#,
+            r#"REF LocalTarget \h \! \* Caps"#,
         ] {
             assert!(source_note_field_is_supported(&marker(instruction)));
         }
@@ -5357,6 +5413,8 @@ mod tests {
         dirty_document_info.field_dirty = true;
         let mut dirty_revision_number = marker("REVNUM");
         dirty_revision_number.field_dirty = true;
+        let mut dirty_local_ref = marker("REF LocalTarget");
+        dirty_local_ref.field_dirty = true;
 
         let mut dirty = cached("PRIVATE legacy-data");
         dirty.field_dirty = true;
@@ -5386,6 +5444,7 @@ mod tests {
             dirty_display,
             dirty_document_info,
             dirty_revision_number,
+            dirty_local_ref,
             malformed,
             malformed_merge,
             malformed_filename,
@@ -5415,6 +5474,11 @@ mod tests {
             marker(r#"DATE \@ "yyyy-MM-dd""#),
             marker("USERNAME"),
             marker(r#"REVNUM \x"#),
+            marker(r#"REF LocalTarget \p"#),
+            marker(r#"REF LocalTarget \n"#),
+            marker(r#"REF LocalTarget \f"#),
+            marker(r#"REF LocalTarget \d ".""#),
+            marker(r#"REF LocalTarget \x"#),
             marker(r#"DOCPROPERTY "Broken Name"#),
             marker(r#"MACROBUTTON RunReport "Run""#),
             marker(r#"INDEX \e " - ""#),
@@ -5432,6 +5496,7 @@ mod tests {
             cached(r#"ADVANCE \r2"#),
             cached("DOCPROPERTY Subject"),
             cached("REVNUM"),
+            cached("REF LocalTarget"),
             Run {
                 field: FieldRole::Simple {
                     instruction: "CUSTOM literal payload".to_string(),
@@ -5464,6 +5529,66 @@ mod tests {
             ..Paragraph::default()
         };
         assert!(!source_note_paragraph_is_supported(&split_result));
+    }
+
+    #[test]
+    fn source_note_local_ref_fields_require_one_stable_same_payload_target() {
+        let target = Run {
+            text: "alpha launch".to_string(),
+            bookmark: Some("LocalTarget".to_string()),
+            ..Run::default()
+        };
+        let field = Run {
+            text: "Alpha Launch".to_string(),
+            field: FieldRole::Simple {
+                instruction: r#"REF LocalTarget \* Caps"#.to_string(),
+            },
+            ..Run::default()
+        };
+        let supported = |runs: Vec<Run>| {
+            let paragraph = Paragraph {
+                runs,
+                ..Paragraph::default()
+            };
+            let text = paragraph.text();
+            let note = AuthoredNote {
+                kind: NoteKind::Footnote,
+                text: text.clone(),
+            };
+            let payload = NoteWritePayload {
+                kind: NoteKind::Footnote,
+                text,
+                blocks: vec![Block::Paragraph(paragraph)],
+                pagination: vec![PaginationHint::default()],
+                line_spacing: vec![None],
+                tab_stops: vec![Vec::new()],
+                column_break_offsets: vec![Vec::new()],
+                table_pagination: vec![None],
+            };
+            source_note_payload_is_supported(&note, &payload)
+        };
+
+        assert!(supported(vec![target.clone(), field.clone()]));
+        assert!(!supported(vec![field.clone()]));
+        assert!(!supported(vec![
+            target.clone(),
+            target.clone(),
+            field.clone(),
+        ]));
+
+        let mut mismatched = field.clone();
+        mismatched.text = "Wrong Result".to_string();
+        assert!(!supported(vec![target.clone(), mismatched]));
+
+        let mut field_backed_target = target.clone();
+        field_backed_target.field = FieldRole::Simple {
+            instruction: r#"QUOTE "alpha launch""#.to_string(),
+        };
+        assert!(!supported(vec![field_backed_target, field.clone()]));
+
+        let mut empty_target = target;
+        empty_target.text.clear();
+        assert!(!supported(vec![empty_target, field]));
     }
 
     fn written_paragraph_with_text<'a>(xml: &'a str, text: &str) -> &'a str {

@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 
 use rwml::{
     Block, Chart, ChartKind, ChartSeries, DocModel, Document, FieldEvaluationReason,
-    FieldEvaluationReasonCount, FieldKind,
+    FieldEvaluationReasonCount, FieldKind, FieldRole,
 };
 
 fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
@@ -696,6 +696,35 @@ fn revision_number_field_note_docx() -> Vec<u8> {
     ])
 }
 
+fn local_ref_field_note_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY A</w:t></w:r><w:r><w:footnoteReference w:id="431"/></w:r><w:r><w:t> BODY B</w:t></w:r><w:r><w:endnoteReference w:id="441"/></w:r><w:r><w:t> BODY C</w:t></w:r><w:r><w:footnoteReference w:id="432"/></w:r><w:r><w:t> BODY D</w:t></w:r><w:r><w:endnoteReference w:id="442"/></w:r><w:r><w:t> BODY E</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="431"><w:p><w:bookmarkStart w:id="51" w:name="FootLocal"/><w:r><w:rPr><w:i/></w:rPr><w:t>alpha launch</w:t></w:r><w:bookmarkEnd w:id="51"/><w:r><w:t xml:space="preserve"> | FOOT REF BEFORE </w:t></w:r><w:fldSimple w:instr=" REF FootLocal \h \* Caps "><w:r><w:rPr><w:b/></w:rPr><w:t>STALE FOOT REF</w:t></w:r></w:fldSimple><w:r><w:t> FOOT REF AFTER</w:t></w:r></w:p></w:footnote><w:footnote w:id="432"><w:p><w:r><w:t xml:space="preserve">CROSS REF BEFORE </w:t></w:r><w:fldSimple w:instr=" REF FootLocal \* Upper "><w:r><w:t>STALE CROSS REF</w:t></w:r></w:fldSimple><w:r><w:t> CROSS REF AFTER</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r##"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="441"><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="3000"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:tbl><w:tblPr/><w:tblGrid><w:gridCol w:w="2400"/></w:tblGrid><w:tr><w:tc><w:tcPr/><w:p><w:bookmarkStart w:id="61" w:name="EndAmount"/><w:r><w:t>1250.5</w:t></w:r><w:bookmarkEnd w:id="61"/><w:r><w:t xml:space="preserve"> | END REF BEFORE </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> REF EndAmount \# &quot;$#,##0.00&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:rPr><w:i/></w:rPr><w:t>STALE END REF</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> END REF AFTER</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:endnote><w:endnote w:id="442"><w:p><w:bookmarkStart w:id="71" w:name="MultiTarget"/><w:r><w:t>multi</w:t></w:r><w:r><w:t xml:space="preserve"> target</w:t></w:r><w:bookmarkEnd w:id="71"/><w:r><w:t xml:space="preserve"> | MULTI REF BEFORE </w:t></w:r><w:fldSimple w:instr=" REF MultiTarget \* Upper "><w:r><w:t>STALE MULTI REF</w:t></w:r></w:fldSimple><w:r><w:t> MULTI REF AFTER</w:t></w:r></w:p></w:endnote></w:endnotes>"##,
+        ),
+    ])
+}
+
 fn raster_note_docx() -> Vec<u8> {
     let png = tiny_png();
     let body_image = source_inline_drawing("rBodyImage", "Body image", 0);
@@ -828,6 +857,29 @@ fn note_with_marker<'a>(xml: &'a str, item: &str, marker: &str) -> &'a str {
             .unwrap_or_else(|| panic!("missing {item} end for {marker:?}: {xml}"))
         + end_marker.len();
     &xml[start..end]
+}
+
+fn clear_simple_field_ownership(block: &mut Block) {
+    match block {
+        Block::Paragraph(paragraph) => {
+            for run in &mut paragraph.runs {
+                if matches!(run.field, FieldRole::Simple { .. }) {
+                    run.field = FieldRole::Other;
+                }
+            }
+        }
+        Block::Table(table) => {
+            for block in table
+                .rows
+                .iter_mut()
+                .flat_map(|row| &mut row.cells)
+                .flat_map(|cell| &mut cell.blocks)
+            {
+                clear_simple_field_ownership(block);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[test]
@@ -3018,6 +3070,143 @@ fn opened_docx_note_revision_number_fields_keep_results_and_instructions() {
 
     let standalone = unzip_parts(&standalone_bytes);
     assert!(standalone.contains_key("docProps/core.xml"));
+    assert!(!standalone.contains_key("word/footnotes.xml"));
+    assert!(!standalone.contains_key("word/endnotes.xml"));
+    assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!standalone.contains_key("word/_rels/endnotes.xml.rels"));
+}
+
+#[test]
+fn opened_docx_note_local_ref_fields_keep_results_instructions_and_targets() {
+    let document =
+        Document::open(&local_ref_field_note_docx()).expect("local-ref field notes open");
+    assert_eq!(document.notes().len(), 4, "source note records missing");
+    assert_eq!(document.report().features.fields, 4);
+    let source_fields = document.fields();
+    assert_eq!(source_fields.len(), 4);
+    assert_eq!(
+        source_fields[0].computed_result.as_deref(),
+        Some("Alpha Launch")
+    );
+    assert_eq!(
+        source_fields[1].computed_result.as_deref(),
+        Some("ALPHA LAUNCH")
+    );
+    assert_eq!(
+        source_fields[2].computed_result.as_deref(),
+        Some("$1,250.50")
+    );
+    assert_eq!(
+        source_fields[3].computed_result.as_deref(),
+        Some("MULTI TARGET")
+    );
+
+    let source_model = document.model();
+    let standalone_bytes = rwml::write_docx(&source_model);
+    let normalized_model = Document::open(&standalone_bytes)
+        .expect("standalone local-ref normalization reopens")
+        .model();
+    let converted = document.to_docx();
+    assert_eq!(converted, document.to_docx(), "conversion is deterministic");
+    assert_eq!(document.model(), source_model);
+
+    let parts = unzip_parts(&converted);
+    let footnotes = std::str::from_utf8(&parts["word/footnotes.xml"]).unwrap();
+    let endnotes = std::str::from_utf8(&parts["word/endnotes.xml"]).unwrap();
+    assert!(!parts.contains_key("word/_rels/footnotes.xml.rels"));
+    assert!(!parts.contains_key("word/_rels/endnotes.xml.rels"));
+    assert!(!footnotes.contains("xmlns:r="), "{footnotes}");
+    assert!(!endnotes.contains("xmlns:r="), "{endnotes}");
+
+    let footnote = note_with_marker(footnotes, "footnote", "FOOT REF BEFORE");
+    let endnote = note_with_marker(endnotes, "endnote", "END REF BEFORE");
+    let rejected_cross = note_with_marker(footnotes, "footnote", "CROSS REF BEFORE");
+    let rejected_multi = note_with_marker(endnotes, "endnote", "MULTI REF BEFORE");
+
+    assert_eq!(footnote.matches("<w:fldSimple").count(), 1, "{footnote}");
+    assert!(
+        footnote.contains(r#"<w:bookmarkStart w:id="0" w:name="FootLocal"/>"#)
+            && footnote.contains(r#"<w:bookmarkEnd w:id="0"/>"#)
+            && footnote.contains(r#"<w:fldSimple w:instr=" REF FootLocal \h \* Caps ">"#)
+            && footnote.contains("<w:b/>")
+            && footnote.contains("Alpha Launch")
+            && footnote.contains("FOOT REF BEFORE ")
+            && footnote.contains(" FOOT REF AFTER"),
+        "top-level local REF missing: {footnote}"
+    );
+    assert!(!footnote.contains("STALE FOOT REF"), "{footnote}");
+    assert!(!footnote.contains("w:dirty="), "{footnote}");
+
+    assert_eq!(endnote.matches("<w:tbl>").count(), 2, "{endnote}");
+    assert_eq!(endnote.matches("<w:fldSimple").count(), 1, "{endnote}");
+    assert!(
+        endnote.contains(r#"<w:bookmarkStart w:id="1" w:name="EndAmount"/>"#)
+            && endnote.contains(r#"<w:bookmarkEnd w:id="1"/>"#)
+            && endnote
+                .contains(r#"<w:fldSimple w:instr=" REF EndAmount \# &quot;$#,##0.00&quot; ">"#)
+            && endnote.contains("<w:i/>")
+            && endnote.contains("$1,250.50")
+            && endnote.contains("END REF BEFORE ")
+            && endnote.contains(" END REF AFTER"),
+        "nested local REF missing: {endnote}"
+    );
+    assert!(!endnote.contains("STALE END REF"), "{endnote}");
+    assert!(!endnote.contains("<w:fldChar"), "{endnote}");
+    assert!(!endnote.contains("w:dirty="), "{endnote}");
+
+    for rejected in [rejected_cross, rejected_multi] {
+        assert!(!rejected.contains("<w:fldSimple"), "{rejected}");
+        assert!(!rejected.contains("<w:fldChar"), "{rejected}");
+        assert!(!rejected.contains("<w:bookmark"), "{rejected}");
+        assert_eq!(rejected.matches("<w:p>").count(), 1, "{rejected}");
+    }
+    assert!(!footnotes.contains("STALE CROSS REF"));
+    assert!(!endnotes.contains("STALE MULTI REF"));
+    assert!(!footnotes.contains(r#"w:name="MultiTarget""#));
+    assert!(!endnotes.contains(r#"w:name="MultiTarget""#));
+
+    let reopened = Document::open(&converted).expect("converted local-ref notes reopen");
+    assert_eq!(reopened.report().features.fields, 2);
+    assert!(reopened
+        .report()
+        .features
+        .unsupported_field_reasons
+        .is_empty());
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Ref);
+    assert_eq!(fields[0].instruction, r#"REF FootLocal \h \* Caps"#);
+    assert_eq!(fields[0].result, "Alpha Launch");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Alpha Launch"));
+    assert_eq!(fields[1].kind, FieldKind::Ref);
+    assert_eq!(fields[1].instruction, r##"REF EndAmount \# "$#,##0.00""##);
+    assert_eq!(fields[1].result, "$1,250.50");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("$1,250.50"));
+
+    let reopened_model = reopened.model();
+    assert_eq!(reopened_model.blocks.len(), normalized_model.blocks.len());
+    for index in [0, 1, 3] {
+        let mut normalized_ownership = reopened_model.blocks[index].clone();
+        clear_simple_field_ownership(&mut normalized_ownership);
+        assert_eq!(normalized_ownership, normalized_model.blocks[index]);
+    }
+    let Block::Paragraph(rejected_cross) = &reopened_model.blocks[2] else {
+        panic!("cross-note REF fallback paragraph")
+    };
+    assert_eq!(
+        rejected_cross.text(),
+        "CROSS REF BEFORE ALPHA LAUNCH CROSS REF AFTER"
+    );
+    let Block::Paragraph(rejected_multi) = &reopened_model.blocks[4] else {
+        panic!("multi-run REF fallback paragraph")
+    };
+    assert_eq!(
+        rejected_multi.text(),
+        "multi target | MULTI REF BEFORE MULTI TARGET MULTI REF AFTER"
+    );
+    assert_eq!(reopened.to_docx(), converted);
+
+    let standalone = unzip_parts(&standalone_bytes);
     assert!(!standalone.contains_key("word/footnotes.xml"));
     assert!(!standalone.contains_key("word/endnotes.xml"));
     assert!(!standalone.contains_key("word/_rels/footnotes.xml.rels"));

@@ -186,6 +186,17 @@ pub(crate) fn supports_revision_number_field_syntax(instruction: &str) -> bool {
     fields::supports_revision_number_field_syntax(instruction)
 }
 
+pub(crate) fn preserved_note_local_ref_target(instruction: &str) -> Option<String> {
+    fields::preserved_note_local_ref_target(instruction)
+}
+
+pub(crate) fn computed_preserved_note_local_ref_result(
+    instruction: &str,
+    bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    fields::computed_preserved_note_local_ref_result(instruction, bookmarks)
+}
+
 pub(crate) fn supports_formula_field_syntax(instruction: &str) -> bool {
     fields::supports_formula_field_syntax(instruction)
 }
@@ -482,6 +493,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         document_variables: &document_variables,
         extended_properties: &extended_properties,
         file_size_bytes: Some(bytes.len()),
+        preserve_note_local_fields: false,
         ref_field_cursor: Default::default(),
         page_field_cursor: Default::default(),
         last_page_field_unsupported_display_format: Default::default(),
@@ -1603,6 +1615,7 @@ fn read_hf_parts(
             document_variables: properties.variables,
             extended_properties: properties.extended,
             file_size_bytes: properties.file_size_bytes,
+            preserve_note_local_fields: false,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
             last_page_field_unsupported_display_format: Default::default(),
@@ -1989,6 +2002,7 @@ fn read_notes(
         document_variables: properties.variables,
         extended_properties: properties.extended,
         file_size_bytes: properties.file_size_bytes,
+        preserve_note_local_fields: true,
         ref_field_cursor: Default::default(),
         page_field_cursor: Default::default(),
         last_page_field_unsupported_display_format: Default::default(),

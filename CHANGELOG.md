@@ -38,6 +38,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   split-result cases still trigger note-local plain-text fallback. This does not
   add revision tracking, field updates, relationships, or layout behavior.
 - Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
+  parser-validated, non-dirty explicit bookmark-text `REF` fields with one modeled
+  result run in exact real footnote and endnote payloads when the target is exactly
+  one stable, nonempty, non-field run in the same note. Neutral hyperlink/lock
+  switches, supported text and integer number formats, numeric pictures, target
+  bookmarks, source order, and modeled formatting survive at the top level and
+  through recursively nested table cells; one-result-run complex source fields
+  normalize to non-dirty `w:fldSimple`. Note-mark, relative-position, paragraph/
+  full/relative-context numbering, sequence-separator, cross-note, missing, empty,
+  multi-run, field-backed, malformed, dirty, mismatched-result, or split-result
+  cases still trigger note-local plain-text fallback. This does not add global
+  bookmark lookup, field updates, relationships, or layout behavior.
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now retains
   context-free, non-dirty `EQ` and `ADVANCE` fields with one modeled result run in
   exact real footnote and endnote payloads. Supported EQ expressions retain their
   normalized instructions, deterministic plain-text approximations, source order,

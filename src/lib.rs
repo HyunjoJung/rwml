@@ -1187,6 +1187,16 @@ impl Document {
     /// formatting are retained. Missing, empty, trim-unstable, malformed, dirty,
     /// or split-result cases remain excluded. This does not add revision tracking,
     /// field updates, relationships, or layout behavior.
+    /// Parser-validated, non-dirty explicit bookmark-text `REF` fields with one
+    /// modeled result run likewise survive when the target is exactly one stable,
+    /// nonempty, non-field run in the same note payload and the modeled result
+    /// matches a fresh evaluation of that text. Neutral hyperlink/lock switches,
+    /// supported text and integer number formats, numeric pictures, target
+    /// bookmarks, and modeled formatting are retained. Note-mark, relative-
+    /// position, paragraph/full/relative-context numbering, sequence-separator,
+    /// cross-note, missing, empty, multi-run, field-backed, malformed, dirty,
+    /// mismatched-result, or split-result cases remain excluded. This does not add
+    /// global bookmark lookup, field updates, relationships, or layout behavior.
     /// Complete nonempty extracted PNG, JPEG, GIF, BMP, TIFF, and WebP inline
     /// runs also retain globally unique media parts and relationships owned by
     /// the corresponding note part, including through nested tables and under

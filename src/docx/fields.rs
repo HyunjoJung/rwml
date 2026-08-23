@@ -96,11 +96,11 @@ pub(crate) use self::page_ref::{
     page_ref_context_with_properties, supports_page_field_syntax, PageRefContext, PageRefPosition,
 };
 pub(crate) use self::reference::{
-    computed_direct_bookmark_ref_result, computed_ref_result,
-    is_direct_bookmark_ref_field_instruction, is_ref_position_field_instruction,
-    ref_number_context, ref_position_context, ref_targets, ref_targets_with_note_context,
-    ref_targets_with_properties, RefFieldPosition, RefNumberContext, RefPositionContext,
-    RefResultContext,
+    computed_direct_bookmark_ref_result, computed_preserved_note_local_ref_result,
+    computed_ref_result, is_direct_bookmark_ref_field_instruction,
+    is_ref_position_field_instruction, preserved_note_local_ref_target, ref_number_context,
+    ref_position_context, ref_targets, ref_targets_with_note_context, ref_targets_with_properties,
+    RefFieldPosition, RefNumberContext, RefPositionContext, RefResultContext,
 };
 use self::reference::{
     computed_ref_instruction_result, direct_bookmark_ref_instruction, ref_instruction,
@@ -2827,21 +2827,21 @@ mod tests {
         cardinal_page_number_text, computed_action_result, computed_ask_result,
         computed_display_result, computed_dynamic_result, computed_listnum_result,
         computed_numbering_result, computed_preserved_document_info_result,
-        computed_preserved_revision_number_result, computed_reference_index_result,
-        computed_sequence_result, computed_set_result, computed_toc_entry_result,
-        direct_bookmark_ref_instruction, document_info_instruction, format_page_number,
-        note_ref_context, note_ref_instruction, ordinal_page_number_text, page_ref_context,
-        page_ref_instruction, ref_instruction, ref_position_context, ref_targets,
-        seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
-        supports_compare_field_syntax, supports_computed_symbol_field_syntax,
-        supports_context_free_display_field_syntax, supports_context_free_fill_in_field_syntax,
-        supports_context_free_formula_field_syntax, supports_context_free_if_compare_field_syntax,
-        supports_formula_field_syntax, supports_if_field_syntax,
-        supports_merge_control_field_syntax, supports_preserved_document_info_field_syntax,
-        supports_prompt_field_syntax, supports_reference_index_marker_syntax,
-        supports_revision_number_field_syntax, supports_sequence_field_syntax,
-        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
-        PageNumberFormat, TocEntrySource,
+        computed_preserved_note_local_ref_result, computed_preserved_revision_number_result,
+        computed_reference_index_result, computed_sequence_result, computed_set_result,
+        computed_toc_entry_result, direct_bookmark_ref_instruction, document_info_instruction,
+        format_page_number, note_ref_context, note_ref_instruction, ordinal_page_number_text,
+        page_ref_context, page_ref_instruction, preserved_note_local_ref_target, ref_instruction,
+        ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
+        supports_action_field_syntax, supports_compare_field_syntax,
+        supports_computed_symbol_field_syntax, supports_context_free_display_field_syntax,
+        supports_context_free_fill_in_field_syntax, supports_context_free_formula_field_syntax,
+        supports_context_free_if_compare_field_syntax, supports_formula_field_syntax,
+        supports_if_field_syntax, supports_merge_control_field_syntax,
+        supports_preserved_document_info_field_syntax, supports_prompt_field_syntax,
+        supports_reference_index_marker_syntax, supports_revision_number_field_syntax,
+        supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
+        toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
@@ -3394,6 +3394,61 @@ mod tests {
                 None
             );
         }
+    }
+
+    #[test]
+    fn preserved_note_local_ref_fields_use_only_bookmark_text() {
+        let bookmarks = HashMap::from([
+            ("FootLocal".to_string(), "alpha launch".to_string()),
+            ("Count".to_string(), "12".to_string()),
+            ("Amount".to_string(), "1250.5".to_string()),
+        ]);
+        for (instruction, target, expected) in [
+            ("REF FootLocal", "FootLocal", "alpha launch"),
+            (
+                r#"REF FootLocal \h \! \* Caps"#,
+                "FootLocal",
+                "Alpha Launch",
+            ),
+            (r#"REF Count \* ROMAN"#, "Count", "XII"),
+            (r##"REF Amount \# "$#,##0.00""##, "Amount", "$1,250.50"),
+        ] {
+            assert_eq!(
+                preserved_note_local_ref_target(instruction).as_deref(),
+                Some(target),
+                "{instruction}"
+            );
+            assert_eq!(
+                computed_preserved_note_local_ref_result(instruction, &bookmarks).as_deref(),
+                Some(expected),
+                "{instruction}"
+            );
+        }
+
+        for instruction in [
+            r#"REF FootLocal \f"#,
+            r#"REF FootLocal \p"#,
+            r#"REF FootLocal \n"#,
+            r#"REF FootLocal \w"#,
+            r#"REF FootLocal \r"#,
+            r#"REF FootLocal \d ".""#,
+            r#"REF FootLocal \x"#,
+            "FootLocal",
+        ] {
+            assert_eq!(preserved_note_local_ref_target(instruction), None);
+            assert_eq!(
+                computed_preserved_note_local_ref_result(instruction, &bookmarks),
+                None
+            );
+        }
+        assert_eq!(
+            computed_preserved_note_local_ref_result("REF Missing", &bookmarks),
+            None
+        );
+        assert_eq!(
+            computed_preserved_note_local_ref_result(r#"REF FootLocal \# "0.00""#, &bookmarks,),
+            None
+        );
     }
 
     #[test]

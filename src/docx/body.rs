@@ -153,6 +153,7 @@ pub(crate) struct Ctx<'a> {
     pub document_variables: &'a HashMap<String, String>,
     pub extended_properties: &'a HashMap<String, String>,
     pub file_size_bytes: Option<usize>,
+    pub preserve_note_local_fields: bool,
     pub ref_field_cursor: std::cell::RefCell<usize>,
     pub page_field_cursor: std::cell::RefCell<usize>,
     pub last_page_field_unsupported_display_format: std::cell::RefCell<Option<bool>>,
@@ -3151,6 +3152,12 @@ fn preserves_computed_field_instruction(instruction: &str, ctx: &Ctx<'_>) -> boo
             ctx.core_properties,
         )
         .is_some()
+        || (ctx.preserve_note_local_fields
+            && super::fields::computed_preserved_note_local_ref_result(
+                instruction,
+                ctx.ref_targets,
+            )
+            .is_some())
 }
 
 fn preserves_context_free_computed_field_instruction(instruction: &str) -> bool {
@@ -8607,6 +8614,7 @@ mod tests {
             document_variables: &document_variables,
             extended_properties: &extended_properties,
             file_size_bytes: None,
+            preserve_note_local_fields: false,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
             last_page_field_unsupported_display_format: Default::default(),
@@ -10999,6 +11007,7 @@ mod tests {
             document_variables: &document_variables,
             extended_properties: &extended_properties,
             file_size_bytes: None,
+            preserve_note_local_fields: false,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
             last_page_field_unsupported_display_format: Default::default(),
@@ -11080,6 +11089,7 @@ mod tests {
             document_variables: &document_variables,
             extended_properties: &extended_properties,
             file_size_bytes: None,
+            preserve_note_local_fields: false,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
             last_page_field_unsupported_display_format: Default::default(),
@@ -11174,6 +11184,7 @@ mod tests {
             document_variables: &document_variables,
             extended_properties: &extended_properties,
             file_size_bytes: None,
+            preserve_note_local_fields: false,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
             last_page_field_unsupported_display_format: Default::default(),
