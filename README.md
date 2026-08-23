@@ -494,7 +494,11 @@ retain the same rules through a section-aligned source-only bridge. Those same
 selected running surfaces retain effective `keepNext`, `keepLines`, and widow-off
 state on direct top-level paragraphs and direct paragraphs in surviving cells of
 top-level tables, plus effective no-split state for aligned top-level table rows,
-through an all-or-nothing section/block/tree-aligned bridge. Nested-table
+through an all-or-nothing section/block/tree-aligned bridge. Fresh legacy
+conversion emits an exact HeaderFooter source range only in its generated
+running part when that range populated a selected section slot; it validates and
+remaps every body sidecar before removing the duplicate from `word/document.xml`.
+Unselected running stories retain their flattened fallback. Nested-table
 descendants and note paragraph layout properties remain outside these layout-
 hint paths, while nested running-table descendants remain outside pagination,
 tab, and line-rule conversion.
@@ -1030,11 +1034,12 @@ text into real references and note parts only when nonempty
 markers match one-to-one at ordinary top-level paragraph offsets. Reopened DOCX
 inputs retain that normalized subset through the same exact private block/id/
 offset contract for stable fresh reconversion. Any missing, truncated, count-,
-ID-, offset-, or context-mismatch keeps the complete historical flattened
-fallback; standalone `write_docx` and the public model are unchanged. Rich note
-formatting, tables, media, source IDs and numbering, separators, note tabs and
-absolute line rules, custom marks, table-cell/manual-break anchors, and page-
-bottom placement remain outside this normalized path.
+ID-, offset-, or context-mismatch keeps the complete historical note fallback;
+the independently promoted running ranges described below may still be removed
+from the generated body. Standalone `write_docx` and the public model are
+unchanged. Rich note formatting, tables, media, source IDs and numbering,
+separators, note tabs and absolute line rules, custom marks, table-cell/manual-
+break anchors, and page-bottom placement remain outside this normalized path.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the
@@ -1252,6 +1257,13 @@ code points.
   `DocSetup` mirrors the first recovered default, even-page, and first-page
   legacy header/footer variants when story indexes are available, and falls back
   to a default running header for unsplit recovered header/footer text.
+  During legacy-backed `Document::to_docx()`, an exact nonempty HeaderFooter
+  region copied into one of those selected running slots is emitted only in its
+  generated header/footer part, not duplicated in `word/document.xml`. The
+  conversion validates and remaps every block-aligned source hint before removing
+  those ranges. Malformed, excess, duplicate-slot, or otherwise unselected
+  HeaderFooter stories remain in the flattened body fallback, as do unsupported
+  footnote, annotation, endnote, and text-box regions.
   Valid `PlcfSed` SED records also preserve each section's SEPX page size,
   orientation, nonnegative left/right/top/bottom margins, equal-width
   `sprmSCcolumns` counts from 1 through 44, strict `sprmSFTitlePage` first-page
@@ -1311,9 +1323,10 @@ code points.
   display-number effects on physical pagination, and page-number footer
   inference remain outside this bounded reader path.
   The shared public legacy model intentionally retains non-body regions in the
-  flat block stream even when the private exact normalized-note conversion
-  bridge activates; exact text-box shape promotion and rich or arbitrary note
-  promotion remain incomplete.
+  flat block stream even when private running-story projection or exact
+  normalized-note conversion activates; standalone model writing therefore also
+  retains that flat stream. Exact text-box shape promotion and rich or arbitrary
+  note promotion remain incomplete.
   `Document::report()` emits `LegacyDocFlattenedSubdocuments` when FIB
   subdocument counts show that promotion is still incomplete.
 - *`.docx` read only:* an original-view `DocModel` (accepted-current is the only

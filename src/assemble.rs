@@ -82,6 +82,8 @@ pub(crate) struct BuildInputs<'a> {
 
 pub(crate) struct LegacyBuildOutput {
     pub(crate) model: DocModel,
+    #[cfg(feature = "docx")]
+    pub(crate) promoted_running_block_ranges: Vec<(usize, usize)>,
     pub(crate) pagination_hints: Vec<PaginationHint>,
     pub(crate) line_spacing_hints: Vec<Option<LineSpacingHint>>,
     #[cfg(any(feature = "docx", feature = "render"))]
@@ -211,7 +213,10 @@ pub(crate) fn build_model_with_render_hints(
         overlay_aligned_nonempty(&table_cell_tab_stops, &note_table_cell_tab_stops);
     let mut blocks = blocks;
     let stats = compute_stats(&blocks);
-    let setup = legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
+    let (setup, promoted_running_block_ranges) =
+        legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
+    #[cfg(not(feature = "docx"))]
+    let _ = promoted_running_block_ranges;
     let (section_column_gap_pt, final_section_column_gap_pt) =
         legacy_section_column_gap_hints(&blocks, &section_spans);
     let (section_column_layouts, final_section_column_layout) =
@@ -234,6 +239,8 @@ pub(crate) fn build_model_with_render_hints(
             custom_xml_items: Vec::new(),
             setup,
         },
+        #[cfg(feature = "docx")]
+        promoted_running_block_ranges,
         pagination_hints,
         line_spacing_hints,
         #[cfg(any(feature = "docx", feature = "render"))]
@@ -357,7 +364,7 @@ fn legacy_doc_setup_from_regions(
     blocks: &mut [Block],
     regions: &[SourceRegion],
     section_spans: &[LegacySectionSpan],
-) -> DocSetup {
+) -> (DocSetup, Vec<(usize, usize)>) {
     let section_count = blocks
         .iter()
         .filter(|block| matches!(block, Block::SectionBreak(_)))
@@ -371,7 +378,7 @@ fn legacy_doc_setup_from_regions(
             section_spans,
         );
     }
-    let mut setup = legacy_doc_flat_setup_from_regions(blocks, regions);
+    let (mut setup, promoted_ranges) = legacy_doc_flat_setup_from_regions(blocks, regions);
     if let [span] = section_spans {
         setup.page = span.page;
         setup.columns = span.columns;
@@ -381,11 +388,15 @@ fn legacy_doc_setup_from_regions(
         setup.text_direction = span.text_direction;
         setup.doc_grid = span.doc_grid;
     }
-    setup
+    (setup, promoted_ranges)
 }
 
-fn legacy_doc_flat_setup_from_regions(blocks: &[Block], regions: &[SourceRegion]) -> DocSetup {
+fn legacy_doc_flat_setup_from_regions(
+    blocks: &[Block],
+    regions: &[SourceRegion],
+) -> (DocSetup, Vec<(usize, usize)>) {
     let mut setup = DocSetup::default();
+    let mut promoted_ranges = Vec::new();
     for region in regions.iter().filter(|region| {
         region.kind == SourceRegionKind::HeaderFooter && region.block_start < region.block_end
     }) {
@@ -395,10 +406,11 @@ fn legacy_doc_flat_setup_from_regions(blocks: &[Block], regions: &[SourceRegion]
             let slot = legacy_header_footer_setup_slot(&mut setup, region.source_story_index);
             if slot.is_empty() {
                 *slot = blocks[start..end].to_vec();
+                promoted_ranges.push((start, end));
             }
         }
     }
-    setup
+    (setup, promoted_ranges)
 }
 
 fn legacy_doc_section_setups_from_regions(
@@ -406,8 +418,9 @@ fn legacy_doc_section_setups_from_regions(
     regions: &[SourceRegion],
     section_count: usize,
     section_spans: &[LegacySectionSpan],
-) -> DocSetup {
+) -> (DocSetup, Vec<(usize, usize)>) {
     let mut section_setups = vec![SectionSetup::default(); section_count];
+    let mut promoted_ranges = Vec::new();
     for (setup, span) in section_setups.iter_mut().zip(section_spans) {
         setup.page = span.page;
         setup.columns = span.columns;
@@ -427,10 +440,15 @@ fn legacy_doc_section_setups_from_regions(
             continue;
         }
         if region.source_story_index.is_none() {
+            let mut promoted = false;
             for section_setup in &mut section_setups {
                 if section_setup.header.is_empty() {
                     section_setup.header = blocks[start..end].to_vec();
+                    promoted = true;
                 }
+            }
+            if promoted {
+                promoted_ranges.push((start, end));
             }
             continue;
         }
@@ -448,6 +466,7 @@ fn legacy_doc_section_setups_from_regions(
         };
         if slot.is_empty() {
             *slot = blocks[start..end].to_vec();
+            promoted_ranges.push((start, end));
         }
     }
 
@@ -467,7 +486,7 @@ fn legacy_doc_section_setups_from_regions(
     if let Some(final_section) = section_setups.last() {
         apply_legacy_section_setup_to_doc_setup(final_section, &mut setup);
     }
-    setup
+    (setup, promoted_ranges)
 }
 
 fn apply_legacy_section_setup_to_doc_setup(section: &SectionSetup, setup: &mut DocSetup) {

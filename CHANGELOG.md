@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Fresh legacy `Document::to_docx()` conversion now excludes a HeaderFooter
+  source region from `word/document.xml` only when assembly actually promoted
+  that exact nonempty block range into a selected section running slot. The
+  DOCX-only projection validates nonoverlapping exact region ranges and every
+  block-aligned writer sidecar before applying one shared keep mask, then remaps
+  later source regions and statistics. Valid single- and two-section running
+  stories no longer duplicate into the body; malformed/excess or second-section
+  stories left unselected by first-owner fallback remain flattened instead of
+  being dropped, and footnote, annotation, endnote, and text-box fallback content
+  retains source order. Public model extraction and standalone model writing are
+  unchanged.
 - Fresh `Document::to_docx()` conversion now preserves effective `keepNext`,
   `keepLines`, and widow-off state on direct top-level paragraphs and direct
   paragraphs in surviving cells of top-level tables across all six selected

@@ -567,6 +567,8 @@ struct DocState {
 fn doc_model_from_doc_state(state: &DocState) -> DocModel {
     let assemble::LegacyBuildOutput {
         model,
+        #[cfg(feature = "docx")]
+            promoted_running_block_ranges: _promoted_running_block_ranges,
         pagination_hints: _pagination_hints,
         line_spacing_hints: _line_spacing_hints,
         #[cfg(any(feature = "docx", feature = "render"))]
@@ -1053,7 +1055,11 @@ impl Document {
     /// aligned source-only hints. Those same selected running surfaces retain
     /// effective `keepNext`, `keepLines`, and widow-off state on direct top-level
     /// paragraphs and direct paragraphs in surviving cells of top-level tables,
-    /// plus effective no-split state for aligned top-level table rows. Opened
+    /// plus effective no-split state for aligned top-level table rows. Fresh
+    /// legacy conversion excludes an exact nonempty HeaderFooter source region
+    /// from the generated body only when assembly actually promoted that range
+    /// into a selected section running slot; unselected running stories and all
+    /// other unsupported subdocuments retain their flattened fallback. Opened
     /// legacy DOC inputs with exact nonempty
     /// `PlcffndRef`/`PlcfendRef` tables, one-to-one Main-story markers, and
     /// ordinary top-level paragraph anchors promote normalized footnote/endnote
@@ -1075,6 +1081,7 @@ impl Document {
         match &self.backend {
             Backend::Doc(state) => {
                 let mut assembled = legacy_build_output_from_doc_state(state);
+                legacy_project_promoted_running_surfaces(&mut assembled);
                 legacy_promote_exact_notes_for_fresh_conversion(state, &mut assembled);
                 write::to_docx_with_source_hints(
                     &assembled.model,
@@ -3503,6 +3510,139 @@ fn legacy_doc_notes_from_state(state: &DocState) -> Vec<Note> {
         attach_legacy_doc_endnote_marker_anchors(&mut notes, state);
     }
     notes
+}
+
+#[cfg(feature = "docx")]
+fn legacy_project_promoted_running_surfaces(assembled: &mut assemble::LegacyBuildOutput) -> bool {
+    if assembled.promoted_running_block_ranges.is_empty() {
+        return true;
+    }
+
+    let block_count = assembled.model.blocks.len();
+    let aligned = assembled.pagination_hints.len() == block_count
+        && assembled.line_spacing_hints.len() == block_count
+        && assembled.tab_stops.len() == block_count
+        && assembled.note_reference_anchors.len() == block_count
+        && assembled.column_break_offsets.len() == block_count
+        && assembled.section_column_gap_pt.len() == block_count
+        && assembled.section_column_layouts.len() == block_count
+        && assembled.section_column_separators.len() == block_count
+        && assembled.section_column_rtl.len() == block_count
+        && assembled.table_row_pagination.len() == block_count
+        && assembled.table_cell_pagination.len() == block_count
+        && assembled.table_cell_line_spacing.len() == block_count
+        && assembled.table_cell_tab_stops.len() == block_count;
+    #[cfg(feature = "render")]
+    let aligned = aligned
+        && assembled.render_tab_stops.len() == block_count
+        && assembled.render_table_cell_tab_stops.len() == block_count;
+    if !aligned {
+        return false;
+    }
+
+    let mut ranges = assembled.promoted_running_block_ranges.clone();
+    ranges.sort_unstable();
+    if ranges
+        .iter()
+        .any(|&(start, end)| start >= end || end > block_count)
+        || ranges.windows(2).any(|pair| pair[0].1 > pair[1].0)
+    {
+        return false;
+    }
+    if ranges.iter().any(|&(start, end)| {
+        !assembled.model.regions.iter().any(|region| {
+            region.kind == SourceRegionKind::HeaderFooter
+                && region.block_start == start
+                && region.block_end == end
+        })
+    }) {
+        return false;
+    }
+    let regions = &assembled.model.regions;
+    if regions
+        .iter()
+        .any(|region| region.block_start > region.block_end || region.block_end > block_count)
+        || regions.windows(2).any(|pair| {
+            pair[0].block_end > pair[1].block_start
+                || pair[0].text_start.saturating_add(pair[0].text_len) > pair[1].text_start
+        })
+    {
+        return false;
+    }
+
+    let mut removed = vec![false; block_count];
+    for &(start, end) in &ranges {
+        let Some(slots) = removed.get_mut(start..end) else {
+            return false;
+        };
+        if slots.iter().any(|slot| *slot) {
+            return false;
+        }
+        slots.fill(true);
+    }
+    for region in &assembled.model.regions {
+        let intersects = removed[region.block_start..region.block_end]
+            .iter()
+            .any(|slot| *slot);
+        let selected = region.kind == SourceRegionKind::HeaderFooter
+            && ranges
+                .binary_search(&(region.block_start, region.block_end))
+                .is_ok();
+        if intersects != selected {
+            return false;
+        }
+    }
+
+    let mut removed_prefix = vec![0usize; block_count.saturating_add(1)];
+    for (index, slot) in removed.iter().enumerate() {
+        removed_prefix[index + 1] = removed_prefix[index] + usize::from(*slot);
+    }
+    let mut text_start = 0usize;
+    let mut remapped_regions = Vec::with_capacity(assembled.model.regions.len());
+    for region in &assembled.model.regions {
+        if region.kind == SourceRegionKind::HeaderFooter
+            && ranges
+                .binary_search(&(region.block_start, region.block_end))
+                .is_ok()
+        {
+            continue;
+        }
+        let mut region = region.clone();
+        region.block_start -= removed_prefix[region.block_start];
+        region.block_end -= removed_prefix[region.block_end];
+        region.text_start = text_start;
+        text_start = text_start.saturating_add(region.text_len);
+        remapped_regions.push(region);
+    }
+
+    retain_legacy_conversion_slots(&mut assembled.model.blocks, &removed);
+    retain_legacy_conversion_slots(&mut assembled.pagination_hints, &removed);
+    retain_legacy_conversion_slots(&mut assembled.line_spacing_hints, &removed);
+    retain_legacy_conversion_slots(&mut assembled.tab_stops, &removed);
+    #[cfg(feature = "render")]
+    retain_legacy_conversion_slots(&mut assembled.render_tab_stops, &removed);
+    retain_legacy_conversion_slots(&mut assembled.note_reference_anchors, &removed);
+    retain_legacy_conversion_slots(&mut assembled.column_break_offsets, &removed);
+    retain_legacy_conversion_slots(&mut assembled.section_column_gap_pt, &removed);
+    retain_legacy_conversion_slots(&mut assembled.section_column_layouts, &removed);
+    retain_legacy_conversion_slots(&mut assembled.section_column_separators, &removed);
+    retain_legacy_conversion_slots(&mut assembled.section_column_rtl, &removed);
+    retain_legacy_conversion_slots(&mut assembled.table_row_pagination, &removed);
+    retain_legacy_conversion_slots(&mut assembled.table_cell_pagination, &removed);
+    retain_legacy_conversion_slots(&mut assembled.table_cell_line_spacing, &removed);
+    retain_legacy_conversion_slots(&mut assembled.table_cell_tab_stops, &removed);
+    #[cfg(feature = "render")]
+    retain_legacy_conversion_slots(&mut assembled.render_table_cell_tab_stops, &removed);
+    assembled.model.regions = remapped_regions;
+    assembled.model.meta.stats = assemble::compute_stats(&assembled.model.blocks);
+    assembled.promoted_running_block_ranges.clear();
+    true
+}
+
+#[cfg(feature = "docx")]
+fn retain_legacy_conversion_slots<T>(values: &mut Vec<T>, removed: &[bool]) {
+    let mut slots = removed.iter();
+    values.retain(|_| slots.next().is_some_and(|removed| !removed));
 }
 
 #[cfg(feature = "docx")]
@@ -7263,6 +7403,151 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_fresh_conversion_projects_only_promoted_running_regions_from_body() {
+        let bytes =
+            synth_doc_with_ccp("BODYFTNHEADANNENDBOX", "", 0x00C1, 0, 0, [4, 3, 4, 3, 3, 3]);
+        let doc = Document::open(&bytes).unwrap();
+        let public_model = doc.model();
+
+        let converted = doc.to_docx();
+        assert_eq!(converted, doc.to_docx());
+        assert_eq!(public_model, doc.model());
+        let document_xml = docx_part(&converted, "word/document.xml");
+        let mut previous = 0;
+        for marker in ["BODY", "FTN", "ANN", "END", "BOX"] {
+            let position = document_xml
+                .find(&format!(">{marker}</w:t>"))
+                .unwrap_or_else(|| panic!("missing retained fallback {marker:?}: {document_xml}"));
+            assert!(
+                position >= previous,
+                "fallback order changed: {document_xml}"
+            );
+            previous = position;
+        }
+        assert!(
+            !document_xml.contains(">HEAD</w:t>"),
+            "promoted header leaked into the generated body: {document_xml}"
+        );
+
+        let running_parts = docx_running_parts(&converted);
+        assert_eq!(
+            running_parts
+                .iter()
+                .filter(|(_, xml)| xml.contains(">HEAD</w:t>"))
+                .count(),
+            1,
+            "promoted header missing or duplicated: {running_parts:?}"
+        );
+
+        let standalone_body = docx_part(&write_docx(&public_model), "word/document.xml");
+        assert!(
+            standalone_body.contains(">HEAD</w:t>"),
+            "standalone model writing must remain model-only: {standalone_body}"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_running_projection_remaps_all_block_sidecars_and_regions() {
+        let bytes =
+            synth_doc_with_ccp("BODYFTNHEADANNENDBOX", "", 0x00C1, 0, 0, [4, 3, 4, 3, 3, 3]);
+        let doc = Document::open(&bytes).unwrap();
+        let Backend::Doc(state) = &doc.backend else {
+            panic!("synthetic fixture must use the legacy backend");
+        };
+        let mut assembled = legacy_build_output_from_doc_state(state);
+
+        assert_eq!(assembled.promoted_running_block_ranges, vec![(2, 3)]);
+        assert!(legacy_project_promoted_running_surfaces(&mut assembled));
+        assert!(assembled.promoted_running_block_ranges.is_empty());
+        assert_eq!(assembled.model.setup.header.len(), 1);
+        assert_eq!(
+            assembled
+                .model
+                .blocks
+                .iter()
+                .map(legacy_doc_block_text)
+                .collect::<Vec<_>>(),
+            ["BODY", "FTN", "ANN", "END", "BOX"]
+        );
+        let block_count = assembled.model.blocks.len();
+        assert_eq!(assembled.pagination_hints.len(), block_count);
+        assert_eq!(assembled.line_spacing_hints.len(), block_count);
+        assert_eq!(assembled.tab_stops.len(), block_count);
+        assert_eq!(assembled.note_reference_anchors.len(), block_count);
+        assert_eq!(assembled.column_break_offsets.len(), block_count);
+        assert_eq!(assembled.section_column_gap_pt.len(), block_count);
+        assert_eq!(assembled.section_column_layouts.len(), block_count);
+        assert_eq!(assembled.section_column_separators.len(), block_count);
+        assert_eq!(assembled.section_column_rtl.len(), block_count);
+        assert_eq!(assembled.table_row_pagination.len(), block_count);
+        assert_eq!(assembled.table_cell_pagination.len(), block_count);
+        assert_eq!(assembled.table_cell_line_spacing.len(), block_count);
+        assert_eq!(assembled.table_cell_tab_stops.len(), block_count);
+        #[cfg(feature = "render")]
+        {
+            assert_eq!(assembled.render_tab_stops.len(), block_count);
+            assert_eq!(assembled.render_table_cell_tab_stops.len(), block_count);
+        }
+
+        let expected = [
+            (SourceRegionKind::Main, 0, 4),
+            (SourceRegionKind::Footnote, 1, 3),
+            (SourceRegionKind::Annotation, 2, 3),
+            (SourceRegionKind::Endnote, 3, 3),
+            (SourceRegionKind::TextBox, 4, 3),
+        ];
+        let mut text_start = 0;
+        for (region, (kind, block_start, text_len)) in assembled.model.regions.iter().zip(expected)
+        {
+            assert_eq!(region.kind, kind);
+            assert_eq!(region.block_start, block_start);
+            assert_eq!(region.block_end, block_start + 1);
+            assert_eq!(region.text_start, text_start);
+            assert_eq!(region.text_len, text_len);
+            text_start += text_len;
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_running_projection_rejects_corrupt_ranges_and_sidecars_without_mutation() {
+        let bytes = synth_doc_with_ccp("BODYHEAD", "", 0x00C1, 0, 0, [4, 0, 4, 0, 0, 0]);
+        let doc = Document::open(&bytes).unwrap();
+        let Backend::Doc(state) = &doc.backend else {
+            panic!("synthetic fixture must use the legacy backend");
+        };
+
+        let mut corrupt_range = legacy_build_output_from_doc_state(state);
+        corrupt_range.promoted_running_block_ranges[0].1 = corrupt_range.model.blocks.len() + 1;
+        let range_model = corrupt_range.model.clone();
+        let range_sidecars = corrupt_range.pagination_hints.clone();
+        assert!(!legacy_project_promoted_running_surfaces(
+            &mut corrupt_range
+        ));
+        assert_eq!(corrupt_range.model, range_model);
+        assert_eq!(corrupt_range.pagination_hints, range_sidecars);
+
+        let mut overlapping_region = legacy_build_output_from_doc_state(state);
+        overlapping_region.model.regions[0].block_end =
+            overlapping_region.promoted_running_block_ranges[0].1;
+        let overlapping_model = overlapping_region.model.clone();
+        assert!(!legacy_project_promoted_running_surfaces(
+            &mut overlapping_region
+        ));
+        assert_eq!(overlapping_region.model, overlapping_model);
+
+        let mut misaligned = legacy_build_output_from_doc_state(state);
+        misaligned.table_cell_pagination.pop();
+        let misaligned_model = misaligned.model.clone();
+        let misaligned_ranges = misaligned.promoted_running_block_ranges.clone();
+        assert!(!legacy_project_promoted_running_surfaces(&mut misaligned));
+        assert_eq!(misaligned.model, misaligned_model);
+        assert_eq!(misaligned.promoted_running_block_ranges, misaligned_ranges);
+    }
+
     #[test]
     fn doc_model_queries_legacy_source_regions() {
         let bytes =
@@ -10409,6 +10694,14 @@ mod tests {
             document_xml.contains(r#"<w:type w:val="nextPage"/>"#),
             "legacy section break should serialize as nextPage: {document_xml}"
         );
+        for marker in [
+            "E0", "O0", "e0", "o0", "F0", "f0", "E1", "O1", "e1", "o1", "F1", "f1",
+        ] {
+            assert!(
+                !document_xml.contains(&format!(">{marker}</w:t>")),
+                "promoted running story {marker:?} leaked into the body: {document_xml}"
+            );
+        }
 
         let mut zip = zip::ZipArchive::new(Cursor::new(docx)).unwrap();
         let mut header_xml = Vec::new();
@@ -10453,6 +10746,42 @@ mod tests {
                 .filter(|record| record.section == Some(1))
                 .count(),
             6
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_fresh_conversion_keeps_unselected_running_fallback_stories() {
+        let bytes = two_section_legacy_header_footer_doc(Some(8));
+        let doc = Document::open(&bytes).unwrap();
+        let converted = doc.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        for marker in ["E0", "O0", "e0", "o0", "F0", "f0"] {
+            assert!(
+                !document_xml.contains(&format!(">{marker}</w:t>")),
+                "promoted first-owner story {marker:?} leaked into the body: {document_xml}"
+            );
+        }
+        for marker in ["E1", "O1", "e1", "o1", "F1", "f1"] {
+            assert!(
+                document_xml.contains(&format!(">{marker}</w:t>")),
+                "unselected fallback story {marker:?} was dropped: {document_xml}"
+            );
+        }
+
+        let running_parts = docx_running_parts(&converted);
+        assert!(
+            running_parts
+                .iter()
+                .any(|(_, xml)| xml.contains(">O0</w:t>")),
+            "selected first-owner header missing: {running_parts:?}"
+        );
+        assert!(
+            running_parts
+                .iter()
+                .all(|(_, xml)| !xml.contains(">O1</w:t>")),
+            "unselected story was incorrectly promoted: {running_parts:?}"
         );
     }
 
