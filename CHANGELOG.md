@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Fresh `Document::to_docx()` conversion of opened DOCX inputs now recursively
+  preserves source-only row no-split state, direct cell-paragraph keep/widow
+  controls, exact/minimum line rules, explicit tab stops, and visible manual
+  column breaks in nested descendants of top-level body tables. The existing
+  recursive reader tree is retained in default-feature state and each table
+  node validates row, cell, block, line, tab, break, and child-tree components
+  independently before reusing the established writers. Two-level accepted-
+  current wrappers, vertical-merge continuation exclusion, malformed component
+  isolation, malformed break leaves, deterministic bytes, native reopen, parser
+  depth limits, standalone-writer exclusion, and unchanged running-surface
+  behavior are covered. Legacy nested-table recovery, nested running tables,
+  notes, table-cell page breaks, and PDF behavior remain outside this bounded
+  conversion path.
 - Fresh `Document::to_docx()` conversion now preserves visible manual column
   breaks in direct paragraph blocks of surviving cells in top-level body tables
   from opened DOCX and legacy DOC inputs. A private block/row/surviving-cell/

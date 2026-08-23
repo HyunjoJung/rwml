@@ -1046,10 +1046,14 @@ impl Document {
     /// reader-resolved explicit paragraph tab stops, while aligned top-level body
     /// paragraphs and aligned direct paragraph blocks in surviving cells of top-
     /// level body tables carry visible manual column breaks through independently
-    /// validated source character offsets. Direct top-level paragraphs in selected
-    /// default/first/even running headers and footers from opened DOCX and legacy
-    /// DOC inputs also carry reader-resolved explicit tab stops through section-
-    /// aligned private hints. Direct paragraph blocks in surviving cells of
+    /// validated source character offsets. Opened DOCX inputs additionally carry
+    /// row no-split state, direct cell-paragraph keep/widow controls,
+    /// exact/minimum line rules, explicit tabs, and visible column breaks
+    /// recursively through nested descendants of those body tables; each
+    /// recursive component is validated independently. Direct top-level
+    /// paragraphs in selected default/first/even running headers and footers from
+    /// opened DOCX and legacy DOC inputs also carry reader-resolved explicit tab
+    /// stops through section-aligned private hints. Direct paragraph blocks in
     /// top-level tables on those running surfaces use a companion block/row/
     /// surviving-cell/paragraph-aligned bridge for explicit tabs. Opened DOCX and
     /// legacy DOC inputs both
@@ -1068,12 +1072,13 @@ impl Document {
     /// ordinary top-level paragraph anchors promote normalized footnote/endnote
     /// text into real references and note parts. Reopened DOCX inputs retain that
     /// normalized subset through an exact private block/id/offset bridge.
-    /// Nested-table descendants and note paragraph layout properties remain
-    /// outside these layout-hint paths, while nested running-table descendants
-    /// remain outside pagination, tab, and line-rule conversion. Settings-defined
-    /// default-tab intervals remain outside the tab path. Table-cell page breaks
-    /// plus note, running-surface, and nested-table manual breaks remain outside
-    /// the break-preservation paths. Rich note formatting, tables, media, source IDs and numbering,
+    /// Legacy nested-table descendants and note paragraph layout properties
+    /// remain outside these layout-hint paths, while nested running-
+    /// table descendants remain outside pagination, tab, line-rule, and manual-
+    /// break conversion. Settings-defined default-tab intervals remain outside
+    /// the tab path. Table-cell page breaks plus note and running-surface manual
+    /// breaks remain outside the break-preservation paths. Rich note formatting,
+    /// tables, media, source IDs and numbering,
     /// separators, custom marks, complex anchors, and page-bottom placement
     /// remain outside the normalized note path.
     /// Standalone [`write_docx`] remains model-only for all of these private
@@ -1110,6 +1115,7 @@ impl Document {
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
+                        table_nested_pagination: &[],
                         table_cell_tab_stops: &assembled.table_cell_tab_stops,
                     },
                 )
@@ -1145,6 +1151,7 @@ impl Document {
                         table_row_pagination: &state.table_row_pagination,
                         table_cell_pagination: &state.table_cell_pagination,
                         table_cell_line_spacing: &state.table_cell_line_spacing,
+                        table_nested_pagination: &state.table_nested_pagination,
                         table_cell_tab_stops: &state.table_cell_tab_stops,
                     },
                 )
@@ -16296,8 +16303,11 @@ mod tests {
             "{cell}"
         );
         let nested = docx_paragraph_with_text(&document_xml, "nested");
-        assert!(!nested.contains("<w:keepNext"), "{nested}");
-        assert!(!nested.contains(r#"w:lineRule="exact""#), "{nested}");
+        assert!(nested.contains("<w:keepNext/>"), "{nested}");
+        assert!(
+            nested.contains(r#"w:line="600" w:lineRule="exact""#),
+            "{nested}"
+        );
         assert!(!document_xml.contains("<w:tabs>"), "{document_xml}");
         assert_eq!(converted, opened.to_docx());
 
@@ -16344,6 +16354,16 @@ mod tests {
         assert_eq!(
             state.table_cell_line_spacing[table_index][0][0][0],
             Some(crate::model::LineSpacingHint::AtLeast(20.0))
+        );
+        let nested_hints = state.table_nested_pagination[table_index][0][0][1]
+            .as_ref()
+            .expect("converted nested table hints");
+        assert!(nested_hints.cells[0][0][0]
+            .as_ref()
+            .is_some_and(|hint| hint.keep_next));
+        assert_eq!(
+            nested_hints.cell_line_spacing[0][0][0],
+            Some(crate::model::LineSpacingHint::Exact(30.0))
         );
     }
 
@@ -16407,7 +16427,10 @@ mod tests {
             "{cell}"
         );
         let nested = docx_paragraph_with_text(&document_xml, "nested-tabs");
-        assert!(!nested.contains("<w:tabs>"), "{nested}");
+        assert!(
+            nested.contains(r#"<w:tab w:val="right" w:pos="1800" w:leader="dot"/>"#),
+            "{nested}"
+        );
         assert_eq!(converted, opened.to_docx());
 
         let model_only_xml = docx_part(&write_docx(&opened.model()), "word/document.xml");
@@ -16460,6 +16483,29 @@ mod tests {
                 alignment: crate::model::TabAlignment::Center,
                 leader: crate::model::TabLeader::None,
             }]
+        );
+        let nested_hints = state.table_nested_pagination[table_index][0][0][1]
+            .as_ref()
+            .expect("converted nested table hints");
+        assert_eq!(
+            nested_hints.cell_tabs[0][0][0],
+            vec![
+                crate::model::TabStop {
+                    position_pt: 36.0,
+                    alignment: crate::model::TabAlignment::Left,
+                    leader: crate::model::TabLeader::Dot,
+                },
+                crate::model::TabStop {
+                    position_pt: 72.0,
+                    alignment: crate::model::TabAlignment::Center,
+                    leader: crate::model::TabLeader::Hyphen,
+                },
+                crate::model::TabStop {
+                    position_pt: 90.0,
+                    alignment: crate::model::TabAlignment::Right,
+                    leader: crate::model::TabLeader::Dot,
+                },
+            ]
         );
     }
 
@@ -16543,6 +16589,128 @@ mod tests {
 
         let model_only_xml = docx_part(&write_docx(&opened.model()), "word/document.xml");
         assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_nested_table_layout_hints_roundtrip_through_fresh_conversion() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tr><w:tc>
+                    <w:tbl><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>
+                        <w:p><w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="240" w:lineRule="exact"/><w:tabs><w:tab w:val="right" w:pos="1440" w:leader="dot"/></w:tabs></w:pPr>
+                            <w:r><w:t>A</w:t><w:tab/><w:t>B</w:t><w:br w:type="column"/><w:t>C</w:t></w:r>
+                        </w:p>
+                    </w:tc></w:tr></w:tbl>
+                    <w:p><w:r><w:t>outer tail</w:t></w:r></w:p>
+                </w:tc></w:tr></w:tbl>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        assert!(document_xml.contains("<w:cantSplit/>"), "{document_xml}");
+        assert!(document_xml.contains("<w:keepNext/>"), "{document_xml}");
+        assert!(document_xml.contains("<w:keepLines/>"), "{document_xml}");
+        assert!(
+            document_xml.contains(r#"<w:widowControl w:val="0"/>"#),
+            "{document_xml}"
+        );
+        assert!(
+            document_xml.contains(r#"w:line="240" w:lineRule="exact""#),
+            "{document_xml}"
+        );
+        assert!(
+            document_xml.contains(r#"<w:tab w:val="right" w:pos="1440" w:leader="dot"/>"#),
+            "{document_xml}"
+        );
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            1,
+            "{document_xml}"
+        );
+        assert_eq!(converted, opened.to_docx());
+
+        let model_only = write_docx(&opened.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        for marker in [
+            "<w:cantSplit/>",
+            "<w:keepNext/>",
+            "<w:keepLines/>",
+            r#"w:lineRule="exact""#,
+            r#"w:leader="dot""#,
+            r#"<w:br w:type="column"/>"#,
+        ] {
+            assert!(!model_only_xml.contains(marker), "{model_only_xml}");
+        }
+        assert_eq!(model_only_xml.matches("<w:br/>").count(), 1);
+        assert_eq!(
+            Document::open(&converted).unwrap().model().blocks,
+            Document::open(&model_only).unwrap().model().blocks
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_docx_deep_nested_table_hints_follow_wrappers_and_merge_survivors() {
+        let source = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tr><w:tc>
+                    <w:tbl>
+                        <w:tr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr>
+                            <w:sdt><w:sdtContent><w:tbl><w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc>
+                                <w:p><w:pPr><w:keepNext/><w:spacing w:line="280" w:lineRule="atLeast"/><w:tabs><w:tab w:val="center" w:pos="1080" w:leader="hyphen"/></w:tabs></w:pPr>
+                                    <w:r><w:t>D</w:t><w:tab/><w:t>E</w:t><w:br w:type="column"/><w:t>F</w:t></w:r>
+                                </w:p>
+                            </w:tc></w:tr></w:tbl></w:sdtContent></w:sdt>
+                            <w:p><w:r><w:t>survivor tail</w:t></w:r></w:p>
+                        </w:tc></w:tr>
+                        <w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr>
+                            <w:tbl><w:tr><w:tc><w:p><w:pPr><w:keepLines/><w:spacing w:line="999" w:lineRule="exact"/></w:pPr><w:r><w:t>LEAK</w:t><w:br w:type="column"/><w:t>DROP</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                        </w:tc></w:tr>
+                    </w:tbl>
+                    <w:p><w:r><w:t>outer tail</w:t></w:r></w:p>
+                </w:tc></w:tr></w:tbl>
+                <w:sectPr><w:cols w:num="2"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let opened = Document::open(&source).unwrap();
+        let converted = opened.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        assert_eq!(document_xml.matches("<w:cantSplit/>").count(), 1);
+        assert_eq!(document_xml.matches("<w:keepNext/>").count(), 1);
+        assert!(
+            document_xml.contains(r#"w:line="280" w:lineRule="atLeast""#),
+            "{document_xml}"
+        );
+        assert!(
+            document_xml.contains(r#"<w:tab w:val="center" w:pos="1080" w:leader="hyphen"/>"#),
+            "{document_xml}"
+        );
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            1,
+            "{document_xml}"
+        );
+        assert!(!document_xml.contains("LEAK"), "{document_xml}");
+        assert!(!document_xml.contains("DROP"), "{document_xml}");
+        assert!(!document_xml.contains(r#"w:line="999""#), "{document_xml}");
+        assert_eq!(converted, opened.to_docx());
+
+        let model_only = write_docx(&opened.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert!(!model_only_xml.contains("<w:cantSplit/>"));
+        assert!(!model_only_xml.contains("<w:keepNext/>"));
+        assert!(!model_only_xml.contains(r#"w:lineRule="atLeast""#));
+        assert!(!model_only_xml.contains(r#"w:leader="hyphen""#));
+        assert!(!model_only_xml.contains(r#"<w:br w:type="column"/>"#));
+        assert_eq!(
+            Document::open(&converted).unwrap().model().blocks,
+            Document::open(&model_only).unwrap().model().blocks
+        );
     }
 
     #[cfg(feature = "docx")]

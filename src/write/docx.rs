@@ -24,8 +24,8 @@ use crate::model::{
     RunningSurfaceTabStopHints, RunningSurfaceTableCellTabStopHints, SectionBreakKind,
     SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
     TableBorderSide, TableBorderStyle, TableCellColumnBreakHints, TableCellLineSpacingHints,
-    TableCellPaginationHints, TableCellTabStopHints, TableRowPaginationHint, VertAlign,
-    WebExtensionTaskPane, MAX_TAB_STOPS,
+    TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
+    TablePaginationHints, TableRowPaginationHint, VertAlign, WebExtensionTaskPane, MAX_TAB_STOPS,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -126,6 +126,7 @@ struct TableWriteHints<'a> {
     cell_pagination: Option<&'a TableCellPaginationHints>,
     cell_line_spacing: Option<&'a TableCellLineSpacingHints>,
     cell_column_breaks: Option<&'a TableCellColumnBreakHints>,
+    nested_tables: Option<&'a TableCellNestedPaginationHints>,
     cell_tab_stops: Option<&'a TableCellTabStopHints>,
 }
 
@@ -134,6 +135,7 @@ struct CellWriteHints<'a> {
     pagination: Option<&'a [Option<PaginationHint>]>,
     line_spacing: Option<&'a [Option<LineSpacingHint>]>,
     column_break_offsets: Option<&'a [Vec<usize>]>,
+    nested_tables: Option<&'a [Option<TablePaginationHints>]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
 }
 
@@ -160,6 +162,7 @@ pub(crate) struct SourceWriteHints<'a> {
     pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     pub(crate) table_cell_pagination: &'a [TableCellPaginationHints],
     pub(crate) table_cell_line_spacing: &'a [TableCellLineSpacingHints],
+    pub(crate) table_nested_pagination: &'a [TableCellNestedPaginationHints],
     pub(crate) table_cell_tab_stops: &'a [TableCellTabStopHints],
 }
 
@@ -237,6 +240,13 @@ impl<'a> SourceWriteHints<'a> {
     ) -> Option<&'a [TableCellColumnBreakHints]> {
         (self.table_cell_column_break_offsets.len() == block_count)
             .then_some(self.table_cell_column_break_offsets)
+    }
+
+    fn aligned_table_nested_pagination(
+        self,
+        block_count: usize,
+    ) -> Option<&'a [TableCellNestedPaginationHints]> {
+        (self.table_nested_pagination.len() == block_count).then_some(self.table_nested_pagination)
     }
 
     fn aligned_table_cell_pagination(
@@ -1224,6 +1234,7 @@ impl Ctx {
                         cell_pagination,
                         cell_line_spacing,
                         cell_column_breaks: None,
+                        nested_tables: None,
                         cell_tab_stops,
                     },
                 )
@@ -1974,6 +1985,28 @@ impl Ctx {
                             .map(Vec::as_slice),
                     },
                 ),
+                Block::Table(table) => {
+                    let nested = hints
+                        .nested_tables
+                        .and_then(|hints| hints.get(index))
+                        .and_then(Option::as_ref);
+                    if let Some(nested) = nested {
+                        self.write_table_with_source_hints(
+                            out,
+                            table,
+                            TableWriteHints {
+                                row_pagination: Some(&nested.rows),
+                                cell_pagination: Some(&nested.cells),
+                                cell_line_spacing: Some(&nested.cell_line_spacing),
+                                cell_column_breaks: Some(&nested.cell_column_breaks),
+                                nested_tables: Some(&nested.nested),
+                                cell_tab_stops: Some(&nested.cell_tabs),
+                            },
+                        );
+                    } else {
+                        self.write_table(out, table);
+                    }
+                }
                 _ => self.write_block(out, block),
             }
         }
@@ -2062,6 +2095,9 @@ impl Ctx {
         let cell_column_breaks = hints
             .cell_column_breaks
             .filter(|hints| Self::table_cell_column_break_hints_align(table, hints));
+        let nested_tables = hints
+            .nested_tables
+            .filter(|hints| Self::table_cell_nested_hints_align(table, hints));
         let cell_tab_stops = hints
             .cell_tab_stops
             .filter(|hints| Self::table_cell_tab_stops_align(table, hints));
@@ -2074,6 +2110,7 @@ impl Ctx {
                 cell_pagination,
                 cell_line_spacing,
                 cell_column_breaks,
+                nested_tables,
                 cell_tab_stops,
             },
         );
@@ -2137,6 +2174,32 @@ impl Ctx {
                     || cell.blocks.iter().zip(cell_hints).any(|(block, offsets)| {
                         !offsets.is_empty() && !matches!(block, Block::Paragraph(_))
                     })
+                {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+
+    fn table_cell_nested_hints_align(
+        table: &Table,
+        hints: &TableCellNestedPaginationHints,
+    ) -> bool {
+        if hints.len() != table.rows.len() {
+            return false;
+        }
+        for (row, row_hints) in table.rows.iter().zip(hints) {
+            if row_hints.len() != row.cells.len() {
+                return false;
+            }
+            for (cell, cell_hints) in row.cells.iter().zip(row_hints) {
+                if cell_hints.len() != cell.blocks.len()
+                    || cell
+                        .blocks
+                        .iter()
+                        .zip(cell_hints)
+                        .any(|(block, hint)| hint.is_some() && !matches!(block, Block::Table(_)))
                 {
                     return false;
                 }
@@ -2209,6 +2272,11 @@ impl Ctx {
                         .and_then(|rows| rows.get(ri))
                         .and_then(|row| row.get(ci))
                         .map(Vec::as_slice);
+                    let source_nested_tables = hints
+                        .nested_tables
+                        .and_then(|rows| rows.get(ri))
+                        .and_then(|row| row.get(ci))
+                        .map(Vec::as_slice);
                     let source_tab_stops = hints
                         .cell_tab_stops
                         .and_then(|rows| rows.get(ri))
@@ -2265,6 +2333,7 @@ impl Ctx {
                                 pagination: source_pagination,
                                 line_spacing: source_line_spacing,
                                 column_break_offsets: source_column_breaks,
+                                nested_tables: source_nested_tables,
                                 tab_stops: source_tab_stops,
                             },
                         );
@@ -4422,6 +4491,8 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
         source_hints.and_then(|hints| hints.aligned_table_cell_line_spacing(model.blocks.len()));
     let table_cell_column_break_offsets = source_hints
         .and_then(|hints| hints.aligned_table_cell_column_break_offsets(model.blocks.len()));
+    let table_nested_pagination =
+        source_hints.and_then(|hints| hints.aligned_table_nested_pagination(model.blocks.len()));
     let table_cell_tab_stops =
         source_hints.and_then(|hints| hints.aligned_table_cell_tab_stops(model.blocks.len()));
     let mut section_index = 0;
@@ -4455,6 +4526,7 @@ fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_
                 cell_line_spacing: table_cell_line_spacing.and_then(|hints| hints.get(index)),
                 cell_column_breaks: table_cell_column_break_offsets
                     .and_then(|hints| hints.get(index)),
+                nested_tables: table_nested_pagination.and_then(|hints| hints.get(index)),
                 cell_tab_stops: table_cell_tab_stops.and_then(|hints| hints.get(index)),
             },
         );
@@ -4606,8 +4678,8 @@ mod tests {
         RunningSurfaceLineSpacingHints, RunningSurfacePaginationHints, RunningSurfaceTabStopHints,
         RunningSurfaceTableCellTabStopHints, SectionColumnHint, SectionColumnLayoutHints,
         SectionSetup, TabAlignment, TabLeader, TabStop, Table, TableCellColumnBreakHints,
-        TableCellLineSpacingHints, TableCellPaginationHints, TableCellTabStopHints,
-        TableRowPaginationHint, MAX_TAB_STOPS,
+        TableCellLineSpacingHints, TableCellNestedPaginationHints, TableCellPaginationHints,
+        TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, MAX_TAB_STOPS,
     };
     use crate::Document;
 
@@ -4744,6 +4816,7 @@ mod tests {
                 table_row_pagination: &[],
                 table_cell_pagination: &[],
                 table_cell_line_spacing: &[],
+                table_nested_pagination: &[],
                 table_cell_tab_stops: &[],
             }),
         );
@@ -4797,6 +4870,7 @@ mod tests {
                 table_row_pagination: &[],
                 table_cell_pagination: &[],
                 table_cell_line_spacing: &[],
+                table_nested_pagination: &[],
                 table_cell_tab_stops: &[],
             }),
         );
@@ -4911,6 +4985,7 @@ mod tests {
                         table_row_pagination: &[],
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
+                        table_nested_pagination: &[],
                         table_cell_tab_stops: &[],
                     }),
                 )
@@ -5062,6 +5137,7 @@ mod tests {
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &[],
+                    table_nested_pagination: &[],
                     table_cell_tab_stops: &[],
                 }),
             )
@@ -5206,6 +5282,7 @@ mod tests {
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &[],
+                    table_nested_pagination: &[],
                     table_cell_tab_stops: &[],
                 }),
             )
@@ -5332,6 +5409,7 @@ mod tests {
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &[],
+                    table_nested_pagination: &[],
                     table_cell_tab_stops: &[],
                 }),
             )
@@ -5655,6 +5733,7 @@ mod tests {
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &[],
+                    table_nested_pagination: &[],
                     table_cell_tab_stops: &[],
                 }),
             )
@@ -5988,6 +6067,7 @@ mod tests {
                         table_row_pagination: &[],
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
+                        table_nested_pagination: &[],
                         table_cell_tab_stops: &[],
                     }),
                 )
@@ -6145,6 +6225,7 @@ mod tests {
                         table_row_pagination: &row_pagination,
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &line_spacing,
+                        table_nested_pagination: &[],
                         table_cell_tab_stops: &[],
                     }),
                 )
@@ -6241,6 +6322,7 @@ mod tests {
                         table_row_pagination: &[],
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
+                        table_nested_pagination: &[],
                         table_cell_tab_stops: &[],
                     }),
                 )
@@ -6305,6 +6387,7 @@ mod tests {
                 table_row_pagination: &[],
                 table_cell_pagination: &[],
                 table_cell_line_spacing: &[],
+                table_nested_pagination: &[],
                 table_cell_tab_stops: &[],
             }),
         );
@@ -6379,6 +6462,7 @@ mod tests {
                         table_row_pagination,
                         table_cell_pagination: &[],
                         table_cell_line_spacing: &[],
+                        table_nested_pagination: &[],
                         table_cell_tab_stops: &[],
                     }),
                 )
@@ -6455,6 +6539,7 @@ mod tests {
                         table_row_pagination: &[],
                         table_cell_pagination: &[],
                         table_cell_line_spacing,
+                        table_nested_pagination: &[],
                         table_cell_tab_stops: &[],
                     }),
                 )
@@ -6542,6 +6627,7 @@ mod tests {
                         table_row_pagination: &row_pagination,
                         table_cell_pagination,
                         table_cell_line_spacing,
+                        table_nested_pagination: &[],
                         table_cell_tab_stops: &[],
                     }),
                 )
@@ -6664,6 +6750,7 @@ mod tests {
                         table_row_pagination: &row_pagination,
                         table_cell_pagination: &cell_pagination,
                         table_cell_line_spacing: &cell_line_spacing,
+                        table_nested_pagination: &[],
                         table_cell_tab_stops,
                     }),
                 )
@@ -6775,6 +6862,7 @@ mod tests {
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &table_cell_line_spacing,
+                    table_nested_pagination: &[],
                     table_cell_tab_stops: &[],
                 }),
             )
@@ -6855,6 +6943,7 @@ mod tests {
                     table_row_pagination: &[],
                     table_cell_pagination: &table_cell_pagination,
                     table_cell_line_spacing: &[],
+                    table_nested_pagination: &[],
                     table_cell_tab_stops: &[],
                 }),
             )
@@ -6937,6 +7026,7 @@ mod tests {
                     table_row_pagination: &[],
                     table_cell_pagination: &[],
                     table_cell_line_spacing: &[],
+                    table_nested_pagination: &[],
                     table_cell_tab_stops: &table_cell_tab_stops,
                 }),
             )
@@ -6965,8 +7055,8 @@ mod tests {
     }
 
     #[test]
-    fn source_table_cell_hints_exclude_nested_and_running_surface_tables() {
-        let mut nested_paragraph = para("nested");
+    fn source_table_cell_hints_include_nested_but_exclude_running_surface_tables() {
+        let mut nested_paragraph = para("nested\tA\nB");
         nested_paragraph.props.spacing.line_pct = Some(1.5);
         let nested_table = Table {
             rows: vec![Row {
@@ -7017,6 +7107,24 @@ mod tests {
             vec![tab(36.0, TabAlignment::Decimal, TabLeader::Heavy)],
             Vec::new(),
         ]]]];
+        let table_nested_pagination = [vec![vec![vec![
+            None,
+            Some(TablePaginationHints {
+                rows: vec![TableRowPaginationHint { cant_split: true }],
+                cells: vec![vec![vec![Some(PaginationHint {
+                    keep_lines: true,
+                    ..PaginationHint::default()
+                })]]],
+                cell_line_spacing: vec![vec![vec![Some(LineSpacingHint::Exact(7.0))]]],
+                cell_column_breaks: vec![vec![vec![vec![8]]]],
+                nested: vec![vec![vec![None]]],
+                cell_tabs: vec![vec![vec![vec![tab(
+                    18.0,
+                    TabAlignment::Center,
+                    TabLeader::Hyphen,
+                )]]]],
+            }),
+        ]]]];
         let rendered = render_body(
             &model,
             Some(SourceWriteHints {
@@ -7041,25 +7149,40 @@ mod tests {
                 table_row_pagination: &[],
                 table_cell_pagination: &table_cell_pagination,
                 table_cell_line_spacing: &table_cell_line_spacing,
+                table_nested_pagination: &table_nested_pagination,
                 table_cell_tab_stops: &table_cell_tab_stops,
             }),
         );
         let document_xml = String::from_utf8(rendered.document_xml).unwrap();
-        assert_eq!(document_xml.matches(r#"w:lineRule="exact""#).count(), 1);
+        assert_eq!(document_xml.matches(r#"w:lineRule="exact""#).count(), 2);
         assert_eq!(document_xml.matches("<w:keepNext").count(), 1);
-        assert_eq!(document_xml.matches("<w:tabs>").count(), 1);
+        assert_eq!(document_xml.matches("<w:keepLines").count(), 1);
+        assert_eq!(document_xml.matches("<w:cantSplit/>").count(), 1);
+        assert_eq!(document_xml.matches("<w:tabs>").count(), 2);
+        assert_eq!(
+            document_xml.matches(r#"<w:br w:type="column"/>"#).count(),
+            1
+        );
         let direct = written_paragraph_with_text(&document_xml, "direct");
         assert!(
             direct.contains(r#"<w:tab w:val="decimal" w:pos="720" w:leader="heavy"/>"#),
             "{direct}"
         );
         let nested = written_paragraph_with_text(&document_xml, "nested");
-        assert!(!nested.contains("<w:tabs>"), "{nested}");
+        assert!(nested.contains("<w:keepLines/>"), "{nested}");
+        assert!(
+            nested.contains(r#"w:line="140" w:lineRule="exact""#),
+            "{nested}"
+        );
+        assert!(
+            nested.contains(r#"<w:tab w:val="center" w:pos="360" w:leader="hyphen"/>"#),
+            "{nested}"
+        );
         assert_eq!(
             document_xml
                 .matches(r#"w:line="360" w:lineRule="auto""#)
                 .count(),
-            1
+            0
         );
 
         let header_xml = rendered
@@ -7074,6 +7197,153 @@ mod tests {
         assert!(
             header_xml.contains(r#"w:line="360" w:lineRule="auto""#),
             "{header_xml}"
+        );
+    }
+
+    #[test]
+    fn source_nested_table_hints_validate_trees_and_components_independently() {
+        let nested_table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(para("N\nX"))],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let model = DocModel {
+            blocks: vec![Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(para("P\nQ")), Block::Table(nested_table)],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            })],
+            ..DocModel::default()
+        };
+        let outer_rows = [vec![TableRowPaginationHint { cant_split: true }]];
+        let outer_cells = [vec![vec![vec![
+            Some(PaginationHint {
+                keep_next: true,
+                ..PaginationHint::default()
+            }),
+            None,
+        ]]]];
+        let outer_lines = [vec![vec![vec![Some(LineSpacingHint::Exact(5.0)), None]]]];
+        let outer_breaks = [vec![vec![vec![vec![1], Vec::new()]]]];
+        let outer_tabs = [vec![vec![vec![
+            vec![tab(12.0, TabAlignment::Left, TabLeader::Dot)],
+            Vec::new(),
+        ]]]];
+        let valid_nested = TablePaginationHints {
+            rows: vec![TableRowPaginationHint { cant_split: true }],
+            cells: vec![vec![vec![Some(PaginationHint {
+                keep_lines: true,
+                ..PaginationHint::default()
+            })]]],
+            cell_line_spacing: vec![vec![vec![Some(LineSpacingHint::Exact(7.0))]]],
+            cell_column_breaks: vec![vec![vec![vec![1]]]],
+            nested: vec![vec![vec![None]]],
+            cell_tabs: vec![vec![vec![vec![tab(
+                18.0,
+                TabAlignment::Right,
+                TabLeader::Hyphen,
+            )]]]],
+        };
+        let tree_for = |nested| vec![vec![vec![None, Some(nested)]]];
+        let render = |nested: &[TableCellNestedPaginationHints]| {
+            String::from_utf8(
+                render_body(
+                    &model,
+                    Some(SourceWriteHints {
+                        gaps: &[None],
+                        layouts: &[None],
+                        separators: &[false],
+                        rtl: &[false],
+                        final_gap: None,
+                        final_layout: None,
+                        final_separator: false,
+                        final_rtl: false,
+                        running_surface_distances: &[RunningSurfaceDistanceHints::default()],
+                        running_line_spacing: &[],
+                        running_pagination: &[],
+                        running_tab_stops: &[],
+                        running_table_cell_tab_stops: &[],
+                        paragraph_line_spacing: &[],
+                        paragraph_pagination: &[],
+                        paragraph_tab_stops: &[],
+                        column_break_offsets: &[],
+                        table_cell_column_break_offsets: &outer_breaks,
+                        table_row_pagination: &outer_rows,
+                        table_cell_pagination: &outer_cells,
+                        table_cell_line_spacing: &outer_lines,
+                        table_nested_pagination: nested,
+                        table_cell_tab_stops: &outer_tabs,
+                    }),
+                )
+                .document_xml,
+            )
+            .unwrap()
+        };
+        let counts = |xml: &str| {
+            (
+                xml.matches("<w:cantSplit/>").count(),
+                xml.matches("<w:keepNext/>").count(),
+                xml.matches("<w:keepLines/>").count(),
+                xml.matches(r#"w:lineRule="exact""#).count(),
+                xml.matches("<w:tabs>").count(),
+                xml.matches(r#"<w:br w:type="column"/>"#).count(),
+                xml.matches("<w:br/>").count(),
+            )
+        };
+
+        let valid_tree = tree_for(valid_nested.clone());
+        assert_eq!(
+            counts(&render(std::slice::from_ref(&valid_tree))),
+            (2, 1, 1, 2, 2, 2, 0)
+        );
+        assert_eq!(counts(&render(&[])), (1, 1, 0, 1, 1, 1, 1));
+        assert_eq!(counts(&render(&[Vec::new()])), (1, 1, 0, 1, 1, 1, 1));
+
+        let mut wrong_kind = valid_tree.clone();
+        wrong_kind[0][0][0] = Some(valid_nested.clone());
+        assert_eq!(counts(&render(&[wrong_kind])), (1, 1, 0, 1, 1, 1, 1));
+
+        let mut bad_rows = valid_nested.clone();
+        bad_rows.rows.clear();
+        assert_eq!(
+            counts(&render(&[tree_for(bad_rows)])),
+            (1, 1, 1, 2, 2, 2, 0)
+        );
+
+        let mut bad_cells = valid_nested.clone();
+        bad_cells.cells.clear();
+        assert_eq!(
+            counts(&render(&[tree_for(bad_cells)])),
+            (2, 1, 0, 2, 2, 2, 0)
+        );
+
+        let mut bad_lines = valid_nested.clone();
+        bad_lines.cell_line_spacing.clear();
+        assert_eq!(
+            counts(&render(&[tree_for(bad_lines)])),
+            (2, 1, 1, 1, 2, 2, 0)
+        );
+
+        let mut bad_tabs = valid_nested.clone();
+        bad_tabs.cell_tabs.clear();
+        assert_eq!(
+            counts(&render(&[tree_for(bad_tabs)])),
+            (2, 1, 1, 2, 1, 2, 0)
+        );
+
+        let mut bad_break_leaf = valid_nested;
+        bad_break_leaf.cell_column_breaks[0][0][0] = vec![1, 1];
+        assert_eq!(
+            counts(&render(&[tree_for(bad_break_leaf)])),
+            (2, 1, 1, 2, 2, 1, 1)
         );
     }
 

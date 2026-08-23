@@ -257,8 +257,7 @@ pub(crate) struct DocxState {
     pub table_cell_pagination: Vec<crate::model::TableCellPaginationHints>,
     /// Source-only table-cell exact/minimum line spacing aligned to body model blocks.
     pub table_cell_line_spacing: Vec<crate::model::TableCellLineSpacingHints>,
-    /// Renderer-only recursive nested-table controls aligned to body model blocks.
-    #[cfg(feature = "render")]
+    /// Source-only recursive nested-table controls aligned to body model blocks.
     pub table_nested_pagination: Vec<crate::model::TableCellNestedPaginationHints>,
     /// Source-only resolved table-cell paragraph tab stops aligned to body model blocks.
     pub table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
@@ -489,7 +488,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let table_cell_column_break_offsets = body_hints.table_cell_column_breaks;
     let table_cell_tab_stops = body_hints.table_cell_tabs;
     let column_break_offsets = body_hints.column_break_offsets;
-    #[cfg(feature = "render")]
     let table_nested_pagination = body_hints.table_nested;
     // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
     // (not appended into `model.blocks`); their parts are preserved verbatim on save.
@@ -774,7 +772,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         table_row_pagination,
         table_cell_pagination,
         table_cell_line_spacing,
-        #[cfg(feature = "render")]
         table_nested_pagination,
         table_cell_tab_stops,
         #[cfg(feature = "render")]
