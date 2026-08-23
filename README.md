@@ -442,7 +442,14 @@ paragraph-style STSH inheritance followed by direct PAPX for `sprmPFKeep`,
 source-aligned hints; resolved `sprmPFPageBreakBefore` maps to the existing
 model property. Explicit direct-off values override inherited-on values.
 Fitting protected content moves whole and over-tall content still splits for
-deterministic progress. Opened `.docx` `Document` renders
+deterministic progress. The same ordinary Main-story legacy paragraphs resolve
+bounded custom tabs through paragraph-style STSH inheritance followed by direct
+PAPX `sprmPChgTabsPapx` and `sprmPChgTabs` changes. Left, center, right, decimal,
+and bar stops plus none, dot, hyphen, underscore, heavy, and middle-dot leaders
+reach both preview rendering and fresh DOCX conversion without entering the
+public model. Legacy running stories, notes, nested tables, default-tab
+intervals, implicit list tabs, negative stops, and Word-exact tab reflow remain
+outside this path. Opened `.docx` `Document` renders
 additionally honor resolved left/center/right/decimal tab stops in LTR
 left/start-aligned top-level body paragraphs, plus explicit left-aligned stops
 and default-tab fallback in supported center/right/justified-aligned LTR
@@ -980,7 +987,8 @@ exact/minimum line rules plus effective `keepNext`, `keepLines`, and widow-off
 state for aligned top-level body paragraphs and aligned direct paragraph blocks
 in surviving cells of top-level tables, plus effective no-split state for
 aligned top-level table rows. The same direct body subset retains resolved
-explicit paragraph tab stops, while aligned top-level body paragraphs retain
+explicit paragraph tab stops; legacy inputs resolve the bounded common
+STSH/PAPX subset described above. Aligned top-level body paragraphs retain
 visible manual column breaks through validated source character offsets.
 Standalone model writing remains proportional-only and consumes no private
 layout hints. Direct top-level paragraphs in selected default/first/even running

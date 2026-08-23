@@ -8,8 +8,8 @@
 //! A paragraph's `istd` (from its PAPX) indexes this array; the heading level is
 //! derived from `sti` (1–9 = Heading 1–9), the base-style chain, or the localized
 //! name (`Heading N` / `제목 N`). Paragraph styles also resolve the bounded
-//! layout, indent, spacing, pagination, and flat-color shading SPRM subsets
-//! through the same base chain.
+//! layout, indent, spacing, pagination, flat-color shading, and custom-tab SPRM
+//! subsets through the same base chain.
 //!
 //! Reference: [MS-DOC] 2.9.271 (STSH), 2.9.272 (STSHI), 2.9.135 (LPStd),
 //! 2.9.270 (STD), 2.9.270.1 (StdfBase), 2.9.276 (sti).
@@ -18,6 +18,8 @@ use crate::papx::{
     scan_paragraph_style_overrides, ParagraphIndentOverrides, ParagraphLayoutOverrides,
     ParagraphPagination, ParagraphShading, ParagraphSpacingOverrides, ParagraphStyleOverrides,
 };
+#[cfg(any(feature = "docx", feature = "render"))]
+use crate::papx::{scan_paragraph_style_tab_changes, LegacyTabStop, ParagraphTabStopChanges};
 use crate::util::u16le;
 
 /// One style's identity (enough to resolve a heading level + name).
@@ -31,7 +33,13 @@ struct StyleDescription {
 
 struct ParsedStyle {
     description: StyleDescription,
-    properties: Option<ParagraphStyleOverrides>,
+    paragraph: Option<ParsedParagraphStyleProperties>,
+}
+
+struct ParsedParagraphStyleProperties {
+    properties: ParagraphStyleOverrides,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    tab_stop_changes: Option<ParagraphTabStopChanges>,
 }
 
 /// The parsed stylesheet: per-`istd` heading, name, and bounded paragraph properties.
@@ -44,6 +52,8 @@ pub(crate) struct StyleSheet {
     spacing: Vec<ParagraphSpacingOverrides>,
     pagination: Vec<ParagraphPagination>,
     shading: Vec<Option<ParagraphShading>>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    tab_stops: Vec<Option<Vec<LegacyTabStop>>>,
 }
 
 impl StyleSheet {
@@ -88,6 +98,15 @@ impl StyleSheet {
         self.shading.get(istd as usize).copied().flatten()
     }
 
+    /// Custom tab stops resolved through the paragraph style's base chain.
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub(crate) fn paragraph_tab_stops(&self, istd: u16) -> Option<&[LegacyTabStop]> {
+        if self.tab_stops.is_empty() && istd == 0 {
+            return Some(&[]);
+        }
+        self.tab_stops.get(istd as usize).and_then(Option::as_deref)
+    }
+
     #[cfg(test)]
     pub(crate) fn from_test_pagination(pagination: Vec<ParagraphPagination>) -> Self {
         let len = pagination.len();
@@ -99,6 +118,8 @@ impl StyleSheet {
             spacing: vec![ParagraphSpacingOverrides::default(); len],
             pagination,
             shading: vec![None; len],
+            #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stops: vec![Some(Vec::new()); len],
         }
     }
 
@@ -126,12 +147,16 @@ impl StyleSheet {
         let mut p = 2usize.saturating_add(cb_stshi as usize);
         let mut descs: Vec<Option<StyleDescription>> = Vec::with_capacity(cstd as usize);
         let mut local_properties = Vec::with_capacity(cstd as usize);
+        #[cfg(any(feature = "docx", feature = "render"))]
+        let mut local_tab_stop_changes = Vec::with_capacity(cstd as usize);
         for _ in 0..cstd {
             let Some(cb_std) = u16le(stsh, p) else { break };
             p += 2;
             if cb_std == 0 {
                 descs.push(None); // empty slot still consumes an istd index
                 local_properties.push(None);
+                #[cfg(any(feature = "docx", feature = "render"))]
+                local_tab_stop_changes.push(None);
                 continue;
             }
             let cb_std = cb_std as usize;
@@ -141,7 +166,19 @@ impl StyleSheet {
             p += cb_std;
             let istd = descs.len() as u16;
             let parsed = parse_std(std, base_len, istd);
-            local_properties.push(parsed.as_ref().and_then(|style| style.properties));
+            local_properties.push(
+                parsed
+                    .as_ref()
+                    .and_then(|style| style.paragraph.as_ref())
+                    .map(|paragraph| paragraph.properties),
+            );
+            #[cfg(any(feature = "docx", feature = "render"))]
+            local_tab_stop_changes.push(
+                parsed
+                    .as_ref()
+                    .and_then(|style| style.paragraph.as_ref())
+                    .and_then(|paragraph| paragraph.tab_stop_changes.clone()),
+            );
             descs.push(parsed.map(|style| style.description));
         }
 
@@ -153,6 +190,8 @@ impl StyleSheet {
         let mut spacing = vec![ParagraphSpacingOverrides::default(); n];
         let mut pagination = vec![ParagraphPagination::default(); n];
         let mut shading = vec![None; n];
+        #[cfg(any(feature = "docx", feature = "render"))]
+        let tab_stops = resolve_all_tab_stops(&descs, &local_tab_stop_changes);
         // Per-style cycle guard by epoch: `visited[i]` is the pass (`gen`) that last touched
         // style `i`. "Clearing" between styles is just a fresh `gen` (O(1)) — refilling the
         // whole buffer each pass was O(n) per style = O(n^2) writes (≈4.3e9 for cstd=65535),
@@ -212,6 +251,8 @@ impl StyleSheet {
             spacing,
             pagination,
             shading,
+            #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stops,
         }
     }
 }
@@ -224,7 +265,7 @@ fn parse_std(std: &[u8], base_len: usize, istd: u16) -> Option<ParsedStyle> {
     let cupx = (u16le(std, 4)? & 0x000F) as u8;
     let has_original_style = base_len == 18 && u16le(std, 10)? & 0x1000 != 0;
     let (name, grlp_offset) = parse_xstz(std, base_len)?;
-    let properties = if sgc == 1 {
+    let paragraph = if sgc == 1 {
         parse_paragraph_style_properties(std.get(grlp_offset..)?, cupx, has_original_style, istd)
     } else {
         None
@@ -236,7 +277,7 @@ fn parse_std(std: &[u8], base_len: usize, istd: u16) -> Option<ParsedStyle> {
             istd_base,
             name,
         },
-        properties,
+        paragraph,
     })
 }
 
@@ -258,7 +299,7 @@ fn parse_paragraph_style_properties(
     cupx: u8,
     has_original_style: bool,
     istd: u16,
-) -> Option<ParagraphStyleOverrides> {
+) -> Option<ParsedParagraphStyleProperties> {
     if !matches!((cupx, has_original_style), (2, false) | (3, true)) {
         return None;
     }
@@ -267,6 +308,8 @@ fn parse_paragraph_style_properties(
         return None;
     }
     let properties = scan_paragraph_style_overrides(&papx[2..])?;
+    #[cfg(any(feature = "docx", feature = "render"))]
+    let tab_stop_changes = scan_paragraph_style_tab_changes(&papx[2..]);
 
     let (_, next) = read_lp_upx(grlp, offset)?;
     offset = next;
@@ -277,7 +320,11 @@ fn parse_paragraph_style_properties(
         validate_revision_paragraph_upx(grlp.get(start..end)?)?;
         offset = end;
     }
-    (offset == grlp.len()).then_some(properties)
+    (offset == grlp.len()).then_some(ParsedParagraphStyleProperties {
+        properties,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        tab_stop_changes,
+    })
 }
 
 fn validate_revision_paragraph_upx(data: &[u8]) -> Option<()> {
@@ -335,6 +382,62 @@ fn resolve_level(
         }
     }
     heading_from_name(&d.name)
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn resolve_all_tab_stops(
+    descs: &[Option<StyleDescription>],
+    local: &[Option<ParagraphTabStopChanges>],
+) -> Vec<Option<Vec<LegacyTabStop>>> {
+    let mut states = vec![0u8; descs.len()];
+    let mut resolved = vec![None; descs.len()];
+    for istd in 0..descs.len() {
+        let _ = resolve_tab_stops(descs, local, istd, &mut states, &mut resolved, 0);
+    }
+    resolved
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn resolve_tab_stops(
+    descs: &[Option<StyleDescription>],
+    local: &[Option<ParagraphTabStopChanges>],
+    istd: usize,
+    states: &mut [u8],
+    resolved: &mut [Option<Vec<LegacyTabStop>>],
+    depth: usize,
+) -> Option<Vec<LegacyTabStop>> {
+    if depth > MAX_STYLE_BASE_DEPTH || istd >= descs.len() {
+        return None;
+    }
+    match states.get(istd).copied()? {
+        1 => return None,
+        2 => return resolved.get(istd)?.clone(),
+        _ => {}
+    }
+    states[istd] = 1;
+    let result = (|| {
+        let description = descs.get(istd)?.as_ref()?;
+        if description.sgc != 1 {
+            return None;
+        }
+        let changes = local.get(istd)?.as_ref()?;
+        let inherited = if description.istd_base == 0x0FFF {
+            Vec::new()
+        } else {
+            resolve_tab_stops(
+                descs,
+                local,
+                description.istd_base as usize,
+                states,
+                resolved,
+                depth + 1,
+            )?
+        };
+        changes.apply(&inherited)
+    })();
+    states[istd] = 2;
+    resolved[istd] = result.clone();
+    result
 }
 
 fn resolve_pagination(
@@ -546,6 +649,8 @@ fn utf16le(b: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::model::Color;
+    #[cfg(any(feature = "docx", feature = "render"))]
+    use crate::model::{TabAlignment, TabLeader, TabStop};
     use crate::papx::{ParagraphJustification, ParagraphLineSpacing};
 
     fn paragraph_style_std(
@@ -653,6 +758,101 @@ mod tests {
             }
         }
         stsh
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_tab_sprm(deletions: &[i16], additions: &[(i16, u8)]) -> Vec<u8> {
+        let mut operand = Vec::new();
+        operand.push(deletions.len() as u8);
+        for &position in deletions {
+            operand.extend_from_slice(&position.to_le_bytes());
+        }
+        operand.push(additions.len() as u8);
+        for &(position, _) in additions {
+            operand.extend_from_slice(&position.to_le_bytes());
+        }
+        for &(_, descriptor) in additions {
+            operand.push(descriptor);
+        }
+        let mut grpprl = Vec::from(0xC60Du16.to_le_bytes());
+        grpprl.push(operand.len() as u8);
+        grpprl.extend_from_slice(&operand);
+        grpprl
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn paragraph_style_tabs_resolve_base_chains_and_isolate_invalid_styles() {
+        let normal = legacy_tab_sprm(&[], &[(720, 0x09), (1440, 0x12)]);
+        let child = legacy_tab_sprm(&[720], &[(1080, 0x19)]);
+        let mut invalid = Vec::from(0x2406u16.to_le_bytes());
+        invalid.push(1);
+        invalid.extend(legacy_tab_sprm(&[], &[(1800, 0x06)]));
+        let bytes = stylesheet(
+            10,
+            &[
+                Some(paragraph_style_std_grpprl(
+                    10, 0, 0x0FFF, "Normal", &normal, false,
+                )),
+                Some(paragraph_style_std_grpprl(10, 1, 0, "Child", &child, false)),
+                Some(paragraph_style_std_grpprl(
+                    10,
+                    2,
+                    1,
+                    "Grandchild",
+                    &[],
+                    false,
+                )),
+                Some(paragraph_style_std_grpprl(10, 3, 4, "CycleA", &[], false)),
+                Some(paragraph_style_std_grpprl(10, 4, 3, "CycleB", &[], false)),
+                Some(paragraph_style_std_grpprl(
+                    10, 5, 0, "Invalid", &invalid, false,
+                )),
+            ],
+        );
+        let styles = StyleSheet::parse(&bytes, 0, bytes.len());
+        let tabs = |istd| {
+            styles.paragraph_tab_stops(istd).map(|stops| {
+                stops
+                    .iter()
+                    .copied()
+                    .map(LegacyTabStop::to_model)
+                    .collect::<Vec<_>>()
+            })
+        };
+        assert_eq!(
+            tabs(0).unwrap(),
+            vec![
+                TabStop {
+                    position_pt: 36.0,
+                    alignment: TabAlignment::Center,
+                    leader: TabLeader::Dot,
+                },
+                TabStop {
+                    position_pt: 72.0,
+                    alignment: TabAlignment::Right,
+                    leader: TabLeader::Hyphen,
+                },
+            ]
+        );
+        let expected_child = vec![
+            TabStop {
+                position_pt: 54.0,
+                alignment: TabAlignment::Center,
+                leader: TabLeader::Underscore,
+            },
+            TabStop {
+                position_pt: 72.0,
+                alignment: TabAlignment::Right,
+                leader: TabLeader::Hyphen,
+            },
+        ];
+        assert_eq!(tabs(1).unwrap(), expected_child);
+        assert_eq!(tabs(2).unwrap(), expected_child);
+        assert_eq!(tabs(3), None);
+        assert_eq!(tabs(4), None);
+        assert_eq!(tabs(5), None);
+        assert!(styles.paragraph_pagination(5).keep_next);
     }
 
     fn parsed_pagination(

@@ -569,6 +569,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         model,
         pagination_hints: _pagination_hints,
         line_spacing_hints: _line_spacing_hints,
+        #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stops: _tab_stops,
         column_break_offsets: _column_break_offsets,
         section_column_gap_pt: _section_column_gap_pt,
         final_section_column_gap_pt: _final_section_column_gap_pt,
@@ -581,6 +583,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         table_row_pagination: _table_row_pagination,
         table_cell_pagination: _table_cell_pagination,
         table_cell_line_spacing: _table_cell_line_spacing,
+        #[cfg(any(feature = "docx", feature = "render"))]
+            table_cell_tab_stops: _table_cell_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
             running_line_spacing_hints: _running_line_spacing_hints,
         running_surface_distances: _running_surface_distances,
@@ -1065,12 +1069,12 @@ impl Document {
                         running_table_cell_tab_stops: &[],
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
-                        paragraph_tab_stops: &[],
+                        paragraph_tab_stops: &assembled.tab_stops,
                         column_break_offsets: &assembled.column_break_offsets,
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
-                        table_cell_tab_stops: &[],
+                        table_cell_tab_stops: &assembled.table_cell_tab_stops,
                     },
                 )
             }
@@ -3034,6 +3038,8 @@ impl Document {
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
+                        tab_stops: &assembled.tab_stops,
+                        table_cell_tab_stops: &assembled.table_cell_tab_stops,
                         running_line_spacing: &assembled.running_line_spacing_hints,
                         running_surface_distances: &assembled.running_surface_distances,
                         ..render::SourceRenderHints::default()
@@ -10720,6 +10726,108 @@ mod tests {
         grpprl.extend_from_slice(&multiple.to_le_bytes());
     }
 
+    #[cfg(feature = "docx")]
+    fn push_legacy_tab_change(
+        grpprl: &mut Vec<u8>,
+        sprm: u16,
+        deletions: &[(i16, Option<u16>)],
+        additions: &[(i16, u8)],
+    ) {
+        let mut operand = Vec::new();
+        operand.push(deletions.len() as u8);
+        for &(position, _) in deletions {
+            operand.extend_from_slice(&position.to_le_bytes());
+        }
+        if sprm == 0xC615 {
+            for &(_, close) in deletions {
+                operand.extend_from_slice(&close.unwrap_or(26).to_le_bytes());
+            }
+        }
+        operand.push(additions.len() as u8);
+        for &(position, _) in additions {
+            operand.extend_from_slice(&position.to_le_bytes());
+        }
+        for &(_, descriptor) in additions {
+            operand.push(descriptor);
+        }
+        grpprl.extend_from_slice(&sprm.to_le_bytes());
+        grpprl.push(operand.len() as u8);
+        grpprl.extend_from_slice(&operand);
+    }
+
+    #[cfg(feature = "docx")]
+    fn legacy_body_and_table_cell_tabs_doc() -> Vec<u8> {
+        legacy_body_and_table_cell_tabs_doc_with_tabs(true)
+    }
+
+    #[cfg(feature = "docx")]
+    fn legacy_body_and_table_cell_tabs_doc_with_tabs(include_tabs: bool) -> Vec<u8> {
+        let mut style_tabs = Vec::new();
+        if include_tabs {
+            push_legacy_tab_change(&mut style_tabs, 0xC60D, &[], &[(720, 0x09), (1440, 0x12)]);
+        }
+        let stylesheet = synthetic_paragraph_stylesheet_grpprl(&style_tabs);
+
+        let mut body_grpprl = vec![0x00, 0x46, 0x01, 0x00];
+        if include_tabs {
+            push_legacy_tab_change(
+                &mut body_grpprl,
+                0xC615,
+                &[(720, Some(26))],
+                &[(1080, 0x1B)],
+            );
+        }
+
+        let mut cell_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x00, 0x46, 0x01, 0x00, // sprmPIstd = tabbed style
+        ];
+        if include_tabs {
+            push_legacy_tab_change(&mut cell_grpprl, 0xC60D, &[(1440, None)], &[(1800, 0x24)]);
+        }
+
+        let text = "Body\tTail\rCell\tTail\u{7}\u{7}";
+        let body_end = "Body\tTail\r".encode_utf16().count() as u32;
+        let cell_end = "Body\tTail\rCell\tTail\u{7}".encode_utf16().count() as u32;
+        let row_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        let runs = [
+            SyntheticPapxRun {
+                cp_lim: body_end,
+                grpprl: body_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: cell_end,
+                grpprl: cell_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: row_end,
+                grpprl: row_grpprl,
+            },
+        ];
+
+        synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [row_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
     fn legacy_paragraph_spacing_doc() -> Vec<u8> {
         const SPRM_P_DYA_BEFORE: u16 = 0xA413;
         const SPRM_P_DYA_AFTER: u16 = 0xA414;
@@ -11016,6 +11124,104 @@ mod tests {
             assert_eq!(state.line_spacing_hints[8], None);
             assert_eq!(state.line_spacing_hints[9], None);
         }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_body_and_table_cell_tabs_roundtrip_to_docx() {
+        let legacy = Document::open(&legacy_body_and_table_cell_tabs_doc()).unwrap();
+        let control =
+            Document::open(&legacy_body_and_table_cell_tabs_doc_with_tabs(false)).unwrap();
+        assert_eq!(
+            legacy.model(),
+            control.model(),
+            "legacy custom tabs must remain outside the public model"
+        );
+        let converted = legacy.to_docx();
+        assert_eq!(converted, legacy.to_docx());
+        assert_ne!(converted, control.to_docx());
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        let body = docx_paragraph_with_text(&document_xml, "Body");
+        assert!(
+            body.contains(concat!(
+                r#"<w:tabs><w:tab w:val="decimal" w:pos="1080" w:leader="underscore"/>"#,
+                r#"<w:tab w:val="right" w:pos="1440" w:leader="hyphen"/></w:tabs>"#,
+            )),
+            "{body}"
+        );
+        let cell = docx_paragraph_with_text(&document_xml, "Cell");
+        assert!(
+            cell.contains(concat!(
+                r#"<w:tabs><w:tab w:val="center" w:pos="720" w:leader="dot"/>"#,
+                r#"<w:tab w:val="bar" w:pos="1800"/></w:tabs>"#,
+            )),
+            "{cell}"
+        );
+
+        let model_only_xml = docx_part(&write_docx(&legacy.model()), "word/document.xml");
+        assert!(!model_only_xml.contains("<w:tabs>"));
+
+        let reopened = Document::open(&converted).unwrap();
+        let reopened_xml = docx_part(&reopened.to_docx(), "word/document.xml");
+        assert_eq!(reopened_xml.matches("<w:tabs>").count(), 2);
+        assert!(reopened_xml.contains(r#"w:val="decimal" w:pos="1080""#));
+        assert!(reopened_xml.contains(r#"w:val="bar" w:pos="1800""#));
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_legacy_doc_body_and_table_cell_tabs_change_preview_deterministically() {
+        let legacy = Document::open(&legacy_body_and_table_cell_tabs_doc()).unwrap();
+        let control =
+            Document::open(&legacy_body_and_table_cell_tabs_doc_with_tabs(false)).unwrap();
+        assert_eq!(legacy.model(), control.model());
+
+        let Backend::Doc(state) = &legacy.backend else {
+            panic!("synthetic legacy document must use the DOC backend");
+        };
+        let assembled = legacy_build_output_from_doc_state(state);
+        assert_eq!(
+            assembled.tab_stops[0],
+            vec![
+                crate::model::TabStop {
+                    position_pt: 54.0,
+                    alignment: crate::model::TabAlignment::Decimal,
+                    leader: crate::model::TabLeader::Underscore,
+                },
+                crate::model::TabStop {
+                    position_pt: 72.0,
+                    alignment: crate::model::TabAlignment::Right,
+                    leader: crate::model::TabLeader::Hyphen,
+                },
+            ]
+        );
+        assert_eq!(
+            assembled.table_cell_tab_stops[1][0][0][0],
+            vec![
+                crate::model::TabStop {
+                    position_pt: 36.0,
+                    alignment: crate::model::TabAlignment::Center,
+                    leader: crate::model::TabLeader::Dot,
+                },
+                crate::model::TabStop {
+                    position_pt: 90.0,
+                    alignment: crate::model::TabAlignment::Bar,
+                    leader: crate::model::TabLeader::None,
+                },
+            ]
+        );
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let rendered = legacy.to_pdf_with_fonts(&fonts);
+        let control_rendered = control.to_pdf_with_fonts(&fonts);
+        assert!(rendered.starts_with(b"%PDF-"));
+        assert_ne!(rendered, control_rendered);
+        assert_eq!(rendered, legacy.to_pdf_with_fonts(&fonts));
+        assert_eq!(
+            control_rendered,
+            render_pdf_with_fonts(&legacy.model(), &fonts)
+        );
     }
 
     #[cfg(feature = "docx")]

@@ -1,7 +1,7 @@
 //! Paragraph-property (PAPX) reading — the minimum needed to reconstruct table
 //! structure and source paragraph layout: table membership/termination, list
 //! and style references, direct pagination and BiDi/justification controls,
-//! bounded flat-color shading, and row properties.
+//! bounded flat-color shading and custom-tab changes, and row properties.
 //!
 //! The `PlcfBtePapx` bin table (FIB `fcPlcfBtePapx`, in the table stream) points
 //! to 512-byte **PAPX FKP** pages in the `WordDocument` stream. Each FKP maps FC
@@ -10,7 +10,10 @@
 //!
 //! Reference: [MS-DOC] 2.8.25 (PlcBtePapx), 2.9.137 (PapxInFkp), 2.6.2 (sprm).
 
+use crate::chpx::pchg_tabs_operand_len;
 use crate::model::Color;
+#[cfg(any(feature = "docx", feature = "render"))]
+use crate::model::{TabAlignment, TabLeader, TabStop, MAX_TAB_STOPS};
 use crate::table::TableDef;
 use crate::util::{u16le, u32le};
 
@@ -42,6 +45,8 @@ fn max_fkp_entries() -> usize {
 }
 const SPRM_P_ISTD: u16 = 0x4600; // direct istd override (2-byte)
 const SPRM_P_ISTD_PERMUTE: u16 = 0xC601; // conditional paragraph-style remap
+#[cfg(any(feature = "docx", feature = "render"))]
+const SPRM_P_CHG_TABS_PAPX: u16 = 0xC60D;
 const SPRM_P_JC_80: u16 = 0x2403; // physical paragraph justification (1-byte)
 const SPRM_P_FKEEP: u16 = 0x2405;
 const SPRM_P_FKEEP_FOLLOW: u16 = 0x2406;
@@ -54,6 +59,7 @@ const SPRM_P_JC: u16 = 0x2461; // logical paragraph justification (1-byte)
 const SPRM_P_DYA_LINE: u16 = 0x6412; // LSPD (4-byte)
 const SPRM_P_DYA_BEFORE: u16 = 0xA413; // unsigned twips
 const SPRM_P_DYA_AFTER: u16 = 0xA414; // unsigned twips
+const SPRM_P_CHG_TABS: u16 = 0xC615;
 const SPRM_P_SHD_80: u16 = 0x442D; // Shd80 (2-byte palette/pattern)
 const SPRM_P_SHD: u16 = 0xC64D; // SHDOperand (cb + 10-byte Shd)
 const SPRM_P_DXA_RIGHT: u16 = 0x845D; // logical right indent (signed twips)
@@ -253,6 +259,242 @@ impl ParagraphShading {
     }
 }
 
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LegacyTabStop {
+    position_twips: i16,
+    alignment: TabAlignment,
+    leader: TabLeader,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+impl LegacyTabStop {
+    pub(crate) fn to_model(self) -> TabStop {
+        TabStop {
+            position_pt: f32::from(self.position_twips) / 20.0,
+            alignment: self.alignment,
+            leader: self.leader,
+        }
+    }
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LegacyTabDeletion {
+    Nearby(i16),
+    Range {
+        center_twips: i16,
+        radius_twips: i32,
+    },
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LegacyTabOperation {
+    deletions: Vec<LegacyTabDeletion>,
+    additions: Vec<LegacyTabStop>,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ParagraphTabStopChanges {
+    valid: bool,
+    operations: Vec<LegacyTabOperation>,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+impl Default for ParagraphTabStopChanges {
+    fn default() -> Self {
+        Self {
+            valid: true,
+            operations: Vec::new(),
+        }
+    }
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+impl ParagraphTabStopChanges {
+    fn clear(&mut self) {
+        *self = Self::default();
+    }
+
+    fn invalidate(&mut self) {
+        self.valid = false;
+        self.operations.clear();
+    }
+
+    fn push_operand(&mut self, sprm: u16, operand: &[u8]) {
+        if !self.valid {
+            return;
+        }
+        let Some(operation) = parse_legacy_tab_operation(sprm, operand) else {
+            self.invalidate();
+            return;
+        };
+        self.operations.push(operation);
+    }
+
+    pub(crate) fn apply(&self, inherited: &[LegacyTabStop]) -> Option<Vec<LegacyTabStop>> {
+        if !self.valid || inherited.len() > MAX_TAB_STOPS {
+            return None;
+        }
+        let mut resolved = inherited.to_vec();
+        if resolved.windows(2).any(|pair| {
+            pair[0].position_twips >= pair[1].position_twips || pair[0].position_twips < 0
+        }) || resolved.last().is_some_and(|stop| stop.position_twips < 0)
+        {
+            return None;
+        }
+
+        for operation in &self.operations {
+            for deletion in &operation.deletions {
+                resolved.retain(|stop| {
+                    let delta = (i32::from(stop.position_twips)
+                        - i32::from(match deletion {
+                            LegacyTabDeletion::Nearby(center) => *center,
+                            LegacyTabDeletion::Range { center_twips, .. } => *center_twips,
+                        }))
+                    .abs();
+                    let radius = match deletion {
+                        LegacyTabDeletion::Nearby(_) => 25,
+                        LegacyTabDeletion::Range { radius_twips, .. } => *radius_twips,
+                    };
+                    delta > radius
+                });
+            }
+            for addition in &operation.additions {
+                match resolved
+                    .binary_search_by_key(&addition.position_twips, |stop| stop.position_twips)
+                {
+                    Ok(index) => resolved[index] = *addition,
+                    Err(index) => resolved.insert(index, *addition),
+                }
+            }
+            if resolved.len() > MAX_TAB_STOPS {
+                return None;
+            }
+        }
+        Some(resolved)
+    }
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn parse_legacy_tab_operation(sprm: u16, operand: &[u8]) -> Option<LegacyTabOperation> {
+    let cb = usize::from(*operand.first()?);
+    if !(2..=u8::MAX as usize).contains(&cb) {
+        return None;
+    }
+    let mut offset = 1usize;
+    let deletion_count = usize::from(*operand.get(offset)?);
+    if deletion_count > 64 {
+        return None;
+    }
+    offset = offset.checked_add(1)?;
+
+    let mut deletion_centers = Vec::with_capacity(deletion_count);
+    for _ in 0..deletion_count {
+        let center = strict_xas(operand.get(offset..offset.checked_add(2)?)?)?;
+        if deletion_centers
+            .last()
+            .is_some_and(|previous| *previous >= center)
+        {
+            return None;
+        }
+        deletion_centers.push(center);
+        offset = offset.checked_add(2)?;
+    }
+
+    let deletions = match sprm {
+        SPRM_P_CHG_TABS_PAPX => deletion_centers
+            .into_iter()
+            .map(LegacyTabDeletion::Nearby)
+            .collect(),
+        SPRM_P_CHG_TABS => {
+            let mut parsed = Vec::with_capacity(deletion_count);
+            for center_twips in deletion_centers {
+                let stored = i16::from_le_bytes(
+                    operand
+                        .get(offset..offset.checked_add(2)?)?
+                        .try_into()
+                        .ok()?,
+                );
+                let decoded = i32::from(stored).checked_sub(1)?;
+                if !(-31_679..=31_681).contains(&decoded) {
+                    return None;
+                }
+                parsed.push(LegacyTabDeletion::Range {
+                    center_twips,
+                    radius_twips: decoded.max(25),
+                });
+                offset = offset.checked_add(2)?;
+            }
+            parsed
+        }
+        _ => return None,
+    };
+
+    let addition_count = usize::from(*operand.get(offset)?);
+    if addition_count > 64 {
+        return None;
+    }
+    offset = offset.checked_add(1)?;
+    let mut addition_positions = Vec::with_capacity(addition_count);
+    for _ in 0..addition_count {
+        let position = strict_xas(operand.get(offset..offset.checked_add(2)?)?)?;
+        if position < 0
+            || addition_positions
+                .last()
+                .is_some_and(|previous| *previous >= position)
+        {
+            return None;
+        }
+        addition_positions.push(position);
+        offset = offset.checked_add(2)?;
+    }
+    let mut additions = Vec::with_capacity(addition_count);
+    for position_twips in addition_positions {
+        let descriptor = *operand.get(offset)?;
+        offset = offset.checked_add(1)?;
+        let alignment = match descriptor & 0x07 {
+            0 => TabAlignment::Left,
+            1 => TabAlignment::Center,
+            2 => TabAlignment::Right,
+            3 => TabAlignment::Decimal,
+            4 => TabAlignment::Bar,
+            _ => return None,
+        };
+        let leader = if alignment == TabAlignment::Bar {
+            TabLeader::None
+        } else {
+            match (descriptor >> 3) & 0x07 {
+                0 | 7 => TabLeader::None,
+                1 => TabLeader::Dot,
+                2 => TabLeader::Hyphen,
+                3 => TabLeader::Underscore,
+                4 => TabLeader::Heavy,
+                5 => TabLeader::MiddleDot,
+                _ => return None,
+            }
+        };
+        additions.push(LegacyTabStop {
+            position_twips,
+            alignment,
+            leader,
+        });
+    }
+
+    let expected_remainder = offset.checked_sub(1)?;
+    if offset != operand.len()
+        || (sprm != SPRM_P_CHG_TABS || cb != u8::MAX as usize) && cb != expected_remainder
+    {
+        return None;
+    }
+    Some(LegacyTabOperation {
+        deletions,
+        additions,
+    })
+}
+
 /// Sparse paragraph properties carried by one paragraph-style PAPX.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct ParagraphStyleOverrides {
@@ -287,6 +529,9 @@ struct PapEntry {
     shading: Option<ParagraphShading>,
     /// Sparse direct paragraph pagination modifiers.
     pagination: ParagraphPaginationOverrides,
+    /// Ordered direct custom-tab changes, unavailable when the local PAPX is malformed.
+    #[cfg(any(feature = "docx", feature = "render"))]
+    tab_stop_changes: ParagraphTabStopChanges,
     /// Row repeats as a table header (`sprmTTableHeader`).
     table_header: bool,
     /// Resolved `sprmTFCantSplit` / `sprmTFCantSplit90` row property.
@@ -298,7 +543,7 @@ struct PapEntry {
 }
 
 /// Per-paragraph properties scanned out of one grpprl.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 struct Pap {
     in_table: bool,
     ttp: bool,
@@ -311,6 +556,8 @@ struct Pap {
     spacing: ParagraphSpacingOverrides,
     shading: Option<ParagraphShading>,
     pagination: ParagraphPaginationOverrides,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    tab_stop_changes: ParagraphTabStopChanges,
     table_header: bool,
     table_cant_split_90: Option<bool>,
     table_cant_split: Option<bool>,
@@ -319,13 +566,13 @@ struct Pap {
 }
 
 impl Pap {
-    fn resolved_cant_split(self) -> bool {
+    fn resolved_cant_split(&self) -> bool {
         self.table_cant_split
             .or(self.table_cant_split_90)
             .unwrap_or(false)
     }
 
-    fn resolved_table_bidi_visual(self) -> bool {
+    fn resolved_table_bidi_visual(&self) -> bool {
         self.table_bidi.unwrap_or(false) || self.table_bidi_90.unwrap_or(false)
     }
 }
@@ -398,6 +645,18 @@ impl PapxTable {
         fc: u32,
     ) -> ParagraphPaginationOverrides {
         self.entry_at(fc).map(|e| e.pagination).unwrap_or_default()
+    }
+
+    /// Resolve direct custom-tab operations against the paragraph style's tab set.
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub(crate) fn resolve_paragraph_tab_stops_at(
+        &self,
+        fc: u32,
+        inherited: &[LegacyTabStop],
+    ) -> Option<Vec<LegacyTabStop>> {
+        self.entry_at(fc)
+            .map(|entry| entry.tab_stop_changes.apply(inherited))
+            .unwrap_or_else(|| Some(inherited.to_vec()))
     }
 
     /// The `sprmTDefTable` row definition for the row ending at `fc` (TTP), if any.
@@ -507,6 +766,26 @@ impl PapxTable {
                 .collect(),
         }
     }
+
+    #[cfg(all(test, any(feature = "docx", feature = "render")))]
+    pub(crate) fn from_test_entries_with_tab_grpprls(entries: &[(u32, &[u8])]) -> Self {
+        Self {
+            entries: entries
+                .iter()
+                .map(|&(fc_lim, grpprl)| PapEntry {
+                    fc_lim,
+                    tab_stop_changes: scan_paragraph_style_tab_changes(grpprl).unwrap_or_else(
+                        || {
+                            let mut changes = ParagraphTabStopChanges::default();
+                            changes.invalidate();
+                            changes
+                        },
+                    ),
+                    ..PapEntry::default()
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Parse the PAPX bin table + FKP pages into a [`PapxTable`]. Returns an empty
@@ -581,6 +860,8 @@ fn parse_fkp(word: &[u8], page_off: usize, out: &mut Vec<PapEntry>) {
             table_header: pap.table_header,
             table_cant_split: pap.resolved_cant_split(),
             table_bidi_visual: pap.resolved_table_bidi_visual(),
+            #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stop_changes: pap.tab_stop_changes,
             table_def,
         });
     }
@@ -680,6 +961,8 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
         let Some(sprm) = u16le(gp, pos) else { break };
         let op = pos + 2;
         let Some(len) = operand_len(sprm, gp, op) else {
+            #[cfg(any(feature = "docx", feature = "render"))]
+            pap.tab_stop_changes.invalidate();
             if is_paragraph_shading_sprm(sprm) {
                 pap.shading = Some(ParagraphShading::Unrepresentable);
             }
@@ -689,6 +972,8 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
             break;
         };
         let Some(operand_end) = op.checked_add(len) else {
+            #[cfg(any(feature = "docx", feature = "render"))]
+            pap.tab_stop_changes.invalidate();
             if is_paragraph_shading_sprm(sprm) {
                 pap.shading = Some(ParagraphShading::Unrepresentable);
             }
@@ -698,6 +983,8 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
             break;
         };
         if gp.get(op..operand_end).is_none() {
+            #[cfg(any(feature = "docx", feature = "render"))]
+            pap.tab_stop_changes.invalidate();
             if is_paragraph_shading_sprm(sprm) {
                 pap.shading = Some(ParagraphShading::Unrepresentable);
             }
@@ -737,6 +1024,10 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
                     apply_paragraph_style_to_modeled_properties(&mut pap, new_istd);
                 }
             }
+            #[cfg(any(feature = "docx", feature = "render"))]
+            SPRM_P_CHG_TABS_PAPX | SPRM_P_CHG_TABS => pap
+                .tab_stop_changes
+                .push_operand(sprm, &gp[op..operand_end]),
             SPRM_P_FIN_TABLE => pap.in_table = gp.get(op).copied().unwrap_or(0) != 0,
             SPRM_P_FTTP => pap.ttp = gp.get(op).copied().unwrap_or(0) != 0,
             SPRM_P_OUT_LVL => pap.outlvl = Some(gp.get(op).copied().unwrap_or(9)),
@@ -801,6 +1092,10 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
         }
         pos = operand_end;
     }
+    #[cfg(any(feature = "docx", feature = "render"))]
+    if pos != gp.len() {
+        pap.tab_stop_changes.invalidate();
+    }
     (pap, table_def)
 }
 
@@ -814,6 +1109,8 @@ fn apply_paragraph_style_to_modeled_properties(pap: &mut Pap, istd: u16) {
     pap.spacing = ParagraphSpacingOverrides::default();
     pap.shading = None;
     pap.pagination = ParagraphPaginationOverrides::default();
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pap.tab_stop_changes.clear();
     // Table membership and row properties are intentionally preserved by a
     // paragraph-style change. Style-derived layout, indent, spacing, shading,
     // and pagination are resolved during assembly; style-derived list values
@@ -1088,6 +1385,28 @@ pub(crate) fn scan_paragraph_style_overrides(gp: &[u8]) -> Option<ParagraphStyle
     })
 }
 
+/// Strictly retain ordered custom-tab changes from one paragraph-style PAPX.
+#[cfg(any(feature = "docx", feature = "render"))]
+pub(crate) fn scan_paragraph_style_tab_changes(gp: &[u8]) -> Option<ParagraphTabStopChanges> {
+    let mut changes = ParagraphTabStopChanges::default();
+    let mut pos = 0usize;
+    while pos < gp.len() {
+        let sprm = u16le(gp, pos)?;
+        let op = pos.checked_add(2)?;
+        let len = operand_len(sprm, gp, op)?;
+        let operand_end = op.checked_add(len)?;
+        let operand = gp.get(op..operand_end)?;
+        if matches!(sprm, SPRM_P_CHG_TABS_PAPX | SPRM_P_CHG_TABS) {
+            changes.push_operand(sprm, operand);
+            if !changes.valid {
+                return None;
+            }
+        }
+        pos = operand_end;
+    }
+    Some(changes)
+}
+
 /// Operand length for a sprm, from its `spra` field ([MS-DOC] 2.2.5).
 fn operand_len(sprm: u16, data: &[u8], op: usize) -> Option<usize> {
     match (sprm >> 13) & 0x7 {
@@ -1101,6 +1420,8 @@ fn operand_len(sprm: u16, data: &[u8], op: usize) -> Option<usize> {
                 // PLUS ONE, so total operand = cb-field(2) + (cb-1) = cb + 1.
                 let cb = u16le(data, op)? as usize;
                 (cb != 0).then_some(1 + cb)
+            } else if sprm == SPRM_P_CHG_TABS {
+                pchg_tabs_operand_len(data, op)
             } else {
                 Some(1 + *data.get(op)? as usize)
             }
@@ -1165,6 +1486,198 @@ mod tests {
         sprm.extend_from_slice(&background);
         sprm.extend_from_slice(&pattern.to_le_bytes());
         sprm
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_tab_sprm(
+        sprm: u16,
+        deletions: &[(i16, i16)],
+        additions: &[(i16, u8)],
+        cb_override: Option<u8>,
+    ) -> Vec<u8> {
+        let mut operand = Vec::new();
+        operand.push(deletions.len() as u8);
+        for &(position, _) in deletions {
+            operand.extend_from_slice(&position.to_le_bytes());
+        }
+        if sprm == SPRM_P_CHG_TABS {
+            for &(_, close) in deletions {
+                operand.extend_from_slice(&close.to_le_bytes());
+            }
+        }
+        operand.push(additions.len() as u8);
+        for &(position, _) in additions {
+            operand.extend_from_slice(&position.to_le_bytes());
+        }
+        for &(_, descriptor) in additions {
+            operand.push(descriptor);
+        }
+        let mut grpprl = Vec::from(sprm.to_le_bytes());
+        grpprl.push(cb_override.unwrap_or(operand.len() as u8));
+        grpprl.extend_from_slice(&operand);
+        grpprl
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_tab(
+        position_twips: i16,
+        alignment: TabAlignment,
+        leader: TabLeader,
+    ) -> LegacyTabStop {
+        LegacyTabStop {
+            position_twips,
+            alignment,
+            leader,
+        }
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn legacy_tab_descriptors_map_all_supported_alignments_and_leaders() {
+        let grpprl = legacy_tab_sprm(
+            SPRM_P_CHG_TABS_PAPX,
+            &[],
+            &[
+                (100, 0x00),
+                (200, 0x09),
+                (300, 0x12),
+                (400, 0x1B),
+                (500, 0x20),
+                (600, 0x28),
+                (700, 0x38),
+                (800, 0x2C),
+            ],
+            None,
+        );
+        let changes = scan_paragraph_style_tab_changes(&grpprl).unwrap();
+        assert_eq!(
+            changes.apply(&[]).unwrap(),
+            vec![
+                legacy_tab(100, TabAlignment::Left, TabLeader::None),
+                legacy_tab(200, TabAlignment::Center, TabLeader::Dot),
+                legacy_tab(300, TabAlignment::Right, TabLeader::Hyphen),
+                legacy_tab(400, TabAlignment::Decimal, TabLeader::Underscore),
+                legacy_tab(500, TabAlignment::Left, TabLeader::Heavy),
+                legacy_tab(600, TabAlignment::Left, TabLeader::MiddleDot),
+                legacy_tab(700, TabAlignment::Left, TabLeader::None),
+                legacy_tab(800, TabAlignment::Bar, TabLeader::None),
+            ]
+        );
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn legacy_tab_deletions_apply_exact_radii_and_source_order() {
+        let inherited = [100, 125, 126, 300, 350, 351, 600, 625, 626]
+            .map(|position| legacy_tab(position, TabAlignment::Left, TabLeader::None));
+        let mut grpprl = legacy_tab_sprm(SPRM_P_CHG_TABS_PAPX, &[(100, 0)], &[(200, 0x09)], None);
+        grpprl.extend(legacy_tab_sprm(
+            SPRM_P_CHG_TABS,
+            &[(300, 51), (600, 1)],
+            &[(400, 0x12)],
+            None,
+        ));
+        let (pap, _) = scan_grpprl(&grpprl, 0);
+        assert_eq!(
+            pap.tab_stop_changes.apply(&inherited).unwrap(),
+            vec![
+                legacy_tab(126, TabAlignment::Left, TabLeader::None),
+                legacy_tab(200, TabAlignment::Center, TabLeader::Dot),
+                legacy_tab(351, TabAlignment::Left, TabLeader::None),
+                legacy_tab(400, TabAlignment::Right, TabLeader::Hyphen),
+                legacy_tab(626, TabAlignment::Left, TabLeader::None),
+            ]
+        );
+
+        let sentinel = legacy_tab_sprm(SPRM_P_CHG_TABS, &[], &[(720, 0x1B)], Some(u8::MAX));
+        let (pap, _) = scan_grpprl(&sentinel, 0);
+        assert_eq!(
+            pap.tab_stop_changes.apply(&[]).unwrap(),
+            vec![legacy_tab(
+                720,
+                TabAlignment::Decimal,
+                TabLeader::Underscore
+            )]
+        );
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn legacy_tab_style_switch_discards_earlier_direct_changes() {
+        let mut grpprl = legacy_tab_sprm(SPRM_P_CHG_TABS_PAPX, &[], &[(500, 0x00)], None);
+        grpprl.extend_from_slice(&SPRM_P_ISTD.to_le_bytes());
+        grpprl.extend_from_slice(&1u16.to_le_bytes());
+        grpprl.extend(legacy_tab_sprm(
+            SPRM_P_CHG_TABS_PAPX,
+            &[],
+            &[(900, 0x09)],
+            None,
+        ));
+        let (pap, _) = scan_grpprl(&grpprl, 0);
+        assert_eq!(pap.istd, 1);
+        assert_eq!(
+            pap.tab_stop_changes
+                .apply(&[legacy_tab(720, TabAlignment::Right, TabLeader::Hyphen)])
+                .unwrap(),
+            vec![
+                legacy_tab(720, TabAlignment::Right, TabLeader::Hyphen),
+                legacy_tab(900, TabAlignment::Center, TabLeader::Dot),
+            ]
+        );
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn legacy_tab_malformed_or_unsupported_operands_are_all_or_nothing() {
+        let malformed = [
+            legacy_tab_sprm(SPRM_P_CHG_TABS_PAPX, &[], &[(200, 0x00), (100, 0x00)], None),
+            legacy_tab_sprm(SPRM_P_CHG_TABS_PAPX, &[], &[(-1, 0x00)], None),
+            legacy_tab_sprm(SPRM_P_CHG_TABS_PAPX, &[], &[(100, 0x06)], None),
+            legacy_tab_sprm(SPRM_P_CHG_TABS_PAPX, &[], &[(100, 0x30)], None),
+            legacy_tab_sprm(SPRM_P_CHG_TABS, &[], &[(100, 0x00)], Some(1)),
+            legacy_tab_sprm(SPRM_P_CHG_TABS, &[], &[(100, 0x00)], Some(7)),
+            vec![0x0D, 0xC6, 0x02, 65, 0],
+        ];
+        for grpprl in malformed {
+            let (pap, _) = scan_grpprl(&grpprl, 0);
+            assert!(pap.tab_stop_changes.apply(&[]).is_none(), "{grpprl:?}");
+            assert!(scan_paragraph_style_tab_changes(&grpprl).is_none());
+        }
+
+        let mut trailing = legacy_tab_sprm(SPRM_P_CHG_TABS_PAPX, &[], &[(100, 0x00)], None);
+        trailing.push(0xFF);
+        let (pap, _) = scan_grpprl(&trailing, 0);
+        assert!(pap.tab_stop_changes.apply(&[]).is_none());
+        assert!(scan_paragraph_style_tab_changes(&trailing).is_none());
+
+        let mut over_bound = Vec::new();
+        for batch in 0..=4 {
+            let additions = (0..64)
+                .map(|index| ((batch * 1000 + index + 1) as i16, 0x00))
+                .collect::<Vec<_>>();
+            over_bound.extend(legacy_tab_sprm(SPRM_P_CHG_TABS_PAPX, &[], &additions, None));
+        }
+        let (pap, _) = scan_grpprl(&over_bound, 0);
+        assert!(pap.tab_stop_changes.apply(&[]).is_none());
+        assert!(scan_paragraph_style_tab_changes(&over_bound)
+            .unwrap()
+            .apply(&[])
+            .is_none());
+
+        let mut bounded_result = Vec::new();
+        let repeated_deletions = (-64..0)
+            .map(|position| (position, 0))
+            .collect::<Vec<(i16, i16)>>();
+        for _ in 0..=4 {
+            bounded_result.extend(legacy_tab_sprm(
+                SPRM_P_CHG_TABS_PAPX,
+                &repeated_deletions,
+                &[],
+                None,
+            ));
+        }
+        let changes = scan_paragraph_style_tab_changes(&bounded_result).unwrap();
+        assert_eq!(changes.apply(&[]), Some(Vec::new()));
     }
 
     fn table_from_grpprl(grpprl: &[u8]) -> Table {
@@ -2171,6 +2684,8 @@ mod tests {
             spacing: ParagraphSpacingOverrides::default(),
             shading: None,
             pagination: ParagraphPaginationOverrides::default(),
+            #[cfg(any(feature = "docx", feature = "render"))]
+            tab_stop_changes: ParagraphTabStopChanges::default(),
             table_header: false,
             table_cant_split: false,
             table_bidi_visual: false,

@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Opened legacy `.doc` ordinary Main-story top-level paragraphs and direct
+  paragraph blocks in surviving cells of top-level tables now resolve bounded
+  custom tabs through paragraph-style STSH inheritance followed by direct PAPX
+  `sprmPChgTabsPapx` and `sprmPChgTabs` changes. Common alignments and leaders,
+  both deletion forms, source-order replacement, style-reset semantics,
+  malformed-input isolation, merge-owner alignment, deterministic PDF output,
+  and fresh DOCX conversion/reopen are covered. The public model and standalone
+  writer remain unchanged; running stories, notes, nested legacy tables,
+  default-tab intervals, implicit list tabs, negative stops, and Word-exact
+  reflow remain outside this bounded path.
 - Preserves visible manual column breaks when `Document::to_docx()` freshly
   converts aligned top-level body paragraphs from opened DOCX and legacy DOC
   inputs. The source-only bridge validates strict block and character-offset
