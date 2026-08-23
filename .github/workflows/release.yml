@@ -19,6 +19,7 @@ jobs:
       # Keep rustdoc JSON compatible with the pinned cargo-semver-checks.
       - uses: dtolnay/rust-toolchain@1.92.0
         with:
+          components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Install system libraries (fontconfig and LibreOffice validation)
