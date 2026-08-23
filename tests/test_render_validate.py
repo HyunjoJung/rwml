@@ -1,5 +1,7 @@
 import importlib.util
+import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +17,51 @@ SPEC.loader.exec_module(render_validate)
 
 
 class RenderValidateReportTests(unittest.TestCase):
+    def test_cli_prefers_warning_free_pymupdf_module(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            modules = pathlib.Path(tmp)
+            (modules / "pymupdf.py").write_text("", encoding="utf-8")
+            (modules / "fitz.py").write_text(
+                'print("deprecated fitz import reached")\n', encoding="utf-8"
+            )
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(modules)
+
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), "--help"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("deprecated fitz import reached", completed.stdout)
+
+    def test_cli_routes_legacy_fitz_import_output_to_stderr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            modules = pathlib.Path(tmp)
+            (modules / "pymupdf.py").write_text(
+                'raise ImportError("legacy PyMuPDF")\n', encoding="utf-8"
+            )
+            (modules / "fitz.py").write_text(
+                'print("legacy fitz import warning")\n', encoding="utf-8"
+            )
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(modules)
+
+            completed = subprocess.run(
+                [sys.executable, str(SCRIPT), "--help"],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("legacy fitz import warning", completed.stdout)
+        self.assertIn("legacy fitz import warning", completed.stderr)
+
     def test_validation_report_summarizes_measured_and_skipped_rows(self):
         rows = [
             render_validate.ValidationRow(

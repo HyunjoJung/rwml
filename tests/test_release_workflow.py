@@ -34,8 +34,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("cargo-target", text)
         self.assertIn('COMMAND_ENV["PATH"]', text)
         self.assertIn('"-m", "venv"', text)
-        self.assertIn('"PyMuPDF"', text)
-        self.assertIn('"Pillow"', text)
+        self.assertIn('PYMUPDF_REQUIREMENT = "PyMuPDF==1.28.2"', text)
+        self.assertIn('PILLOW_REQUIREMENT = "Pillow==12.3.0"', text)
         self.assertIn("JSONDecoder", text)
         for command in [
             "public_hygiene_audit.py",
@@ -165,6 +165,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(
             'evidence_dir="$RUNNER_TEMP/rwml-release-evidence"', evidence
         )
+        self.assertIn("PyMuPDF==1.28.2 Pillow==12.3.0", evidence)
         self.assertNotIn("target/release-evidence", evidence)
         self.assertIn(
             'python3 -m json.tool "$evidence_dir/render-validation.json"',

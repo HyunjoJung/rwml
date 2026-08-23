@@ -81,7 +81,7 @@ jobs:
       - name: Generate strict revision-bound evidence
         run: |
           python3 -m venv "$RUNNER_TEMP/rwml-release-tools"
-          "$RUNNER_TEMP/rwml-release-tools/bin/pip" install --disable-pip-version-check --no-cache-dir PyMuPDF Pillow
+          "$RUNNER_TEMP/rwml-release-tools/bin/pip" install --disable-pip-version-check --no-cache-dir PyMuPDF==1.28.2 Pillow==12.3.0
           evidence_dir="$RUNNER_TEMP/rwml-release-evidence"
           mkdir -p "$evidence_dir"
           set +e

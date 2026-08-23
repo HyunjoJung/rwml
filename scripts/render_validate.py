@@ -39,6 +39,7 @@ to Docker.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import math
@@ -50,10 +51,14 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-try:
-    import fitz  # PyMuPDF
-except ImportError:
-    fitz = None
+with contextlib.redirect_stdout(sys.stderr):
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        try:
+            import fitz  # type: ignore[no-redef]  # Legacy PyMuPDF.
+        except ImportError:
+            fitz = None
 try:
     from PIL import Image, ImageChops
 except ImportError:
