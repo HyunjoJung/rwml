@@ -1016,10 +1016,36 @@ impl Document {
     /// preserves the structure (text, character runs, headings, alignment, lists,
     /// tables with colspan/rowspan, images, hyperlinks), so a legacy `.doc` can be
     /// converted to a clean, Office-openable `.docx` through the shared model.
+    /// Opened legacy documents also carry validated source-only section column
+    /// gaps, complete unequal geometry, separator flags, and right-to-left
+    /// population into the generated package; standalone [`write_docx`] remains
+    /// model-only for those private hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
-        write::to_docx(&self.model())
+        match &self.backend {
+            Backend::Doc(state) => {
+                let assembled = legacy_build_output_from_doc_state(state);
+                write::to_docx_with_section_columns(
+                    &assembled.model,
+                    write::SourceSectionColumnWriteHints {
+                        gaps: &assembled.section_column_gap_pt,
+                        layouts: &assembled.section_column_layouts,
+                        separators: &assembled.section_column_separators,
+                        rtl: &assembled.section_column_rtl,
+                        final_gap: assembled.final_section_column_gap_pt,
+                        final_layout: assembled.final_section_column_layout.as_ref(),
+                        final_separator: assembled.final_section_column_separator,
+                        final_rtl: assembled.final_section_column_rtl,
+                    },
+                )
+            }
+            Backend::Docx(state) => {
+                let mut model = state.model.clone();
+                model.blocks.extend(state.notes.iter().cloned());
+                write::to_docx(&model)
+            }
+        }
     }
 
     /// **Package-preserving save** — re-emit this document's `.docx` with every part
@@ -6167,7 +6193,7 @@ mod tests {
         grpprl.extend_from_slice(&columns_minus_one.to_le_bytes());
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn push_section_column_spacing(grpprl: &mut Vec<u8>, spacing_twips: u16) {
         grpprl.extend_from_slice(&0x900Cu16.to_le_bytes());
         grpprl.extend_from_slice(&spacing_twips.to_le_bytes());
@@ -6190,13 +6216,13 @@ mod tests {
         grpprl.extend_from_slice(&spacing_twips.to_le_bytes());
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn push_section_column_separator(grpprl: &mut Vec<u8>, separator: u8) {
         grpprl.extend_from_slice(&0x3019u16.to_le_bytes());
         grpprl.push(separator);
     }
 
-    #[cfg(feature = "render")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn push_section_column_rtl(grpprl: &mut Vec<u8>, rtl: u8) {
         grpprl.extend_from_slice(&0x3228u16.to_le_bytes());
         grpprl.push(rtl);
@@ -7935,6 +7961,113 @@ mod tests {
 
         assert_eq!(first_columns, Some(2));
         assert_eq!(model.setup.columns, Some(3));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_to_docx_preserves_private_unequal_column_semantics() {
+        let text = "CUSTOM";
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let mut section = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut section, 1);
+        push_section_column_width(&mut section, 0, 2_000);
+        push_section_column_custom_spacing(&mut section, 0, 400);
+        push_section_column_width(&mut section, 1, 4_000);
+        push_section_evenly_spaced(&mut section, 0);
+        push_section_column_separator(&mut section, 1);
+        push_section_column_rtl(&mut section, 1);
+        let document = Document::open(&legacy_doc_with_section_page_grpprls(
+            text,
+            &section_cps,
+            &[section.as_slice()],
+        ))
+        .unwrap();
+
+        let converted = document.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        assert!(
+            document_xml.contains(
+                r#"<w:cols w:num="2" w:equalWidth="0" w:sep="1"><w:col w:w="2000" w:space="400"/><w:col w:w="4000"/></w:cols>"#
+            ),
+            "custom legacy column geometry was not preserved: {document_xml}"
+        );
+        assert!(
+            document_xml.contains("<w:bidi/>"),
+            "legacy section bidi was not preserved: {document_xml}"
+        );
+        assert_eq!(converted, document.to_docx());
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(reopened.model().setup.columns, Some(2));
+        #[cfg(feature = "render")]
+        reopened.with_render_model_and_hints(|_, hints| {
+            let layout = hints
+                .final_section_column_layout
+                .expect("converted custom column geometry");
+            assert_eq!(layout.columns[0].width_pt, 100.0);
+            assert_eq!(layout.columns[0].space_after_pt, 20.0);
+            assert_eq!(layout.columns[1].width_pt, 200.0);
+            assert!(hints.final_section_column_separator);
+            assert!(hints.final_section_column_rtl);
+        });
+
+        let model_only = write_docx(&document.model());
+        let model_only_xml = docx_part(&model_only, "word/document.xml");
+        assert!(model_only_xml.contains(r#"<w:cols w:num="2"/>"#));
+        assert!(!model_only_xml.contains("w:equalWidth"));
+        assert!(!model_only_xml.contains("<w:bidi/>"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_to_docx_preserves_equal_column_hints_by_section() {
+        let section_cps = [0, 5, 10];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_spacing(&mut first, 720);
+        push_section_column_separator(&mut first, 1);
+        push_section_column_rtl(&mut first, 1);
+
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut final_section, 2);
+        push_section_column_spacing(&mut final_section, 0);
+
+        let document = Document::open(&legacy_doc_with_section_page_grpprls(
+            "FIRSTFINAL",
+            &section_cps,
+            &[first.as_slice(), final_section.as_slice()],
+        ))
+        .unwrap();
+        let converted = document.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        let first_columns = document_xml
+            .find(r#"<w:cols w:num="2" w:space="720" w:sep="1"/>"#)
+            .expect("ending-section equal columns");
+        let final_columns = document_xml
+            .find(r#"<w:cols w:num="3" w:space="0"/>"#)
+            .expect("final-section equal columns");
+        assert!(first_columns < final_columns, "{document_xml}");
+        assert_eq!(document_xml.matches("<w:bidi/>").count(), 1);
+
+        #[cfg(feature = "render")]
+        Document::open(&converted)
+            .unwrap()
+            .with_render_model_and_hints(|model, hints| {
+                let boundary = model
+                    .blocks
+                    .iter()
+                    .position(|block| matches!(block, Block::SectionBreak(_)))
+                    .expect("converted section boundary");
+                assert_eq!(hints.section_column_gap_pt[boundary], Some(36.0));
+                assert!(hints.section_column_separators[boundary]);
+                assert!(hints.section_column_rtl[boundary]);
+                assert_eq!(hints.final_section_column_gap_pt, Some(0.0));
+                assert!(!hints.final_section_column_separator);
+                assert!(!hints.final_section_column_rtl);
+            });
     }
 
     #[cfg(feature = "render")]

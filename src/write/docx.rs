@@ -19,8 +19,8 @@ use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
     ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, ParaProps,
-    Paragraph, ParagraphStyle, SectionBreakKind, SectionSetup, Spacing, Table, TableBorderSide,
-    TableBorderStyle, VertAlign, WebExtensionTaskPane,
+    Paragraph, ParagraphStyle, SectionBreakKind, SectionColumnLayoutHints, SectionSetup, Spacing,
+    Table, TableBorderSide, TableBorderStyle, VertAlign, WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -58,6 +58,114 @@ fn table_border_style(table: &Table, side: TableBorderSide) -> TableBorderStyle 
 /// Points → twips (1/20 pt), the OOXML measurement unit.
 fn pt_twips(pt: f32) -> i64 {
     (pt * 20.0).round() as i64
+}
+
+#[derive(Clone, Copy, Default)]
+struct SectionColumnWriteHint<'a> {
+    gap_pt: Option<f32>,
+    layout: Option<&'a SectionColumnLayoutHints>,
+    separator: bool,
+    rtl: bool,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct SourceSectionColumnWriteHints<'a> {
+    pub(crate) gaps: &'a [Option<f32>],
+    pub(crate) layouts: &'a [Option<SectionColumnLayoutHints>],
+    pub(crate) separators: &'a [bool],
+    pub(crate) rtl: &'a [bool],
+    pub(crate) final_gap: Option<f32>,
+    pub(crate) final_layout: Option<&'a SectionColumnLayoutHints>,
+    pub(crate) final_separator: bool,
+    pub(crate) final_rtl: bool,
+}
+
+impl<'a> SourceSectionColumnWriteHints<'a> {
+    fn for_block(&self, index: usize) -> SectionColumnWriteHint<'a> {
+        SectionColumnWriteHint {
+            gap_pt: self.gaps.get(index).copied().flatten(),
+            layout: self.layouts.get(index).and_then(Option::as_ref),
+            separator: self.separators.get(index).copied().unwrap_or(false),
+            rtl: self.rtl.get(index).copied().unwrap_or(false),
+        }
+    }
+
+    fn final_section(self) -> SectionColumnWriteHint<'a> {
+        SectionColumnWriteHint {
+            gap_pt: self.final_gap,
+            layout: self.final_layout,
+            separator: self.final_separator,
+            rtl: self.final_rtl,
+        }
+    }
+}
+
+fn source_column_twips(points: f32, allow_zero: bool) -> Option<i64> {
+    if !points.is_finite() || points < 0.0 || (!allow_zero && points == 0.0) {
+        return None;
+    }
+    let twips = pt_twips(points);
+    let minimum = if allow_zero { 0 } else { 1 };
+    (minimum..=31_680).contains(&twips).then_some(twips)
+}
+
+fn section_columns_xml(column_count: Option<u16>, hint: SectionColumnWriteHint<'_>) -> String {
+    let count = column_count.map(|columns| usize::from(columns.max(1)));
+    let equal_space = hint
+        .gap_pt
+        .and_then(|points| source_column_twips(points, true));
+    let custom_columns = hint.layout.and_then(|layout| {
+        if count != Some(layout.columns.len()) || !(1..=64).contains(&layout.columns.len()) {
+            return None;
+        }
+        layout
+            .columns
+            .iter()
+            .map(|column| {
+                Some((
+                    source_column_twips(column.width_pt, false)?,
+                    source_column_twips(column.space_after_pt, true)?,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()
+    });
+
+    let has_columns = column_count.is_some()
+        || custom_columns.is_some()
+        || equal_space.is_some()
+        || hint.separator;
+    if !has_columns {
+        return String::new();
+    }
+
+    let mut out = String::from("<w:cols");
+    if let Some(count) = count {
+        out.push_str(&format!(r#" w:num="{count}""#));
+    }
+    if custom_columns.is_some() {
+        out.push_str(r#" w:equalWidth="0""#);
+    } else if let Some(space) = equal_space {
+        out.push_str(&format!(r#" w:space="{space}""#));
+    }
+    if hint.separator {
+        out.push_str(r#" w:sep="1""#);
+    }
+
+    let Some(custom_columns) = custom_columns else {
+        out.push_str("/>");
+        return out;
+    };
+    out.push('>');
+    let last = custom_columns.len().saturating_sub(1);
+    for (index, (width, space_after)) in custom_columns.into_iter().enumerate() {
+        out.push_str(&format!(r#"<w:col w:w="{width}""#));
+        if index < last && space_after > 0 {
+            out.push_str(&format!(r#" w:space="{space_after}""#));
+        }
+        out.push_str("/>");
+    }
+    out.push_str("</w:cols>");
+    out
 }
 
 /// Image extent in EMU from intrinsic pixels (96 dpi → 9525 EMU/px), clamped to
@@ -652,7 +760,22 @@ impl Ctx {
             }
             Block::Chart(chart) => self.write_chart(out, chart),
             Block::PageBreak => out.push_str(r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#),
-            Block::SectionBreak(setup) => self.write_section_break(out, setup),
+            Block::SectionBreak(setup) => {
+                self.write_section_break(out, setup, SectionColumnWriteHint::default())
+            }
+        }
+    }
+
+    fn write_top_level_block(
+        &mut self,
+        out: &mut String,
+        block: &Block,
+        section_columns: SectionColumnWriteHint<'_>,
+    ) {
+        if let Block::SectionBreak(setup) = block {
+            self.write_section_break(out, setup, section_columns);
+        } else {
+            self.write_block(out, block);
         }
     }
 
@@ -686,9 +809,19 @@ impl Ctx {
         }
     }
 
-    fn write_section_break(&mut self, out: &mut String, setup: &SectionSetup) {
+    fn write_section_break(
+        &mut self,
+        out: &mut String,
+        setup: &SectionSetup,
+        section_columns: SectionColumnWriteHint<'_>,
+    ) {
         out.push_str("<w:p><w:pPr>");
-        self.write_sect_pr(out, setup, Some(SectionBreakKind::NextPage));
+        self.write_sect_pr(
+            out,
+            setup,
+            Some(SectionBreakKind::NextPage),
+            section_columns,
+        );
         out.push_str("</w:pPr></w:p>");
     }
 
@@ -741,6 +874,7 @@ impl Ctx {
         out: &mut String,
         setup: &SectionSetup,
         fallback_break: Option<SectionBreakKind>,
+        section_columns: SectionColumnWriteHint<'_>,
     ) {
         let mut refs = String::new();
         self.write_header_ref(&mut refs, "default", &setup.header);
@@ -769,10 +903,8 @@ impl Ctx {
             pt_twips(page.bottom()),
             pt_twips(page.left()),
         );
-        let columns = setup
-            .columns
-            .map(|columns| format!(r#"<w:cols w:num="{}"/>"#, columns.max(1)))
-            .unwrap_or_default();
+        let columns = section_columns_xml(setup.columns, section_columns);
+        let bidi = if section_columns.rtl { "<w:bidi/>" } else { "" };
         let text_direction = setup
             .text_direction
             .map(|direction| format!(r#"<w:textDirection w:val="{}"/>"#, direction.wml_value()))
@@ -790,7 +922,7 @@ impl Ctx {
             ""
         };
         out.push_str(&format!(
-            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{text_direction}{page_number_type}{columns}{doc_grid}</w:sectPr>"#
+            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{text_direction}{bidi}{page_number_type}{columns}{doc_grid}</w:sectPr>"#
         ));
     }
 
@@ -3204,10 +3336,24 @@ pub(crate) fn to_docx(model: &crate::DocModel) -> Vec<u8> {
     try_to_docx(model).unwrap_or_default()
 }
 
+pub(crate) fn to_docx_with_section_columns(
+    model: &crate::DocModel,
+    section_columns: SourceSectionColumnWriteHints<'_>,
+) -> Vec<u8> {
+    try_to_docx_with_section_columns(model, Some(section_columns)).unwrap_or_default()
+}
+
 /// Fallible generator — used by the public `try_write_docx` so a serialization
 /// failure surfaces instead of becoming silent empty bytes.
 pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
-    let br = render_body(model);
+    try_to_docx_with_section_columns(model, None)
+}
+
+fn try_to_docx_with_section_columns(
+    model: &crate::DocModel,
+    section_columns: Option<SourceSectionColumnWriteHints<'_>>,
+) -> crate::Result<Vec<u8>> {
+    let br = render_body(model, section_columns);
 
     let mut pkg = Package::new();
     pkg.add_part("word/document.xml", Some(CT_DOCUMENT), br.document_xml);
@@ -3408,11 +3554,20 @@ pub(crate) struct BodyRender {
 /// Render the body parts from the model. List items reference the synthetic
 /// `numbering.xml` (numId 1 = ordered, 2 = bullet). Self-contained: the returned
 /// `doc_rels` already include the `numbering`/`styles` type-links.
-fn render_body(model: &crate::DocModel) -> BodyRender {
+fn render_body(
+    model: &crate::DocModel,
+    section_columns: Option<SourceSectionColumnWriteHints<'_>>,
+) -> BodyRender {
     let mut ctx = Ctx::new();
     let mut body = String::new();
-    for b in &model.blocks {
-        ctx.write_block(&mut body, b);
+    for (index, block) in model.blocks.iter().enumerate() {
+        ctx.write_top_level_block(
+            &mut body,
+            block,
+            section_columns
+                .map(|hints| hints.for_block(index))
+                .unwrap_or_default(),
+        );
     }
 
     // word/document.xml
@@ -3425,7 +3580,14 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
 
     // Final section properties describe the last section in the body. Earlier
     // section breaks were emitted while folding blocks.
-    ctx.write_sect_pr(&mut doc, &SectionSetup::from(&model.setup), None);
+    ctx.write_sect_pr(
+        &mut doc,
+        &SectionSetup::from(&model.setup),
+        None,
+        section_columns
+            .map(SourceSectionColumnWriteHints::final_section)
+            .unwrap_or_default(),
+    );
     let comments_xml = if ctx.comments.is_empty() {
         None
     } else {
@@ -3540,9 +3702,10 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
 
 #[cfg(test)]
 mod tests {
+    use super::{section_columns_xml, SectionColumnWriteHint};
     use crate::model::{
         Align, Block, Cell, CharProps, DocModel, FieldRole, Image, ListInfo, ParaProps, Paragraph,
-        Row, Run, Table,
+        Row, Run, SectionColumnHint, SectionColumnLayoutHints, Table,
     };
     use crate::Document;
 
@@ -3560,6 +3723,52 @@ mod tests {
         Cell {
             blocks: vec![Block::Paragraph(para(text))],
             ..Cell::default()
+        }
+    }
+
+    #[test]
+    fn source_section_column_writer_falls_back_from_invalid_private_geometry() {
+        let invalid = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: f32::NAN,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 200.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let mismatched = SectionColumnLayoutHints {
+            columns: vec![SectionColumnHint {
+                width_pt: 100.0,
+                space_after_pt: 0.0,
+            }],
+        };
+        let oversized = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                };
+                65
+            ],
+        };
+
+        for (count, layout) in [(2, &invalid), (2, &mismatched), (65, &oversized)] {
+            assert_eq!(
+                section_columns_xml(
+                    Some(count),
+                    SectionColumnWriteHint {
+                        gap_pt: Some(18.0),
+                        layout: Some(layout),
+                        separator: true,
+                        rtl: false,
+                    },
+                ),
+                format!(r#"<w:cols w:num="{count}" w:space="360" w:sep="1"/>"#)
+            );
         }
     }
 

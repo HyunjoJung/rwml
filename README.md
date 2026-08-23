@@ -633,8 +633,12 @@ bridges.
 > sections remain paint-inert. Valid opened-DOCX section `w:bidi` and legacy
 > `sprmSFBiDi` values preserve physical track geometry while starting flow at
 > the rightmost track, advancing left, and resetting right on a new page.
-> Incomplete custom legacy geometry, private-width conversion round-trip, and
-> Word-exact reflow remain outside this bounded bridge.
+> `Document::to_docx()` maps those validated legacy equal gaps, complete
+> unequal tracks, separator flags, and section direction into fresh
+> `w:cols`/`w:col` and `w:bidi` properties. Standalone `write_docx` and
+> DOCX-backed private source hints remain model-only. Incomplete custom legacy
+> geometry, DOCX-backed private-width conversion round-trip, exact per-column
+> rewrapping, and Word-exact reflow remain outside this bounded bridge.
 > Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
@@ -915,6 +919,10 @@ element-tree image insert produces a package python-docx opens with the inline i
 present on every openable file; both fail cleanly (no panic) on a pathologically-deep
 file and a structurally-broken original. To author/convert from a `DocModel`, use
 `write_docx` (it regenerates a fresh package, lossy w.r.t. unmodeled content).
+Converting an opened legacy `.doc` through `Document::to_docx()` additionally
+retains validated source-only section column gaps, complete unequal geometry,
+separator flags, and right-to-left population without exposing them in the
+public model.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the
@@ -1157,7 +1165,11 @@ code points.
   complete unequal section columns from right to left in opened-document PDF
   previews; invalid later values preserve the last valid state and malformed
   local SEPX data remains isolated. This section direction does not force
-  paragraph or run bidi behavior.
+  paragraph or run bidi behavior. Legacy-backed `Document::to_docx()` also
+  serializes each aligned, validated equal gap or complete unequal layout,
+  separator flag, and section direction as bounded `w:cols`/`w:col` and
+  `w:bidi` properties; native reopen recovers the same source semantics.
+  Standalone model writing and DOCX-backed private sidecars are unchanged.
   A visible end-of-column character (`0x0E`) in a top-level main-story
   paragraph advances an opened-document PDF preview to the next active column,
   or to a new page after the final column, through private source-aligned
