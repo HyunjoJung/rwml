@@ -37,10 +37,11 @@ use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Chart, Color, DocGrid,
     DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, LineSpacingHint, ListInfo,
     PageNumberFormat, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind,
-    SectionSetup, TabAlignment, TabStop, Table, TableBorderColors, TableBorderSide,
-    TableBorderSizes, TableBorderStyle, TableBorderStyles, TableCellLineSpacingHints,
-    TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
-    TablePaginationHints, TableRowPaginationHint, TextDirection, VCell, MAX_TAB_STOPS,
+    SectionColumnHint, SectionColumnLayoutHints, SectionSetup, TabAlignment, TabStop, Table,
+    TableBorderColors, TableBorderSide, TableBorderSizes, TableBorderStyle, TableBorderStyles,
+    TableCellLineSpacingHints, TableCellNestedPaginationHints, TableCellPaginationHints,
+    TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, TextDirection, VCell,
+    MAX_TAB_STOPS,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -70,6 +71,8 @@ type Xml<'a> = Reader<&'a [u8]>;
 /// this depth the subtree is skipped rather than recursed into.
 const MAX_DEPTH: u32 = 128;
 const MAX_TABLE_GRID_COLS: usize = 1024;
+const MAX_UNEQUAL_SECTION_COLUMNS: usize = 64;
+const MAX_SECTION_COLUMN_TWIPS: u32 = 31_680;
 const PAGE_BREAK_MARKER: char = '\u{000C}';
 const COLUMN_BREAK_MARKER: char = '\u{000B}';
 
@@ -80,6 +83,7 @@ pub(super) struct PaginationCapture {
     tab_stops: Vec<Vec<TabStop>>,
     column_break_offsets: Vec<Vec<usize>>,
     section_column_gap_pt: Vec<Option<f32>>,
+    section_column_layouts: Vec<Option<SectionColumnLayoutHints>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     table_cell_pagination: Vec<TableCellPaginationHints>,
     table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
@@ -96,6 +100,7 @@ pub(super) struct BodyRenderHints {
     pub(super) tab_stops: Vec<Vec<TabStop>>,
     pub(super) column_break_offsets: Vec<Vec<usize>>,
     pub(super) section_column_gap_pt: Vec<Option<f32>>,
+    pub(super) section_column_layouts: Vec<Option<SectionColumnLayoutHints>>,
     pub(super) table_rows: Vec<Vec<TableRowPaginationHint>>,
     pub(super) table_cells: Vec<TableCellPaginationHints>,
     pub(super) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
@@ -180,6 +185,7 @@ impl Ctx<'_> {
                 tab_stops: capture.tab_stops,
                 column_break_offsets: capture.column_break_offsets,
                 section_column_gap_pt: capture.section_column_gap_pt,
+                section_column_layouts: capture.section_column_layouts,
                 table_rows: capture.table_row_pagination,
                 table_cells: capture.table_cell_pagination,
                 table_cell_line_spacing: capture.table_cell_line_spacing,
@@ -207,6 +213,7 @@ impl Ctx<'_> {
         line_spacing: Option<LineSpacingHint>,
         tab_stops: &[TabStop],
         section_column_gap_pt: Option<f32>,
+        section_column_layout: Option<&SectionColumnLayoutHints>,
         column_break_offsets: &[usize],
     ) {
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
@@ -218,6 +225,9 @@ impl Ctx<'_> {
                     .column_break_offsets
                     .push(column_break_offsets.to_vec());
                 capture.section_column_gap_pt.push(section_column_gap_pt);
+                capture
+                    .section_column_layouts
+                    .push(section_column_layout.cloned());
                 capture.table_row_pagination.push(Vec::new());
                 capture.table_cell_pagination.push(Vec::new());
                 capture.table_cell_line_spacing.push(Vec::new());
@@ -235,6 +245,7 @@ impl Ctx<'_> {
                 capture.tab_stops.push(Vec::new());
                 capture.column_break_offsets.push(Vec::new());
                 capture.section_column_gap_pt.push(None);
+                capture.section_column_layouts.push(None);
                 capture.table_row_pagination.push(table.rows.clone());
                 capture.table_cell_pagination.push(table.cells.clone());
                 capture
@@ -246,26 +257,36 @@ impl Ctx<'_> {
         }
     }
 
-    fn capture_paragraph_blocks(
-        &self,
-        blocks: &[Block],
-        hint: PaginationHint,
-        line_spacing: Option<LineSpacingHint>,
-        tab_stops: &[TabStop],
-        section_column_gap_pt: Option<f32>,
-        column_break_offsets: &[Vec<usize>],
-    ) {
-        for (index, block) in blocks.iter().enumerate() {
-            let break_offsets = column_break_offsets
+    fn capture_paragraph_blocks(&self, data: &ParagraphBlockData) {
+        for (index, block) in data.blocks.iter().enumerate() {
+            let break_offsets = data
+                .column_break_offsets
                 .get(index)
                 .map_or(&[][..], Vec::as_slice);
             if matches!(block, Block::Paragraph(_)) {
-                self.capture_block_hints(hint, line_spacing, tab_stops, None, break_offsets);
+                self.capture_block_hints(
+                    data.pagination,
+                    data.line_spacing,
+                    &data.tab_stops,
+                    None,
+                    None,
+                    break_offsets,
+                );
             } else {
                 let column_gap = matches!(block, Block::SectionBreak(_))
-                    .then_some(section_column_gap_pt)
+                    .then_some(data.section_column_gap_pt)
                     .flatten();
-                self.capture_block_hints(PaginationHint::default(), None, &[], column_gap, &[]);
+                let column_layout = matches!(block, Block::SectionBreak(_))
+                    .then_some(data.section_column_layout.as_ref())
+                    .flatten();
+                self.capture_block_hints(
+                    PaginationHint::default(),
+                    None,
+                    &[],
+                    column_gap,
+                    column_layout,
+                    &[],
+                );
             }
         }
     }
@@ -655,6 +676,26 @@ pub(crate) fn scan_section_columns(xml: &str) -> Option<u16> {
     columns
 }
 
+/// Scan the final/body section's explicit unequal-column geometry.
+#[cfg(feature = "render")]
+pub(crate) fn scan_section_column_layout(xml: &str) -> Option<SectionColumnLayoutHints> {
+    let mut r = Reader::from_str(xml);
+    let mut layout = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                layout = read_section_column_properties(&mut r).layout;
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                layout = None;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    layout
+}
+
 /// Scan the final/body section's explicit equal-column spacing.
 #[cfg(feature = "render")]
 pub(crate) fn scan_section_column_gap_pt(xml: &str) -> Option<f32> {
@@ -771,16 +812,37 @@ pub(crate) fn scan_page_number_format(xml: &str) -> Option<PageNumberFormat> {
 }
 
 fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
-    let mut columns = None;
+    read_section_column_properties(r).count
+}
+
+#[derive(Default)]
+struct ParsedSectionColumns {
+    count: Option<u16>,
+    gap_pt: Option<f32>,
+    layout: Option<SectionColumnLayoutHints>,
+}
+
+fn read_section_column_properties(r: &mut Xml<'_>) -> ParsedSectionColumns {
+    let mut columns = ParsedSectionColumns::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                if let Some(value) = read_section_setup_alternate_content(r).columns {
-                    columns = value;
+                let alternate = read_section_setup_alternate_content(r);
+                if let Some(value) = alternate.columns {
+                    columns.count = value;
+                }
+                if let Some(value) = alternate.column_gap_pt {
+                    columns.gap_pt = value;
+                }
+                if let Some(value) = alternate.column_layout {
+                    columns.layout = value;
                 }
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"cols" => {
-                columns = section_columns(&e);
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"cols" => {
+                columns = read_section_columns_element(r, &e);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"cols" => {
+                columns = section_columns_from_attrs(&e);
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
@@ -793,24 +855,93 @@ fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
 
 #[cfg(feature = "render")]
 fn read_section_column_gap_pt(r: &mut Xml<'_>) -> Option<f32> {
-    let mut column_gap_pt = None;
+    read_section_column_properties(r).gap_pt
+}
+
+fn section_columns_from_attrs(e: &BytesStart<'_>) -> ParsedSectionColumns {
+    if explicitly_unequal_columns(e) {
+        return ParsedSectionColumns::default();
+    }
+    ParsedSectionColumns {
+        count: section_columns(e),
+        gap_pt: section_column_gap_pt(e),
+        layout: None,
+    }
+}
+
+fn explicitly_unequal_columns(e: &BytesStart<'_>) -> bool {
+    attr_local_trimmed(e, b"equalWidth").is_some_and(|value| !toggle_on(Some(value)))
+}
+
+fn read_section_columns_element(r: &mut Xml<'_>, e: &BytesStart<'_>) -> ParsedSectionColumns {
+    if !explicitly_unequal_columns(e) {
+        let columns = section_columns_from_attrs(e);
+        skip_subtree(r);
+        return columns;
+    }
+
+    let mut values = Vec::new();
+    let mut valid = true;
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                if let Some(value) = read_section_setup_alternate_content(r).column_gap_pt {
-                    column_gap_pt = value;
+            Ok(Event::Start(child)) if local(child.name().as_ref()) == b"col" => {
+                if let Some(column) = section_column_hint(&child) {
+                    if values.len() < MAX_UNEQUAL_SECTION_COLUMNS {
+                        values.push(column);
+                    } else {
+                        valid = false;
+                    }
+                } else {
+                    valid = false;
+                }
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(child)) if local(child.name().as_ref()) == b"col" => {
+                if let Some(column) = section_column_hint(&child) {
+                    if values.len() < MAX_UNEQUAL_SECTION_COLUMNS {
+                        values.push(column);
+                    } else {
+                        valid = false;
+                    }
+                } else {
+                    valid = false;
                 }
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"cols" => {
-                column_gap_pt = section_column_gap_pt(&e);
-            }
             Ok(Event::Start(_)) => skip_subtree(r),
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
-            Ok(Event::Eof) | Err(_) => break,
+            Ok(Event::End(end)) if local(end.name().as_ref()) == b"cols" => break,
+            Ok(Event::Eof) | Err(_) => {
+                valid = false;
+                break;
+            }
             _ => {}
         }
     }
-    column_gap_pt
+    if !valid || values.is_empty() {
+        return ParsedSectionColumns::default();
+    }
+    ParsedSectionColumns {
+        count: u16::try_from(values.len()).ok(),
+        gap_pt: None,
+        layout: Some(SectionColumnLayoutHints { columns: values }),
+    }
+}
+
+fn section_column_hint(e: &BytesStart<'_>) -> Option<SectionColumnHint> {
+    let width_twips = attr_u32(e, b"w")?;
+    if width_twips == 0 || width_twips > MAX_SECTION_COLUMN_TWIPS {
+        return None;
+    }
+    let space_twips = match attr_local_trimmed(e, b"space") {
+        Some(_) => attr_u32(e, b"space")?,
+        None => 0,
+    };
+    if space_twips > MAX_SECTION_COLUMN_TWIPS {
+        return None;
+    }
+    Some(SectionColumnHint {
+        width_pt: width_twips as f32 / 20.0,
+        space_after_pt: space_twips as f32 / 20.0,
+    })
 }
 
 fn section_columns(e: &BytesStart<'_>) -> Option<u16> {
@@ -914,6 +1045,7 @@ fn read_section_title_page(r: &mut Xml<'_>) -> bool {
 struct SectionSetupScan {
     columns: Option<Option<u16>>,
     column_gap_pt: Option<Option<f32>>,
+    column_layout: Option<Option<SectionColumnLayoutHints>>,
     text_direction: Option<Option<TextDirection>>,
     doc_grid: Option<Option<DocGrid>>,
     title_page: bool,
@@ -950,6 +1082,9 @@ fn read_section_setup_alternate_content_branch(r: &mut Xml<'_>, branch: &[u8]) -
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 merge_section_setup_scan(&mut setup, read_section_setup_alternate_content(r));
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"cols" => {
+                record_section_columns_scan(&mut setup, read_section_columns_element(r, &e));
+            }
             Ok(Event::Start(e)) if !record_section_setup_child(&mut setup, &e) => {
                 skip_subtree(r);
             }
@@ -971,6 +1106,9 @@ fn merge_section_setup_scan(target: &mut SectionSetupScan, source: SectionSetupS
     if source.column_gap_pt.is_some() {
         target.column_gap_pt = source.column_gap_pt;
     }
+    if source.column_layout.is_some() {
+        target.column_layout = source.column_layout;
+    }
     if source.text_direction.is_some() {
         target.text_direction = source.text_direction;
     }
@@ -983,8 +1121,7 @@ fn merge_section_setup_scan(target: &mut SectionSetupScan, source: SectionSetupS
 fn record_section_setup_child(setup: &mut SectionSetupScan, e: &BytesStart<'_>) -> bool {
     match local(e.name().as_ref()) {
         b"cols" => {
-            setup.columns = Some(section_columns(e));
-            setup.column_gap_pt = Some(section_column_gap_pt(e));
+            record_section_columns_scan(setup, section_columns_from_attrs(e));
             true
         }
         b"textDirection" => {
@@ -1001,6 +1138,12 @@ fn record_section_setup_child(setup: &mut SectionSetupScan, e: &BytesStart<'_>) 
         }
         _ => false,
     }
+}
+
+fn record_section_columns_scan(setup: &mut SectionSetupScan, columns: ParsedSectionColumns) {
+    setup.columns = Some(columns.count);
+    setup.column_gap_pt = Some(columns.gap_pt);
+    setup.column_layout = Some(columns.layout);
 }
 
 fn read_section_page_number_start(r: &mut Xml<'_>) -> Option<u32> {
@@ -2446,6 +2589,7 @@ struct ParagraphBlockData {
     line_spacing: Option<LineSpacingHint>,
     tab_stops: Vec<TabStop>,
     section_column_gap_pt: Option<f32>,
+    section_column_layout: Option<SectionColumnLayoutHints>,
     column_break_offsets: Vec<Vec<usize>>,
 }
 
@@ -2463,11 +2607,13 @@ fn read_paragraph_blocks_data(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Par
         split_page_breaks(paragraph)
     };
     let mut section_column_gap_pt = None;
+    let mut section_column_layout = None;
     if let Some(mut section) = section {
         if section.setup.section_break.is_none() {
             section.setup.section_break = Some(SectionBreakKind::NextPage);
         }
         section_column_gap_pt = section.column_gap_pt;
+        section_column_layout = section.column_layout;
         split.push(Block::SectionBreak(section.setup), Vec::new());
     }
     ParagraphBlockData {
@@ -2476,20 +2622,14 @@ fn read_paragraph_blocks_data(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Par
         line_spacing,
         tab_stops,
         section_column_gap_pt,
+        section_column_layout,
         column_break_offsets: split.column_break_offsets,
     }
 }
 
 fn read_paragraph_block_batch(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> BlockBatch {
     let data = read_paragraph_blocks_data(r, ctx, depth);
-    ctx.capture_paragraph_blocks(
-        &data.blocks,
-        data.pagination,
-        data.line_spacing,
-        &data.tab_stops,
-        data.section_column_gap_pt,
-        &data.column_break_offsets,
-    );
+    ctx.capture_paragraph_blocks(&data);
     let pagination = data
         .blocks
         .iter()
@@ -3650,6 +3790,7 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
 struct ParsedSectionSetup {
     setup: SectionSetup,
     column_gap_pt: Option<f32>,
+    column_layout: Option<SectionColumnLayoutHints>,
 }
 
 fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> ParsedSectionSetup {
@@ -3665,6 +3806,9 @@ fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> ParsedSectionSetup {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 read_sect_pr_alternate_content(r, &mut section, depth + 1);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"cols" => {
+                apply_parsed_section_columns(&mut section, read_section_columns_element(r, &e));
             }
             Ok(Event::Start(e)) if is_sect_pr_leaf(local(e.name().as_ref())) => {
                 apply_sect_pr_child(&mut section, &e);
@@ -3727,6 +3871,9 @@ fn read_sect_pr_alternate_content_branch(
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 read_sect_pr_alternate_content(r, section, depth + 1);
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"cols" => {
+                apply_parsed_section_columns(section, read_section_columns_element(r, &e));
+            }
             Ok(Event::Start(e)) if is_sect_pr_leaf(local(e.name().as_ref())) => {
                 apply_sect_pr_child(section, &e);
                 skip_subtree(r);
@@ -3775,8 +3922,7 @@ fn apply_sect_pr_child(section: &mut ParsedSectionSetup, e: &BytesStart<'_>) {
             section.setup.page_number_format = section_page_number_format(e);
         }
         b"cols" => {
-            section.setup.columns = section_columns(e);
-            section.column_gap_pt = section_column_gap_pt(e);
+            apply_parsed_section_columns(section, section_columns_from_attrs(e));
         }
         b"textDirection" => {
             section.setup.text_direction = section_text_direction(e);
@@ -3789,6 +3935,12 @@ fn apply_sect_pr_child(section: &mut ParsedSectionSetup, e: &BytesStart<'_>) {
         }
         _ => {}
     }
+}
+
+fn apply_parsed_section_columns(section: &mut ParsedSectionSetup, columns: ParsedSectionColumns) {
+    section.setup.columns = columns.count;
+    section.column_gap_pt = columns.gap_pt;
+    section.column_layout = columns.layout;
 }
 
 /// Read a `<w:r>`: its `w:rPr` formatting plus text / breaks / drawings. Returns
@@ -10298,6 +10450,108 @@ mod tests {
             </w:cols>
         </w:sectPr></w:body></w:document>"#;
         assert_eq!(scan_section_column_gap_pt(unequal), None);
+    }
+
+    #[test]
+    fn final_unequal_columns_use_direct_child_count() {
+        let xml = r#"<w:document><w:body><w:sectPr>
+            <w:cols w:num="9" w:equalWidth="0">
+                <w:col w:w="2400" w:space="480"/>
+                <w:col w:w="4800"/>
+            </w:cols>
+        </w:sectPr></w:body></w:document>"#;
+
+        assert_eq!(scan_section_columns(xml), Some(2));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn final_unequal_columns_preserve_bounded_direct_geometry() {
+        let xml = r#"<w:document><w:body><w:sectPr>
+            <w:cols w:num="9" w:equalWidth="false" w:space="960">
+                <w:col w:w="2400" w:space="480"/>
+                <w:col w:w="4800" w:space="120"/>
+            </w:cols>
+        </w:sectPr></w:body></w:document>"#;
+
+        let layout = scan_section_column_layout(xml).expect("unequal column geometry");
+        assert_eq!(layout.columns.len(), 2);
+        assert_eq!(layout.columns[0].width_pt, 120.0);
+        assert_eq!(layout.columns[0].space_after_pt, 24.0);
+        assert_eq!(layout.columns[1].width_pt, 240.0);
+        assert_eq!(layout.columns[1].space_after_pt, 6.0);
+        assert_eq!(scan_section_column_gap_pt(xml), None);
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn unequal_columns_reject_malformed_or_excessive_direct_geometry() {
+        for cols in [
+            r#"<w:col w:w="0"/><w:col w:w="2400"/>"#,
+            r#"<w:col/><w:col w:w="2400"/>"#,
+            r#"<w:col w:w="31681"/><w:col w:w="2400"/>"#,
+            r#"<w:col w:w="2400" w:space="invalid"/><w:col w:w="2400"/>"#,
+            r#"<w:col w:w="2400" w:space="31681"/><w:col w:w="2400"/>"#,
+        ] {
+            let xml = format!(
+                r#"<w:document><w:body><w:sectPr><w:cols w:num="7" w:equalWidth="0">{cols}</w:cols></w:sectPr></w:body></w:document>"#
+            );
+            assert_eq!(scan_section_columns(&xml), None, "{cols}");
+            assert_eq!(scan_section_column_layout(&xml), None, "{cols}");
+        }
+
+        let sixty_four = (0..64)
+            .map(|_| r#"<w:col w:w="2400"/>"#)
+            .collect::<String>();
+        let accepted = format!(
+            r#"<w:document><w:body><w:sectPr><w:cols w:equalWidth="0">{sixty_four}</w:cols></w:sectPr></w:body></w:document>"#
+        );
+        assert_eq!(scan_section_columns(&accepted), Some(64));
+        assert_eq!(
+            scan_section_column_layout(&accepted)
+                .expect("64 direct columns")
+                .columns
+                .len(),
+            64
+        );
+
+        let sixty_five = format!(r#"{sixty_four}<w:col w:w="2400"/>"#);
+        let rejected = format!(
+            r#"<w:document><w:body><w:sectPr><w:cols w:num="9" w:equalWidth="0">{sixty_five}</w:cols></w:sectPr></w:body></w:document>"#
+        );
+        assert_eq!(scan_section_columns(&rejected), None);
+        assert_eq!(scan_section_column_layout(&rejected), None);
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn unequal_columns_follow_selected_alternate_content_branch() {
+        let xml = r#"<w:document><w:body><w:sectPr><mc:AlternateContent>
+            <mc:Choice Requires="w14"><w:cols w:num="8" w:equalWidth="off">
+                <w:col w:w="2000" w:space="400"/><w:col w:w="4000"/>
+            </w:cols></mc:Choice>
+            <mc:Fallback><w:cols w:num="5"/></mc:Fallback>
+        </mc:AlternateContent></w:sectPr></w:body></w:document>"#;
+
+        assert_eq!(scan_section_columns(xml), Some(2));
+        let layout = scan_section_column_layout(xml).expect("selected Choice geometry");
+        assert_eq!(layout.columns[0].width_pt, 100.0);
+        assert_eq!(layout.columns[0].space_after_pt, 20.0);
+        assert_eq!(layout.columns[1].width_pt, 200.0);
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn equal_columns_ignore_direct_geometry() {
+        let xml = r#"<w:document><w:body><w:sectPr>
+            <w:cols w:num="3" w:equalWidth="true" w:space="360">
+                <w:col w:w="2400"/><w:col w:w="4800"/>
+            </w:cols>
+        </w:sectPr></w:body></w:document>"#;
+
+        assert_eq!(scan_section_columns(xml), Some(3));
+        assert_eq!(scan_section_column_gap_pt(xml), Some(18.0));
+        assert_eq!(scan_section_column_layout(xml), None);
     }
 
     #[test]

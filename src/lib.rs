@@ -2958,7 +2958,9 @@ impl Document {
                         tab_stops: &d.tab_stops,
                         column_break_offsets: &d.column_break_offsets,
                         section_column_gap_pt: &d.section_column_gap_pt,
+                        section_column_layouts: &d.section_column_layouts,
                         final_section_column_gap_pt: d.final_section_column_gap_pt,
+                        final_section_column_layout: d.final_section_column_layout.as_ref(),
                         table_row_pagination: &d.table_row_pagination,
                         table_cell_pagination: &d.table_cell_pagination,
                         table_cell_line_spacing: &d.table_cell_line_spacing,
@@ -11648,6 +11650,76 @@ mod tests {
             assert_eq!(hints.section_column_gap_pt, &[None, Some(40.0), None]);
             assert_eq!(hints.final_section_column_gap_pt, Some(10.0));
         });
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_carries_section_local_unequal_column_geometry_hints() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:sectPr><w:cols w:equalWidth="0">
+                    <w:col w:w="2000" w:space="400"/><w:col w:w="4000"/>
+                </w:cols></w:sectPr></w:pPr><w:r><w:t>ending section</w:t></w:r></w:p>
+                <w:p><w:r><w:t>final section</w:t></w:r></w:p>
+                <w:sectPr><w:cols w:equalWidth="false">
+                    <w:col w:w="3000" w:space="200"/><w:col w:w="5000"/>
+                </w:cols></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 3);
+            assert_eq!(model.setup.columns, Some(2));
+            let ending = hints.section_column_layouts[1]
+                .as_ref()
+                .expect("ending-section geometry");
+            assert_eq!(ending.columns[0].width_pt, 100.0);
+            assert_eq!(ending.columns[0].space_after_pt, 20.0);
+            assert_eq!(ending.columns[1].width_pt, 200.0);
+            assert!(hints.section_column_layouts[0].is_none());
+            assert!(hints.section_column_layouts[2].is_none());
+
+            let final_layout = hints
+                .final_section_column_layout
+                .expect("final-section geometry");
+            assert_eq!(final_layout.columns[0].width_pt, 150.0);
+            assert_eq!(final_layout.columns[0].space_after_pt, 10.0);
+            assert_eq!(final_layout.columns[1].width_pt, 250.0);
+        });
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_unequal_columns_change_preview_pdf_deterministically() {
+        let text = (0..24)
+            .map(|index| format!("word{index}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let xml = format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:r><w:t>{text}</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="3000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/>
+                    <w:cols w:equalWidth="0"><w:col w:w="1200" w:space="400"/><w:col w:w="2000"/></w:cols>
+                </w:sectPr>
+            </w:body></w:document>"#
+        );
+        let document = Document::open(&minimal_docx(&xml)).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        let opened_pdf = document.try_to_pdf_with_fonts(&fonts).unwrap();
+        let model_only_pdf = render_pdf_with_fonts(&document.model(), &fonts);
+
+        assert!(opened_pdf.starts_with(b"%PDF-"));
+        assert_eq!(opened_pdf, document.try_to_pdf_with_fonts(&fonts).unwrap());
+        assert_ne!(
+            opened_pdf, model_only_pdf,
+            "the public model intentionally omits unequal-column geometry"
+        );
+        assert_eq!(
+            document.layout_pages_with_fonts(&fonts).unwrap(),
+            document.layout_pages_with_fonts(&fonts).unwrap()
+        );
     }
 
     #[test]

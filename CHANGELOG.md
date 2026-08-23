@@ -8,6 +8,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies bounded explicit unequal-width `w:cols` geometry from opened DOCX
+  sections to PDF and `LayoutPages` previews through a private section-aligned
+  sidecar. An explicit false `w:equalWidth` accepts one through 64 direct
+  `w:col` children with positive widths and nonnegative following spaces; child
+  count replaces the ignored parent count, selected Markup Compatibility
+  branches remain source-stable, and malformed definitions fall back without
+  exposing a public API. Fitting dimensions retain their declared origins and
+  widths; over-wide sets scale uniformly only while every resulting column
+  remains at least the renderer minimum, otherwise the established equal-column
+  fallback wins. Pagination places content in each active width, while shaping
+  remains conservatively bounded to the narrowest section column. Legacy custom
+  widths, separators, RTL column reversal, private-width conversion round-trip,
+  deferred per-column rewrapping, and Word-exact pagination remain outside this
+  bounded path.
 - Applies validated legacy `.doc` `sprmSDyaHdrTop` and
   `sprmSDyaHdrBottom` section distances to PDF running surfaces through the
   existing private section-aligned renderer sidecar. Unsigned twip operands
@@ -253,14 +267,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Applies an opened DOCX section's explicit `w:cols/@w:space` value to both
   equal-column paragraph shaping and the corresponding PDF column origins,
   including section-local values selected through accepted-current Markup
-  Compatibility branches. Explicit unequal-width `w:col` tracks remain outside
-  this bounded path, and model-authored sections retain the established preview
-  gap because the public section model stores only the column count.
+  Compatibility branches. Explicit unequal-width `w:col` tracks now use the
+  separate bounded private geometry path above, while model-authored sections
+  retain the established preview gap because the public section model stores
+  only the column count.
 - Applies each modeled section's physical page width and height, including
   landscape layouts, plus per-side margins to PDF body shaping and pagination,
   running headers and footers, anchored floating-shape coordinates,
-  top-and-bottom wrap bands, and emitted page media boxes. Unequal column tracks
-  and Word-exact pagination remain outside this bounded renderer bridge.
+  top-and-bottom wrap bands, and emitted page media boxes. Legacy custom column
+  widths, exact per-column rewrapping, and Word-exact pagination remain outside
+  this bounded renderer bridge.
 - Prunes an unreferenced internal image relationship and unreachable `word/media/*`
   target when `remove_body_block` removes the last retained reference, while
   preserving shared media, other relationship kinds, and unrelated package parts.

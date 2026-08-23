@@ -407,9 +407,9 @@ when the table declares neither.
 Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,
-equal-width section columns, explicit opened-DOCX and legacy `.doc` inter-column
-spacing, visible top-level opened-DOCX and legacy `.doc` manual column breaks,
-and per-side margins
+equal-width section columns, bounded explicit unequal-width opened-DOCX tracks,
+explicit opened-DOCX and legacy `.doc` inter-column spacing, visible top-level
+opened-DOCX and legacy `.doc` manual column breaks, and per-side margins
 come from the document;
 multi-page tables repeat their header rows without losing outer placement or
 border paint. Opened
@@ -608,14 +608,20 @@ bridges.
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
 > layout engine. It is faithful to the model and produces selectable text, but
 > does **not** claim Word- or LibreOffice-exact pagination, floating-object
-> layout, end-to-end RTL typography, page-bottom footnote composition, unequal
-> section columns, or Word-exact section-local geometry. Supported section
+> layout, end-to-end RTL typography, page-bottom footnote composition, exact
+> per-column rewrapping, or Word-exact section-local geometry. Supported section
 > breaks apply each section's modeled physical page width and height, including
 > landscape layouts, plus per-side margins to native shaping, pagination,
-> running surfaces, anchored overlays, and emitted PDF pages. Unequal column
-> tracks remain outside this bounded bridge; equal-width opened DOCX and legacy
-> `.doc` sections apply explicit `w:cols/@w:space` and `sprmSDxaColumns` values to
-> shaping and column placement.
+> running surfaces, anchored overlays, and emitted PDF pages. Explicit-false
+> opened-DOCX unequal sections accept one through 64 bounded direct `w:col`
+> widths and following spaces, preserve fitting geometry, and scale an over-wide
+> set only while every scaled column remains usable; otherwise they fall back to
+> equal tracks. Content is shaped conservatively to the narrowest active track
+> before pagination places it at each declared origin. Equal-width opened DOCX
+> and legacy `.doc` sections apply explicit `w:cols/@w:space` and
+> `sprmSDxaColumns` values. Legacy custom widths, separator lines, RTL column
+> reversal, private-width conversion round-trip, and Word-exact reflow remain
+> outside this bounded bridge.
 > Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
@@ -725,7 +731,8 @@ to reach the requested 1-based physical parity. Section display-number
 restarts/formats do not affect that preview parity. Word-exact filler-page
 running surfaces and section-relative odd/even header selection remain outside
 this bounded behavior; modeled section-local page geometry is applied, while
-unequal column tracks remain outside it.
+bounded explicit unequal-DOCX tracks use the same deterministic private geometry
+as PDF output. Exact per-column rewrapping and Word pagination remain outside it.
 
 You can also convert a parsed document straight to PDF:
 `Document::open(&bytes)?.to_pdf()` / `try_to_pdf()`, pass font blobs with
@@ -1217,7 +1224,7 @@ rather than a Word- or LibreOffice-exact layout replacement.
 | Area | Current direction | Explicit boundary |
 |---|---|---|
 | Read and fields | Keep extending bounded DOC and DOCX parsing, field evaluation, and cached-with-reason diagnostics | Layout-dependent field values remain cached when their page or Word context cannot be derived deterministically |
-| PDF preview | Improve paragraph, table, tab, list, image, and section behavior from existing model data | Word-exact pagination, footnote composition, unequal columns, and full floating-shape exclusion reflow remain out of scope |
+| PDF preview | Improve paragraph, table, tab, list, image, and section behavior from existing model data | Word-exact pagination, footnote composition, exact per-column rewrapping, legacy custom column widths, and full floating-shape exclusion reflow remain out of scope |
 | RTL | Extend tested mixed-script paragraph, table, tab, and list behavior | End-to-end RTL typography, punctuation, font fallback, and Word-exact list/table parity are not claimed |
 | Metafiles | Add narrowly validated raster profiles when fixtures prove them | General WMF/EMF vector replay, composition, scaling, cropping, and mirroring remain unsupported |
 | Editing | Expand package-preserving mutations where the target structure and rollback behavior are unambiguous; bounded top-level removal prunes proven-orphaned image relationships/media | Arbitrary rich block editing, nested-container mutation, general relationship garbage collection, and cross-block range rewriting remain limited |
