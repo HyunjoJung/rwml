@@ -286,14 +286,12 @@ pub(crate) enum LineSpacingHint {
     AtLeast(f32),
 }
 
-#[cfg(any(feature = "docx", feature = "render"))]
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SectionColumnHint {
     pub(crate) width_pt: f32,
     pub(crate) space_after_pt: f32,
 }
 
-#[cfg(any(feature = "docx", feature = "render"))]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct SectionColumnLayoutHints {
     pub(crate) columns: Vec<SectionColumnHint>,

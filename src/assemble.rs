@@ -18,9 +18,9 @@ use crate::list::Numberer;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocGrid, DocGridType, DocMeta, DocModel,
     DocSetup, FieldRole, Image, Indent, LineSpacingHint, ListInfo, PageNumberFormat, PageSetup,
-    PaginationHint, ParaProps, Paragraph, SectionBreakKind, SectionSetup, SourceRegion,
-    SourceRegionKind, Spacing, Stats, TableCellLineSpacingHints, TableCellPaginationHints,
-    TableRowPaginationHint, TextDirection,
+    PaginationHint, ParaProps, Paragraph, SectionBreakKind, SectionColumnHint,
+    SectionColumnLayoutHints, SectionSetup, SourceRegion, SourceRegionKind, Spacing, Stats,
+    TableCellLineSpacingHints, TableCellPaginationHints, TableRowPaginationHint, TextDirection,
 };
 use crate::papx::{
     PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
@@ -81,6 +81,8 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) column_break_offsets: Vec<Vec<usize>>,
     pub(crate) section_column_gap_pt: Vec<Option<f32>>,
     pub(crate) final_section_column_gap_pt: Option<f32>,
+    pub(crate) section_column_layouts: Vec<Option<SectionColumnLayoutHints>>,
+    pub(crate) final_section_column_layout: Option<SectionColumnLayoutHints>,
     pub(crate) table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
     pub(crate) table_cell_pagination: Vec<TableCellPaginationHints>,
     pub(crate) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
@@ -143,6 +145,8 @@ pub(crate) fn build_model_with_render_hints(
     let setup = legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
     let (section_column_gap_pt, final_section_column_gap_pt) =
         legacy_section_column_gap_hints(&blocks, &section_spans);
+    let (section_column_layouts, final_section_column_layout) =
+        legacy_section_column_layout_hints(&blocks, &section_spans);
     #[cfg(feature = "render")]
     let running_surface_distances = legacy_running_surface_distance_hints(&section_spans);
     LegacyBuildOutput {
@@ -163,6 +167,8 @@ pub(crate) fn build_model_with_render_hints(
         column_break_offsets,
         section_column_gap_pt,
         final_section_column_gap_pt,
+        section_column_layouts,
+        final_section_column_layout,
         table_row_pagination,
         table_cell_pagination,
         table_cell_line_spacing,
@@ -199,6 +205,28 @@ fn legacy_section_column_gap_hints(
     }
     let final_gap = section_spans.last().and_then(|span| span.column_gap_pt);
     (hints, final_gap)
+}
+
+fn legacy_section_column_layout_hints(
+    blocks: &[Block],
+    section_spans: &[LegacySectionSpan],
+) -> (
+    Vec<Option<SectionColumnLayoutHints>>,
+    Option<SectionColumnLayoutHints>,
+) {
+    let mut hints = vec![None; blocks.len()];
+    let mut ending_sections = section_spans.iter();
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            hints[index] = ending_sections
+                .next()
+                .and_then(|span| span.column_layout.clone());
+        }
+    }
+    let final_layout = section_spans
+        .last()
+        .and_then(|span| span.column_layout.clone());
+    (hints, final_layout)
 }
 
 fn legacy_doc_setup_from_regions(
@@ -561,6 +589,9 @@ struct HeaderStoryRange {
 const HEADER_FOOTER_STORY_BASE: usize = 6;
 const FIB_FCLCB_PLCF_SED: usize = 6;
 const SED_RECORD_LEN: usize = 12;
+const MAX_LEGACY_SECTION_COLUMNS: usize = 44;
+const SPRM_S_DXA_COL_WIDTH: u16 = 0xF203;
+const SPRM_S_DXA_COL_SPACING: u16 = 0xF204;
 const SPRM_S_F_EVENLY_SPACED: u16 = 0x3005;
 const SPRM_S_BKC: u16 = 0x3009;
 const SPRM_S_F_TITLE_PAGE: u16 = 0x300A;
@@ -773,13 +804,14 @@ fn header_footer_story_ranges(fib: &Fib, table: &[u8]) -> Vec<HeaderStoryRange> 
     stories
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct LegacySectionSpan {
     start_cp: usize,
     end_cp: usize,
     page: PageSetup,
     columns: Option<u16>,
     column_gap_pt: Option<f32>,
+    column_layout: Option<SectionColumnLayoutHints>,
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
@@ -790,11 +822,12 @@ struct LegacySectionSpan {
     section_break: SectionBreakKind,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct LegacySectionProperties {
     page: PageSetup,
     columns: Option<u16>,
     column_gap_pt: Option<f32>,
+    column_layout: Option<SectionColumnLayoutHints>,
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
@@ -865,6 +898,7 @@ fn parse_legacy_section_spans(
             page: properties.page,
             columns: properties.columns,
             column_gap_pt: properties.column_gap_pt,
+            column_layout: properties.column_layout,
             title_page: properties.title_page,
             page_number_start: properties.page_number_start,
             page_number_format: properties.page_number_format,
@@ -902,6 +936,8 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
     // [MS-DOC] 2.6.4 defaults to equal spacing and stores the count minus one.
     let mut column_count = None;
     let mut column_gap_pt = None;
+    let mut column_width_twips = [None; MAX_LEGACY_SECTION_COLUMNS];
+    let mut column_spacing_twips = [None; MAX_LEGACY_SECTION_COLUMNS];
     let mut columns_evenly_spaced = true;
     let mut page_number_restart = false;
     let mut page_number_start = None;
@@ -918,6 +954,22 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
         let operand = grpprl.get(operand_start..operand_end)?;
 
         match sprm {
+            SPRM_S_DXA_COL_WIDTH => {
+                let index = usize::from(*operand.first()?);
+                if index < MAX_LEGACY_SECTION_COLUMNS {
+                    if let Some(value @ 718..=31_680) = u16le(operand, 1) {
+                        column_width_twips[index] = Some(value);
+                    }
+                }
+            }
+            SPRM_S_DXA_COL_SPACING => {
+                let index = usize::from(*operand.first()?);
+                if index < MAX_LEGACY_SECTION_COLUMNS {
+                    if let Some(value @ 0..=31_680) = u16le(operand, 1) {
+                        column_spacing_twips[index] = Some(value);
+                    }
+                }
+            }
             SPRM_S_F_EVENLY_SPACED => match operand.first().copied() {
                 Some(0) => columns_evenly_spaced = false,
                 Some(1) => columns_evenly_spaced = true,
@@ -1047,11 +1099,20 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
         }
         pos = operand_end;
     }
-    properties.columns = columns_evenly_spaced.then_some(column_count).flatten();
-    properties.column_gap_pt = (columns_evenly_spaced
-        && column_count.is_some_and(|count| count > 1))
-    .then_some(column_gap_pt)
-    .flatten();
+    if columns_evenly_spaced {
+        properties.columns = column_count;
+        properties.column_gap_pt = column_count
+            .is_some_and(|count| count > 1)
+            .then_some(column_gap_pt)
+            .flatten();
+    } else if column_count == Some(1) {
+        properties.columns = Some(1);
+    } else if let Some(layout) =
+        legacy_custom_column_layout(column_count, &column_width_twips, &column_spacing_twips)
+    {
+        properties.columns = u16::try_from(layout.columns.len()).ok();
+        properties.column_layout = Some(layout);
+    }
     properties.page_number_start =
         page_number_restart.then_some(page_number_start.unwrap_or(0).max(1));
     properties.doc_grid = doc_grid_type
@@ -1062,6 +1123,29 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
             character_space: doc_grid_character_space,
         });
     Some(properties)
+}
+
+fn legacy_custom_column_layout(
+    column_count: Option<u16>,
+    widths_twips: &[Option<u16>; MAX_LEGACY_SECTION_COLUMNS],
+    spacing_twips: &[Option<u16>; MAX_LEGACY_SECTION_COLUMNS],
+) -> Option<SectionColumnLayoutHints> {
+    let count = usize::from(column_count?);
+    if !(2..=MAX_LEGACY_SECTION_COLUMNS).contains(&count) {
+        return None;
+    }
+    let mut columns = Vec::with_capacity(count);
+    for index in 0..count {
+        columns.push(SectionColumnHint {
+            width_pt: twips_to_points(widths_twips[index]?),
+            space_after_pt: if index + 1 < count {
+                twips_to_points(spacing_twips[index].unwrap_or(0))
+            } else {
+                0.0
+            },
+        });
+    }
+    Some(SectionColumnLayoutHints { columns })
 }
 
 fn legacy_text_direction(text_flow: u16) -> Option<TextDirection> {
@@ -1116,6 +1200,7 @@ fn legacy_section_properties_default() -> LegacySectionProperties {
         page: legacy_section_page_setup_default(),
         columns: None,
         column_gap_pt: None,
+        column_layout: None,
         title_page: false,
         page_number_start: None,
         page_number_format: None,
@@ -2227,6 +2312,27 @@ mod tests {
         asm.finish()
     }
 
+    fn push_test_section_column_count(grpprl: &mut Vec<u8>, columns_minus_one: u16) {
+        grpprl.extend_from_slice(&SPRM_S_C_COLUMNS.to_le_bytes());
+        grpprl.extend_from_slice(&columns_minus_one.to_le_bytes());
+    }
+
+    fn push_test_section_evenly_spaced(grpprl: &mut Vec<u8>, evenly_spaced: u8) {
+        grpprl.extend_from_slice(&SPRM_S_F_EVENLY_SPACED.to_le_bytes());
+        grpprl.push(evenly_spaced);
+    }
+
+    fn push_test_section_indexed_column_value(
+        grpprl: &mut Vec<u8>,
+        sprm: u16,
+        index: u8,
+        twips: u16,
+    ) {
+        grpprl.extend_from_slice(&sprm.to_le_bytes());
+        grpprl.push(index);
+        grpprl.extend_from_slice(&twips.to_le_bytes());
+    }
+
     #[test]
     fn legacy_assembly_aligns_row_pagination_with_emitted_blocks() {
         let units = [b'A' as u16, CELL_MARK, CELL_MARK, b'X' as u16, PARA_MARK];
@@ -3043,6 +3149,151 @@ mod tests {
     }
 
     #[test]
+    fn legacy_sepx_scanner_recovers_complete_unequal_column_count() {
+        let mut grpprl = Vec::new();
+        push_test_section_column_count(&mut grpprl, 1);
+        for (index, width_twips) in [(0, 2_000u16), (1, 4_000)] {
+            push_test_section_indexed_column_value(
+                &mut grpprl,
+                SPRM_S_DXA_COL_WIDTH,
+                index,
+                width_twips,
+            );
+        }
+        push_test_section_evenly_spaced(&mut grpprl, 0);
+
+        let properties = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(properties.columns, Some(2));
+        assert_eq!(
+            properties.column_layout,
+            Some(SectionColumnLayoutHints {
+                columns: vec![
+                    SectionColumnHint {
+                        width_pt: 100.0,
+                        space_after_pt: 0.0,
+                    },
+                    SectionColumnHint {
+                        width_pt: 200.0,
+                        space_after_pt: 0.0,
+                    },
+                ],
+            })
+        );
+        assert_eq!(properties.column_gap_pt, None);
+    }
+
+    #[test]
+    fn legacy_sepx_scanner_bounds_custom_columns_and_keeps_last_valid_values() {
+        let mut grpprl = Vec::new();
+        push_test_section_column_count(&mut grpprl, 1);
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 0, 718);
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 1, 31_680);
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_SPACING, 0, 31_680);
+        push_test_section_evenly_spaced(&mut grpprl, 0);
+
+        let bounded = scan_legacy_section_grpprl(&grpprl).unwrap();
+        let bounded_layout = bounded.column_layout.unwrap();
+        assert_eq!(bounded_layout.columns[0].width_pt, 35.9);
+        assert_eq!(bounded_layout.columns[0].space_after_pt, 1_584.0);
+        assert_eq!(bounded_layout.columns[1].width_pt, 1_584.0);
+
+        for (sprm, index, value) in [
+            (SPRM_S_DXA_COL_WIDTH, 0, 717),
+            (SPRM_S_DXA_COL_WIDTH, 1, 31_681),
+            (SPRM_S_DXA_COL_WIDTH, 44, 2_000),
+            (SPRM_S_DXA_COL_SPACING, 0, 31_681),
+            (SPRM_S_DXA_COL_SPACING, 44, 720),
+        ] {
+            push_test_section_indexed_column_value(&mut grpprl, sprm, index, value);
+        }
+        let retained = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(retained.column_layout, Some(bounded_layout));
+
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 0, 1_440);
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_SPACING, 0, 720);
+        let replaced = scan_legacy_section_grpprl(&grpprl).unwrap();
+        let replaced_layout = replaced.column_layout.unwrap();
+        assert_eq!(replaced_layout.columns[0].width_pt, 72.0);
+        assert_eq!(replaced_layout.columns[0].space_after_pt, 36.0);
+    }
+
+    #[test]
+    fn legacy_sepx_scanner_requires_complete_final_custom_geometry() {
+        let mut grpprl = Vec::new();
+        push_test_section_column_count(&mut grpprl, 1);
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 0, 2_000);
+        push_test_section_evenly_spaced(&mut grpprl, 0);
+
+        let incomplete = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(incomplete.columns, None);
+        assert_eq!(incomplete.column_layout, None);
+
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 1, 4_000);
+        let complete = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(complete.columns, Some(2));
+        assert_eq!(
+            complete.column_layout.unwrap().columns[0].space_after_pt,
+            0.0
+        );
+
+        push_test_section_evenly_spaced(&mut grpprl, 1);
+        grpprl.extend_from_slice(&SPRM_S_DXA_COLUMNS.to_le_bytes());
+        grpprl.extend_from_slice(&800u16.to_le_bytes());
+        let equal = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(equal.columns, Some(2));
+        assert_eq!(equal.column_gap_pt, Some(40.0));
+        assert_eq!(equal.column_layout, None);
+
+        push_test_section_evenly_spaced(&mut grpprl, 0);
+        push_test_section_column_count(&mut grpprl, 2);
+        let changed_count = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(changed_count.columns, None);
+        assert_eq!(changed_count.column_layout, None);
+
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_WIDTH, 2, 3_000);
+        push_test_section_evenly_spaced(&mut grpprl, 2);
+        let completed_changed_count = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(completed_changed_count.columns, Some(3));
+        assert_eq!(
+            completed_changed_count.column_layout.unwrap().columns.len(),
+            3
+        );
+
+        push_test_section_column_count(&mut grpprl, 0);
+        let single = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(single.columns, Some(1));
+        assert_eq!(single.column_layout, None);
+    }
+
+    #[test]
+    fn legacy_sepx_scanner_accepts_the_exact_custom_column_cap() {
+        let mut grpprl = Vec::new();
+        push_test_section_column_count(&mut grpprl, 43);
+        for index in 0..44 {
+            push_test_section_indexed_column_value(
+                &mut grpprl,
+                SPRM_S_DXA_COL_WIDTH,
+                index,
+                718 + u16::from(index),
+            );
+        }
+        push_test_section_indexed_column_value(&mut grpprl, SPRM_S_DXA_COL_SPACING, 43, 1_440);
+        push_test_section_evenly_spaced(&mut grpprl, 0);
+
+        let capped = scan_legacy_section_grpprl(&grpprl).unwrap();
+        let capped_layout = capped.column_layout.unwrap();
+        assert_eq!(capped.columns, Some(44));
+        assert_eq!(capped_layout.columns.len(), 44);
+        assert_eq!(capped_layout.columns[43].width_pt, twips_to_points(761));
+        assert_eq!(capped_layout.columns[43].space_after_pt, 0.0);
+
+        push_test_section_column_count(&mut grpprl, 44);
+        let invalid_count = scan_legacy_section_grpprl(&grpprl).unwrap();
+        assert_eq!(invalid_count.columns, Some(44));
+        assert_eq!(invalid_count.column_layout, Some(capped_layout));
+    }
+
+    #[test]
     fn legacy_sepx_scanner_preserves_bounded_equal_column_spacing() {
         let mut grpprl = Vec::new();
         let push_columns = |grpprl: &mut Vec<u8>, value: u16| {
@@ -3270,6 +3521,7 @@ mod tests {
                     page: PageSetup::default(),
                     columns: Some(2),
                     column_gap_pt: None,
+                    column_layout: None,
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,
@@ -3285,6 +3537,7 @@ mod tests {
                     page: PageSetup::default(),
                     columns: Some(3),
                     column_gap_pt: None,
+                    column_layout: None,
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,

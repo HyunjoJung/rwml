@@ -407,8 +407,9 @@ when the table declares neither.
 Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,
-equal-width section columns, bounded explicit unequal-width opened-DOCX tracks,
-explicit opened-DOCX and legacy `.doc` inter-column spacing, visible top-level
+equal-width section columns, bounded explicit unequal-width opened-DOCX and
+legacy `.doc` tracks, explicit opened-DOCX and legacy `.doc` inter-column
+spacing, visible top-level
 opened-DOCX and legacy `.doc` manual column breaks, and per-side margins
 come from the document;
 multi-page tables repeat their header rows without losing outer placement or
@@ -616,12 +617,15 @@ bridges.
 > opened-DOCX unequal sections accept one through 64 bounded direct `w:col`
 > widths and following spaces, preserve fitting geometry, and scale an over-wide
 > set only while every scaled column remains usable; otherwise they fall back to
-> equal tracks. Content is shaped conservatively to the narrowest active track
-> before pagination places it at each declared origin. Equal-width opened DOCX
-> and legacy `.doc` sections apply explicit `w:cols/@w:space` and
-> `sprmSDxaColumns` values. Legacy custom widths, separator lines, RTL column
-> reversal, private-width conversion round-trip, and Word-exact reflow remain
-> outside this bounded bridge.
+> equal tracks. Complete unequal legacy `.doc` sections accept two through 44
+> indexed `sprmSDxaColWidth` values and optional zero-defaulted
+> `sprmSDxaColSpacing` values under a false `sprmSFEvenlySpaced` selector.
+> Content is shaped conservatively to the narrowest active track before
+> pagination places it at each declared origin. Equal-width opened DOCX and
+> legacy `.doc` sections apply explicit `w:cols/@w:space` and
+> `sprmSDxaColumns` values. Incomplete custom legacy geometry, separator lines,
+> RTL column reversal, private-width conversion round-trip, and Word-exact
+> reflow remain outside this bounded bridge.
 > Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
@@ -731,8 +735,9 @@ to reach the requested 1-based physical parity. Section display-number
 restarts/formats do not affect that preview parity. Word-exact filler-page
 running surfaces and section-relative odd/even header selection remain outside
 this bounded behavior; modeled section-local page geometry is applied, while
-bounded explicit unequal-DOCX tracks use the same deterministic private geometry
-as PDF output. Exact per-column rewrapping and Word pagination remain outside it.
+bounded explicit unequal DOCX and legacy `.doc` tracks use the same
+deterministic private geometry as PDF output. Exact per-column rewrapping and
+Word pagination remain outside it.
 
 You can also convert a parsed document straight to PDF:
 `Document::open(&bytes)?.to_pdf()` / `try_to_pdf()`, pass font blobs with
@@ -1127,11 +1132,16 @@ code points.
   fallback, non-counting values use the spec-permitted decimal fallback, and
   invalid values leave prior state intact. A
   disabled restart ignores its stored start, while an enabled zero/default
-  start normalizes to the model's one-based contract. An explicit unequal-
-  spacing selector leaves the column count unmodeled; a later valid equal-
-  spacing selector restores the last valid count. Malformed local SEPX data
-  keeps that section's deterministic default without discarding valid
-  neighboring sections.
+  start normalizes to the model's one-based contract. A complete explicit
+  unequal-spacing section recovers two through 44 indexed column widths and
+  optional following spaces into a private preview sidecar while exposing the
+  validated count through the shared section model. Widths are bounded to the
+  specified 718 through 31,680 twips, spacing defaults to zero and is bounded to
+  31,680 twips, and later valid indexed modifiers replace earlier values. A
+  missing width leaves that unequal count unmodeled; a later valid equal-spacing
+  selector restores the last valid count. Malformed local SEPX data keeps that
+  section's deterministic default without discarding valid neighboring
+  sections.
   A visible end-of-column character (`0x0E`) in a top-level main-story
   paragraph advances an opened-document PDF preview to the next active column,
   or to a new page after the final column, through private source-aligned
@@ -1145,8 +1155,8 @@ code points.
   explicit. Table-cell and non-main-story occurrences retain their newline
   representation.
   Continuous/new-column section marks normalize to the shared model's
-  next-page fallback. Custom column widths/gaps, separator lines, RTL column
-  ordering, gutters/facing pages, header/footer margin-growth semantics,
+  next-page fallback. Incomplete custom column geometry, separator lines, RTL
+  column ordering, gutters/facing pages, header/footer margin-growth semantics,
   page borders, vertical justification, signed negative document-grid
   character-pitch deltas, negative fixed-position top/bottom semantics,
   display-number effects on physical pagination, and page-number footer
@@ -1224,7 +1234,7 @@ rather than a Word- or LibreOffice-exact layout replacement.
 | Area | Current direction | Explicit boundary |
 |---|---|---|
 | Read and fields | Keep extending bounded DOC and DOCX parsing, field evaluation, and cached-with-reason diagnostics | Layout-dependent field values remain cached when their page or Word context cannot be derived deterministically |
-| PDF preview | Improve paragraph, table, tab, list, image, and section behavior from existing model data | Word-exact pagination, footnote composition, exact per-column rewrapping, legacy custom column widths, and full floating-shape exclusion reflow remain out of scope |
+| PDF preview | Improve paragraph, table, tab, list, image, and section behavior from existing model data | Word-exact pagination, footnote composition, exact per-column rewrapping, and full floating-shape exclusion reflow remain out of scope |
 | RTL | Extend tested mixed-script paragraph, table, tab, and list behavior | End-to-end RTL typography, punctuation, font fallback, and Word-exact list/table parity are not claimed |
 | Metafiles | Add narrowly validated raster profiles when fixtures prove them | General WMF/EMF vector replay, composition, scaling, cropping, and mirroring remain unsupported |
 | Editing | Expand package-preserving mutations where the target structure and rollback behavior are unambiguous; bounded top-level removal prunes proven-orphaned image relationships/media | Arbitrary rich block editing, nested-container mutation, general relationship garbage collection, and cross-block range rewriting remain limited |

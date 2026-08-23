@@ -572,6 +572,8 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
         column_break_offsets: _column_break_offsets,
         section_column_gap_pt: _section_column_gap_pt,
         final_section_column_gap_pt: _final_section_column_gap_pt,
+        section_column_layouts: _section_column_layouts,
+        final_section_column_layout: _final_section_column_layout,
         table_row_pagination: _table_row_pagination,
         table_cell_pagination: _table_cell_pagination,
         table_cell_line_spacing: _table_cell_line_spacing,
@@ -2934,7 +2936,9 @@ impl Document {
                         line_spacing: &assembled.line_spacing_hints,
                         column_break_offsets: &assembled.column_break_offsets,
                         section_column_gap_pt: &assembled.section_column_gap_pt,
+                        section_column_layouts: &assembled.section_column_layouts,
                         final_section_column_gap_pt: assembled.final_section_column_gap_pt,
+                        final_section_column_layout: assembled.final_section_column_layout.as_ref(),
                         table_row_pagination: &assembled.table_row_pagination,
                         table_cell_pagination: &assembled.table_cell_pagination,
                         table_cell_line_spacing: &assembled.table_cell_line_spacing,
@@ -6162,6 +6166,18 @@ mod tests {
         grpprl.push(evenly_spaced);
     }
 
+    fn push_section_column_width(grpprl: &mut Vec<u8>, index: u8, width_twips: u16) {
+        grpprl.extend_from_slice(&0xF203u16.to_le_bytes());
+        grpprl.push(index);
+        grpprl.extend_from_slice(&width_twips.to_le_bytes());
+    }
+
+    fn push_section_column_custom_spacing(grpprl: &mut Vec<u8>, index: u8, spacing_twips: u16) {
+        grpprl.extend_from_slice(&0xF204u16.to_le_bytes());
+        grpprl.push(index);
+        grpprl.extend_from_slice(&spacing_twips.to_le_bytes());
+    }
+
     fn push_section_title_page(grpprl: &mut Vec<u8>, title_page: u8) {
         grpprl.extend_from_slice(&0x300Au16.to_le_bytes());
         grpprl.push(title_page);
@@ -7858,6 +7874,130 @@ mod tests {
             assert_eq!(reopened_section_columns, section_columns);
             assert_eq!(reopened_model.setup.columns, Some(44));
         }
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_complete_unequal_section_column_counts() {
+        let section_cps = [0, 5, 10];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_width(&mut first, 0, 2_000);
+        push_section_column_custom_spacing(&mut first, 0, 400);
+        push_section_column_width(&mut first, 1, 4_000);
+        push_section_evenly_spaced(&mut first, 0);
+
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut final_section, 2);
+        for (index, width) in [(0, 1_500), (1, 2_500), (2, 3_500)] {
+            push_section_column_width(&mut final_section, index, width);
+        }
+        push_section_evenly_spaced(&mut final_section, 0);
+
+        let bytes = legacy_doc_with_section_page_grpprls(
+            "FIRSTFINAL",
+            &section_cps,
+            &[first.as_slice(), final_section.as_slice()],
+        );
+        let model = Document::open(&bytes).unwrap().model();
+        let first_columns = model
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup.columns),
+                _ => None,
+            })
+            .expect("section boundary");
+
+        assert_eq!(first_columns, Some(2));
+        assert_eq!(model.setup.columns, Some(3));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_aligns_unequal_column_geometry_and_isolates_malformed_sepx() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_width(&mut first, 0, 2_000);
+        push_section_column_custom_spacing(&mut first, 0, 400);
+        push_section_column_width(&mut first, 1, 4_000);
+        push_section_evenly_spaced(&mut first, 0);
+        let malformed = [0x03];
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut final_section, 1);
+        push_section_column_width(&mut final_section, 0, 3_000);
+        push_section_column_custom_spacing(&mut final_section, 0, 200);
+        push_section_column_width(&mut final_section, 1, 5_000);
+        push_section_evenly_spaced(&mut final_section, 0);
+
+        let bytes = legacy_doc_with_section_page_grpprls(
+            "AAAAABBBBBCCCCC",
+            &section_cps,
+            &[
+                first.as_slice(),
+                malformed.as_slice(),
+                final_section.as_slice(),
+            ],
+        );
+        let document = Document::open(&bytes).unwrap();
+
+        document.with_render_model_and_hints(|model, hints| {
+            assert_eq!(model.blocks.len(), 5);
+            assert!(hints.section_column_layouts[0].is_none());
+            let first_layout = hints.section_column_layouts[1]
+                .as_ref()
+                .expect("first ending-section geometry");
+            assert_eq!(first_layout.columns[0].width_pt, 100.0);
+            assert_eq!(first_layout.columns[0].space_after_pt, 20.0);
+            assert_eq!(first_layout.columns[1].width_pt, 200.0);
+            assert!(hints.section_column_layouts[2].is_none());
+            assert!(hints.section_column_layouts[3].is_none());
+            assert!(hints.section_column_layouts[4].is_none());
+
+            let final_layout = hints
+                .final_section_column_layout
+                .expect("final-section geometry");
+            assert_eq!(final_layout.columns[0].width_pt, 150.0);
+            assert_eq!(final_layout.columns[0].space_after_pt, 10.0);
+            assert_eq!(final_layout.columns[1].width_pt, 250.0);
+        });
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_unequal_columns_change_preview_pdf_deterministically() {
+        let text = "left column\u{000e}right column\r";
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let custom_document = |first_width, second_width| {
+            let mut section = section_page_grpprl(4_400, 3_000, 400, 400, 400, 400, false);
+            push_section_column_count(&mut section, 1);
+            push_section_column_width(&mut section, 0, first_width);
+            push_section_column_custom_spacing(&mut section, 0, 400);
+            push_section_column_width(&mut section, 1, second_width);
+            push_section_evenly_spaced(&mut section, 0);
+            Document::open(&legacy_doc_with_section_page_grpprls(
+                text,
+                &section_cps,
+                &[section.as_slice()],
+            ))
+            .unwrap()
+        };
+        let first_wide = custom_document(2_000, 1_200);
+        let second_wide = custom_document(1_200, 2_000);
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(first_wide.model(), second_wide.model());
+        let first_pdf = first_wide.try_to_pdf_with_fonts(&fonts).unwrap();
+        let second_pdf = second_wide.try_to_pdf_with_fonts(&fonts).unwrap();
+        assert!(first_pdf.starts_with(b"%PDF-"));
+        assert_ne!(first_pdf, second_pdf);
+        assert_eq!(first_pdf, first_wide.try_to_pdf_with_fonts(&fonts).unwrap());
+        assert_eq!(
+            first_wide.layout_pages_with_fonts(&fonts).unwrap(),
+            first_wide.layout_pages_with_fonts(&fonts).unwrap()
+        );
     }
 
     #[test]
