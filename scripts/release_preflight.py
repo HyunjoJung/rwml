@@ -20,6 +20,13 @@ from collections.abc import Sequence
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CARGO = os.environ.get("CARGO", "cargo")
 PYTHON = os.environ.get("PYTHON", sys.executable)
+PYMUPDF_REQUIREMENT = "PyMuPDF==1.28.2"
+PILLOW_REQUIREMENT = "Pillow==12.3.0"
+RENDER_TOOL_CHECK = (
+    "import pymupdf, PIL; "
+    'assert pymupdf.__version__ == "1.28.2"; '
+    'assert PIL.__version__ == "12.3.0"'
+)
 COMMAND_ENV = os.environ.copy()
 if pathlib.Path(CARGO).is_absolute():
     cargo_dir = str(pathlib.Path(CARGO).parent)
@@ -154,7 +161,7 @@ def ensure_render_tools(output_dir: pathlib.Path) -> str:
     if not interpreter.is_file():
         run([PYTHON, "-m", "venv", relative(venv_dir)])
     try:
-        run([str(interpreter), "-c", "import fitz; import PIL"])
+        run([str(interpreter), "-c", RENDER_TOOL_CHECK])
     except subprocess.CalledProcessError:
         run(
             [
@@ -164,11 +171,11 @@ def ensure_render_tools(output_dir: pathlib.Path) -> str:
                 "install",
                 "--disable-pip-version-check",
                 "--no-cache-dir",
-                "PyMuPDF",
-                "Pillow",
+                PYMUPDF_REQUIREMENT,
+                PILLOW_REQUIREMENT,
             ]
         )
-        run([str(interpreter), "-c", "import fitz; import PIL"])
+        run([str(interpreter), "-c", RENDER_TOOL_CHECK])
     return str(interpreter)
 
 
