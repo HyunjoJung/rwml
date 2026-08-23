@@ -570,17 +570,18 @@ through the same style inheritance and final direct-PAPX precedence. Omitted
 values materialize the MS-DOC defaults of zero points before/after and single
 line spacing; supported values survive shared-model use, `.docx`
 conversion/reopen, and top-level or table-cell PDF preview layout.
-Opened legacy PDF previews additionally retain positive non-multiple LSPD as a
-minimum line box and negative encoded LSPD as an exact line box for top-level
-main-story paragraphs, ordinary main-story table-cell paragraphs, and ordinary
-top-level or table-cell paragraphs in section-linked even/default/first headers
-and footers through private render hints. Exact boxes use the same centered or
-bottom-aligned baseline and vertical clipping behavior as opened DOCX. The
-hints survive promoted manual page-break fragments, remain aligned through
-horizontal cell folds and surviving vertical-merge owners, and mirror the
-existing six-story legacy running-surface mapping, non-table block positions,
-and unindexed default-header fallback. Exact running-surface content is clipped
-to its margin-band line box or visible table-row fragment.
+Opened legacy documents additionally retain positive non-multiple LSPD as a
+minimum line box and negative encoded LSPD as an exact line box through private
+hints. Aligned top-level paragraphs carry those rules into fresh `.docx`
+conversion/reopen, while PDF previews also apply them to ordinary main-story
+table-cell paragraphs and ordinary top-level or table-cell paragraphs in
+section-linked even/default/first headers and footers. Exact boxes use the same
+centered or bottom-aligned baseline and vertical clipping behavior as opened
+DOCX. The hints survive promoted manual page-break fragments, remain aligned
+through horizontal cell folds and surviving vertical-merge owners, and mirror
+the existing six-story legacy running-surface mapping, non-table block
+positions, and unindexed default-header fallback. Exact running-surface content
+is clipped to its margin-band line box or visible table-row fragment.
 Direct and paragraph-style `sprmPShd80` and `sprmPShd` paragraph shading also
 reaches the shared model, `.docx` conversion/reopen, and PDF preview when the
 source result collapses exactly to one explicit RGB fill: clear uses its
@@ -596,7 +597,8 @@ direct shading.
 At-least/exact and explicit zero proportional LSPD values clear an inherited
 multiplier but remain unset in the shared model because it has no corresponding
 line-rule representation. The absolute line-rule sidecar does not enter the
-shared model or fresh `.docx` conversion.
+shared model; table-cell and running-surface rules are not yet carried through
+fresh `.docx` conversion.
 Paragraph direction does not imply table mirroring. Opened
 legacy tables preserve strict direct row-mark
 `sprmTFBiDi` and compatibility
@@ -927,7 +929,9 @@ file and a structurally-broken original. To author/convert from a `DocModel`, us
 Converting an opened `.doc` or `.docx` through `Document::to_docx()` additionally
 retains validated source-only section column gaps, complete unequal geometry,
 separator flags, and right-to-left population without exposing them in the
-public model.
+public model. Legacy-backed conversion also retains validated exact/minimum line
+rules for aligned top-level paragraphs; standalone model writing remains
+proportional-only.
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document using text recall, page-count ratio, the

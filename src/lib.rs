@@ -1018,17 +1018,18 @@ impl Document {
     /// Opened legacy and DOCX documents also carry validated source-only section
     /// column gaps, complete unequal geometry, separator flags, right-to-left
     /// population, and running header/footer distances into the generated
-    /// package; standalone [`write_docx`] remains model-only for those private
-    /// hints.
+    /// package. Opened legacy documents additionally carry exact/minimum line
+    /// rules for aligned top-level paragraphs; standalone [`write_docx`] remains
+    /// model-only for those private hints.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn to_docx(&self) -> Vec<u8> {
         match &self.backend {
             Backend::Doc(state) => {
                 let assembled = legacy_build_output_from_doc_state(state);
-                write::to_docx_with_section_hints(
+                write::to_docx_with_source_hints(
                     &assembled.model,
-                    write::SourceSectionWriteHints {
+                    write::SourceWriteHints {
                         gaps: &assembled.section_column_gap_pt,
                         layouts: &assembled.section_column_layouts,
                         separators: &assembled.section_column_separators,
@@ -1038,15 +1039,16 @@ impl Document {
                         final_separator: assembled.final_section_column_separator,
                         final_rtl: assembled.final_section_column_rtl,
                         running_surface_distances: &assembled.running_surface_distances,
+                        paragraph_line_spacing: &assembled.line_spacing_hints,
                     },
                 )
             }
             Backend::Docx(state) => {
                 let mut model = state.model.clone();
                 model.blocks.extend(state.notes.iter().cloned());
-                write::to_docx_with_section_hints(
+                write::to_docx_with_source_hints(
                     &model,
-                    write::SourceSectionWriteHints {
+                    write::SourceWriteHints {
                         gaps: &state.section_column_gap_pt,
                         layouts: &state.section_column_layouts,
                         separators: &state.section_column_separators,
@@ -1056,6 +1058,7 @@ impl Document {
                         final_separator: state.final_section_column_separator,
                         final_rtl: state.final_section_column_rtl,
                         running_surface_distances: &state.running_surface_distances,
+                        paragraph_line_spacing: &[],
                     },
                 )
             }
@@ -6337,6 +6340,22 @@ mod tests {
             .collect()
     }
 
+    #[cfg(feature = "docx")]
+    fn docx_paragraph_with_text<'a>(document_xml: &'a str, text: &str) -> &'a str {
+        let marker = format!(">{text}</w:t>");
+        let text_start = document_xml
+            .find(&marker)
+            .unwrap_or_else(|| panic!("missing paragraph text {text:?}: {document_xml}"));
+        let start = document_xml[..text_start]
+            .rfind("<w:p>")
+            .expect("paragraph start");
+        let end = document_xml[text_start..]
+            .find("</w:p>")
+            .map(|offset| text_start + offset + "</w:p>".len())
+            .expect("paragraph end");
+        &document_xml[start..end]
+    }
+
     fn push_lpx_char_buffer9(out: &mut Vec<u8>, text: &str) {
         let units: Vec<u16> = text.encode_utf16().collect();
         assert!(units.len() <= 9);
@@ -10601,6 +10620,62 @@ mod tests {
             paragraph_spacing_signature(&reopened.model()),
             expected_legacy_paragraph_spacing_signature()
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_absolute_line_spacing_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_paragraph_spacing_doc()).unwrap();
+        let converted = legacy.to_docx();
+        let document_xml = docx_part(&converted, "word/document.xml");
+
+        let default = docx_paragraph_with_text(&document_xml, "Default");
+        assert!(default.contains(r#"w:line="240" w:lineRule="auto""#));
+        let at_least = docx_paragraph_with_text(&document_xml, "AtLeast");
+        assert!(at_least.contains(
+            r#"<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="atLeast"/>"#
+        ));
+        let style_at_least = docx_paragraph_with_text(&document_xml, "StyleAtLeast");
+        assert!(style_at_least.contains(
+            r#"<w:spacing w:before="360" w:after="180" w:line="240" w:lineRule="atLeast"/>"#
+        ));
+        let style_exact = docx_paragraph_with_text(&document_xml, "StyleExact");
+        assert!(style_exact.contains(r#"w:line="240" w:lineRule="exact""#));
+        let zero = docx_paragraph_with_text(&document_xml, "StyleZeroLine");
+        assert!(!zero.contains("w:line="), "{zero}");
+        let invalid = docx_paragraph_with_text(&document_xml, "StyleInvalidLine");
+        assert!(invalid.contains(r#"w:line="360" w:lineRule="auto""#));
+        assert_eq!(converted, legacy.to_docx());
+
+        let model_only_xml = docx_part(&write_docx(&legacy.model()), "word/document.xml");
+        assert!(!model_only_xml.contains(r#"w:lineRule="atLeast""#));
+        assert!(!model_only_xml.contains(r#"w:lineRule="exact""#));
+
+        let reopened = Document::open(&converted).unwrap();
+        assert_eq!(
+            paragraph_spacing_signature(&reopened.model()),
+            expected_legacy_paragraph_spacing_signature()
+        );
+        #[cfg(feature = "render")]
+        {
+            let Backend::Docx(state) = &reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(
+                state.line_spacing_hints[3],
+                Some(crate::model::LineSpacingHint::AtLeast(12.0))
+            );
+            assert_eq!(
+                state.line_spacing_hints[6],
+                Some(crate::model::LineSpacingHint::AtLeast(12.0))
+            );
+            assert_eq!(
+                state.line_spacing_hints[7],
+                Some(crate::model::LineSpacingHint::Exact(12.0))
+            );
+            assert_eq!(state.line_spacing_hints[8], None);
+            assert_eq!(state.line_spacing_hints[9], None);
+        }
     }
 
     #[cfg(feature = "render")]

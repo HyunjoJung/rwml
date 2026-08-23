@@ -18,8 +18,8 @@ use super::{esc_attr, esc_text};
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
-    ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, ParaProps,
-    Paragraph, ParagraphStyle, RunningSurfaceDistanceHints, SectionBreakKind,
+    ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, LineSpacingHint,
+    ParaProps, Paragraph, ParagraphStyle, RunningSurfaceDistanceHints, SectionBreakKind,
     SectionColumnLayoutHints, SectionSetup, Spacing, Table, TableBorderSide, TableBorderStyle,
     VertAlign, WebExtensionTaskPane,
 };
@@ -76,7 +76,7 @@ struct SectionWriteHint<'a> {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct SourceSectionWriteHints<'a> {
+pub(crate) struct SourceWriteHints<'a> {
     pub(crate) gaps: &'a [Option<f32>],
     pub(crate) layouts: &'a [Option<SectionColumnLayoutHints>],
     pub(crate) separators: &'a [bool],
@@ -86,12 +86,20 @@ pub(crate) struct SourceSectionWriteHints<'a> {
     pub(crate) final_separator: bool,
     pub(crate) final_rtl: bool,
     pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
+    pub(crate) paragraph_line_spacing: &'a [Option<LineSpacingHint>],
 }
 
-impl<'a> SourceSectionWriteHints<'a> {
+impl<'a> SourceWriteHints<'a> {
     fn aligned_distances(self, section_count: usize) -> Option<&'a [RunningSurfaceDistanceHints]> {
         (self.running_surface_distances.len() == section_count)
             .then_some(self.running_surface_distances)
+    }
+
+    fn aligned_paragraph_line_spacing(
+        self,
+        block_count: usize,
+    ) -> Option<&'a [Option<LineSpacingHint>]> {
+        (self.paragraph_line_spacing.len() == block_count).then_some(self.paragraph_line_spacing)
     }
 
     fn for_block(
@@ -146,6 +154,18 @@ fn source_running_surface_twips(points: Option<f32>) -> i64 {
     points
         .and_then(|value| source_column_twips(value, true))
         .unwrap_or(708)
+}
+
+fn source_line_spacing(spacing: Option<LineSpacingHint>) -> Option<(i64, &'static str)> {
+    let (points, rule) = match spacing? {
+        LineSpacingHint::Exact(points) => (points, "exact"),
+        LineSpacingHint::AtLeast(points) => (points, "atLeast"),
+    };
+    if !points.is_finite() || points <= 0.0 {
+        return None;
+    }
+    let twips = pt_twips(points);
+    (1..=31_680).contains(&twips).then_some((twips, rule))
 }
 
 fn section_columns_xml(column_count: Option<u16>, hint: SectionColumnWriteHint<'_>) -> String {
@@ -536,7 +556,7 @@ fn write_style_ppr(out: &mut String, style: &ParagraphStyle) {
             hex(c)
         ));
     }
-    write_spacing(out, sp);
+    write_spacing(out, sp, None);
     write_indent(out, ind);
     if let Some(j) = jc {
         out.push_str(&format!(r#"<w:jc w:val="{j}"/>"#));
@@ -547,8 +567,13 @@ fn write_style_ppr(out: &mut String, style: &ParagraphStyle) {
     out.push_str("</w:pPr>");
 }
 
-fn write_spacing(out: &mut String, sp: Spacing) {
-    if sp.before_pt.is_none() && sp.after_pt.is_none() && sp.line_pct.is_none() {
+fn write_spacing(out: &mut String, sp: Spacing, absolute: Option<LineSpacingHint>) {
+    let absolute = source_line_spacing(absolute);
+    if sp.before_pt.is_none()
+        && sp.after_pt.is_none()
+        && sp.line_pct.is_none()
+        && absolute.is_none()
+    {
         return;
     }
     let mut a = String::new();
@@ -558,7 +583,9 @@ fn write_spacing(out: &mut String, sp: Spacing) {
     if let Some(af) = sp.after_pt {
         a += &format!(r#" w:after="{}""#, pt_twips(af));
     }
-    if let Some(l) = sp.line_pct {
+    if let Some((line, rule)) = absolute {
+        a += &format!(r#" w:line="{line}" w:lineRule="{rule}""#);
+    } else if let Some(l) = sp.line_pct {
         a += &format!(
             r#" w:line="{}" w:lineRule="auto""#,
             (l * 240.0).round() as i64
@@ -810,11 +837,14 @@ impl Ctx {
         out: &mut String,
         block: &Block,
         section_hints: SectionWriteHint<'_>,
+        line_spacing: Option<LineSpacingHint>,
     ) {
-        if let Block::SectionBreak(setup) = block {
-            self.write_section_break(out, setup, section_hints);
-        } else {
-            self.write_block(out, block);
+        match block {
+            Block::Paragraph(paragraph) => {
+                self.write_paragraph_with_line_spacing(out, paragraph, line_spacing)
+            }
+            Block::SectionBreak(setup) => self.write_section_break(out, setup, section_hints),
+            _ => self.write_block(out, block),
         }
     }
 
@@ -822,7 +852,7 @@ impl Ctx {
         match b {
             Block::Paragraph(p) => {
                 out.push_str("<w:p>");
-                self.write_ppr(out, &p.props);
+                self.write_ppr(out, &p.props, None);
                 for r in &p.runs {
                     write_hf_run(self, rels, out, r);
                 }
@@ -969,15 +999,29 @@ impl Ctx {
     }
 
     fn write_paragraph(&mut self, out: &mut String, p: &Paragraph) {
+        self.write_paragraph_with_line_spacing(out, p, None);
+    }
+
+    fn write_paragraph_with_line_spacing(
+        &mut self,
+        out: &mut String,
+        p: &Paragraph,
+        line_spacing: Option<LineSpacingHint>,
+    ) {
         out.push_str("<w:p>");
-        self.write_ppr(out, &p.props);
+        self.write_ppr(out, &p.props, line_spacing);
         for r in &p.runs {
             self.write_run(out, r);
         }
         out.push_str("</w:p>");
     }
 
-    fn write_ppr(&mut self, out: &mut String, pr: &ParaProps) {
+    fn write_ppr(
+        &mut self,
+        out: &mut String,
+        pr: &ParaProps,
+        line_spacing: Option<LineSpacingHint>,
+    ) {
         let heading = pr.heading_level;
         // A heading suppresses list rendering — mirror the reader's precedence.
         let list = pr.list.as_ref().filter(|_| heading.is_none());
@@ -1002,7 +1046,11 @@ impl Ctx {
             .or_else(|| heading.map(|h| format!("Heading{}", h.clamp(1, 6))));
         let sp = pr.spacing;
         let ind = pr.indent;
-        let has_spacing = sp.before_pt.is_some() || sp.after_pt.is_some() || sp.line_pct.is_some();
+        let line_spacing = line_spacing.filter(|hint| source_line_spacing(Some(*hint)).is_some());
+        let has_spacing = sp.before_pt.is_some()
+            || sp.after_pt.is_some()
+            || sp.line_pct.is_some()
+            || line_spacing.is_some();
         let has_indent = ind.left_pt.is_some()
             || ind.right_pt.is_some()
             || ind.first_line_pt.is_some()
@@ -1049,7 +1097,7 @@ impl Ctx {
         if pr.bidi {
             out.push_str("<w:bidi/>");
         }
-        write_spacing(out, sp);
+        write_spacing(out, sp, line_spacing);
         write_indent(out, ind);
         if let Some(j) = jc {
             out.push_str(&format!(r#"<w:jc w:val="{j}"/>"#));
@@ -3378,24 +3426,24 @@ pub(crate) fn to_docx(model: &crate::DocModel) -> Vec<u8> {
     try_to_docx(model).unwrap_or_default()
 }
 
-pub(crate) fn to_docx_with_section_hints(
+pub(crate) fn to_docx_with_source_hints(
     model: &crate::DocModel,
-    section_hints: SourceSectionWriteHints<'_>,
+    source_hints: SourceWriteHints<'_>,
 ) -> Vec<u8> {
-    try_to_docx_with_section_hints(model, Some(section_hints)).unwrap_or_default()
+    try_to_docx_with_source_hints(model, Some(source_hints)).unwrap_or_default()
 }
 
 /// Fallible generator — used by the public `try_write_docx` so a serialization
 /// failure surfaces instead of becoming silent empty bytes.
 pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
-    try_to_docx_with_section_hints(model, None)
+    try_to_docx_with_source_hints(model, None)
 }
 
-fn try_to_docx_with_section_hints(
+fn try_to_docx_with_source_hints(
     model: &crate::DocModel,
-    section_hints: Option<SourceSectionWriteHints<'_>>,
+    source_hints: Option<SourceWriteHints<'_>>,
 ) -> crate::Result<Vec<u8>> {
-    let br = render_body(model, section_hints);
+    let br = render_body(model, source_hints);
 
     let mut pkg = Package::new();
     pkg.add_part("word/document.xml", Some(CT_DOCUMENT), br.document_xml);
@@ -3596,10 +3644,7 @@ pub(crate) struct BodyRender {
 /// Render the body parts from the model. List items reference the synthetic
 /// `numbering.xml` (numId 1 = ordered, 2 = bullet). Self-contained: the returned
 /// `doc_rels` already include the `numbering`/`styles` type-links.
-fn render_body(
-    model: &crate::DocModel,
-    section_hints: Option<SourceSectionWriteHints<'_>>,
-) -> BodyRender {
+fn render_body(model: &crate::DocModel, source_hints: Option<SourceWriteHints<'_>>) -> BodyRender {
     let mut ctx = Ctx::new();
     let mut body = String::new();
     let section_count = model
@@ -3609,15 +3654,21 @@ fn render_body(
         .count()
         + 1;
     let running_surface_distances =
-        section_hints.and_then(|hints| hints.aligned_distances(section_count));
+        source_hints.and_then(|hints| hints.aligned_distances(section_count));
+    let paragraph_line_spacing =
+        source_hints.and_then(|hints| hints.aligned_paragraph_line_spacing(model.blocks.len()));
     let mut section_index = 0;
     for (index, block) in model.blocks.iter().enumerate() {
         ctx.write_top_level_block(
             &mut body,
             block,
-            section_hints
+            source_hints
                 .map(|hints| hints.for_block(index, section_index, running_surface_distances))
                 .unwrap_or_default(),
+            paragraph_line_spacing
+                .and_then(|hints| hints.get(index))
+                .copied()
+                .flatten(),
         );
         if matches!(block, Block::SectionBreak(_)) {
             section_index += 1;
@@ -3638,7 +3689,7 @@ fn render_body(
         &mut doc,
         &SectionSetup::from(&model.setup),
         None,
-        section_hints
+        source_hints
             .map(|hints| hints.final_section(running_surface_distances))
             .unwrap_or_default(),
     );
@@ -3757,12 +3808,13 @@ fn render_body(
 #[cfg(test)]
 mod tests {
     use super::{
-        render_body, section_columns_xml, SectionColumnWriteHint, SourceSectionWriteHints,
+        render_body, section_columns_xml, source_line_spacing, SectionColumnWriteHint,
+        SourceWriteHints,
     };
     use crate::model::{
-        Align, Block, Cell, CharProps, DocModel, FieldRole, Image, ListInfo, ParaProps, Paragraph,
-        Row, Run, RunningSurfaceDistanceHints, SectionColumnHint, SectionColumnLayoutHints,
-        SectionSetup, Table,
+        Align, Block, Cell, CharProps, DocModel, FieldRole, Image, LineSpacingHint, ListInfo,
+        ParaProps, Paragraph, Row, Run, RunningSurfaceDistanceHints, SectionColumnHint,
+        SectionColumnLayoutHints, SectionSetup, Table,
     };
     use crate::Document;
 
@@ -3845,7 +3897,7 @@ mod tests {
         }];
         let rendered = render_body(
             &model,
-            Some(SourceSectionWriteHints {
+            Some(SourceWriteHints {
                 gaps: &gaps,
                 layouts: &layouts,
                 separators: &separators,
@@ -3855,6 +3907,7 @@ mod tests {
                 final_separator: false,
                 final_rtl: false,
                 running_surface_distances: &distances,
+                paragraph_line_spacing: &[],
             }),
         );
         let document_xml = String::from_utf8(rendered.document_xml).unwrap();
@@ -3866,6 +3919,61 @@ mod tests {
             2,
             "{document_xml}"
         );
+    }
+
+    #[test]
+    fn source_paragraph_spacing_writer_rejects_misaligned_vector() {
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(para("body"))],
+            ..DocModel::default()
+        };
+        let gaps = [None];
+        let layouts = [None];
+        let separators = [false];
+        let rtl = [false];
+        let distances = [RunningSurfaceDistanceHints::default()];
+        let line_spacing = [
+            Some(LineSpacingHint::Exact(12.0)),
+            Some(LineSpacingHint::AtLeast(24.0)),
+        ];
+        let rendered = render_body(
+            &model,
+            Some(SourceWriteHints {
+                gaps: &gaps,
+                layouts: &layouts,
+                separators: &separators,
+                rtl: &rtl,
+                final_gap: None,
+                final_layout: None,
+                final_separator: false,
+                final_rtl: false,
+                running_surface_distances: &distances,
+                paragraph_line_spacing: &line_spacing,
+            }),
+        );
+        let document_xml = String::from_utf8(rendered.document_xml).unwrap();
+
+        assert!(!document_xml.contains("w:lineRule="), "{document_xml}");
+    }
+
+    #[test]
+    fn source_paragraph_spacing_writer_bounds_absolute_values() {
+        assert_eq!(
+            source_line_spacing(Some(LineSpacingHint::Exact(1_584.0))),
+            Some((31_680, "exact"))
+        );
+        assert_eq!(
+            source_line_spacing(Some(LineSpacingHint::AtLeast(12.0))),
+            Some((240, "atLeast"))
+        );
+        for hint in [
+            LineSpacingHint::Exact(f32::NAN),
+            LineSpacingHint::Exact(-1.0),
+            LineSpacingHint::AtLeast(0.0),
+            LineSpacingHint::AtLeast(1_584.1),
+        ] {
+            assert_eq!(source_line_spacing(Some(hint)), None);
+        }
     }
 
     /// Build a representative model, write it to `.docx`, read it back, and assert

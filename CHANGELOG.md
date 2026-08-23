@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Preserves resolved legacy-DOC exact and minimum line spacing when
+  `Document::to_docx()` freshly converts aligned top-level paragraphs. The
+  existing private block sidecar now emits bounded positive `w:line` values with
+  `exact` or `atLeast` while preserving public before/after spacing and leaving
+  proportional rules unchanged. Style/direct precedence, direct-zero clearing,
+  deterministic bytes, native reopen, and strict misalignment fallback are
+  covered. Standalone model writing, DOCX-backed source hints, table-cell and
+  running-surface conversion, and the public model remain unchanged.
 - Preserves source-defined section-local running header and footer distances
   when `Document::to_docx()` freshly converts an opened DOCX or legacy `.doc`.
   The shared writer bridge consumes strictly section-aligned private hints,
