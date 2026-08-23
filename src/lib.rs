@@ -587,6 +587,10 @@ fn doc_model_from_doc_state(state: &DocState) -> DocModel {
             table_cell_tab_stops: _table_cell_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
             running_line_spacing_hints: _running_line_spacing_hints,
+        #[cfg(any(feature = "docx", feature = "render"))]
+            running_tab_stops: _running_tab_stops,
+        #[cfg(any(feature = "docx", feature = "render"))]
+            running_table_cell_tab_stops: _running_table_cell_tab_stops,
         running_surface_distances: _running_surface_distances,
     } = legacy_build_output_from_doc_state(state);
     model
@@ -1030,18 +1034,19 @@ impl Document {
     /// reader-resolved explicit paragraph tab stops, while aligned top-level body
     /// paragraphs carry visible manual column breaks through validated source
     /// character offsets. Direct top-level paragraphs in selected
-    /// default/first/even running headers and footers from an opened DOCX also
-    /// carry reader-resolved explicit tab stops through section-aligned private
-    /// hints. Direct paragraph blocks in surviving cells of top-level tables on
-    /// those running surfaces use a companion block/row/surviving-cell/paragraph-
-    /// aligned bridge for explicit tabs. Opened DOCX and legacy DOC inputs both
+    /// default/first/even running headers and footers from opened DOCX and legacy
+    /// DOC inputs also carry reader-resolved explicit tab stops through section-
+    /// aligned private hints. Direct paragraph blocks in surviving cells of
+    /// top-level tables on those running surfaces use a companion block/row/
+    /// surviving-cell/paragraph-aligned bridge for explicit tabs. Opened DOCX and
+    /// legacy DOC inputs both
     /// retain reader-resolved exact/minimum line rules on those direct table-cell
     /// paragraphs and on direct top-level running paragraphs through section-
     /// aligned source-only hints. Nested-table descendants and notes remain
     /// outside these fresh-conversion paths, and all running surfaces remain
-    /// outside pagination conversion; legacy-DOC running stories remain outside
-    /// tab conversion, while nested running-table descendants remain outside
-    /// both tab and line-rule conversion. Settings-defined default-tab intervals
+    /// outside pagination conversion, while nested running-table descendants
+    /// remain outside both tab and line-rule conversion. Settings-defined
+    /// default-tab intervals
     /// remain outside the tab path, and table-cell, note, running-surface, and
     /// nested-content manual breaks remain outside the column-break path.
     /// Standalone [`write_docx`] remains model-only for all of these private
@@ -1065,8 +1070,8 @@ impl Document {
                         final_rtl: assembled.final_section_column_rtl,
                         running_surface_distances: &assembled.running_surface_distances,
                         running_line_spacing: &assembled.running_line_spacing_hints,
-                        running_tab_stops: &[],
-                        running_table_cell_tab_stops: &[],
+                        running_tab_stops: &assembled.running_tab_stops,
+                        running_table_cell_tab_stops: &assembled.running_table_cell_tab_stops,
                         paragraph_line_spacing: &assembled.line_spacing_hints,
                         paragraph_pagination: &assembled.pagination_hints,
                         paragraph_tab_stops: &assembled.tab_stops,
@@ -3041,6 +3046,8 @@ impl Document {
                         tab_stops: &assembled.tab_stops,
                         table_cell_tab_stops: &assembled.table_cell_tab_stops,
                         running_line_spacing: &assembled.running_line_spacing_hints,
+                        running_tab_stops: &assembled.running_tab_stops,
+                        running_table_cell_tab_stops: &assembled.running_table_cell_tab_stops,
                         running_surface_distances: &assembled.running_surface_distances,
                         ..render::SourceRenderHints::default()
                     },
@@ -6175,6 +6182,87 @@ mod tests {
         )
     }
 
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_running_tabs_doc(
+        story_position: usize,
+        in_table: bool,
+        include_tabs: bool,
+    ) -> Vec<u8> {
+        assert!(story_position < 6);
+        let mut text = "PAGE1\u{c}PAGE2\u{c}PAGE3\r".to_string();
+        let main_len = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: main_len,
+            grpprl: Vec::new(),
+        }];
+        let mut story_ends = Vec::with_capacity(6);
+
+        for (index, label) in ["EH", "OH", "EF", "OF", "FH", "FF"].into_iter().enumerate() {
+            if index == story_position && in_table {
+                text.push_str("T\tX");
+                text.push('\u{7}');
+                let mut cell_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                ];
+                if include_tabs {
+                    push_legacy_tab_change(&mut cell_grpprl, 0xC60D, &[], &[(1200, 0x0A)]);
+                }
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: cell_grpprl,
+                });
+
+                text.push('\u{7}');
+                let mut row_grpprl = vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                    0x17, 0x24, 0x01, // sprmPFTtp
+                    0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+                    0x01, // one cell
+                    0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+                ];
+                row_grpprl.extend_from_slice(&[0u8; 20]);
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl: row_grpprl,
+                });
+            } else {
+                text.push_str(label);
+                if index == story_position {
+                    text.push('\t');
+                    text.push('X');
+                }
+                text.push('\r');
+                let mut grpprl = Vec::new();
+                if index == story_position && include_tabs {
+                    push_legacy_tab_change(&mut grpprl, 0xC615, &[], &[(1080, 0x1B)]);
+                }
+                runs.push(SyntheticPapxRun {
+                    cp_lim: text.encode_utf16().count() as u32,
+                    grpprl,
+                });
+            }
+            story_ends.push(text.encode_utf16().count() as u32 - main_len);
+        }
+
+        let mut plcf_hdd = vec![0u32; 7];
+        plcf_hdd.extend_from_slice(&story_ends);
+        plcf_hdd.push(*story_ends.last().unwrap());
+        let ccp_hdd = *story_ends.last().unwrap();
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [main_len, 0, ccp_hdd, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_hdd_cps: Some(&plcf_hdd),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
     #[cfg(feature = "render")]
     fn render_opened_document_without_body_line_spacing(
         document: &Document,
@@ -6221,6 +6309,36 @@ mod tests {
             3 => &hints.footer_table_cells,
             4 => &hints.first_header_table_cells,
             _ => &hints.first_footer_table_cells,
+        }
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_running_tabs_at(
+        hints: &model::RunningSurfaceTabStopHints,
+        story_position: usize,
+    ) -> &[Vec<crate::model::TabStop>] {
+        match story_position {
+            0 => &hints.even_header,
+            1 => &hints.header,
+            2 => &hints.even_footer,
+            3 => &hints.footer,
+            4 => &hints.first_header,
+            _ => &hints.first_footer,
+        }
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    fn legacy_running_table_tabs_at(
+        hints: &model::RunningSurfaceTableCellTabStopHints,
+        story_position: usize,
+    ) -> &[crate::model::TableCellTabStopHints] {
+        match story_position {
+            0 => &hints.even_header,
+            1 => &hints.header,
+            2 => &hints.even_footer,
+            3 => &hints.footer,
+            4 => &hints.first_header,
+            _ => &hints.first_footer,
         }
     }
 
@@ -6424,6 +6542,34 @@ mod tests {
                 .sum::<usize>(),
             1,
             "unexpected generated running absolute line rule: {parts:?}"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    fn assert_single_running_tabs(bytes: &[u8], marker: &str, expected: &str) {
+        let parts = docx_running_parts(bytes);
+        let selected = parts
+            .iter()
+            .filter(|(_, xml)| xml.contains(marker))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            selected.len(),
+            1,
+            "expected one generated running part containing {marker:?}: {parts:?}"
+        );
+        assert!(
+            selected[0].1.contains(expected),
+            "missing {expected:?} in {}: {}",
+            selected[0].0,
+            selected[0].1
+        );
+        assert_eq!(
+            parts
+                .iter()
+                .map(|(_, xml)| xml.matches("<w:tabs>").count())
+                .sum::<usize>(),
+            1,
+            "expected exactly one running tab definition: {parts:?}"
         );
     }
 
@@ -7515,6 +7661,145 @@ mod tests {
                 minimum_pdf,
                 render_opened_document_without_body_line_spacing(&minimum, &fonts)
             );
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_surfaces_roundtrip_custom_tabs_to_docx() {
+        let variants = ["EH", "OH", "EF", "OF", "FH", "FF"];
+        let expected_xml = concat!(
+            r#"<w:tabs><w:tab w:val="decimal" w:pos="1080" "#,
+            r#"w:leader="underscore"/></w:tabs>"#,
+        );
+        let expected_stop = crate::model::TabStop {
+            position_pt: 54.0,
+            alignment: crate::model::TabAlignment::Decimal,
+            leader: crate::model::TabLeader::Underscore,
+        };
+
+        for (story_position, marker) in variants.into_iter().enumerate() {
+            let tabbed =
+                Document::open(&legacy_running_tabs_doc(story_position, false, true)).unwrap();
+            let control =
+                Document::open(&legacy_running_tabs_doc(story_position, false, false)).unwrap();
+            let model = tabbed.model();
+            assert_eq!(model, control.model());
+
+            let converted = tabbed.to_docx();
+            assert_eq!(converted, tabbed.to_docx());
+            assert_ne!(converted, control.to_docx());
+            assert!(!docx_part(&converted, "word/document.xml").contains("<w:tabs>"));
+            assert_single_running_tabs(&converted, &format!(">{marker}</w:t>"), expected_xml);
+
+            let reopened = Document::open(&converted).unwrap();
+            let Backend::Docx(state) = &reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(state.running_tab_stops.len(), 1);
+            assert_eq!(
+                legacy_running_tabs_at(&state.running_tab_stops[0], story_position),
+                &[vec![expected_stop]]
+            );
+            assert!(docx_running_parts(&write_docx(&model))
+                .iter()
+                .all(|(_, xml)| !xml.contains("<w:tabs>")));
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn opened_legacy_doc_running_table_cells_roundtrip_custom_tabs_to_docx() {
+        let expected_xml = r#"<w:tabs><w:tab w:val="right" w:pos="1200" w:leader="dot"/></w:tabs>"#;
+        let expected_stop = crate::model::TabStop {
+            position_pt: 60.0,
+            alignment: crate::model::TabAlignment::Right,
+            leader: crate::model::TabLeader::Dot,
+        };
+
+        for story_position in 0..6 {
+            let tabbed =
+                Document::open(&legacy_running_tabs_doc(story_position, true, true)).unwrap();
+            let control =
+                Document::open(&legacy_running_tabs_doc(story_position, true, false)).unwrap();
+            let model = tabbed.model();
+            assert_eq!(model, control.model());
+
+            let converted = tabbed.to_docx();
+            assert_eq!(converted, tabbed.to_docx());
+            assert_ne!(converted, control.to_docx());
+            assert!(!docx_part(&converted, "word/document.xml").contains("<w:tabs>"));
+            assert_single_running_tabs(&converted, ">T</w:t>", expected_xml);
+
+            let reopened = Document::open(&converted).unwrap();
+            let Backend::Docx(state) = &reopened.backend else {
+                panic!("converted document must use the DOCX backend");
+            };
+            assert_eq!(state.running_table_cell_tab_stops.len(), 1);
+            assert_eq!(
+                legacy_running_table_tabs_at(
+                    &state.running_table_cell_tab_stops[0],
+                    story_position,
+                ),
+                &[vec![vec![vec![vec![expected_stop]]]]]
+            );
+            assert!(docx_running_parts(&write_docx(&model))
+                .iter()
+                .all(|(_, xml)| !xml.contains("<w:tabs>")));
+        }
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_running_tabs_change_preview_deterministically() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        for in_table in [false, true] {
+            for story_position in 0..6 {
+                let tabbed =
+                    Document::open(&legacy_running_tabs_doc(story_position, in_table, true))
+                        .unwrap();
+                let control =
+                    Document::open(&legacy_running_tabs_doc(story_position, in_table, false))
+                        .unwrap();
+                assert_eq!(tabbed.model(), control.model());
+                let Backend::Doc(state) = &tabbed.backend else {
+                    panic!("synthetic legacy document must use the DOC backend");
+                };
+                let assembled = legacy_build_output_from_doc_state(state);
+                assert!(assembled.tab_stops.iter().all(Vec::is_empty));
+                assert!(assembled.table_cell_tab_stops.iter().all(Vec::is_empty));
+                if in_table {
+                    assert_eq!(
+                        legacy_running_table_tabs_at(
+                            &assembled.running_table_cell_tab_stops[0],
+                            story_position,
+                        ),
+                        &[vec![vec![vec![vec![crate::model::TabStop {
+                            position_pt: 60.0,
+                            alignment: crate::model::TabAlignment::Right,
+                            leader: crate::model::TabLeader::Dot,
+                        }]]]]]
+                    );
+                } else {
+                    assert_eq!(
+                        legacy_running_tabs_at(&assembled.running_tab_stops[0], story_position),
+                        &[vec![crate::model::TabStop {
+                            position_pt: 54.0,
+                            alignment: crate::model::TabAlignment::Decimal,
+                            leader: crate::model::TabLeader::Underscore,
+                        }]]
+                    );
+                }
+
+                let rendered = tabbed.to_pdf_with_fonts(&fonts);
+                let control_rendered = control.to_pdf_with_fonts(&fonts);
+                assert!(rendered.starts_with(b"%PDF-"));
+                assert_ne!(
+                    rendered, control_rendered,
+                    "legacy running tabs were ignored for story {story_position}, table={in_table}"
+                );
+                assert_eq!(rendered, tabbed.to_pdf_with_fonts(&fonts));
+            }
         }
     }
 
@@ -10726,7 +11011,7 @@ mod tests {
         grpprl.extend_from_slice(&multiple.to_le_bytes());
     }
 
-    #[cfg(feature = "docx")]
+    #[cfg(any(feature = "docx", feature = "render"))]
     fn push_legacy_tab_change(
         grpprl: &mut Vec<u8>,
         sprm: u16,

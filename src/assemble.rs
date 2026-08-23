@@ -24,7 +24,10 @@ use crate::model::{
     TextDirection,
 };
 #[cfg(any(feature = "docx", feature = "render"))]
-use crate::model::{RunningSurfaceLineSpacingHints, TabStop, TableCellTabStopHints};
+use crate::model::{
+    RunningSurfaceLineSpacingHints, RunningSurfaceTabStopHints,
+    RunningSurfaceTableCellTabStopHints, TabStop, TableCellTabStopHints,
+};
 use crate::papx::{
     PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
     ParagraphSpacingOverrides,
@@ -97,6 +100,10 @@ pub(crate) struct LegacyBuildOutput {
     pub(crate) table_cell_tab_stops: Vec<TableCellTabStopHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
     pub(crate) running_line_spacing_hints: Vec<RunningSurfaceLineSpacingHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub(crate) running_tab_stops: Vec<RunningSurfaceTabStopHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    pub(crate) running_table_cell_tab_stops: Vec<RunningSurfaceTableCellTabStopHints>,
     pub(crate) running_surface_distances: Vec<RunningSurfaceDistanceHints>,
 }
 
@@ -143,6 +150,8 @@ pub(crate) fn build_model_with_render_hints(
         table_cell_line_spacing,
         #[cfg(any(feature = "docx", feature = "render"))]
         table_cell_tab_stops,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        running_tab_regions,
         text_start: _,
     } = build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
     #[cfg(any(feature = "docx", feature = "render"))]
@@ -152,6 +161,9 @@ pub(crate) fn build_model_with_render_hints(
         &line_spacing_hints,
         &table_cell_line_spacing,
     );
+    #[cfg(any(feature = "docx", feature = "render"))]
+    let (running_tab_stops, running_table_cell_tab_stops) =
+        legacy_running_tab_stops_from_regions(&blocks, &running_tab_regions);
     let mut blocks = blocks;
     let stats = compute_stats(&blocks);
     let setup = legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
@@ -197,6 +209,10 @@ pub(crate) fn build_model_with_render_hints(
         table_cell_tab_stops,
         #[cfg(any(feature = "docx", feature = "render"))]
         running_line_spacing_hints,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        running_tab_stops,
+        #[cfg(any(feature = "docx", feature = "render"))]
+        running_table_cell_tab_stops,
         running_surface_distances,
     }
 }
@@ -584,6 +600,14 @@ fn push_legacy_region(
         region_output = promote_legacy_manual_page_breaks(region_output);
     }
     #[cfg(any(feature = "docx", feature = "render"))]
+    let running_tab_region = (kind == SourceRegionKind::HeaderFooter
+        && !region_output.blocks.is_empty())
+    .then(|| LegacyRunningTabRegion {
+        source_story_index,
+        tab_stops: std::mem::take(&mut region_output.tab_stops),
+        table_cell_tab_stops: std::mem::take(&mut region_output.table_cell_tab_stops),
+    });
+    #[cfg(any(feature = "docx", feature = "render"))]
     if kind != SourceRegionKind::Main {
         region_output.tab_stops = vec![Vec::new(); region_output.blocks.len()];
         region_output.table_cell_tab_stops = vec![Vec::new(); region_output.blocks.len()];
@@ -618,6 +642,10 @@ fn push_legacy_region(
     output
         .table_cell_tab_stops
         .append(&mut region_output.table_cell_tab_stops);
+    #[cfg(any(feature = "docx", feature = "render"))]
+    if let Some(region) = running_tab_region {
+        output.running_tab_regions.push(region);
+    }
     let block_end = output.blocks.len();
 
     if source_len_cp > 0 || include_empty {
@@ -650,7 +678,16 @@ struct LegacyRegionOutput {
     table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
     #[cfg(any(feature = "docx", feature = "render"))]
     table_cell_tab_stops: Vec<TableCellTabStopHints>,
+    #[cfg(any(feature = "docx", feature = "render"))]
+    running_tab_regions: Vec<LegacyRunningTabRegion>,
     text_start: usize,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+struct LegacyRunningTabRegion {
+    source_story_index: Option<usize>,
+    tab_stops: Vec<Vec<TabStop>>,
+    table_cell_tab_stops: Vec<TableCellTabStopHints>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -846,6 +883,109 @@ fn legacy_running_line_spacing_section_slots(
         3 => Some((&mut hints.footer, &mut hints.footer_table_cells)),
         4 => Some((&mut hints.first_header, &mut hints.first_header_table_cells)),
         _ => Some((&mut hints.first_footer, &mut hints.first_footer_table_cells)),
+    }
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn legacy_running_tab_stops_from_regions(
+    blocks: &[Block],
+    regions: &[LegacyRunningTabRegion],
+) -> (
+    Vec<RunningSurfaceTabStopHints>,
+    Vec<RunningSurfaceTableCellTabStopHints>,
+) {
+    let section_count = blocks
+        .iter()
+        .filter(|block| matches!(block, Block::SectionBreak(_)))
+        .count()
+        .saturating_add(1);
+    let mut paragraph_sections = vec![RunningSurfaceTabStopHints::default(); section_count];
+    let mut table_sections = vec![RunningSurfaceTableCellTabStopHints::default(); section_count];
+
+    for region in regions.iter().filter(|region| !region.tab_stops.is_empty()) {
+        debug_assert_eq!(region.tab_stops.len(), region.table_cell_tab_stops.len());
+        if section_count == 1 {
+            let (paragraph_slot, table_slot) = legacy_running_tab_slots(
+                &mut paragraph_sections[0],
+                &mut table_sections[0],
+                region.source_story_index,
+            );
+            if paragraph_slot.is_empty() {
+                *paragraph_slot = region.tab_stops.clone();
+                *table_slot = region.table_cell_tab_stops.clone();
+            }
+            continue;
+        }
+
+        if region.source_story_index.is_none() {
+            for (paragraph, table) in paragraph_sections.iter_mut().zip(&mut table_sections) {
+                if paragraph.header.is_empty() {
+                    paragraph.header = region.tab_stops.clone();
+                    table.header = region.table_cell_tab_stops.clone();
+                }
+            }
+            continue;
+        }
+        let Some(section_index) = legacy_header_footer_section_index(region.source_story_index)
+        else {
+            continue;
+        };
+        let Some((paragraph, table)) = paragraph_sections
+            .get_mut(section_index)
+            .zip(table_sections.get_mut(section_index))
+        else {
+            continue;
+        };
+        let Some((paragraph_slot, table_slot)) =
+            legacy_running_tab_section_slots(paragraph, table, region.source_story_index)
+        else {
+            continue;
+        };
+        if paragraph_slot.is_empty() {
+            *paragraph_slot = region.tab_stops.clone();
+            *table_slot = region.table_cell_tab_stops.clone();
+        }
+    }
+
+    (paragraph_sections, table_sections)
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn legacy_running_tab_slots<'a>(
+    paragraph: &'a mut RunningSurfaceTabStopHints,
+    table: &'a mut RunningSurfaceTableCellTabStopHints,
+    story_index: Option<usize>,
+) -> (
+    &'a mut Vec<Vec<TabStop>>,
+    &'a mut Vec<TableCellTabStopHints>,
+) {
+    match legacy_header_footer_story_position(story_index) {
+        Some(0) => (&mut paragraph.even_header, &mut table.even_header),
+        Some(1) => (&mut paragraph.header, &mut table.header),
+        Some(2) => (&mut paragraph.even_footer, &mut table.even_footer),
+        Some(3) => (&mut paragraph.footer, &mut table.footer),
+        Some(4) => (&mut paragraph.first_header, &mut table.first_header),
+        Some(_) => (&mut paragraph.first_footer, &mut table.first_footer),
+        None => (&mut paragraph.header, &mut table.header),
+    }
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+fn legacy_running_tab_section_slots<'a>(
+    paragraph: &'a mut RunningSurfaceTabStopHints,
+    table: &'a mut RunningSurfaceTableCellTabStopHints,
+    story_index: Option<usize>,
+) -> Option<(
+    &'a mut Vec<Vec<TabStop>>,
+    &'a mut Vec<TableCellTabStopHints>,
+)> {
+    match legacy_header_footer_story_position(story_index)? {
+        0 => Some((&mut paragraph.even_header, &mut table.even_header)),
+        1 => Some((&mut paragraph.header, &mut table.header)),
+        2 => Some((&mut paragraph.even_footer, &mut table.even_footer)),
+        3 => Some((&mut paragraph.footer, &mut table.footer)),
+        4 => Some((&mut paragraph.first_header, &mut table.first_header)),
+        _ => Some((&mut paragraph.first_footer, &mut table.first_footer)),
     }
 }
 
@@ -4083,6 +4223,122 @@ mod tests {
         }
     }
 
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn legacy_running_tabs_map_six_story_slots_per_section_and_keep_first_owner() {
+        let blocks = vec![
+            Block::PageBreak,
+            Block::SectionBreak(SectionSetup::default()),
+            Block::PageBreak,
+        ];
+        let tab = |position_pt| TabStop {
+            position_pt,
+            alignment: crate::model::TabAlignment::Left,
+            leader: crate::model::TabLeader::None,
+        };
+        let mut regions = (0..12)
+            .map(|story_offset| LegacyRunningTabRegion {
+                source_story_index: Some(HEADER_FOOTER_STORY_BASE + story_offset),
+                tab_stops: vec![vec![tab((story_offset + 1) as f32)]],
+                table_cell_tab_stops: vec![vec![vec![vec![vec![
+                    tab((story_offset + 101) as f32),
+                ]]]]],
+            })
+            .collect::<Vec<_>>();
+        regions.push(LegacyRunningTabRegion {
+            source_story_index: Some(HEADER_FOOTER_STORY_BASE),
+            tab_stops: vec![vec![tab(999.0)]],
+            table_cell_tab_stops: vec![vec![vec![vec![vec![tab(1_999.0)]]]]],
+        });
+
+        let (paragraphs, tables) = legacy_running_tab_stops_from_regions(&blocks, &regions);
+        let paragraph_values = |hints: &RunningSurfaceTabStopHints| {
+            [
+                &hints.even_header,
+                &hints.header,
+                &hints.even_footer,
+                &hints.footer,
+                &hints.first_header,
+                &hints.first_footer,
+            ]
+            .map(|blocks| blocks[0][0].position_pt)
+        };
+        let table_values = |hints: &RunningSurfaceTableCellTabStopHints| {
+            [
+                &hints.even_header,
+                &hints.header,
+                &hints.even_footer,
+                &hints.footer,
+                &hints.first_header,
+                &hints.first_footer,
+            ]
+            .map(|blocks| blocks[0][0][0][0][0].position_pt)
+        };
+
+        assert_eq!(paragraphs.len(), 2);
+        assert_eq!(tables.len(), 2);
+        assert_eq!(
+            paragraph_values(&paragraphs[0]),
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+        );
+        assert_eq!(
+            paragraph_values(&paragraphs[1]),
+            [7.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        );
+        assert_eq!(
+            table_values(&tables[0]),
+            [101.0, 102.0, 103.0, 104.0, 105.0, 106.0]
+        );
+        assert_eq!(
+            table_values(&tables[1]),
+            [107.0, 108.0, 109.0, 110.0, 111.0, 112.0]
+        );
+    }
+
+    #[cfg(any(feature = "docx", feature = "render"))]
+    #[test]
+    fn legacy_running_tabs_repeat_unindexed_header_fallback() {
+        let blocks = vec![
+            Block::SectionBreak(SectionSetup::default()),
+            Block::PageBreak,
+        ];
+        let paragraph_tab = TabStop {
+            position_pt: 36.0,
+            alignment: crate::model::TabAlignment::Center,
+            leader: crate::model::TabLeader::Dot,
+        };
+        let table_tab = TabStop {
+            position_pt: 72.0,
+            alignment: crate::model::TabAlignment::Right,
+            leader: crate::model::TabLeader::Hyphen,
+        };
+        let regions = [LegacyRunningTabRegion {
+            source_story_index: None,
+            tab_stops: vec![Vec::new(), vec![paragraph_tab]],
+            table_cell_tab_stops: vec![
+                vec![vec![vec![vec![table_tab]]]],
+                TableCellTabStopHints::new(),
+            ],
+        }];
+
+        let (paragraphs, tables) = legacy_running_tab_stops_from_regions(&blocks, &regions);
+        assert_eq!(paragraphs.len(), 2);
+        assert_eq!(tables.len(), 2);
+        for (paragraph, table) in paragraphs.iter().zip(tables) {
+            assert_eq!(paragraph.header, vec![Vec::new(), vec![paragraph_tab]]);
+            assert_eq!(
+                table.header,
+                vec![vec![vec![vec![vec![table_tab]]]], Vec::new()]
+            );
+            assert!(paragraph.even_header.is_empty());
+            assert!(paragraph.first_header.is_empty());
+            assert!(paragraph.footer.is_empty());
+            assert!(table.even_header.is_empty());
+            assert!(table.first_header.is_empty());
+            assert!(table.footer.is_empty());
+        }
+    }
+
     #[test]
     fn field_without_separator_does_not_swallow_following_text() {
         // 0x13 "AB" 0x15 (field begin, instruction, end — NO 0x14 separator),
@@ -4111,7 +4367,7 @@ mod tests {
         #[cfg(any(feature = "docx", feature = "render"))]
         let papx = PapxTable::from_test_entries_with_tab_grpprls(&[(
             units.len() as u32,
-            &[0x0D, 0xC6, 4, 0, 1, 0xD0, 0x02, 0],
+            &[0x0D, 0xC6, 5, 0, 1, 0xD0, 0x02, 0],
         )]);
         let chpx = ChpxTable::default();
         let stsh = StyleSheet::default();
@@ -4143,6 +4399,8 @@ mod tests {
             table_cell_line_spacing,
             #[cfg(any(feature = "docx", feature = "render"))]
             table_cell_tab_stops,
+            #[cfg(any(feature = "docx", feature = "render"))]
+            running_tab_regions,
             text_start: _,
         } = build_legacy_region_blocks(&src, &mut numberer, &fib, &plcf_hdd, &[]);
         assert_eq!(pagination_hints.len(), blocks.len());
@@ -4160,6 +4418,25 @@ mod tests {
         {
             assert_eq!(table_cell_tab_stops.len(), blocks.len());
             assert!(table_cell_tab_stops.iter().all(Vec::is_empty));
+            assert_eq!(running_tab_regions.len(), 1);
+            assert_eq!(running_tab_regions[0].source_story_index, None);
+            assert_eq!(running_tab_regions[0].tab_stops.len(), 1);
+            assert_eq!(
+                running_tab_regions[0].table_cell_tab_stops,
+                vec![TableCellTabStopHints::new()]
+            );
+            assert_eq!(running_tab_regions[0].tab_stops[0].len(), 1);
+            assert_eq!(running_tab_regions[0].tab_stops[0][0].position_pt, 36.0);
+
+            let (running_tabs, running_table_tabs) =
+                legacy_running_tab_stops_from_regions(&blocks, &running_tab_regions);
+            assert_eq!(running_tabs.len(), 1);
+            assert_eq!(running_tabs[0].header, running_tab_regions[0].tab_stops);
+            assert_eq!(running_table_tabs.len(), 1);
+            assert_eq!(
+                running_table_tabs[0].header,
+                running_tab_regions[0].table_cell_tab_stops
+            );
         }
 
         let header_region = regions

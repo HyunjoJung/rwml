@@ -449,7 +449,11 @@ and bar stops plus none, dot, hyphen, underscore, heavy, and middle-dot leaders
 reach both preview rendering and fresh DOCX conversion without entering the
 public model. Legacy running stories, notes, nested tables, default-tab
 intervals, implicit list tabs, negative stops, and Word-exact tab reflow remain
-outside this path. Opened `.docx` `Document` renders
+outside this Main-story path. The same bounded legacy resolution reaches direct
+top-level paragraphs and direct paragraph blocks in surviving cells of
+top-level tables across all six running header/footer variants through private
+section-aligned hints. Legacy notes, nested running tables, and Word-exact tab
+reflow remain outside that running-story path. Opened `.docx` `Document` renders
 additionally honor resolved left/center/right/decimal tab stops in LTR
 left/start-aligned top-level body paragraphs, plus explicit left-aligned stops
 and default-tab fallback in supported center/right/justified-aligned LTR
@@ -478,8 +482,9 @@ top-level table rows. The same direct body subset carries resolved exact/minimum
 line rules and explicit tab stops into fresh DOCX conversion. Visible manual
 column breaks in aligned top-level body paragraphs also survive through a
 strictly validated source-offset bridge. Direct top-level paragraphs in selected
-default/first/even running headers and footers from an opened DOCX also retain
-reader-resolved explicit tab stops through a section-aligned six-variant bridge.
+default/first/even running headers and footers from opened DOCX and legacy DOC
+inputs also retain reader-resolved explicit tab stops through section-aligned
+six-variant bridges.
 Direct paragraph blocks in surviving cells of top-level tables on those same
 running surfaces retain explicit tabs through an independently validated
 companion block/row/surviving-cell/paragraph-aligned bridge. For opened DOCX and
@@ -487,20 +492,20 @@ legacy DOC inputs alike, those direct table-cell paragraphs also retain reader-
 resolved exact/minimum line rules, while direct top-level running paragraphs
 retain the same rules through a section-aligned source-only bridge. Nested-table
 descendants and notes remain outside these fresh-conversion paths, and all
-running surfaces remain outside pagination conversion; legacy-DOC running
-stories remain outside tab conversion, while nested running-table descendants
-remain outside both tab and line-rule conversion.
+running surfaces remain outside pagination conversion, while nested
+running-table descendants remain outside both tab and line-rule conversion.
 Settings-defined default-tab intervals remain outside the tab path, and table-
 cell, note, running-surface, and nested-content manual breaks remain outside the
 column-break path.
 Ordinary top-level paragraphs in selected default/first/even running headers
-and footers from an opened DOCX also consume reader-resolved explicit tab stops
-and supported leaders through section-aligned render hints. Default-surface
-inheritance, page-variant selection, and a positive settings-defined default-tab
-interval use the same bounded paragraph shaper without changing the public
-model; running-table-cell tabs remain independently aligned. Legacy-DOC running
-stories, post-tab field containment, and Word-exact tab reflow and pagination
-remain outside this path.
+and footers from opened DOCX and legacy DOC inputs also consume reader-resolved
+explicit tab stops and supported leaders through section-aligned render hints.
+DOCX default-surface inheritance, page-variant selection, and a positive
+settings-defined default-tab interval use the same bounded paragraph shaper
+without changing the public model; running-table-cell tabs remain independently
+aligned. Legacy running stories use their resolved six-story section mapping
+without a settings-defined interval. Post-tab field containment and Word-exact
+tab reflow and pagination remain outside this path.
 Ordinary top-level real footnote and endnote paragraphs from an opened DOCX
 likewise consume reader-resolved explicit tab stops, supported leaders, and a
 positive settings-defined default-tab interval. Their private hints retain
@@ -992,17 +997,17 @@ STSH/PAPX subset described above. Aligned top-level body paragraphs retain
 visible manual column breaks through validated source character offsets.
 Standalone model writing remains proportional-only and consumes no private
 layout hints. Direct top-level paragraphs in selected default/first/even running
-headers and footers from an opened DOCX also retain reader-resolved explicit tab
-stops through section-aligned private hints. Direct paragraph blocks in
-surviving cells of top-level tables on those running surfaces use a companion
+headers and footers from opened DOCX and legacy DOC inputs also retain
+reader-resolved explicit tab stops through section-aligned private hints. Direct
+paragraph blocks in surviving cells of top-level tables on those running
+surfaces use a companion
 block/row/surviving-cell/paragraph-aligned bridge for explicit tabs. Opened DOCX
 and legacy DOC inputs both retain reader-resolved exact/minimum line rules on
 those direct table-cell paragraphs and on direct top-level running paragraphs
 through section-aligned source-only hints. Nested-table descendants and notes
 remain outside these fresh-conversion paths, and all running surfaces remain
-outside pagination conversion; legacy-DOC running stories remain outside tab
-conversion, while nested running-table descendants remain outside both tab and
-line-rule conversion. Settings-defined default-tab
+outside pagination conversion, while nested running-table descendants remain
+outside both tab and line-rule conversion. Settings-defined default-tab
 intervals remain outside the tab path, and table-cell, note, running-surface,
 and nested-content manual breaks remain outside the column-break path.
 

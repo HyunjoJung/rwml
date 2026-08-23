@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Opened legacy `.doc` direct top-level paragraphs and direct paragraph blocks
+  in surviving cells of top-level tables across all six running header/footer
+  variants now retain bounded STSH/PAPX custom tabs in deterministic PDF output
+  and fresh DOCX conversion. A short-lived parser sidecar folds each MS-DOC
+  story into section-aligned private hints without leaking running properties
+  into body blocks. Six-variant and two-section mapping, unindexed default-header
+  fallback, first-owner precedence, direct/table isolation, deterministic bytes,
+  native DOCX reopen, and unchanged public-model/standalone-writer behavior are
+  covered. Legacy notes, nested running tables, settings-defined default-tab
+  intervals, implicit list tabs, negative stops, post-tab field containment,
+  running pagination controls, and Word-exact reflow remain outside this path.
 - Opened legacy `.doc` ordinary Main-story top-level paragraphs and direct
   paragraph blocks in surviving cells of top-level tables now resolve bounded
   custom tabs through paragraph-style STSH inheritance followed by direct PAPX
