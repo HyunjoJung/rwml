@@ -289,6 +289,18 @@ pub(crate) struct DocxState {
     /// Renderer-only exact/minimum line spacing aligned to `notes` blocks.
     #[cfg(feature = "render")]
     pub note_line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
+    /// Renderer-only table-row pagination controls aligned to `notes` blocks.
+    #[cfg(feature = "render")]
+    pub note_table_row_pagination: Vec<Vec<crate::model::TableRowPaginationHint>>,
+    /// Renderer-only table-cell paragraph controls aligned to `notes` blocks.
+    #[cfg(feature = "render")]
+    pub note_table_cell_pagination: Vec<crate::model::TableCellPaginationHints>,
+    /// Renderer-only table-cell line spacing aligned to `notes` blocks.
+    #[cfg(feature = "render")]
+    pub note_table_cell_line_spacing: Vec<crate::model::TableCellLineSpacingHints>,
+    /// Renderer-only recursive table controls aligned to `notes` blocks.
+    #[cfg(feature = "render")]
+    pub note_table_nested_pagination: Vec<crate::model::TableCellNestedPaginationHints>,
     /// Renderer-only explicit paragraph tab stops aligned to `notes` blocks.
     #[cfg(feature = "render")]
     pub note_tab_stops: Vec<Vec<crate::model::TabStop>>,
@@ -604,6 +616,16 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     #[cfg(feature = "render")]
     note_part.line_spacing.extend(endnote_part.line_spacing);
     #[cfg(feature = "render")]
+    note_part.table_rows.extend(endnote_part.table_rows);
+    #[cfg(feature = "render")]
+    note_part.table_cells.extend(endnote_part.table_cells);
+    #[cfg(feature = "render")]
+    note_part
+        .table_cell_line_spacing
+        .extend(endnote_part.table_cell_line_spacing);
+    #[cfg(feature = "render")]
+    note_part.table_nested.extend(endnote_part.table_nested);
+    #[cfg(feature = "render")]
     note_part.tab_stops.extend(endnote_part.tab_stops);
     #[cfg(feature = "render")]
     note_part
@@ -856,6 +878,14 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         note_pagination_hints: note_part.pagination,
         #[cfg(feature = "render")]
         note_line_spacing_hints: note_part.line_spacing,
+        #[cfg(feature = "render")]
+        note_table_row_pagination: note_part.table_rows,
+        #[cfg(feature = "render")]
+        note_table_cell_pagination: note_part.table_cells,
+        #[cfg(feature = "render")]
+        note_table_cell_line_spacing: note_part.table_cell_line_spacing,
+        #[cfg(feature = "render")]
+        note_table_nested_pagination: note_part.table_nested,
         #[cfg(feature = "render")]
         note_tab_stops: note_part.tab_stops,
         #[cfg(feature = "render")]
@@ -1915,6 +1945,14 @@ struct NotePartRead {
     #[cfg(feature = "render")]
     line_spacing: Vec<Option<crate::model::LineSpacingHint>>,
     #[cfg(feature = "render")]
+    table_rows: Vec<Vec<crate::model::TableRowPaginationHint>>,
+    #[cfg(feature = "render")]
+    table_cells: Vec<crate::model::TableCellPaginationHints>,
+    #[cfg(feature = "render")]
+    table_cell_line_spacing: Vec<crate::model::TableCellLineSpacingHints>,
+    #[cfg(feature = "render")]
+    table_nested: Vec<crate::model::TableCellNestedPaginationHints>,
+    #[cfg(feature = "render")]
     tab_stops: Vec<Vec<crate::model::TabStop>>,
     #[cfg(feature = "render")]
     table_cell_tab_stops: Vec<crate::model::TableCellTabStopHints>,
@@ -2154,6 +2192,14 @@ fn read_notes(
             .collect(),
         #[cfg(feature = "render")]
         line_spacing: layout_hints.line_spacing,
+        #[cfg(feature = "render")]
+        table_rows: layout_hints.table_rows,
+        #[cfg(feature = "render")]
+        table_cells: layout_hints.table_cells,
+        #[cfg(feature = "render")]
+        table_cell_line_spacing: layout_hints.table_cell_line_spacing,
+        #[cfg(feature = "render")]
+        table_nested: layout_hints.table_nested,
         #[cfg(feature = "render")]
         tab_stops: layout_hints.tab_stops,
         #[cfg(feature = "render")]

@@ -3256,6 +3256,14 @@ impl Document {
                 pagination.extend_from_slice(&d.note_pagination_hints);
                 let mut line_spacing = d.line_spacing_hints.clone();
                 line_spacing.extend_from_slice(&d.note_line_spacing_hints);
+                let mut table_row_pagination = d.table_row_pagination.clone();
+                table_row_pagination.extend_from_slice(&d.note_table_row_pagination);
+                let mut table_cell_pagination = d.table_cell_pagination.clone();
+                table_cell_pagination.extend_from_slice(&d.note_table_cell_pagination);
+                let mut table_cell_line_spacing = d.table_cell_line_spacing.clone();
+                table_cell_line_spacing.extend_from_slice(&d.note_table_cell_line_spacing);
+                let mut table_nested_pagination = d.table_nested_pagination.clone();
+                table_nested_pagination.extend_from_slice(&d.note_table_nested_pagination);
                 let mut tab_stops = d.tab_stops.clone();
                 tab_stops.extend_from_slice(&d.note_tab_stops);
                 let mut table_cell_tab_stops = d.table_cell_tab_stops.clone();
@@ -3275,10 +3283,10 @@ impl Document {
                         final_section_column_layout: d.final_section_column_layout.as_ref(),
                         final_section_column_separator: d.final_section_column_separator,
                         final_section_column_rtl: d.final_section_column_rtl,
-                        table_row_pagination: &d.table_row_pagination,
-                        table_cell_pagination: &d.table_cell_pagination,
-                        table_cell_line_spacing: &d.table_cell_line_spacing,
-                        table_nested_pagination: &d.table_nested_pagination,
+                        table_row_pagination: &table_row_pagination,
+                        table_cell_pagination: &table_cell_pagination,
+                        table_cell_line_spacing: &table_cell_line_spacing,
+                        table_nested_pagination: &table_nested_pagination,
                         table_cell_tab_stops: &table_cell_tab_stops,
                         running_line_spacing: &d.running_line_spacing_hints,
                         running_tab_stops: &d.running_tab_stops,
