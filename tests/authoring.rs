@@ -4279,7 +4279,12 @@ fn rtl_properties_round_trip_through_docx() {
         .rich_paragraph(
             ParagraphBuilder::new()
                 .bidi()
-                .runs([RunBuilder::new("rtl text").rtl().build()]),
+                .runs([RunBuilder::new("rtl text")
+                    .bold()
+                    .italic()
+                    .size_half_pt(30)
+                    .rtl()
+                    .build()]),
         )
         .rich_table(
             TableBuilder::new()
@@ -4294,6 +4299,8 @@ fn rtl_properties_round_trip_through_docx() {
     assert!(
         document_xml.contains("<w:bidi/>")
             && document_xml.contains("<w:rtl/>")
+            && document_xml.contains("<w:b/><w:bCs/><w:i/><w:iCs/>")
+            && document_xml.contains(r#"<w:sz w:val="30"/><w:szCs w:val="30"/>"#)
             && document_xml.contains("<w:bidiVisual/>")
             && document_xml.contains(r#"<w:jc w:val="left"/>"#),
         "RTL properties missing: {document_xml}"
@@ -4307,6 +4314,9 @@ fn rtl_properties_round_trip_through_docx() {
     assert!(paragraph.props.bidi);
     assert_eq!(paragraph.props.align, Align::Left);
     assert!(paragraph.runs[0].props.rtl);
+    assert!(paragraph.runs[0].props.bold);
+    assert!(paragraph.runs[0].props.italic);
+    assert_eq!(paragraph.runs[0].props.size_half_pt, Some(30));
 
     let Block::Table(table) = &reopened_model.blocks[1] else {
         panic!("expected reopened table");

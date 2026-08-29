@@ -697,13 +697,16 @@ fn apply_paragraph_props_child(props: &mut ParagraphProps, e: &BytesStart<'_>) {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct RunProps {
     bold: Option<bool>,
+    bold_cs: Option<bool>,
     italic: Option<bool>,
+    italic_cs: Option<bool>,
     underline: Option<bool>,
     strike: Option<bool>,
     hidden: Option<bool>,
     font: Option<String>,
     font_cs: Option<String>,
     size_half_pt: Option<u16>,
+    size_half_pt_cs: Option<u16>,
     color: Option<Color>,
     highlight: Option<String>,
     vert_align: Option<VertAlign>,
@@ -754,8 +757,17 @@ impl RunProps {
             props.rtl = value;
         }
         if props.rtl {
+            if let Some(value) = self.bold_cs {
+                props.bold = value;
+            }
+            if let Some(value) = self.italic_cs {
+                props.italic = value;
+            }
             if let Some(value) = &self.font_cs {
                 props.font = Some(value.clone());
+            }
+            if let Some(value) = self.size_half_pt_cs {
+                props.size_half_pt = Some(value);
             }
         }
     }
@@ -764,8 +776,14 @@ impl RunProps {
         if other.bold.is_some() {
             self.bold = other.bold;
         }
+        if other.bold_cs.is_some() {
+            self.bold_cs = other.bold_cs;
+        }
         if other.italic.is_some() {
             self.italic = other.italic;
+        }
+        if other.italic_cs.is_some() {
+            self.italic_cs = other.italic_cs;
         }
         if other.underline.is_some() {
             self.underline = other.underline;
@@ -784,6 +802,9 @@ impl RunProps {
         }
         if other.size_half_pt.is_some() {
             self.size_half_pt = other.size_half_pt;
+        }
+        if other.size_half_pt_cs.is_some() {
+            self.size_half_pt_cs = other.size_half_pt_cs;
         }
         if other.color.is_some() {
             self.color = other.color;
@@ -809,7 +830,9 @@ impl RunProps {
 pub(crate) fn apply_run_props_child(props: &mut RunProps, e: &BytesStart<'_>) {
     match local(e.name().as_ref()) {
         b"b" => props.bold = Some(toggle_on(attr_local(e, b"val"))),
+        b"bCs" => props.bold_cs = Some(toggle_on(attr_local(e, b"val"))),
         b"i" => props.italic = Some(toggle_on(attr_local(e, b"val"))),
+        b"iCs" => props.italic_cs = Some(toggle_on(attr_local(e, b"val"))),
         b"strike" | b"dstrike" => props.strike = Some(toggle_on(attr_local(e, b"val"))),
         b"vanish" => props.hidden = Some(toggle_on(attr_local(e, b"val"))),
         b"u" => {
@@ -828,6 +851,7 @@ pub(crate) fn apply_run_props_child(props: &mut RunProps, e: &BytesStart<'_>) {
             props.font_cs = attr_local_trimmed(e, b"cs");
         }
         b"sz" => props.size_half_pt = attr_u16(e, b"val"),
+        b"szCs" => props.size_half_pt_cs = attr_u16(e, b"val"),
         b"color" => props.color = attr_local(e, b"val").and_then(|v| parse_rgb_hex_color(&v)),
         b"highlight" => props.highlight = attr_local_trimmed(e, b"val"),
         b"vertAlign" => {

@@ -2860,8 +2860,8 @@ fn write_rpr(out: &mut String, p: &CharProps) {
         return;
     }
     out.push_str("<w:rPr>");
-    // Schema order: rFonts, b, i, smallCaps, strike, vanish, color, sz/szCs,
-    // highlight, u, vertAlign, rtl.
+    // Schema order: rFonts, b/bCs, i/iCs, smallCaps, strike, vanish, color,
+    // sz/szCs, highlight, u, vertAlign, rtl.
     if let Some(f) = font {
         let f = esc_attr(f);
         out.push_str(&format!(
@@ -2870,9 +2870,15 @@ fn write_rpr(out: &mut String, p: &CharProps) {
     }
     if p.bold {
         out.push_str("<w:b/>");
+        if p.rtl {
+            out.push_str("<w:bCs/>");
+        }
     }
     if p.italic {
         out.push_str("<w:i/>");
+        if p.rtl {
+            out.push_str("<w:iCs/>");
+        }
     }
     if p.small_caps {
         out.push_str("<w:smallCaps/>");
