@@ -568,6 +568,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let table_cell_tab_stops = body_hints.table_cell_tabs;
     let column_break_offsets = body_hints.column_break_offsets;
     let table_nested_pagination = body_hints.table_nested;
+    let source_block_anchors = body_hints.source_block_anchors;
     // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
     // (not appended into `model.blocks`); their parts are preserved verbatim on save.
     // They are re-joined for the read/text views below and in `Document::model()`.
@@ -642,6 +643,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             style_refs: &style_ref_context,
             sequence_headings: &sequence_heading_context,
         },
+        Some(&source_block_anchors),
     );
     floating_shapes.extend(note_part.floating_shapes);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
@@ -1711,6 +1713,7 @@ fn read_hf_parts(
                     style_refs: &style_ref_context,
                     sequence_headings: &sequence_heading_context,
                 },
+                None,
             ));
         }
         if seen_fields.insert((path.clone(), type_name.to_string())) {
@@ -2086,6 +2089,7 @@ fn read_notes(
             style_refs: &style_ref_context,
             sequence_headings: &sequence_heading_context,
         },
+        None,
     );
     let text_box_id_prefix = format!("{name}-text-box");
     let text_boxes = read_text_boxes_with_prefix(&xml, &ctx, &floating_shapes, &text_box_id_prefix);
@@ -2333,7 +2337,11 @@ struct ShapeFieldPositions {
     style_ref_position: Option<fields::StyleRefFieldPosition>,
 }
 
-fn read_floating_shapes(doc_xml: &str, cx: ShapeFieldContext<'_>) -> Vec<FloatingShape> {
+fn read_floating_shapes(
+    doc_xml: &str,
+    cx: ShapeFieldContext<'_>,
+    source_block_anchors: Option<&[Option<usize>]>,
+) -> Vec<FloatingShape> {
     let mut r = Reader::from_str(doc_xml);
     let mut shapes = Vec::new();
     let mut shape_field_cursor = ShapeFieldCursor::default();
@@ -2475,11 +2483,16 @@ fn read_floating_shapes(doc_xml: &str, cx: ShapeFieldContext<'_>) -> Vec<Floatin
                 }
                 if name == b"anchor" {
                     let index = shapes.len();
+                    let anchor_block_index = current_body_block_index.and_then(|source_index| {
+                        source_block_anchors.map_or(Some(source_index), |anchors| {
+                            anchors.get(source_index).copied().flatten()
+                        })
+                    });
                     let shape = read_floating_shape(
                         &mut r,
                         &e,
                         index,
-                        current_body_block_index,
+                        anchor_block_index,
                         cx,
                         &mut shape_field_cursor,
                     );
@@ -2544,7 +2557,12 @@ fn read_floating_shapes(doc_xml: &str, cx: ShapeFieldContext<'_>) -> Vec<Floatin
                 }
                 if name == b"anchor" {
                     let index = shapes.len();
-                    shapes.push(floating_shape_shell(index, &e, current_body_block_index));
+                    let anchor_block_index = current_body_block_index.and_then(|source_index| {
+                        source_block_anchors.map_or(Some(source_index), |anchors| {
+                            anchors.get(source_index).copied().flatten()
+                        })
+                    });
+                    shapes.push(floating_shape_shell(index, &e, anchor_block_index));
                     if current_body_block_index.is_some() {
                         current_body_block_shapes.push(FloatingShapeAnchorCandidate {
                             shape_index: index,

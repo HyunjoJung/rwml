@@ -88,6 +88,7 @@ pub(super) struct PaginationCapture {
     table_cell_column_breaks: Vec<TableCellColumnBreakHints>,
     table_nested_pagination: Vec<TableCellNestedPaginationHints>,
     table_cell_tab_stops: Vec<TableCellTabStopHints>,
+    source_block_anchors: Vec<Option<usize>>,
     suspended: usize,
 }
 
@@ -120,6 +121,7 @@ pub(super) struct BodyLayoutHints {
     pub(super) table_cell_column_breaks: Vec<TableCellColumnBreakHints>,
     pub(super) table_nested: Vec<TableCellNestedPaginationHints>,
     pub(super) table_cell_tabs: Vec<TableCellTabStopHints>,
+    pub(super) source_block_anchors: Vec<Option<usize>>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -230,6 +232,7 @@ impl Ctx<'_> {
                 table_cell_column_breaks: capture.table_cell_column_breaks,
                 table_nested: capture.table_nested_pagination,
                 table_cell_tabs: capture.table_cell_tab_stops,
+                source_block_anchors: capture.source_block_anchors,
             })
             .unwrap_or_default()
     }
@@ -297,6 +300,7 @@ impl Ctx<'_> {
         }
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
+                capture.source_block_anchors.push(Some(capture.hints.len()));
                 capture.hints.push(PaginationHint::default());
                 capture.line_spacing.push(None);
                 capture.table_row_pagination.push(table.rows.clone());
@@ -315,7 +319,36 @@ impl Ctx<'_> {
         }
     }
 
+    fn capture_empty_source_block(&self) {
+        if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
+            if capture.suspended == 0 {
+                capture.source_block_anchors.push(None);
+            }
+        }
+    }
+
+    fn capture_source_paragraph_anchor(&self, blocks: &[Block]) {
+        if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
+            if capture.suspended != 0 {
+                return;
+            }
+            let start = capture.hints.len();
+            let anchor = if blocks.iter().any(|block| matches!(block, Block::PageBreak)) {
+                None
+            } else {
+                let mut paragraphs = blocks
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, block)| matches!(block, Block::Paragraph(_)));
+                let first = paragraphs.next().map(|(index, _)| start + index);
+                first.filter(|_| paragraphs.next().is_none())
+            };
+            capture.source_block_anchors.push(anchor);
+        }
+    }
+
     fn capture_paragraph_blocks(&self, data: &ParagraphBlockData) {
+        self.capture_source_paragraph_anchor(&data.blocks);
         for (index, block) in data.blocks.iter().enumerate() {
             let break_offsets = data
                 .column_break_offsets
@@ -2365,6 +2398,9 @@ fn read_blocks_with_pagination(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Bl
                     _ => skip_subtree(r),
                 }
             }
+            Ok(Event::Empty(e)) if matches!(local(e.name().as_ref()), b"p" | b"tbl") => {
+                ctx.capture_empty_source_block();
+            }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -2442,6 +2478,9 @@ fn read_content_control_blocks_with_pagination(
                 }
                 _ => skip_subtree(r),
             },
+            Ok(Event::Empty(e)) if matches!(local(e.name().as_ref()), b"p" | b"tbl") => {
+                ctx.capture_empty_source_block();
+            }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -2523,6 +2562,9 @@ fn read_content_control_blocks_alternate_content_branch(
                 }
                 _ => skip_subtree(r),
             },
+            Ok(Event::Empty(e)) if matches!(local(e.name().as_ref()), b"p" | b"tbl") => {
+                ctx.capture_empty_source_block();
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -4869,7 +4911,9 @@ fn walk_drawing(r: &mut Xml<'_>, ctx: &Ctx<'_>, state: &mut DrawingReadState, de
                 }
                 b"txbxContent" => {
                     if depth < MAX_DEPTH {
+                        ctx.suspend_block_captures();
                         let blocks = read_blocks(r, ctx, depth + 1);
+                        ctx.resume_block_captures();
                         append_blocks_text(&mut state.text, &blocks);
                     } else {
                         skip_subtree(r);
@@ -6447,6 +6491,7 @@ fn read_table_block(
     let (table, pagination) = read_table(r, ctx, depth);
     ctx.resume_block_captures();
     if table.rows.is_empty() {
+        ctx.capture_empty_source_block();
         None
     } else {
         ctx.capture_table_block_hints(&pagination);

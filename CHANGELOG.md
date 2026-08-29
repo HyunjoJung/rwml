@@ -12,6 +12,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `BI_RGB` DIB payloads as RGB555, including the unused high storage bit.
   Scaled, composited, alpha-blended, and general vector metafiles remain outside
   this bounded raster subset.
+- Floating shapes in opened DOCX files now anchor to emitted model block indexes
+  after a source paragraph expands into a paragraph plus section break. This
+  keeps overlays and bounded `wrapTopAndBottom` flow attached to the intended
+  later paragraph; page-break-split source paragraphs continue to fail closed
+  without an ambiguous fragment index.
 - Source-backed unequal-column PDF preview now uses a bounded convergence pass
   to rewrap top-level paragraphs that remain wholly on a wider physical column
   track, including RTL column order. Paragraphs that cross tracks or do not
