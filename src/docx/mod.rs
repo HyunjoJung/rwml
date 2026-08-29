@@ -286,6 +286,9 @@ pub(crate) struct DocxState {
     /// Renderer-only keep-lines and widow controls aligned to `notes` blocks.
     #[cfg(feature = "render")]
     pub note_pagination_hints: Vec<crate::model::PaginationHint>,
+    /// Renderer-only block starts for each nonempty exact footnote/endnote entry.
+    #[cfg(feature = "render")]
+    pub note_entry_starts: Vec<usize>,
     /// Renderer-only exact/minimum line spacing aligned to `notes` blocks.
     #[cfg(feature = "render")]
     pub note_line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
@@ -607,12 +610,21 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         NoteKind::Endnote,
         part_env,
     );
+    #[cfg(feature = "render")]
+    let endnote_block_offset = note_part.blocks.len();
     note_part.blocks.extend(endnote_part.blocks);
     note_part
         .source_entries
         .append(&mut endnote_part.source_entries);
     #[cfg(feature = "render")]
     note_part.pagination.extend(endnote_part.pagination);
+    #[cfg(feature = "render")]
+    note_part.entry_starts.extend(
+        endnote_part
+            .entry_starts
+            .into_iter()
+            .filter_map(|start| endnote_block_offset.checked_add(start)),
+    );
     #[cfg(feature = "render")]
     note_part.line_spacing.extend(endnote_part.line_spacing);
     #[cfg(feature = "render")]
@@ -876,6 +888,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         line_spacing_hints,
         #[cfg(feature = "render")]
         note_pagination_hints: note_part.pagination,
+        #[cfg(feature = "render")]
+        note_entry_starts: note_part.entry_starts,
         #[cfg(feature = "render")]
         note_line_spacing_hints: note_part.line_spacing,
         #[cfg(feature = "render")]
@@ -1943,6 +1957,8 @@ struct NotePartRead {
     #[cfg(feature = "render")]
     pagination: Vec<crate::model::PaginationHint>,
     #[cfg(feature = "render")]
+    entry_starts: Vec<usize>,
+    #[cfg(feature = "render")]
     line_spacing: Vec<Option<crate::model::LineSpacingHint>>,
     #[cfg(feature = "render")]
     table_rows: Vec<Vec<crate::model::TableRowPaginationHint>>,
@@ -2159,7 +2175,13 @@ fn read_notes(
     let layout_hints = ctx.take_layout_hints();
     let mut source_entries = Vec::with_capacity(note_entries.len());
     let mut block_offset = 0usize;
+    #[cfg(feature = "render")]
+    let mut entry_starts = Vec::with_capacity(note_entries.len());
     for (id, note_blocks) in note_entries {
+        #[cfg(feature = "render")]
+        if !note_blocks.is_empty() {
+            entry_starts.push(block_offset);
+        }
         let text = blocks_text(&note_blocks);
         let payload = note_write_payload(kind, &text, &note_blocks, &layout_hints, block_offset);
         block_offset = block_offset.saturating_add(note_blocks.len());
@@ -2180,16 +2202,9 @@ fn read_notes(
         blocks,
         source_entries,
         #[cfg(feature = "render")]
-        // Flattened render notes do not retain note-entry boundaries, so a
-        // source `keepNext` cannot safely chain without crossing into another note.
-        pagination: layout_hints
-            .pagination
-            .iter()
-            .map(|hint| crate::model::PaginationHint {
-                keep_next: false,
-                ..*hint
-            })
-            .collect(),
+        pagination: layout_hints.pagination,
+        #[cfg(feature = "render")]
+        entry_starts,
         #[cfg(feature = "render")]
         line_spacing: layout_hints.line_spacing,
         #[cfg(feature = "render")]
