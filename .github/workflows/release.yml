@@ -77,8 +77,8 @@ jobs:
             corpus/public "$RUNNER_TEMP/rwml-edit-validation"
           "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/validate_edit_check.py \
             corpus/public "$RUNNER_TEMP/rwml-edit-validation"
-          cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --default-features
-          cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --all-features
+          cargo semver-checks check-release --baseline-rev v0.1.3 --release-type patch --default-features
+          cargo semver-checks check-release --baseline-rev v0.1.3 --release-type patch --all-features
           cargo fmt --all -- --check
           cargo clippy --all-targets -- -D warnings
           cargo clippy --all-targets --all-features -- -D warnings

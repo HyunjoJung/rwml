@@ -117,7 +117,7 @@ complete matrix on every pull request and remains authoritative.
 |---|---|
 | Legacy `.doc` core, feature boundaries, or optional dependencies | `cargo test --all-targets --no-default-features` |
 | Renderer or all-feature behavior | `cargo clippy --all-targets --all-features -- -D warnings`<br>`cargo test --all-targets --features render`<br>`cargo test --doc --all-features`<br>`cargo doc --no-deps --all-features` |
-| Public Rust API, Rustdoc, or examples | `cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --default-features`<br>`cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --all-features`<br>`cargo test --doc --all-features`<br>`cargo doc --no-deps --all-features` |
+| Public Rust API, Rustdoc, or examples | `cargo semver-checks check-release --baseline-rev v0.1.3 --release-type patch --default-features`<br>`cargo semver-checks check-release --baseline-rev v0.1.3 --release-type patch --all-features`<br>`cargo test --doc --all-features`<br>`cargo doc --no-deps --all-features` |
 | Public corpus or corpus manifests | `python3 scripts/gen_public_corpus.py --check`<br>`cargo test --release --test performance --locked -- --ignored --nocapture` |
 | Python scripts or release/evidence tooling | `python3 -m unittest discover -s tests -p 'test_*.py'` |
 | Fuzz targets or parsing/edit/render surfaces used by fuzzing | `cargo check --manifest-path fuzz/Cargo.toml --all-targets --locked` |
@@ -145,7 +145,7 @@ Release publishing is tag-bound. Create the version-matching `v*` tag only
 after the protected-branch CI result is green; the release workflow rejects
 branch dispatches, verifies that the tag points at the exact workflow revision
 and that revision is on protected `origin/main`, and compares the package against
-the published `v0.1.1` API baseline. It then generates strict render and
+the latest published `v0.1.3` API baseline. It then generates strict render and
 extraction evidence, packages both crates, records checksums, and attaches the
 exact packages and evidence to the GitHub Release.
 

@@ -44,8 +44,8 @@ jobs:
             'import docx, pymupdf, PIL; assert docx.__version__ == "1.2.0"; assert pymupdf.__version__ == "1.28.2"; assert PIL.__version__ == "12.3.0"'
       - name: Check patch-compatible public API
         run: |
-          cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --default-features
-          cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --all-features
+          cargo semver-checks check-release --baseline-rev v0.1.3 --release-type patch --default-features
+          cargo semver-checks check-release --baseline-rev v0.1.3 --release-type patch --all-features
       - name: Public hygiene audit
         run: python3 scripts/public_hygiene_audit.py
       - name: Python release and evidence tooling tests

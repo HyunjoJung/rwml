@@ -17,7 +17,7 @@ codepages, Korean cp949 documents, and untrusted input through bounded parsers
 that return typed errors for malformed or unsupported files.
 
 ```sh
-cargo add rwml@0.1.3
+cargo add rwml@0.1.4
 ```
 
 ## What it does
@@ -43,14 +43,14 @@ writer, diagnostics, and the PDF renderer consume that model.
 
 | Release | Safety and toolchain | Public release evidence |
 |---|---|---|
-| `0.1.3` · MIT | no `unsafe` · core MSRV 1.85 · render MSRV 1.92 | 21 DOCX fixtures / 26 rendered pages · 3 generated DOC oracle fixtures · strict tag-bound manifest |
+| `0.1.4` · MIT | no `unsafe` · core MSRV 1.85 · render MSRV 1.92 | 21 DOCX fixtures / 26 rendered pages · 3 generated DOC oracle fixtures · strict tag-bound manifest |
 
-Version `0.1.3` is published on
-[crates.io](https://crates.io/crates/rwml/0.1.3) and
-[docs.rs](https://docs.rs/rwml/0.1.3/rwml/). Its exact crates, checksums,
+Version `0.1.4` is published on
+[crates.io](https://crates.io/crates/rwml/0.1.4) and
+[docs.rs](https://docs.rs/rwml/0.1.4/rwml/). Its exact crates, checksums,
 public-hygiene result, extraction benchmark, render validation, and release
 manifest are attached to the
-[`v0.1.3` release](https://github.com/HyunjoJung/rwml/releases/tag/v0.1.3).
+[`v0.1.4` release](https://github.com/HyunjoJung/rwml/releases/tag/v0.1.4).
 
 ## Start using rwml
 
@@ -107,7 +107,7 @@ println!("updated package parts: {touched:?}");
 **Inspect or convert** from the CLI:
 
 ```sh
-cargo install rwml --version =0.1.3 --locked
+cargo install rwml --version =0.1.4 --locked
 
 rwml extract file.docx
 rwml convert legacy.doc md
@@ -118,7 +118,7 @@ rwml to-docx legacy.doc converted.docx
 PDF output is opt-in because it adds the shaping and PDF stack:
 
 ```sh
-cargo add rwml@0.1.3 --features render
+cargo add rwml@0.1.4 --features render
 # or build the current checkout with deterministic bundled OFL font subsets;
 # this source version automatically registers them for `to-pdf`
 cargo install --path . --locked --features bundled-fonts
@@ -177,7 +177,7 @@ a checkout.
 Use `default-features = false` for the dependency-light legacy `.doc` reader:
 
 ```toml
-rwml = { version = "0.1.3", default-features = false }
+rwml = { version = "0.1.4", default-features = false }
 ```
 
 ## Public validation
