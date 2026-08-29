@@ -8,8 +8,9 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    action_field_syntax, advance_field_syntax, compare_field_syntax, direct_ref_field_syntax,
-    document_property_key, eq_enclosed_operand as take_eq_enclosed_operand,
+    action_field_syntax, advance_field_syntax, apply_field_text_format, compare_field_syntax,
+    direct_ref_field_syntax, document_property_key,
+    eq_enclosed_operand as take_eq_enclosed_operand,
     eq_fraction_operands as split_eq_fraction_operands, eq_list_operands as split_eq_list_operands,
     eq_numeric_prefix_option as consume_eq_numeric_prefix_option,
     eq_parenthesized_operand as take_eq_parenthesized_operand,
@@ -2814,49 +2815,6 @@ fn accept_autonum_separator_switch(part: &str, separator: &mut Option<char>) -> 
         return None;
     }
     Some(())
-}
-
-fn capitalize_first_word(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut changed = false;
-    for ch in text.chars() {
-        if !changed && ch.is_alphabetic() {
-            out.extend(ch.to_uppercase());
-            changed = true;
-        } else {
-            out.push(ch);
-        }
-    }
-    out
-}
-
-fn capitalize_words(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    let mut at_word_start = true;
-    for ch in text.chars() {
-        if ch.is_alphabetic() {
-            if at_word_start {
-                out.extend(ch.to_uppercase());
-            } else {
-                out.push(ch);
-            }
-            at_word_start = false;
-        } else {
-            out.push(ch);
-            at_word_start = !ch.is_alphanumeric();
-        }
-    }
-    out
-}
-
-fn apply_field_text_format(text: String, format: Option<FieldTextFormat>) -> String {
-    match format {
-        Some(FieldTextFormat::Upper) => text.to_uppercase(),
-        Some(FieldTextFormat::Lower) => text.to_lowercase(),
-        Some(FieldTextFormat::Caps) => capitalize_words(&text),
-        Some(FieldTextFormat::FirstCap) => capitalize_first_word(&text),
-        None => text,
-    }
 }
 
 fn normalize_instruction(s: &str) -> String {

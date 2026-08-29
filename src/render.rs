@@ -45,6 +45,9 @@ use parley::layout::{Alignment, IndentOptions};
 use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, StyleProperty};
 use parley::{FontContext, Layout, LayoutContext};
 
+use crate::annotation::{
+    apply_field_text_format, instruction_parts, page_field_format_syntax_tail, FieldTextFormat,
+};
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
     FieldRole, Image, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
@@ -54,6 +57,7 @@ use crate::model::{
     TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
     TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
 };
+use crate::page_number::{format_page_number, PageNumberFormat};
 use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
 use crate::{Error, Result};
 use crate::{FieldKind, FloatingShape, ShapePosition};
@@ -198,7 +202,28 @@ enum DynamicTextKind {
 struct DynamicTextRun {
     kind: DynamicTextKind,
     page_field_index: Option<usize>,
+    number_format: Option<PageNumberFormat>,
+    text_format: Option<FieldTextFormat>,
     props: CharProps,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PageDisplayNumber {
+    value: usize,
+    format: Option<PageNumberFormat>,
+}
+
+impl PageDisplayNumber {
+    fn decimal(value: usize) -> Self {
+        Self {
+            value,
+            format: None,
+        }
+    }
+
+    fn text(self) -> Option<String> {
+        format_page_number(self.value, self.format)
+    }
 }
 
 /// One drawable run on a line: its x offset within the content box, the krilla
@@ -1745,17 +1770,35 @@ fn dynamic_text_for_field(
         FieldRole::Simple { instruction }
             if FieldKind::from_instruction(instruction) == FieldKind::Page =>
         {
+            let tokens = instruction_parts(instruction);
+            let mut parts = tokens.iter().map(String::as_str);
+            let kind = parts.next()?;
+            if !kind.eq_ignore_ascii_case("PAGE") {
+                return None;
+            }
+            let format = page_field_format_syntax_tail(&mut parts)?;
             let mut props = props.clone();
             props.caps = false;
             props.small_caps = false;
             Some(DynamicTextRun {
                 kind: DynamicTextKind::PageNumber,
                 page_field_index,
+                number_format: format.number_format.map(Into::into),
+                text_format: format.text_format,
                 props,
             })
         }
         _ => None,
     }
+}
+
+fn dynamic_page_number_text(
+    dynamic: &DynamicTextRun,
+    page_number: PageDisplayNumber,
+) -> Option<String> {
+    let format = dynamic.number_format.or(page_number.format);
+    let text = format_page_number(page_number.value, format)?;
+    Some(apply_field_text_format(text, dynamic.text_format))
 }
 
 fn map_chars(text: &str, map: fn(char) -> Option<char>) -> String {
@@ -4386,7 +4429,7 @@ fn draw_running_surface_items(
     items: Vec<RunningSurfaceItem>,
     vertical_bounds: (f32, f32),
     geom: Geom,
-    page_number: usize,
+    page_number: PageDisplayNumber,
     page_links: &mut Vec<PageLink>,
     cx: &mut TextCx<'_>,
 ) -> f32 {
@@ -4731,12 +4774,45 @@ fn assign_section_to_render_pages(
     }
 }
 
+fn display_page_numbers(
+    page_sections: &[Option<RenderPageSection>],
+    fallback_setup: &SectionSetup,
+) -> Vec<PageDisplayNumber> {
+    let mut active_section = None;
+    let mut next_value = 1usize;
+    let mut format = None;
+    page_sections
+        .iter()
+        .map(|section| {
+            let (section_index, setup) = section
+                .as_ref()
+                .map(|section| (section.section_index, &section.setup))
+                .unwrap_or((usize::MAX, fallback_setup));
+            if active_section != Some(section_index) {
+                active_section = Some(section_index);
+                if let Some(start) = setup.page_number_start {
+                    next_value = (start as usize).max(1);
+                }
+                if let Some(section_format) = setup.page_number_format {
+                    format = Some(section_format.into());
+                }
+            }
+            let page_number = PageDisplayNumber {
+                value: next_value,
+                format,
+            };
+            next_value = next_value.saturating_add(1);
+            page_number
+        })
+        .collect()
+}
+
 fn layout_page_number_line(
-    page_number: usize,
+    page_number: PageDisplayNumber,
     geom: Geom,
     cx: &mut TextCx<'_>,
 ) -> Option<LineLayout> {
-    let text = page_number.to_string();
+    let text = page_number.text()?;
     shape(
         &text,
         StyledText::plain(&[(0, text.len(), CharProps::default())]),
@@ -5460,7 +5536,7 @@ struct CellContentPlacement {
 struct RowPaintPlacement {
     x_offset: f32,
     top: f32,
-    page_number: usize,
+    page_number: PageDisplayNumber,
 }
 
 fn cell_lines_extent(lines: &[LineLayout]) -> f32 {
@@ -5481,7 +5557,7 @@ fn draw_table_cell_content(
     surface: &mut Surface<'_>,
     cell: CellBox,
     placement: CellContentPlacement,
-    page_number: usize,
+    page_number: PageDisplayNumber,
     cx: &mut TextCx<'_>,
     page_links: &mut Vec<PageLink>,
 ) {
@@ -7714,7 +7790,7 @@ fn draw_run_with_page_context(
     run: RunDraw,
     x_abs: f32,
     baseline_y: f32,
-    page_number: usize,
+    page_number: PageDisplayNumber,
     tcx: &mut TextCx<'_>,
 ) {
     let Some(dynamic) = run.dynamic.clone() else {
@@ -7723,7 +7799,11 @@ fn draw_run_with_page_context(
     };
 
     let text = match dynamic.kind {
-        DynamicTextKind::PageNumber => page_number.to_string(),
+        DynamicTextKind::PageNumber => dynamic_page_number_text(&dynamic, page_number),
+    };
+    let Some(text) = text else {
+        draw_run(surface, run, x_abs, baseline_y);
+        return;
     };
     let Some(line) = shape(
         &text,
@@ -9720,6 +9800,8 @@ fn render_pdf(
                 .unwrap_or(geom)
         })
         .collect::<Vec<_>>();
+    let page_display_numbers =
+        display_page_numbers(&pagination.page_sections, &final_section_setup);
     let pages = pagination.pages;
     let page_sections = pagination.page_sections;
     let section_start_page_index = pagination.final_section_start_page_index;
@@ -9736,6 +9818,10 @@ fn render_pdf(
     let page_count = pages.len();
     for (page_index, page_items) in pages.into_iter().enumerate() {
         let page_number = page_index + 1;
+        let display_page_number = page_display_numbers
+            .get(page_index)
+            .copied()
+            .unwrap_or_else(|| PageDisplayNumber::decimal(page_number));
         let fallback_page_section;
         let page_section = match page_sections.get(page_index).and_then(Option::as_ref) {
             Some(section) => section,
@@ -9831,7 +9917,7 @@ fn render_pdf(
         let explicit_footer_distance =
             normalized_running_surface_distance(running_distances.footer_pt);
         if page_section.setup.page_numbers && explicit_footer_distance.is_some() {
-            if let Some(line) = layout_page_number_line(page_index + 1, page_geom, &mut tcx) {
+            if let Some(line) = layout_page_number_line(display_page_number, page_geom, &mut tcx) {
                 footer_items.push(RunningSurfaceItem::Line(line));
             }
         }
@@ -9855,7 +9941,7 @@ fn render_pdf(
             header_items,
             header_bounds,
             page_geom,
-            page_number,
+            display_page_number,
             &mut page_links,
             &mut tcx,
         );
@@ -9864,12 +9950,12 @@ fn render_pdf(
             footer_items,
             footer_bounds,
             page_geom,
-            page_number,
+            display_page_number,
             &mut page_links,
             &mut tcx,
         );
         if page_section.setup.page_numbers && explicit_footer_distance.is_none() {
-            if let Some(line) = layout_page_number_line(page_index + 1, page_geom, &mut tcx) {
+            if let Some(line) = layout_page_number_line(display_page_number, page_geom, &mut tcx) {
                 if fy + line.height <= page_geom.page_h {
                     let baseline = fy + line.baseline;
                     let x0 = page_geom.left + line.x_indent;
@@ -9941,7 +10027,7 @@ fn render_pdf(
                             run,
                             x0,
                             baseline,
-                            page_index + 1,
+                            display_page_number,
                             &mut tcx,
                         );
                     }
@@ -9956,7 +10042,7 @@ fn render_pdf(
                         RowPaintPlacement {
                             x_offset: page_geom.left + column_x,
                             top,
-                            page_number,
+                            page_number: display_page_number,
                         },
                         &mut tcx,
                         &mut page_links,
@@ -10001,13 +10087,14 @@ mod tests {
 
     use super::{
         assign_section_to_render_pages, cell_insets, cell_line_origin, count_missing_image_bytes,
-        display_text, first_row_fragment_height, fit_chart_layout_to_box, fit_image_layout_to_box,
-        image_layout, image_paint_transform, layout_page_number_line, layout_paragraph,
-        layout_table, layout_table_with_row_pagination, page_field_text, paginate,
-        paginate_with_column_gap, push_clipped_page_link, render_pdf, rgb,
-        running_footer_vertical_bounds, running_header_footer_blocks_for_page,
-        running_header_vertical_bounds, running_surface_tab_stops, shape, shape_cell, split_row,
-        unsupported_placeholder_texts, ColumnLayout, FlowItem, Geom, LayoutCapture, LineLayout,
+        display_page_numbers, display_text, dynamic_page_number_text, dynamic_text_for_field,
+        first_row_fragment_height, fit_chart_layout_to_box, fit_image_layout_to_box, image_layout,
+        image_paint_transform, layout_page_number_line, layout_paragraph, layout_table,
+        layout_table_with_row_pagination, page_field_text, paginate, paginate_with_column_gap,
+        push_clipped_page_link, render_pdf, rgb, running_footer_vertical_bounds,
+        running_header_footer_blocks_for_page, running_header_vertical_bounds,
+        running_surface_tab_stops, shape, shape_cell, split_row, unsupported_placeholder_texts,
+        ColumnLayout, FlowItem, Geom, LayoutCapture, LineLayout, PageDisplayNumber,
         RunningSurfaceDistanceHints, RunningSurfaceTabStopHints, RunningSurfaceVariant,
         SourceRenderHints, StyledText, TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
     };
@@ -15354,13 +15441,94 @@ mod tests {
             font_cache: &mut font_cache,
         };
 
-        let line = layout_page_number_line(7, geom, &mut tcx).expect("page number line");
+        let line = layout_page_number_line(PageDisplayNumber::decimal(7), geom, &mut tcx)
+            .expect("page number line");
         let text: String = line.runs.iter().map(|run| run.text.as_ref()).collect();
         assert_eq!(text, "7");
         assert!(
             line.runs.iter().any(|run| run.x > geom.content_w() * 0.4),
             "page number should be centered in the content box"
         );
+
+        let roman = layout_page_number_line(
+            PageDisplayNumber {
+                value: 7,
+                format: Some(crate::model::PageNumberFormat::UpperRoman.into()),
+            },
+            geom,
+            &mut tcx,
+        )
+        .expect("formatted page number line");
+        let text: String = roman.runs.iter().map(|run| run.text.as_ref()).collect();
+        assert_eq!(text, "VII");
+    }
+
+    #[test]
+    fn display_page_numbers_follow_restarts_and_inherit_formats() {
+        let first = SectionSetup {
+            page_number_start: Some(5),
+            page_number_format: Some(crate::model::PageNumberFormat::LowerRoman),
+            ..Default::default()
+        };
+        let continuing = SectionSetup::default();
+        let restarted = SectionSetup {
+            page_number_start: Some(3),
+            page_number_format: Some(crate::model::PageNumberFormat::UpperLetter),
+            ..Default::default()
+        };
+        let mut page_sections = vec![None, None, None, None, None];
+        assign_section_to_render_pages(&mut page_sections, 0, 0, &first, 0);
+        assign_section_to_render_pages(&mut page_sections, 1, 2, &continuing, 1);
+        assign_section_to_render_pages(&mut page_sections, 3, 4, &restarted, 2);
+
+        let text = display_page_numbers(&page_sections, &restarted)
+            .into_iter()
+            .map(PageDisplayNumber::text)
+            .collect::<Option<Vec<_>>>()
+            .expect("display formats are representable");
+        assert_eq!(text, ["v", "vi", "vii", "C", "D"]);
+    }
+
+    #[test]
+    fn dynamic_page_number_text_prefers_field_format_and_applies_text_format() {
+        let section_page = PageDisplayNumber {
+            value: 7,
+            format: Some(crate::model::PageNumberFormat::UpperRoman.into()),
+        };
+        let inherited = dynamic_text_for_field(
+            &FieldRole::Simple {
+                instruction: "PAGE".to_string(),
+            },
+            &CharProps::default(),
+            None,
+        )
+        .expect("plain PAGE is dynamic");
+        assert_eq!(
+            dynamic_page_number_text(&inherited, section_page).as_deref(),
+            Some("VII")
+        );
+
+        let overridden = dynamic_text_for_field(
+            &FieldRole::Simple {
+                instruction: "PAGE \\* CardText \\* Upper".to_string(),
+            },
+            &CharProps::default(),
+            None,
+        )
+        .expect("formatted PAGE is dynamic");
+        assert_eq!(
+            dynamic_page_number_text(&overridden, section_page).as_deref(),
+            Some("SEVEN")
+        );
+
+        assert!(dynamic_text_for_field(
+            &FieldRole::Simple {
+                instruction: "PAGE \\q malformed".to_string(),
+            },
+            &CharProps::default(),
+            None,
+        )
+        .is_none());
     }
 
     #[test]
