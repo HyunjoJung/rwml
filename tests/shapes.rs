@@ -46,6 +46,34 @@ fn floating_shape_docx() -> Vec<u8> {
     ])
 }
 
+const SECTION_SHIFTED_AFTER_TEXT: &str = "Second after";
+
+fn section_shifted_floating_shape_docx(top_and_bottom: bool, split_anchor: bool) -> Vec<u8> {
+    let wrapping = if top_and_bottom {
+        "<wp:wrapTopAndBottom/>"
+    } else {
+        "<wp:wrapNone/>"
+    };
+    let page_break = split_anchor
+        .then_some("<w:r><w:t>Split lead</w:t><w:br w:type=\"page\"/></w:r>")
+        .unwrap_or_default();
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr><w:r><w:t>First section</w:t></w:r></w:p><w:p><w:pPr><w:widowControl w:val="0"/></w:pPr>{page_break}<w:r><w:t>Second before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="73" behindDoc="0"><wp:positionV relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionV><wp:extent cx="914400" cy="457200"/>{wrapping}<wp:docPr id="73" name="Section-shifted float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Section shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>{after}</w:t></w:r></w:p><w:p><w:r><w:t>Following flow paragraph</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        after = SECTION_SHIFTED_AFTER_TEXT,
+    );
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
 fn floating_shape_symbol_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1024,6 +1052,77 @@ fn docx_floating_shape_geometry_is_extracted() {
         })
     );
     assert_eq!(doc.report().features.floating_shapes, 1);
+}
+
+#[test]
+fn docx_floating_shape_anchor_uses_emitted_body_block_index() {
+    let doc =
+        Document::open(&section_shifted_floating_shape_docx(true, false)).expect("fixture opens");
+    let model = doc.model();
+    let shape = doc
+        .floating_shapes()
+        .into_iter()
+        .next()
+        .expect("floating shape extracted");
+
+    assert_eq!(model.blocks.len(), 4);
+    assert!(matches!(model.blocks[0], Block::Paragraph(_)));
+    assert!(matches!(model.blocks[1], Block::SectionBreak(_)));
+    assert!(matches!(model.blocks[2], Block::Paragraph(_)));
+    assert!(matches!(model.blocks[3], Block::Paragraph(_)));
+    assert_eq!(shape.anchor_block_index, Some(2));
+    assert_eq!(
+        shape.anchor_text.as_deref(),
+        Some(format!("Second before {SECTION_SHIFTED_AFTER_TEXT}").as_str())
+    );
+    assert_eq!(
+        shape.anchor_char_offset,
+        Some("Second before ".chars().count())
+    );
+}
+
+#[test]
+fn docx_floating_shape_anchor_fails_closed_for_split_source_paragraph() {
+    let doc =
+        Document::open(&section_shifted_floating_shape_docx(true, true)).expect("fixture opens");
+    let model = doc.model();
+    let shape = doc
+        .floating_shapes()
+        .into_iter()
+        .next()
+        .expect("floating shape extracted");
+
+    assert!(model
+        .blocks
+        .iter()
+        .any(|block| matches!(block, Block::PageBreak)));
+    assert_eq!(shape.anchor_block_index, None);
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn corrected_floating_shape_anchor_drives_deterministic_top_bottom_flow() {
+    let wrapped = Document::open(&section_shifted_floating_shape_docx(true, false))
+        .expect("wrapped fixture opens");
+    let control = Document::open(&section_shifted_floating_shape_docx(false, false))
+        .expect("control fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    assert_eq!(wrapped.model(), control.model());
+    let wrapped_pdf = wrapped
+        .try_to_pdf_with_fonts(&fonts)
+        .expect("wrapped fixture renders");
+    let control_pdf = control
+        .try_to_pdf_with_fonts(&fonts)
+        .expect("control fixture renders");
+
+    assert_ne!(wrapped_pdf, control_pdf);
+    assert_eq!(
+        wrapped_pdf,
+        wrapped
+            .try_to_pdf_with_fonts(&fonts)
+            .expect("wrapped fixture rerenders")
+    );
 }
 
 #[test]
