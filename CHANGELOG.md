@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Strict single-raster WMF/EMF extraction now decodes canonical 16-bit
+  `BI_RGB` DIB payloads as RGB555, including the unused high storage bit.
+  Scaled, composited, alpha-blended, and general vector metafiles remain outside
+  this bounded raster subset.
 - Source-backed unequal-column PDF preview now uses a bounded convergence pass
   to rewrap top-level paragraphs that remain wholly on a wider physical column
   track, including RTL column order. Paragraphs that cross tracks or do not
