@@ -5,6 +5,10 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    ignore:
+      - dependency-name: "quick-xml"
+        update-types:
+          - "version-update:semver-minor"
 
   - package-ecosystem: "github-actions"
     directory: "/"
