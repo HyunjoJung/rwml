@@ -170,6 +170,7 @@ const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
 #[derive(Clone, Copy, Default)]
 pub(crate) struct SourceRenderHints<'a> {
     pub(crate) pagination: &'a [PaginationHint],
+    pub(crate) pagination_boundaries: &'a [usize],
     pub(crate) line_spacing: &'a [Option<LineSpacingHint>],
     pub(crate) tab_stops: &'a [Vec<TabStop>],
     pub(crate) column_break_offsets: &'a [Vec<usize>],
@@ -4852,6 +4853,7 @@ struct BlockCollectionOptions<'a> {
     section_column_rtl: Option<&'a [bool]>,
     section_geometries: Option<&'a [Geom]>,
     pagination_hints: Option<&'a [PaginationHint]>,
+    pagination_boundaries: Option<&'a [usize]>,
     line_spacing_hints: Option<&'a [Option<LineSpacingHint>]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
     column_break_offsets: Option<&'a [Vec<usize>]>,
@@ -4872,6 +4874,7 @@ struct BodyCollectionSidecars<'a> {
     section_column_rtl: &'a [bool],
     section_geometries: &'a [Geom],
     pagination_hints: &'a [PaginationHint],
+    pagination_boundaries: &'a [usize],
     line_spacing_hints: &'a [Option<LineSpacingHint>],
     tab_stops: &'a [Vec<TabStop>],
     column_break_offsets: &'a [Vec<usize>],
@@ -4907,6 +4910,7 @@ fn collect_blocks_with_block_anchors(
             section_column_rtl: Some(sidecars.section_column_rtl),
             section_geometries: Some(sidecars.section_geometries),
             pagination_hints: Some(sidecars.pagination_hints),
+            pagination_boundaries: Some(sidecars.pagination_boundaries),
             line_spacing_hints: Some(sidecars.line_spacing_hints),
             tab_stops: Some(sidecars.tab_stops),
             column_break_offsets: Some(sidecars.column_break_offsets),
@@ -4931,6 +4935,12 @@ fn collect_blocks_inner(
 ) {
     let mut lists = ListState::default();
     for (block_index, b) in blocks.iter().enumerate() {
+        if options
+            .pagination_boundaries
+            .is_some_and(|boundaries| boundaries.binary_search(&block_index).is_ok())
+        {
+            out.push(FlowItem::PaginationBoundary);
+        }
         let section_geom = options
             .section_geometries
             .and_then(|geometries| geometries.get(block_index).copied())
@@ -8480,12 +8490,18 @@ fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMet
         .collect::<Vec<_>>();
     let mut metrics = vec![None; items.len()];
     for (position, &start) in starts.iter().enumerate() {
-        let next_start = starts.get(position + 1).copied().unwrap_or(items.len());
-        let end = items[start + 1..next_start]
+        let candidate_next = starts.get(position + 1).copied();
+        let scan_end = candidate_next.unwrap_or(items.len());
+        let boundary = items[start + 1..scan_end]
             .iter()
             .position(|item| matches!(item, FlowItem::PaginationBoundary))
-            .map(|offset| start + 1 + offset)
-            .unwrap_or(next_start);
+            .map(|offset| start + 1 + offset);
+        let end = boundary.unwrap_or(scan_end);
+        let next_start = if boundary.is_some() {
+            None
+        } else {
+            candidate_next
+        };
         let pagination = match items[start] {
             FlowItem::BlockStart { pagination, .. } => pagination,
             _ => PaginationHint::default(),
@@ -8523,7 +8539,7 @@ fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMet
         is_paragraph &= !line_heights.is_empty();
         metrics[start] = Some(BlockPaginationMetrics {
             pagination,
-            next_start: starts.get(position + 1).copied(),
+            next_start,
             line_heights,
             first_line_extent: first_line_extent.unwrap_or(0.0),
             last_line_extent,
@@ -9084,6 +9100,7 @@ fn collect_pdf_flow_items_with_paragraph_widths(
             section_column_rtl: source_hints.section_column_rtl,
             section_geometries: &body_geometries,
             pagination_hints: source_hints.pagination,
+            pagination_boundaries: source_hints.pagination_boundaries,
             line_spacing_hints: source_hints.line_spacing,
             tab_stops: source_hints.tab_stops,
             column_break_offsets: source_hints.column_break_offsets,

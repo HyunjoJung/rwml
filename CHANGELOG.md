@@ -29,9 +29,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Flattened PDF preview of opened DOCX footnotes and endnotes now consumes their
   private `keepLines` and widow/orphan paragraph controls, plus table-row
   `cantSplit`, table-cell pagination and exact/minimum spacing, and recursive
-  nested-table controls. Note `keepNext` remains conversion-only until render
-  flow retains note-entry boundaries, and notes remain end-flow content rather
-  than page-bottom composition.
+  nested-table controls. Note `keepNext` is honored within each exact note entry
+  and stops at body/note, sibling-note, and footnote/endnote boundaries. Notes
+  remain end-flow content rather than page-bottom composition.
 - Source-backed unequal-column PDF preview now uses a bounded convergence pass
   to rewrap top-level paragraphs that remain wholly on a wider physical column
   track, including RTL column order. Paragraphs that cross tracks or do not

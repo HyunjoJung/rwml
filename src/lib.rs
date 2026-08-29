@@ -3252,7 +3252,16 @@ impl Document {
             #[cfg(feature = "docx")]
             Backend::Docx(d) => {
                 let mut model = d.model.clone();
+                let body_block_count = model.blocks.len();
                 model.blocks.extend(d.notes.iter().cloned());
+                let mut pagination_boundaries = d
+                    .note_entry_starts
+                    .iter()
+                    .filter_map(|start| body_block_count.checked_add(*start))
+                    .filter(|start| *start < model.blocks.len())
+                    .collect::<Vec<_>>();
+                pagination_boundaries.sort_unstable();
+                pagination_boundaries.dedup();
                 let mut pagination = d.pagination_hints.clone();
                 pagination.extend_from_slice(&d.note_pagination_hints);
                 let mut line_spacing = d.line_spacing_hints.clone();
@@ -3273,6 +3282,7 @@ impl Document {
                     &model,
                     render::SourceRenderHints {
                         pagination: &pagination,
+                        pagination_boundaries: &pagination_boundaries,
                         line_spacing: &line_spacing,
                         tab_stops: &tab_stops,
                         column_break_offsets: &d.column_break_offsets,
