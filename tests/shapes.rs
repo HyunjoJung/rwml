@@ -54,9 +54,11 @@ fn section_shifted_floating_shape_docx(top_and_bottom: bool, split_anchor: bool)
     } else {
         "<wp:wrapNone/>"
     };
-    let page_break = split_anchor
-        .then_some("<w:r><w:t>Split lead</w:t><w:br w:type=\"page\"/></w:r>")
-        .unwrap_or_default();
+    let page_break = if split_anchor {
+        "<w:r><w:t>Split lead</w:t><w:br w:type=\"page\"/></w:r>"
+    } else {
+        ""
+    };
     let document_xml = format!(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr><w:r><w:t>First section</w:t></w:r></w:p><w:p><w:pPr><w:widowControl w:val="0"/></w:pPr>{page_break}<w:r><w:t>Second before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="73" behindDoc="0"><wp:positionV relativeFrom="page"><wp:posOffset>914400</wp:posOffset></wp:positionV><wp:extent cx="914400" cy="457200"/>{wrapping}<wp:docPr id="73" name="Section-shifted float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Section shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>{after}</w:t></w:r></w:p><w:p><w:r><w:t>Following flow paragraph</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
         after = SECTION_SHIFTED_AFTER_TEXT,
