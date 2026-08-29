@@ -756,6 +756,63 @@ fn docx_run_props_resolve_docdefaults_paragraph_and_character_styles() {
 }
 
 #[test]
+fn docx_explicit_rtl_runs_resolve_complex_script_weight_style_and_size() {
+    let content_types = content_types(true);
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="paragraph" w:styleId="RtlBody">
+                    <w:rPr><w:rtl/><w:b w:val="0"/><w:bCs/><w:i w:val="0"/><w:iCs/><w:sz w:val="20"/><w:szCs w:val="30"/></w:rPr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:pStyle w:val="RtlBody"/></w:pPr><w:r><w:t>styled rtl</w:t></w:r></w:p>
+                <w:p><w:pPr><w:pStyle w:val="RtlBody"/></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr><w:t>direct ltr</w:t></w:r></w:p>
+                <w:p><w:pPr><w:pStyle w:val="RtlBody"/></w:pPr><w:r><w:rPr><w:bCs w:val="0"/><w:iCs w:val="0"/><w:szCs w:val="24"/></w:rPr><w:t>direct rtl off</w:t></w:r></w:p>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("complex-script fixture opens");
+    let model = doc.model();
+    let paragraphs = model
+        .blocks
+        .iter()
+        .map(|block| match block {
+            Block::Paragraph(paragraph) => paragraph,
+            _ => panic!("expected paragraph"),
+        })
+        .collect::<Vec<_>>();
+
+    let styled = &paragraphs[0].runs[0].props;
+    assert!(styled.rtl);
+    assert!(styled.bold);
+    assert!(styled.italic);
+    assert_eq!(styled.size_half_pt, Some(30));
+
+    let ltr = &paragraphs[1].runs[0].props;
+    assert!(!ltr.rtl);
+    assert!(!ltr.bold);
+    assert!(!ltr.italic);
+    assert_eq!(ltr.size_half_pt, Some(20));
+
+    let direct_off = &paragraphs[2].runs[0].props;
+    assert!(direct_off.rtl);
+    assert!(!direct_off.bold);
+    assert!(!direct_off.italic);
+    assert_eq!(direct_off.size_half_pt, Some(24));
+}
+
+#[test]
 fn docx_without_styles_part_keeps_run_defaults_unchanged() {
     let doc = Document::open(&no_styles_docx()).expect("fixture opens");
     let model = doc.model();

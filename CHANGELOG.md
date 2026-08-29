@@ -17,6 +17,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   keeps overlays and bounded `wrapTopAndBottom` flow attached to the intended
   later paragraph; page-break-split source paragraphs continue to fail closed
   without an ambiguous fragment index.
+- Explicitly RTL runs in opened DOCX files now resolve complex-script
+  `w:bCs`, `w:iCs`, and `w:szCs` values across style and direct-formatting
+  layers, and fresh DOCX output pairs `w:bCs`/`w:iCs` with effective RTL
+  bold/italic formatting. Non-RTL runs retain their Latin-property behavior;
+  automatic script selection and full end-to-end RTL parity remain outside.
 - Source-backed unequal-column PDF preview now uses a bounded convergence pass
   to rewrap top-level paragraphs that remain wholly on a wider physical column
   track, including RTL column order. Paragraphs that cross tracks or do not
