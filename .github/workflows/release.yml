@@ -258,3 +258,9 @@ jobs:
               --generate-notes \
               "${assets[@]}"
           fi
+
+      # rust-cache v2 misclassifies transient package/semver `tests/` trees
+      # during post-save cleanup: https://github.com/Swatinem/rust-cache/issues/193
+      - name: Remove transient Cargo sources before cache save
+        if: always()
+        run: rm -rf -- target/package target/semver-checks

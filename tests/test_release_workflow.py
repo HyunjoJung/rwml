@@ -304,6 +304,20 @@ class ReleaseWorkflowTests(unittest.TestCase):
             text,
         )
 
+    def test_release_removes_transient_cargo_sources_before_cache_save(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        cleanup = step_body(
+            text, "Remove transient Cargo sources before cache save"
+        )
+
+        self.assertIn("if: always()", cleanup)
+        self.assertIn("rm -rf -- target/package target/semver-checks", cleanup)
+        self.assertIn("https://github.com/Swatinem/rust-cache/issues/193", text)
+        self.assertLess(
+            text.index("- name: Create GitHub Release"),
+            text.index("- name: Remove transient Cargo sources before cache save"),
+        )
+
     def test_release_workflow_publishes_font_dependency_before_main_package(self):
         text = WORKFLOW.read_text(encoding="utf-8")
 
