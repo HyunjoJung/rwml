@@ -155,6 +155,7 @@ const COLUMN_GAP_PT: f32 = 18.0;
 const COLUMN_SEPARATOR_WIDTH_PT: f32 = 0.5;
 const MIN_COLUMN_WIDTH_PT: f32 = 20.0;
 const MAX_SECTION_COLUMNS: usize = 64;
+const MAX_TARGET_COLUMN_REWRAP_PASSES: usize = 4;
 // Keep hostile numeric attributes away from PDF-coordinate overflow while
 // leaving every practical document value untouched.
 const MAX_ABSOLUTE_LINE_HEIGHT_PT: f32 = 1_000_000.0;
@@ -4768,6 +4769,7 @@ fn collect_blocks(
 #[derive(Default)]
 struct BlockCollectionOptions<'a> {
     include_block_anchors: bool,
+    paragraph_widths: Option<&'a [Option<f32>]>,
     section_columns: Option<&'a [Option<u16>]>,
     section_column_gap_pt: Option<&'a [Option<f32>]>,
     section_column_layouts: Option<&'a [Option<&'a SectionColumnLayoutHints>]>,
@@ -4787,6 +4789,7 @@ struct BlockCollectionOptions<'a> {
 }
 
 struct BodyCollectionSidecars<'a> {
+    paragraph_widths: Option<&'a [Option<f32>]>,
     section_columns: &'a [Option<u16>],
     section_column_gap_pt: &'a [Option<f32>],
     section_column_layouts: &'a [Option<&'a SectionColumnLayoutHints>],
@@ -4821,6 +4824,7 @@ fn collect_blocks_with_block_anchors(
         capture,
         BlockCollectionOptions {
             include_block_anchors: true,
+            paragraph_widths: sidecars.paragraph_widths,
             section_columns: Some(sidecars.section_columns),
             section_column_gap_pt: Some(sidecars.section_column_gap_pt),
             section_column_layouts: Some(sidecars.section_column_layouts),
@@ -4885,6 +4889,14 @@ fn collect_blocks_inner(
         }
         match b {
             Block::Paragraph(p) => {
+                let paragraph_geom = options
+                    .paragraph_widths
+                    .and_then(|widths| widths.get(block_index))
+                    .copied()
+                    .flatten()
+                    .filter(|width| width.is_finite() && *width > 0.0)
+                    .map(|width| section_geom.with_content_width(width))
+                    .unwrap_or(block_geom);
                 if p.props.page_break_before
                     && out
                         .iter()
@@ -4929,7 +4941,7 @@ fn collect_blocks_inner(
                     column_break_offsets,
                     options.default_tab_stop_pt,
                     line_spacing_hint,
-                    block_geom,
+                    paragraph_geom,
                     cx,
                     capture,
                 );
@@ -8003,6 +8015,7 @@ struct Pagination {
     page_sections: Vec<Option<RenderPageSection>>,
     block_pages: HashMap<usize, usize>,
     block_line_pages: HashMap<usize, Vec<BlockLinePage>>,
+    block_line_widths: HashMap<usize, Vec<f32>>,
     final_section_start_page_index: usize,
 }
 
@@ -8264,6 +8277,22 @@ fn record_block_line_page(
         .entry(block_index)
         .or_default()
         .push(BlockLinePage { page_index, range });
+}
+
+fn record_block_line_width(
+    block_line_widths: &mut HashMap<usize, Vec<f32>>,
+    current_block: Option<usize>,
+    width: f32,
+) {
+    let Some(block_index) = current_block else {
+        return;
+    };
+    if width.is_finite() && width > 0.0 {
+        block_line_widths
+            .entry(block_index)
+            .or_default()
+            .push(width);
+    }
 }
 
 fn section_columns_by_item(items: &[FlowItem], final_columns: Option<u16>) -> Vec<Option<u16>> {
@@ -8564,6 +8593,7 @@ fn paginate_with_column_gap(
         .unwrap_or(final_column_rtl);
     let mut block_pages = HashMap::new();
     let mut block_line_pages: HashMap<usize, Vec<BlockLinePage>> = HashMap::new();
+    let mut block_line_widths: HashMap<usize, Vec<f32>> = HashMap::new();
     let mut pending_block = None;
     let mut current_block = None;
     let mut current_block_start = None;
@@ -8767,6 +8797,11 @@ fn paginate_with_column_gap(
                 let page_index = pages.len().saturating_sub(1);
                 record_pending_block_page(&mut block_pages, &mut pending_block, page_index);
                 record_block_line_page(&mut block_line_pages, current_block, &l, page_index);
+                record_block_line_width(
+                    &mut block_line_widths,
+                    current_block,
+                    cursor.columns.width(cursor.column_index),
+                );
                 let line_range = l.char_range;
                 place_item(&mut pages, &mut cursor, FlowItem::Line(l), h);
                 activate_reached_top_bottom_bands(
@@ -8903,6 +8938,7 @@ fn paginate_with_column_gap(
         page_sections,
         block_pages,
         block_line_pages,
+        block_line_widths,
         final_section_start_page_index: section_start_page_index,
     }
 }
@@ -8915,6 +8951,29 @@ fn collect_pdf_flow_items(
     source_hints: SourceRenderHints<'_>,
     floating_shapes: &[FloatingShape],
     unsupported_features: Option<&FeatureInventory>,
+) -> Vec<FlowItem> {
+    collect_pdf_flow_items_with_paragraph_widths(
+        model,
+        geom,
+        tcx,
+        capture,
+        source_hints,
+        floating_shapes,
+        unsupported_features,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_pdf_flow_items_with_paragraph_widths(
+    model: &DocModel,
+    geom: Geom,
+    tcx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    source_hints: SourceRenderHints<'_>,
+    floating_shapes: &[FloatingShape],
+    unsupported_features: Option<&FeatureInventory>,
+    paragraph_widths: Option<&[Option<f32>]>,
 ) -> Vec<FlowItem> {
     let mut items: Vec<FlowItem> = Vec::new();
     let final_section_setup = SectionSetup::from(&model.setup);
@@ -8938,6 +8997,7 @@ fn collect_pdf_flow_items(
         tcx,
         capture,
         BodyCollectionSidecars {
+            paragraph_widths,
             section_columns: &body_columns,
             section_column_gap_pt: &body_column_gaps,
             section_column_layouts: &body_column_layouts,
@@ -9133,6 +9193,202 @@ fn section_geometries_by_block(blocks: &[Block], base: Geom) -> Vec<Geom> {
     geometries
 }
 
+fn has_source_column_width_variants(source_hints: SourceRenderHints<'_>) -> bool {
+    source_hints.final_section_column_layout.is_some()
+        || source_hints
+            .section_column_layouts
+            .iter()
+            .any(Option::is_some)
+}
+
+fn paragraph_shaping_widths_by_block(
+    model: &DocModel,
+    geom: Geom,
+    source_hints: SourceRenderHints<'_>,
+) -> Vec<f32> {
+    let final_section_setup = SectionSetup::from(&model.setup);
+    let columns = section_columns_by_block(&model.blocks, final_section_setup.columns);
+    let gaps = section_column_gaps_by_block(
+        &model.blocks,
+        source_hints.section_column_gap_pt,
+        source_hints.final_section_column_gap_pt,
+    );
+    let layouts = section_column_layouts_by_block(
+        &model.blocks,
+        source_hints.section_column_layouts,
+        source_hints.final_section_column_layout,
+    );
+    let geometries = section_geometries_by_block(&model.blocks, geom);
+    (0..model.blocks.len())
+        .map(|index| {
+            ColumnLayout::new_with_layout(
+                geometries[index],
+                columns[index],
+                gaps[index],
+                layouts[index],
+            )
+            .shaping_width()
+        })
+        .collect()
+}
+
+fn target_column_paragraph_widths(
+    model: &DocModel,
+    pagination: &Pagination,
+    shaping_widths: &[f32],
+    current_widths: &[Option<f32>],
+    suppressed: &[bool],
+) -> Vec<Option<f32>> {
+    model
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(index, block)| {
+            if !matches!(block, Block::Paragraph(_))
+                || suppressed.get(index).copied().unwrap_or(true)
+            {
+                return None;
+            }
+            let widths = pagination.block_line_widths.get(&index)?;
+            let (&first, rest) = widths.split_first()?;
+            if current_widths.get(index).copied().flatten().is_some()
+                && rest.iter().any(|width| (width - first).abs() > 0.01)
+            {
+                return None;
+            }
+            let shaping_width = shaping_widths.get(index).copied().unwrap_or(first);
+            (first > shaping_width + 0.01).then_some(first)
+        })
+        .collect()
+}
+
+fn suppress_unstable_target_paragraphs(
+    pagination: &Pagination,
+    current_widths: &[Option<f32>],
+    suppressed: &mut [bool],
+) {
+    for (index, current_width) in current_widths.iter().enumerate() {
+        let Some(current_width) = current_width else {
+            continue;
+        };
+        if suppressed.get(index).copied().unwrap_or(true) {
+            continue;
+        }
+        let Some(widths) = pagination.block_line_widths.get(&index) else {
+            continue;
+        };
+        let Some((&first, rest)) = widths.split_first() else {
+            continue;
+        };
+        if (first - current_width).abs() > 0.01
+            || rest.iter().any(|width| (width - first).abs() > 0.01)
+        {
+            suppressed[index] = true;
+        }
+    }
+}
+
+fn paragraph_width_maps_equal(left: &[Option<f32>], right: &[Option<f32>]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(left, right)| match (left, right) {
+                (Some(left), Some(right)) => (left - right).abs() <= 0.01,
+                (None, None) => true,
+                _ => false,
+            })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_and_paginate_pdf_flow(
+    model: &DocModel,
+    geom: Geom,
+    tcx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    source_hints: SourceRenderHints<'_>,
+    floating_shapes: &[FloatingShape],
+    unsupported_features: Option<&FeatureInventory>,
+) -> Pagination {
+    let final_section_setup = SectionSetup::from(&model.setup);
+    let paginate = |items| {
+        paginate_with_column_gap(
+            items,
+            geom,
+            &final_section_setup,
+            source_hints.final_section_column_gap_pt,
+            source_hints.final_section_column_layout,
+            source_hints.final_section_column_rtl,
+        )
+    };
+    if !has_source_column_width_variants(source_hints) {
+        return paginate(collect_pdf_flow_items(
+            model,
+            geom,
+            tcx,
+            capture,
+            source_hints,
+            floating_shapes,
+            unsupported_features,
+        ));
+    }
+
+    let shaping_widths = paragraph_shaping_widths_by_block(model, geom, source_hints);
+    let mut paragraph_widths = vec![None; model.blocks.len()];
+    let mut suppressed = vec![false; model.blocks.len()];
+    let mut converged = false;
+    // Wider-track shaping is retained only when it stabilizes on that physical
+    // track. Cross-track paragraphs need resumable fragment layout, so they keep
+    // the conservative narrowest-column width.
+    for _ in 0..MAX_TARGET_COLUMN_REWRAP_PASSES {
+        let mut scratch_capture = LayoutCapture::default();
+        let items = collect_pdf_flow_items_with_paragraph_widths(
+            model,
+            geom,
+            tcx,
+            &mut scratch_capture,
+            source_hints,
+            floating_shapes,
+            None,
+            paragraph_widths
+                .iter()
+                .any(Option::is_some)
+                .then_some(paragraph_widths.as_slice()),
+        );
+        let pagination = paginate(items);
+        suppress_unstable_target_paragraphs(&pagination, &paragraph_widths, &mut suppressed);
+        let next = target_column_paragraph_widths(
+            model,
+            &pagination,
+            &shaping_widths,
+            &paragraph_widths,
+            &suppressed,
+        );
+        if paragraph_width_maps_equal(&paragraph_widths, &next) {
+            converged = true;
+            break;
+        }
+        paragraph_widths = next;
+    }
+    if !converged {
+        paragraph_widths.fill(None);
+    }
+    let paragraph_widths = paragraph_widths
+        .iter()
+        .any(Option::is_some)
+        .then_some(paragraph_widths.as_slice());
+    paginate(collect_pdf_flow_items_with_paragraph_widths(
+        model,
+        geom,
+        tcx,
+        capture,
+        source_hints,
+        floating_shapes,
+        unsupported_features,
+        paragraph_widths,
+    ))
+}
+
 fn strict_font_context(fonts: &[Vec<u8>]) -> Result<FontContext> {
     use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
 
@@ -9248,7 +9504,7 @@ pub(crate) fn layout_pages_with_fonts_and_pagination(
     };
     let geom = Geom::from_setup(&model.setup.page);
     let mut capture = LayoutCapture::page_fields();
-    let items = collect_pdf_flow_items(
+    let pagination = collect_and_paginate_pdf_flow(
         model,
         geom,
         &mut tcx,
@@ -9256,15 +9512,6 @@ pub(crate) fn layout_pages_with_fonts_and_pagination(
         source_hints,
         floating_shapes,
         None,
-    );
-    let final_section_setup = SectionSetup::from(&model.setup);
-    let pagination = paginate_with_column_gap(
-        items,
-        geom,
-        &final_section_setup,
-        source_hints.final_section_column_gap_pt,
-        source_hints.final_section_column_layout,
-        source_hints.final_section_column_rtl,
     );
     let mut page_fields = capture.page_fields;
     record_page_fields(&pagination.pages, &mut page_fields);
@@ -9444,7 +9691,7 @@ fn render_pdf(
     // Page geometry from the document (Letter/A4/A3/landscape/custom margins).
     let geom = Geom::from_setup(&model.setup.page);
     let mut capture = LayoutCapture::default();
-    let items = collect_pdf_flow_items(
+    let pagination = collect_and_paginate_pdf_flow(
         model,
         geom,
         &mut tcx,
@@ -9454,14 +9701,6 @@ fn render_pdf(
         unsupported_features,
     );
     let final_section_setup = SectionSetup::from(&model.setup);
-    let pagination = paginate_with_column_gap(
-        items,
-        geom,
-        &final_section_setup,
-        source_hints.final_section_column_gap_pt,
-        source_hints.final_section_column_layout,
-        source_hints.final_section_column_rtl,
-    );
     let section_column_paint_hints = section_column_paint_hints_by_section(
         &model.blocks,
         source_hints.section_column_gap_pt,
@@ -15643,6 +15882,205 @@ mod tests {
         assert_close(lines[0].width, 60.0);
         assert_close(lines[1].x, 80.0);
         assert_close(lines[1].width, 100.0);
+    }
+
+    #[test]
+    fn wider_unequal_target_column_rewraps_a_single_column_paragraph() {
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 120.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let model = DocModel {
+            blocks: vec![
+                para("seed", None),
+                para(
+                    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+                    None,
+                ),
+            ],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let column_breaks = vec![vec!["seed".len()], Vec::new()];
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let layout = super::layout_pages_with_fonts_and_pagination(
+            &model,
+            &fonts,
+            super::SourceRenderHints {
+                column_break_offsets: &column_breaks,
+                final_section_column_layout: Some(&source),
+                ..super::SourceRenderHints::default()
+            },
+            &[],
+        )
+        .expect("unequal-column model lays out");
+
+        assert_eq!(layout.pages, 1);
+        assert_eq!(layout.block_pages, [Some(1), Some(1)]);
+    }
+
+    #[test]
+    fn cross_track_unequal_paragraph_falls_back_to_narrow_wrapping() {
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 160.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let short_text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu";
+        let long_text = std::iter::repeat_n(
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+            8,
+        )
+        .collect::<Vec<_>>()
+        .join(" ");
+        let model = DocModel {
+            blocks: vec![
+                para("seed", None),
+                para(short_text, None),
+                para(&long_text, None),
+            ],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let column_breaks = vec![vec!["seed".len()], Vec::new(), Vec::new()];
+        let hints = super::SourceRenderHints {
+            column_break_offsets: &column_breaks,
+            final_section_column_layout: Some(&source),
+            ..super::SourceRenderHints::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&page);
+        let setup = SectionSetup::from(&model.setup);
+        let mut conservative_capture = LayoutCapture::default();
+        let conservative_items = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut conservative_capture,
+            hints,
+            &[],
+            None,
+        );
+        let conservative =
+            paginate_with_column_gap(conservative_items, geom, &setup, None, Some(&source), false);
+        let mut adaptive_capture = LayoutCapture::default();
+        let adaptive = super::collect_and_paginate_pdf_flow(
+            &model,
+            geom,
+            &mut tcx,
+            &mut adaptive_capture,
+            hints,
+            &[],
+            None,
+        );
+        let conservative_short = &conservative.block_line_widths[&1];
+        let adaptive_short = &adaptive.block_line_widths[&1];
+        let conservative_long = &conservative.block_line_widths[&2];
+        let adaptive_long = &adaptive.block_line_widths[&2];
+
+        assert!(adaptive_short.len() < conservative_short.len());
+        assert!(adaptive_short
+            .iter()
+            .all(|width| (*width - 100.0).abs() < 0.01));
+        assert_eq!(adaptive_long.len(), conservative_long.len());
+        assert!(adaptive_long
+            .iter()
+            .any(|width| (*width - 60.0).abs() < 0.01));
+        assert!(adaptive_long
+            .iter()
+            .any(|width| (*width - 100.0).abs() < 0.01));
+    }
+
+    #[test]
+    fn rtl_wider_unequal_start_column_rewraps_single_column_paragraph() {
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 120.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let model = DocModel {
+            blocks: vec![para(
+                "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+                None,
+            )],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let layout = super::layout_pages_with_fonts_and_pagination(
+            &model,
+            &fonts,
+            super::SourceRenderHints {
+                final_section_column_layout: Some(&source),
+                final_section_column_rtl: true,
+                ..super::SourceRenderHints::default()
+            },
+            &[],
+        )
+        .expect("RTL unequal-column model lays out");
+
+        assert_eq!(layout.pages, 1);
+        assert_eq!(layout.block_pages, [Some(1)]);
     }
 
     #[test]

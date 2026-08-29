@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Source-backed unequal-column PDF preview now uses a bounded convergence pass
+  to rewrap top-level paragraphs that remain wholly on a wider physical column
+  track, including RTL column order. Paragraphs that cross tracks or do not
+  stabilize retain the deterministic narrowest-column fallback; tables, media,
+  and Word-exact fragment reflow remain outside this slice.
 - The native PDF preview now lays nested tables out as bounded recursive grids,
   preserving modeled column proportions, width and alignment, spans, borders,
   shading, empty rows, and cell-local pagination instead of flattening nested
