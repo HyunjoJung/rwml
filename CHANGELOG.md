@@ -16,6 +16,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `quick-xml` is upgraded to `0.41.0`, including bounded namespace handling and
   regression coverage for the reachable attribute and namespace denial-of-service
   advisories.
+- OPC content-type and relationship parsing now rejects XML nesting deeper than
+  128 levels while retaining over-depth raw metadata for no-op saves, preventing
+  namespace-depth panic and quadratic-resolution paths on `quick-xml` 0.41.
 - Public contribution guidance now uses a right-sized issue/PR workflow, with
   optional BMad planning kept external and all review decisions recorded in the
   public repository.
