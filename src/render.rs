@@ -8,8 +8,9 @@
 //! pages repeats its header rows after each break. Opened DOCX rows may split at
 //! legal cell line boundaries unless effective `w:cantSplit` from direct row
 //! properties or a resolved table-style chain keeps a fitting row together.
-//! Recursively flattened nested rows retain the same protected boundary, while
-//! an over-tall row still splits to guarantee progress.
+//! Nested tables reuse the same grid layout recursively and expose legal row
+//! fragments to the outer paginator, retaining protected boundaries while an
+//! over-tall row still splits to guarantee progress.
 //! Tables are rendered as a
 //! real grid: columns are reconstructed
 //! (including `col_span`/`row_span` placement), sized to authored `col_widths_pct`
@@ -129,7 +130,7 @@ const BORDER: f32 = 0.4;
 const MAX_TABLE_BORDER_SIZE_EIGHTHS: u16 = 96;
 /// Left indent added per list nesting level, in points.
 const LIST_INDENT: f32 = 18.0;
-/// Max nesting depth for tables-in-cells flattened by `shape_cell` (panic-free
+/// Max nesting depth for tables-in-cells laid out by `shape_cell` (panic-free
 /// bound against pathologically nested tables).
 const MAX_CELL_DEPTH: u32 = 32;
 /// Max laid-out lines kept for a single table cell. A cell taller than ~78 pages is not a
@@ -513,6 +514,9 @@ enum CellVisual {
         height: f32,
         layout: ScaledChartLayout,
     },
+    NestedRow {
+        row: Box<RowLayout>,
+    },
 }
 
 impl CellVisual {
@@ -533,6 +537,7 @@ impl CellVisual {
                 *layout = fitted;
                 Some(fitted.bounds_h)
             }
+            Self::NestedRow { .. } => None,
         }
     }
 }
@@ -3189,9 +3194,9 @@ fn natural_width(text: &str, cx: &mut TextCx<'_>) -> f32 {
 /// Shape a cell's paragraph blocks into wrapped, richly-styled lines (each
 /// paragraph keeps its own runs' bold/italic/color/size/font and alignment).
 /// Raster images and model-authored charts become atomic row-splitting records.
-/// A **nested table** inside a cell is flattened to its cells' content lines (no
-/// nested grid), recursively, so wrapper tables still surface text and supported
-/// media. Recursion is depth-capped.
+/// Nested tables reuse the normal grid layout recursively, then expose legal row
+/// fragments as cell visuals so outer-row pagination remains bounded. Recursion
+/// is depth-capped.
 fn cell_visual_line(visual: CellVisual, height: f32, before: f32) -> LineLayout {
     LineLayout {
         height,
@@ -3247,6 +3252,106 @@ fn cell_chart_line(chart: &Chart, inner_width: f32, max_height: f32) -> Option<L
         layout.bounds_h,
         0.0,
     ))
+}
+
+fn nested_table_geom(inner_width: f32, max_height: f32) -> Geom {
+    Geom {
+        page_w: inner_width.max(20.0),
+        page_h: max_height.max(1.0),
+        left: 0.0,
+        right: 0.0,
+        top_m: 0.0,
+        bottom_m: 0.0,
+    }
+}
+
+fn nested_row_visual_lines(
+    rows: Vec<RowLayout>,
+    max_height: f32,
+    state: &mut CellShapeState,
+) -> Vec<LineLayout> {
+    let mut lines = Vec::new();
+    for mut row in rows {
+        if lines.len() >= MAX_CELL_LINES {
+            break;
+        }
+        let keep_whole = row.cant_split && row.height <= max_height;
+        let group = row
+            .cant_split
+            .then(|| state.allocate_cant_split_group())
+            .flatten();
+        loop {
+            let legal_budget = if keep_whole {
+                row.height
+            } else {
+                first_row_fragment_height(&row)
+            };
+            let budget = legal_budget.min(max_height.max(1.0));
+            let (fragment, rest) = if row.height <= budget + f32::EPSILON {
+                (row, None)
+            } else {
+                split_row(row, budget)
+            };
+            let height = fragment.height;
+            let mut line = cell_visual_line(
+                CellVisual::NestedRow {
+                    row: Box::new(fragment),
+                },
+                height,
+                0.0,
+            );
+            line.cell_cant_split_group = group;
+            lines.push(line);
+            if lines.len() >= MAX_CELL_LINES {
+                break;
+            }
+            let Some(remaining) = rest else {
+                break;
+            };
+            row = remaining;
+        }
+    }
+    lines
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shape_nested_table(
+    table: &Table,
+    hints: Option<&TablePaginationHints>,
+    default_tab_stop_pt: Option<f32>,
+    inner_width: f32,
+    max_height: f32,
+    depth: u32,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    state: &mut CellShapeState,
+    lists: &mut ListState,
+) -> Vec<LineLayout> {
+    if depth > MAX_CELL_DEPTH {
+        return Vec::new();
+    }
+    let mut flow = Vec::new();
+    layout_table_with_row_pagination_and_lists(
+        table,
+        &mut flow,
+        nested_table_geom(inner_width, max_height),
+        cx,
+        capture,
+        TablePaginationView {
+            rows: hints.map(|hints| hints.rows.as_slice()),
+            cells: hints.map(|hints| &hints.cells),
+            cell_line_spacing: hints.map(|hints| &hints.cell_line_spacing),
+            nested: hints.map(|hints| &hints.nested),
+            cell_tabs: hints.map(|hints| &hints.cell_tabs),
+            default_tab_stop_pt,
+            depth,
+        },
+        lists,
+    );
+    let Some(FlowItem::Table { rows, .. }) = flow.pop() else {
+        return Vec::new();
+    };
+    nested_row_visual_lines(rows, max_height, state)
 }
 
 #[cfg(test)]
@@ -3309,7 +3414,6 @@ fn shape_cell_with_pagination_and_lists(
     lists: &mut ListState,
 ) -> Vec<LineLayout> {
     let mut state = CellShapeState {
-        next_scope_id: 1,
         next_paragraph_id: 0,
         next_cant_split_group_id: 1,
     };
@@ -3332,7 +3436,6 @@ fn shape_cell_with_pagination_and_lists(
 }
 
 struct CellShapeState {
-    next_scope_id: usize,
     next_paragraph_id: usize,
     next_cant_split_group_id: usize,
 }
@@ -3357,12 +3460,6 @@ fn truncate_cell_paragraph_lines(lines: &mut Vec<LineLayout>, remaining: usize, 
 }
 
 impl CellShapeState {
-    fn allocate_scope(&mut self) -> usize {
-        let value = self.next_scope_id;
-        self.next_scope_id = self.next_scope_id.saturating_add(1);
-        value
-    }
-
     fn allocate_paragraph(&mut self) -> usize {
         let value = self.next_paragraph_id;
         self.next_paragraph_id = self.next_paragraph_id.saturating_add(1);
@@ -3467,55 +3564,18 @@ fn shape_cell_in_scope(
                 let table_pagination = nested_pagination
                     .and_then(|tables| tables.get(block_index))
                     .and_then(Option::as_ref);
-                for (row_index, row) in t.rows.iter().enumerate() {
-                    let row_start = lines.len();
-                    for (cell_index, c) in row.cells.iter().enumerate() {
-                        let nested_cell_pagination = table_pagination
-                            .and_then(|table| table.cells.get(row_index))
-                            .and_then(|row| row.get(cell_index))
-                            .map(Vec::as_slice);
-                        let nested_cell_tab_stops = table_pagination
-                            .and_then(|table| table.cell_tabs.get(row_index))
-                            .and_then(|row| row.get(cell_index))
-                            .map(Vec::as_slice);
-                        let nested_cell_line_spacing = table_pagination
-                            .and_then(|table| table.cell_line_spacing.get(row_index))
-                            .and_then(|row| row.get(cell_index))
-                            .map(Vec::as_slice);
-                        let nested_cell_tables = table_pagination
-                            .and_then(|table| table.nested.get(row_index))
-                            .and_then(|row| row.get(cell_index))
-                            .map(Vec::as_slice);
-                        let nested_scope_id = state.allocate_scope();
-                        lines.extend(shape_cell_in_scope(
-                            c,
-                            nested_cell_pagination,
-                            nested_cell_line_spacing,
-                            nested_cell_tab_stops,
-                            nested_cell_tables,
-                            default_tab_stop_pt,
-                            inner_w,
-                            max_visual_height,
-                            depth + 1,
-                            cx,
-                            capture,
-                            nested_scope_id,
-                            state,
-                            lists,
-                        ));
-                    }
-                    let cant_split = table_pagination
-                        .and_then(|table| table.rows.get(row_index))
-                        .map(|row| row.cant_split)
-                        .unwrap_or(false);
-                    if cant_split && row_start < lines.len() {
-                        if let Some(group_id) = state.allocate_cant_split_group() {
-                            for line in &mut lines[row_start..] {
-                                line.cell_cant_split_group = Some(group_id);
-                            }
-                        }
-                    }
-                }
+                lines.extend(shape_nested_table(
+                    t,
+                    table_pagination,
+                    default_tab_stop_pt,
+                    inner_w,
+                    max_visual_height,
+                    depth + 1,
+                    cx,
+                    capture,
+                    state,
+                    lists,
+                ));
             }
             Block::Image(image) => {
                 if let Some(line) = cell_picture_line(image, inner_w, max_visual_height, 0.0) {
@@ -3557,6 +3617,7 @@ struct TablePaginationView<'a> {
     nested: Option<&'a TableCellNestedPaginationHints>,
     cell_tabs: Option<&'a TableCellTabStopHints>,
     default_tab_stop_pt: Option<f32>,
+    depth: u32,
 }
 
 fn table_placement(t: &Table, available_width: f32) -> (f32, f32) {
@@ -3829,7 +3890,7 @@ fn layout_table_with_row_pagination_and_lists(
                         pagination.default_tab_stop_pt,
                         (width - insets.left - insets.right).max(1.0),
                         (geom.bottom() - geom.top() - insets.top - insets.bottom).max(1.0),
-                        0,
+                        pagination.depth,
                         cx,
                         capture,
                         lists,
@@ -3928,11 +3989,11 @@ fn greedy_cell_split(lines: &[LineLayout], budget: f32) -> usize {
     count
 }
 
-fn fitting_cell_split(lines: &[LineLayout], budget: f32) -> usize {
-    let greedy = greedy_cell_split(lines, budget);
-    if greedy >= lines.len() {
+fn fitting_nonterminal_cell_split(lines: &[LineLayout], budget: f32) -> usize {
+    if lines.len() <= 1 {
         return lines.len();
     }
+    let greedy = greedy_cell_split(lines, budget).min(lines.len() - 1);
     (1..=greedy)
         .rev()
         .find(|cut| legal_cell_split(lines, *cut))
@@ -3978,11 +4039,23 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
             insets,
             border_edges,
         } = cell;
-        let budget = (avail - insets.top - insets.bottom).max(0.0);
-        let cut = fitting_cell_split(&lines, budget);
+        let content_budget = (avail - insets.top).max(0.0);
+        let cut = if cell_lines_extent(&lines) + insets.bottom <= content_budget {
+            lines.len()
+        } else {
+            // A nonterminal fragment drops its bottom inset, so padding must not
+            // reduce its legal line budget. Preserve at least one line for the
+            // terminal fragment when only that inset exceeds the page budget.
+            fitting_nonterminal_cell_split(&lines, content_budget)
+        };
         let mut head = lines;
         let tail = head.split_off(cut);
-        fit_forced_cell_visual_to_budget(&mut head, budget);
+        let forced_visual_budget = if tail.is_empty() {
+            (content_budget - insets.bottom).max(0.0)
+        } else {
+            content_budget
+        };
+        fit_forced_cell_visual_to_budget(&mut head, forced_visual_budget);
         if !tail.is_empty() {
             any_rest = true;
         }
@@ -4901,6 +4974,7 @@ fn collect_blocks_inner(
                         nested: nested_pagination,
                         cell_tabs: cell_tab_stops,
                         default_tab_stop_pt: options.default_tab_stop_pt,
+                        depth: 0,
                     },
                     &mut lists,
                 );
@@ -5403,6 +5477,7 @@ fn draw_table_cell_content(
     let clip_left = placement.x;
     let clip_width = cell.width;
     let mut line_top = placement.top + cell.insets.top + offset;
+    let mut previous_nested_borders: Option<RenderedRowBorders> = None;
     for line in cell.lines {
         line_top += line.cell_spacing.before;
         let baseline = line_top + line.baseline;
@@ -5415,6 +5490,7 @@ fn draw_table_cell_content(
         draw_line_leaders(surface, &line, line_x, line_top, baseline);
         match line.cell_visual {
             Some(CellVisual::Picture { image, layout }) => {
+                previous_nested_borders = None;
                 let inner_width =
                     (cell.width - cell.insets.left - cell.insets.right).max(layout.bounds_w);
                 let x = placement.x
@@ -5432,6 +5508,7 @@ fn draw_table_cell_content(
                 height,
                 layout,
             }) => {
+                previous_nested_borders = None;
                 let inner_width =
                     (cell.width - cell.insets.left - cell.insets.right).max(layout.bounds_w);
                 let x = placement.x
@@ -5451,7 +5528,23 @@ fn draw_table_cell_content(
                     surface.pop();
                 }
             }
+            Some(CellVisual::NestedRow { row }) => {
+                let next = draw_row_layout(
+                    surface,
+                    *row,
+                    RowPaintPlacement {
+                        x_offset: line_x,
+                        top: line_top,
+                        page_number,
+                    },
+                    cx,
+                    page_links,
+                    previous_nested_borders.as_ref(),
+                );
+                previous_nested_borders = next;
+            }
             None => {
+                previous_nested_borders = None;
                 for run in line.runs {
                     if let Some(url) = run.link.clone() {
                         let left = line_x + run.x;
@@ -12730,6 +12823,79 @@ mod tests {
     }
 
     #[test]
+    fn nested_table_rows_retain_their_inner_grid_geometry() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let inner = Table {
+            rows: vec![Row {
+                cells: vec![cell("key"), cell("a much wider value")],
+            }],
+            col_widths_pct: vec![0.25, 0.75],
+            width_pct: Some(0.8),
+            align: Some(Align::Center),
+            ..Table::default()
+        };
+        let outer = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Table(inner)],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+
+        let mut rows = laid_out_table_rows(&outer, geom);
+        let outer_cell = rows.remove(0).cells.remove(0);
+        assert_eq!(outer_cell.lines.len(), 1);
+        let Some(super::CellVisual::NestedRow { row }) = outer_cell.lines[0].cell_visual.as_ref()
+        else {
+            panic!("nested table row must remain a grid visual")
+        };
+        assert_eq!(row.cells.len(), 2);
+        assert_close(row.cells[0].x, 17.4);
+        assert_close(row.cells[0].width, 34.8);
+        assert_close(row.cells[0].right, row.cells[1].x);
+        assert_close(row.cells[1].width, 104.4);
+        assert_close(row.cells[1].right, 156.6);
+    }
+
+    #[test]
+    fn empty_nested_table_rows_retain_their_grid_box() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let outer = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Table(Table {
+                        rows: vec![Row {
+                            cells: vec![Cell::default(), Cell::default()],
+                        }],
+                        ..Table::default()
+                    })],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+
+        let mut rows = laid_out_table_rows(&outer, geom);
+        let outer_cell = rows.remove(0).cells.remove(0);
+        assert_eq!(outer_cell.lines.len(), 1);
+        let nested = nested_visual_row(&outer_cell.lines[0]);
+        assert_eq!(nested.cells.len(), 2);
+        assert_close(nested.height, 14.0);
+    }
+
+    #[test]
     fn preferred_table_width_is_column_relative_and_malformed_values_are_bounded() {
         let geom = Geom::from_setup(&PageSetup {
             width_pt: 220.0,
@@ -13033,7 +13199,11 @@ mod tests {
         assert_eq!(lines.len(), 2);
         assert_close(lines[0].height, 8.0);
         assert!(lines[0].clip_to_height);
-        assert_close(lines[1].height, 40.0);
+        let nested = nested_visual_row(&lines[1]);
+        assert_eq!(nested.cells[0].lines.len(), 1);
+        assert_close(nested.cells[0].lines[0].height, 40.0);
+        assert_close(lines[1].height, nested.height);
+        assert_close(nested.height, 46.0);
         assert!(!lines[1].clip_to_height);
     }
 
@@ -13292,12 +13462,18 @@ mod tests {
                 .iter()
                 .map(|line| (line.cell_spacing.before, line.cell_spacing.after))
                 .collect::<Vec<_>>(),
-            [(2.0, 3.0), (5.0, 7.0), (0.0, 0.0)]
+            [(2.0, 3.0), (0.0, 0.0), (0.0, 0.0)]
         );
-        assert_close(
-            super::cell_lines_extent(&lines) - lines.iter().map(|line| line.height).sum::<f32>(),
-            17.0,
+        let nested = nested_visual_row(&lines[1]);
+        let nested_line = &nested.cells[0].lines[0];
+        assert_eq!(
+            (
+                nested_line.cell_spacing.before,
+                nested_line.cell_spacing.after
+            ),
+            (5.0, 7.0)
         );
+        assert_close(nested.height - nested_line.height, 18.0);
     }
 
     #[test]
@@ -13748,6 +13924,14 @@ mod tests {
         nested_cells: &[Vec<(&str, PaginationHint)>],
         cant_split: bool,
     ) -> super::RowLayout {
+        nested_cell_row_with_pagination_at_height(nested_cells, cant_split, 400.0)
+    }
+
+    fn nested_cell_row_with_pagination_at_height(
+        nested_cells: &[Vec<(&str, PaginationHint)>],
+        cant_split: bool,
+        page_height: f32,
+    ) -> super::RowLayout {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
         let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
@@ -13759,7 +13943,7 @@ mod tests {
         };
         let geom = Geom::from_setup(&PageSetup {
             width_pt: 220.0,
-            height_pt: 400.0,
+            height_pt: page_height,
             margin_pt: 20.0,
             ..PageSetup::default()
         });
@@ -13931,6 +14115,41 @@ mod tests {
                 .sum::<f32>()
     }
 
+    fn nested_visual_row(line: &LineLayout) -> &super::RowLayout {
+        let Some(super::CellVisual::NestedRow { row }) = line.cell_visual.as_ref() else {
+            panic!("nested row visual")
+        };
+        row
+    }
+
+    fn nested_fragment_line_counts(cell: &super::CellBox) -> Vec<Vec<usize>> {
+        cell.lines
+            .iter()
+            .map(|line| {
+                nested_visual_row(line)
+                    .cells
+                    .iter()
+                    .map(|cell| cell.lines.len())
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn nested_chain_depth_and_terminal_lines(row: &super::RowLayout) -> (usize, usize) {
+        let mut depth = 0usize;
+        let mut cell = &row.cells[0];
+        loop {
+            let Some(line) = cell.lines.first() else {
+                return (depth, 0);
+            };
+            let Some(super::CellVisual::NestedRow { row }) = line.cell_visual.as_ref() else {
+                return (depth, cell.lines.len());
+            };
+            depth += 1;
+            cell = &row.cells[0];
+        }
+    }
+
     #[test]
     fn table_cell_widow_control_avoids_a_three_plus_one_split() {
         let row = cell_row_with_pagination(&[(
@@ -14023,26 +14242,27 @@ mod tests {
             ("body", PaginationHint::default()),
         ]]);
         let cell = &row.cells[0];
-        assert_eq!(cell.lines.len(), 3);
+        assert_eq!(cell.lines.len(), 1);
+        let nested = nested_visual_row(&cell.lines[0]);
+        let nested_cell = &nested.cells[0];
+        assert_eq!(nested_cell.lines.len(), 3);
         assert_eq!(
-            cell.lines[0]
+            nested_cell.lines[0]
                 .cell_paragraph
                 .expect("first nested paragraph")
                 .scope_id,
-            cell.lines[2]
+            nested_cell.lines[2]
                 .cell_paragraph
                 .expect("last nested paragraph")
                 .scope_id
         );
-        let expected = cell.insets.top
-            + cell.lines.iter().map(|line| line.height).sum::<f32>()
-            + cell.insets.bottom;
+        let expected = cell.insets.top + cell.lines[0].cell_extent() + cell.insets.bottom;
 
         assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
     }
 
     #[test]
-    fn nested_table_cell_keep_next_does_not_cross_cell_scopes() {
+    fn nested_table_keeps_cell_paragraph_streams_separate() {
         let row = nested_cell_row_with_pagination(&[
             vec![(
                 "heading",
@@ -14054,17 +14274,22 @@ mod tests {
             vec![("separate cell", PaginationHint::default())],
         ]);
         let cell = &row.cells[0];
-        assert_eq!(cell.lines.len(), 2);
-        let first = cell.lines[0]
+        assert_eq!(cell.lines.len(), 1);
+        let nested = nested_visual_row(&cell.lines[0]);
+        assert_eq!(nested.cells.len(), 2);
+        assert_eq!(nested.cells[0].lines.len(), 1);
+        assert_eq!(nested.cells[1].lines.len(), 1);
+        assert_close(nested.cells[0].right, nested.cells[1].x);
+        let first = nested.cells[0].lines[0]
             .cell_paragraph
             .expect("first nested cell paragraph");
-        let second = cell.lines[1]
+        let second = nested.cells[1].lines[0]
             .cell_paragraph
             .expect("second nested cell paragraph");
-        assert_ne!(first.scope_id, second.scope_id);
-        let expected = cell.insets.top + cell.lines[0].height;
+        assert!(first.pagination.keep_next);
+        assert!(!second.pagination.keep_next);
 
-        assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+        assert_close(first_row_fragment_height(&row), row.height);
     }
 
     #[test]
@@ -14076,65 +14301,90 @@ mod tests {
                 ..PaginationHint::default()
             },
         )]]);
-        assert_eq!(row.cells[0].lines.len(), 4);
-        let avail = row_avail_for_lines(&row, 3);
+        assert_eq!(
+            nested_fragment_line_counts(&row.cells[0]),
+            vec![vec![2], vec![2]]
+        );
+        let avail = row_avail_for_lines(&row, 1);
 
         let (head, tail) = split_row(row, avail);
         let tail = tail.expect("two nested widow-protected lines remain");
 
-        assert_eq!(head.cells[0].lines.len(), 2);
-        assert_eq!(tail.cells[0].lines.len(), 2);
+        assert_eq!(nested_fragment_line_counts(&head.cells[0]), vec![vec![2]]);
+        assert_eq!(nested_fragment_line_counts(&tail.cells[0]), vec![vec![2]]);
     }
 
     #[test]
     fn nested_table_cant_split_requires_a_whole_first_fragment_but_allows_progress() {
-        let row = nested_cell_row_with_pagination_and_row_policy(
+        let row = nested_cell_row_with_pagination_at_height(
             &[
-                vec![("one\ntwo", PaginationHint::default())],
-                vec![("three", PaginationHint::default())],
+                vec![("one\ntwo\nthree\nfour", PaginationHint::default())],
+                vec![("five", PaginationHint::default())],
             ],
             true,
+            73.0,
         );
         let cell = &row.cells[0];
-        assert_eq!(cell.lines.len(), 3);
+        assert!(cell.lines.len() > 1);
         let whole_row =
             cell.insets.top + super::cell_lines_extent(&cell.lines) + cell.insets.bottom;
         assert!((first_row_fragment_height(&row) - whole_row).abs() < 0.01);
-        let avail = row_avail_for_lines(&row, 2);
+        let avail = row_avail_for_lines(&row, 1);
 
         let (head, tail) = split_row(row, avail);
         let tail = tail.expect("over-tall nested row content remains");
 
-        assert_eq!(head.cells[0].lines.len(), 2);
-        assert_eq!(tail.cells[0].lines.len(), 1);
+        assert_eq!(head.cells[0].lines.len(), 1);
+        assert!(!tail.cells[0].lines.is_empty());
     }
 
     #[test]
     fn over_tall_nested_kept_table_cell_still_splits_for_progress() {
-        let row = nested_cell_row_with_pagination(&[vec![(
-            "one\ntwo\nthree\nfour\nfive",
-            PaginationHint {
-                keep_lines: true,
-                ..PaginationHint::default()
-            },
-        )]]);
-        assert_eq!(row.cells[0].lines.len(), 5);
-        let avail = row_avail_for_lines(&row, 2);
+        let row = nested_cell_row_with_pagination_at_height(
+            &[vec![(
+                "one\ntwo\nthree\nfour\nfive",
+                PaginationHint {
+                    keep_lines: true,
+                    ..PaginationHint::default()
+                },
+            )]],
+            false,
+            73.0,
+        );
+        let counts = nested_fragment_line_counts(&row.cells[0]);
+        assert!(counts.len() > 1);
+        assert_eq!(counts.iter().flatten().sum::<usize>(), 5);
+        let avail = row_avail_for_lines(&row, 1);
 
         let (head, tail) = split_row(row, avail);
         let tail = tail.expect("over-tall nested kept content remains");
 
-        assert_eq!(head.cells[0].lines.len(), 2);
-        assert_eq!(tail.cells[0].lines.len(), 3);
+        assert_eq!(head.cells[0].lines.len(), 1);
+        let head_counts = nested_fragment_line_counts(&head.cells[0]);
+        let tail_counts = nested_fragment_line_counts(&tail.cells[0]);
+        assert_eq!(
+            head_counts
+                .iter()
+                .chain(tail_counts.iter())
+                .flatten()
+                .sum::<usize>(),
+            5
+        );
     }
 
     #[test]
-    fn nested_table_pagination_stops_at_the_render_depth_limit() {
+    fn nested_table_rendering_stops_content_at_the_depth_limit() {
         let at_limit = deeply_nested_cell_row(super::MAX_CELL_DEPTH);
         let beyond_limit = deeply_nested_cell_row(super::MAX_CELL_DEPTH + 1);
 
-        assert_eq!(at_limit.cells[0].lines.len(), 1);
-        assert!(beyond_limit.cells[0].lines.is_empty());
+        assert_eq!(
+            nested_chain_depth_and_terminal_lines(&at_limit),
+            (super::MAX_CELL_DEPTH as usize, 1)
+        );
+        assert_eq!(
+            nested_chain_depth_and_terminal_lines(&beyond_limit),
+            (super::MAX_CELL_DEPTH as usize, 0)
+        );
     }
 
     #[test]
@@ -18220,6 +18470,18 @@ mod tests {
     }
 
     fn shaped_line_text(line: &LineLayout) -> String {
+        if let Some(super::CellVisual::NestedRow { row }) = &line.cell_visual {
+            let mut texts = Vec::new();
+            for cell in &row.cells {
+                for line in &cell.lines {
+                    let text = shaped_line_text(line);
+                    if !text.is_empty() {
+                        texts.push(text);
+                    }
+                }
+            }
+            return texts.join(" ");
+        }
         line.runs
             .first()
             .map(|run| run.text.to_string())
@@ -18264,6 +18526,7 @@ mod tests {
                 _ => {}
             }
         }
+        texts.retain(|text| !text.is_empty());
         texts
     }
 
