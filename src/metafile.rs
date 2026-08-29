@@ -615,33 +615,34 @@ fn decode_packed_dib(dib: &[u8]) -> Option<MetafileRaster> {
 }
 
 fn bitmap_info_header_len(dib: &[u8]) -> Option<usize> {
-    if dib.len() < 40 || read_u32le(dib, 0)? != 40 {
-        return None;
-    }
+    let header_size = supported_dib_header_size(dib)?;
     let bit_count = read_u16le(dib, 14)?;
     let compression = read_u32le(dib, 16)?;
     let colors_used = read_u32le(dib, 32)?;
-    40usize.checked_add(dib_info_extra_len(bit_count, compression, colors_used)?)
+    header_size.checked_add(dib_info_extra_len(
+        header_size,
+        bit_count,
+        compression,
+        colors_used,
+    )?)
 }
 
 fn decode_dib(bmi: &[u8], bits: &[u8]) -> Option<MetafileRaster> {
-    if bmi.len() < 40 || read_u32le(bmi, 0)? != 40 {
-        return None;
-    }
+    let header_size = supported_dib_header_size(bmi)?;
     let width = read_i32le(bmi, 4)?;
     let height = read_i32le(bmi, 8)?;
     let planes = read_u16le(bmi, 12)?;
     let bit_count = read_u16le(bmi, 14)?;
     let compression = read_u32le(bmi, 16)?;
     let colors_used = read_u32le(bmi, 32)?;
-    let info_extra_len = dib_info_extra_len(bit_count, compression, colors_used)?;
-    let palette_end = 40usize.checked_add(info_extra_len)?;
+    let info_extra_len = dib_info_extra_len(header_size, bit_count, compression, colors_used)?;
+    let palette_end = header_size.checked_add(info_extra_len)?;
     if bmi.len() != palette_end {
         return None;
     }
-    let palette = bmi.get(40..palette_end)?;
+    let palette = bmi.get(header_size..palette_end)?;
     let bitfields = match (compression, bit_count) {
-        (3, _) => Some(bitfield_channels(palette, bit_count)?),
+        (3, _) => Some(bitfield_channels(bmi.get(40..52)?, bit_count)?),
         (0, 16) => Some([
             BitfieldChannel::new(0x7C00, bit_count)?,
             BitfieldChannel::new(0x03E0, bit_count)?,
@@ -732,10 +733,45 @@ fn dib_rgba_len(width: u32, height: u32) -> Option<usize> {
     (len <= MAX_METAFILE_RGBA).then_some(len)
 }
 
-fn dib_info_extra_len(bit_count: u16, compression: u32, colors_used: u32) -> Option<usize> {
+fn supported_dib_header_size(dib: &[u8]) -> Option<usize> {
+    if dib.len() < 40 {
+        return None;
+    }
+    let header_size = read_u32le(dib, 0)? as usize;
+    if !matches!(header_size, 40 | 108 | 124) || dib.len() < header_size {
+        return None;
+    }
+    if header_size == 40 {
+        return Some(header_size);
+    }
+
+    let alpha_mask = read_u32le(dib, 52)?;
+    let color_space = read_u32le(dib, 56)?;
+    if alpha_mask != 0 || !matches!(color_space, 0x7352_4742 | 0x5769_6E20) {
+        return None;
+    }
+    if header_size == 124
+        && (!matches!(read_u32le(dib, 108)?, 1 | 2 | 4 | 8)
+            || read_u32le(dib, 112)? != 0
+            || read_u32le(dib, 116)? != 0
+            || read_u32le(dib, 120)? != 0)
+    {
+        return None;
+    }
+    Some(header_size)
+}
+
+fn dib_info_extra_len(
+    header_size: usize,
+    bit_count: u16,
+    compression: u32,
+    colors_used: u32,
+) -> Option<usize> {
     match compression {
         0 => dib_palette_entries(bit_count, colors_used)?.checked_mul(4),
-        3 if matches!(bit_count, 16 | 32) && colors_used == 0 => Some(12),
+        3 if matches!(bit_count, 16 | 32) && colors_used == 0 => {
+            Some(if header_size == 40 { 12 } else { 0 })
+        }
         _ => None,
     }
 }
@@ -906,6 +942,21 @@ mod tests {
         put_u32le(&mut dib, 20, 4);
         dib.extend_from_slice(&[0x33, 0x22, 0x11, 0x00]);
         dib
+    }
+
+    fn extended_dib_header(size: usize, width: i32, bit_count: u16) -> Vec<u8> {
+        assert!(matches!(size, 108 | 124));
+        let mut bmi = vec![0; size];
+        put_u32le(&mut bmi, 0, size as u32);
+        put_i32le(&mut bmi, 4, width);
+        put_i32le(&mut bmi, 8, -1);
+        put_u16le(&mut bmi, 12, 1);
+        put_u16le(&mut bmi, 14, bit_count);
+        put_u32le(&mut bmi, 56, 0x7352_4742); // LCS_sRGB
+        if size == 124 {
+            put_u32le(&mut bmi, 108, 4); // LCS_GM_IMAGES
+        }
+        bmi
     }
 
     fn emf_with_setdibits_to_device(start_scan: u32, scan_count: u32) -> Vec<u8> {
@@ -1190,6 +1241,111 @@ mod tests {
         let raster = decode_dib(&bmi, &[0x33, 0x22, 0x11, 0x00]).expect("32-bit RGB DIB");
 
         assert_eq!(raster.rgba, [0x11, 0x22, 0x33, 0xFF]);
+    }
+
+    #[test]
+    fn packed_v4_bitfields_dib_uses_inline_rgb_masks() {
+        let mut dib = extended_dib_header(108, 3, 16);
+        put_u32le(&mut dib, 16, 3);
+        put_u32le(&mut dib, 20, 8);
+        put_u32le(&mut dib, 40, 0xF800);
+        put_u32le(&mut dib, 44, 0x07E0);
+        put_u32le(&mut dib, 48, 0x001F);
+        dib.extend_from_slice(&[0x00, 0xF8, 0xE0, 0x07, 0x1F, 0x00, 0, 0]);
+
+        let raster = decode_packed_dib(&dib).expect("V4 RGB565 DIB");
+        assert_eq!(
+            raster.rgba,
+            [0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0xFF,]
+        );
+    }
+
+    #[test]
+    fn packed_v4_palette_dib_reads_table_after_declared_header() {
+        let mut dib = extended_dib_header(108, 3, 8);
+        put_u32le(&mut dib, 20, 4);
+        put_u32le(&mut dib, 32, 3);
+        dib.extend_from_slice(&[
+            0x00, 0x00, 0xFF, 0, 0x00, 0xFF, 0x00, 0, 0xFF, 0x00, 0x00, 0,
+        ]);
+        dib.extend_from_slice(&[0, 1, 2, 0]);
+
+        let raster = decode_packed_dib(&dib).expect("V4 palette DIB");
+        assert_eq!(
+            raster.rgba,
+            [0xFF, 0x00, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0x00, 0xFF, 0xFF,]
+        );
+    }
+
+    #[test]
+    fn packed_v5_rgb_dib_decodes_windows_color_space_pixels() {
+        let mut dib = extended_dib_header(124, 1, 32);
+        put_u32le(&mut dib, 20, 4);
+        put_u32le(&mut dib, 56, 0x5769_6E20); // LCS_WINDOWS_COLOR_SPACE
+        dib.extend_from_slice(&[0x33, 0x22, 0x11, 0x00]);
+
+        let raster = decode_packed_dib(&dib).expect("V5 Windows RGB DIB");
+        assert_eq!(raster.rgba, [0x11, 0x22, 0x33, 0xFF]);
+    }
+
+    #[test]
+    fn extended_dib_headers_extract_through_emf_and_wmf_records() {
+        let mut v4 = extended_dib_header(108, 1, 16);
+        put_u32le(&mut v4, 16, 3);
+        put_u32le(&mut v4, 20, 4);
+        put_u32le(&mut v4, 40, 0xF800);
+        put_u32le(&mut v4, 44, 0x07E0);
+        put_u32le(&mut v4, 48, 0x001F);
+        v4.extend_from_slice(&[0x00, 0xF8, 0, 0]);
+
+        let mut v5 = extended_dib_header(124, 1, 32);
+        put_u32le(&mut v5, 20, 4);
+        v5.extend_from_slice(&[0x33, 0x22, 0x11, 0x00]);
+
+        for (kind, bytes, expected) in [
+            (
+                MetafileKind::Emf,
+                emf_with_source_blt_dib(76, &v4),
+                [0xFF, 0x00, 0x00, 0xFF],
+            ),
+            (
+                MetafileKind::Wmf,
+                wmf_with_source_dib_blt_dib(0x0940, &v5),
+                [0x11, 0x22, 0x33, 0xFF],
+            ),
+        ] {
+            let raster = extract_raster(kind, &bytes, false).expect("extended-header raster");
+            assert_eq!(raster.rgba, expected);
+        }
+    }
+
+    #[test]
+    fn extended_dib_headers_reject_unhandled_color_state() {
+        let mut calibrated = extended_dib_header(108, 1, 32);
+        put_u32le(&mut calibrated, 56, 0);
+        calibrated.extend_from_slice(&[0; 4]);
+        assert!(decode_packed_dib(&calibrated).is_none());
+
+        let mut alpha = extended_dib_header(108, 1, 32);
+        put_u32le(&mut alpha, 52, 0xFF00_0000);
+        alpha.extend_from_slice(&[0; 4]);
+        assert!(decode_packed_dib(&alpha).is_none());
+
+        let mut linked_profile = extended_dib_header(124, 1, 32);
+        put_u32le(&mut linked_profile, 56, 0x4C49_4E4B);
+        put_u32le(&mut linked_profile, 112, 124);
+        put_u32le(&mut linked_profile, 116, 4);
+        linked_profile.extend_from_slice(&[0; 4]);
+        assert!(decode_packed_dib(&linked_profile).is_none());
+
+        let mut invalid_intent = extended_dib_header(124, 1, 32);
+        put_u32le(&mut invalid_intent, 108, 0);
+        invalid_intent.extend_from_slice(&[0; 4]);
+        assert!(decode_packed_dib(&invalid_intent).is_none());
+
+        let mut unsupported_header = vec![0; 52];
+        put_u32le(&mut unsupported_header, 0, 52);
+        assert!(decode_packed_dib(&unsupported_header).is_none());
     }
 
     #[test]
