@@ -283,6 +283,9 @@ pub(crate) struct DocxState {
     pub pagination_hints: Vec<crate::model::PaginationHint>,
     /// Source-only exact/minimum line spacing aligned to body model blocks.
     pub line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
+    /// Renderer-only keep-lines and widow controls aligned to `notes` blocks.
+    #[cfg(feature = "render")]
+    pub note_pagination_hints: Vec<crate::model::PaginationHint>,
     /// Renderer-only exact/minimum line spacing aligned to `notes` blocks.
     #[cfg(feature = "render")]
     pub note_line_spacing_hints: Vec<Option<crate::model::LineSpacingHint>>,
@@ -597,6 +600,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         .source_entries
         .append(&mut endnote_part.source_entries);
     #[cfg(feature = "render")]
+    note_part.pagination.extend(endnote_part.pagination);
+    #[cfg(feature = "render")]
     note_part.line_spacing.extend(endnote_part.line_spacing);
     #[cfg(feature = "render")]
     note_part.tab_stops.extend(endnote_part.tab_stops);
@@ -847,6 +852,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         floating_shapes,
         pagination_hints,
         line_spacing_hints,
+        #[cfg(feature = "render")]
+        note_pagination_hints: note_part.pagination,
         #[cfg(feature = "render")]
         note_line_spacing_hints: note_part.line_spacing,
         #[cfg(feature = "render")]
@@ -1904,6 +1911,8 @@ struct NotePartRead {
     blocks: Vec<Block>,
     source_entries: Vec<NoteSourceEntry>,
     #[cfg(feature = "render")]
+    pagination: Vec<crate::model::PaginationHint>,
+    #[cfg(feature = "render")]
     line_spacing: Vec<Option<crate::model::LineSpacingHint>>,
     #[cfg(feature = "render")]
     tab_stops: Vec<Vec<crate::model::TabStop>>,
@@ -2132,6 +2141,17 @@ fn read_notes(
     NotePartRead {
         blocks,
         source_entries,
+        #[cfg(feature = "render")]
+        // Flattened render notes do not retain note-entry boundaries, so a
+        // source `keepNext` cannot safely chain without crossing into another note.
+        pagination: layout_hints
+            .pagination
+            .iter()
+            .map(|hint| crate::model::PaginationHint {
+                keep_next: false,
+                ..*hint
+            })
+            .collect(),
         #[cfg(feature = "render")]
         line_spacing: layout_hints.line_spacing,
         #[cfg(feature = "render")]
