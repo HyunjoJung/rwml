@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- PDF preview now paints dynamic `PAGE` fields and generated page-number footers
+  with section display numbering, including explicit restarts, inherited section
+  formats, and field-level number-format overrides. `LayoutPages` continues to
+  report physical page indexes for deterministic layout diagnostics.
 - Strict single-raster WMF/EMF extraction now decodes canonical 16-bit
   `BI_RGB` DIB payloads as RGB555, including the unused high storage bit.
   Scaled, composited, alpha-blended, and general vector metafiles remain outside
