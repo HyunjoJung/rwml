@@ -174,6 +174,23 @@ fn sample_rgb565_dib() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn sample_rgb555_dib() -> Vec<u8> {
+    let mut dib = vec![0u8; 40];
+    put_u32le(&mut dib, 0, 40);
+    put_i32le(&mut dib, 4, 2);
+    put_i32le(&mut dib, 8, 2);
+    put_u16le(&mut dib, 12, 1);
+    put_u16le(&mut dib, 14, 16);
+    put_u32le(&mut dib, 16, 0);
+    put_u32le(&mut dib, 20, 8);
+    dib.extend_from_slice(&0x7FE0u16.to_le_bytes());
+    dib.extend_from_slice(&0x8C41u16.to_le_bytes());
+    dib.extend_from_slice(&0x7C00u16.to_le_bytes());
+    dib.extend_from_slice(&0x021Fu16.to_le_bytes());
+    dib
+}
+
+#[cfg(feature = "docx")]
 fn expected_rgba_2x2_pixels() -> Vec<u8> {
     vec![
         255, 0, 0, 255, // red
@@ -4155,6 +4172,45 @@ fn report_extracts_palette_and_bitfield_metafiles_as_images() {
             "{name} pixels"
         );
         assert_eq!(doc.report().features.unsupported_metafiles, 0, "{name}");
+    }
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_extracts_canonical_rgb555_metafiles_as_images() {
+    let dib = sample_rgb555_dib();
+    let expected_rgba = [
+        255, 0, 0, 255, // red
+        0, 132, 255, 255, // cyan-blue
+        255, 255, 0, 255, // yellow
+        25, 16, 8, 255, // unequal channels; high storage bit is ignored
+    ];
+    for (name, bytes) in [
+        ("rgb555.emf", sample_emf_with_dib(&dib, 40)),
+        ("rgb555.wmf", sample_placeable_wmf_with_dib(&dib)),
+    ] {
+        let doc = Document::open(&metafile_image_docx(name, "rIdMeta", bytes))
+            .expect("RGB555 metafile fixture opens");
+        let images = doc.images();
+        assert_eq!(images.len(), 1, "{name}");
+        assert_eq!(images[0].width_px, Some(2), "{name}");
+        assert_eq!(images[0].height_px, Some(2), "{name}");
+        assert_eq!(
+            images[0].bytes.as_deref(),
+            Some(expected_rgba.as_slice()),
+            "{name} pixels"
+        );
+
+        let report = doc.report();
+        assert_eq!(report.features.unsupported_metafiles, 0, "{name}");
+        assert!(
+            report.warnings.iter().all(|warning| !matches!(
+                warning,
+                DocumentWarning::UnsupportedMetafileImages { .. }
+            )),
+            "{name}: {:?}",
+            report.warnings
+        );
     }
 }
 

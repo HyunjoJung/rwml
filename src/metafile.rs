@@ -640,10 +640,14 @@ fn decode_dib(bmi: &[u8], bits: &[u8]) -> Option<MetafileRaster> {
         return None;
     }
     let palette = bmi.get(40..palette_end)?;
-    let bitfields = if compression == 3 {
-        Some(bitfield_channels(palette, bit_count)?)
-    } else {
-        None
+    let bitfields = match (compression, bit_count) {
+        (3, _) => Some(bitfield_channels(palette, bit_count)?),
+        (0, 16) => Some([
+            BitfieldChannel::new(0x7C00, bit_count)?,
+            BitfieldChannel::new(0x03E0, bit_count)?,
+            BitfieldChannel::new(0x001F, bit_count)?,
+        ]),
+        _ => None,
     };
     if width <= 0 || height == 0 || planes != 1 {
         return None;
@@ -747,7 +751,7 @@ fn dib_palette_entries(bit_count: u16, colors_used: u32) -> Option<usize> {
             };
             (entries > 0 && entries <= maximum).then_some(entries)
         }
-        24 | 32 if colors_used == 0 => Some(0),
+        16 | 24 | 32 if colors_used == 0 => Some(0),
         _ => None,
     }
 }
