@@ -3,7 +3,7 @@ name = "rwml"
 version = "0.1.3"
 edition = "2021"
 # Core deps (`cfb`→`uuid`, `zip`→`indexmap`/`hashbrown`) require Rust 1.85; the
-# `render` feature (`parley`) raises the floor to 1.92.
+# `render` feature (currently `krilla`) raises the floor to 1.92.
 rust-version = "1.85"
 license = "MIT"
 description = "Native Rust toolkit for Microsoft Word — read, write, edit, and render legacy .doc (Word 97-2003, [MS-DOC]) and modern .docx (OOXML): one document model, package-preserving edits, field evaluation, Markdown/HTML export, PDF preview"
@@ -33,9 +33,9 @@ quick-xml = { version = "0.41", optional = true }
 flate2 = { version = "1.0", optional = true }
 # Native typesetting renderer (DocModel → PDF): parley for layout/shaping/CJK
 # line-breaking, krilla for PDF emit with subsetted fonts + selectable text.
-# Heavy + raises the MSRV to 1.92 (parley), so it is strictly opt-in.
+# Heavy + raises the MSRV to 1.92 (currently krilla), so it is strictly opt-in.
 krilla = { version = "0.8", optional = true }
-parley = { version = "0.10", optional = true }
+parley = { version = "0.11", optional = true }
 rwml-fonts = { version = "0.1.3", path = "rwml-fonts", optional = true }
 
 [features]

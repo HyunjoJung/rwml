@@ -11,6 +11,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The `rwml` CLI now automatically registers the deterministic OFL font subsets
   when built with `bundled-fonts`, so `rwml to-pdf` uses the bundled Korean,
   Arabic, and Hebrew coverage without a separate library call.
+- The opt-in renderer now uses `parley` 0.11.1, including corrected emoji
+  variation-selector font fallback and refreshed Fontations/HarfRust shaping
+  dependencies. The render MSRV remains 1.92 because `krilla` 0.8.2 sets the
+  current render-stack floor.
 - Public edit and legacy-oracle release validation now use authoritative
   recursive manifests and fail closed on empty, missing, or partial evidence.
 - `quick-xml` is upgraded to `0.41.0`, including bounded namespace handling and
