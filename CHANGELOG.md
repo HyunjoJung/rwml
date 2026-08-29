@@ -22,6 +22,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   layers, and fresh DOCX output pairs `w:bCs`/`w:iCs` with effective RTL
   bold/italic formatting. Non-RTL runs retain their Latin-property behavior;
   automatic script selection and full end-to-end RTL parity remain outside.
+- Flattened PDF preview of opened DOCX footnotes and endnotes now consumes their
+  private `keepLines` and widow/orphan paragraph controls. Note `keepNext`
+  remains conversion-only until render flow retains note-entry boundaries, and
+  notes remain end-flow content rather than page-bottom composition.
 - Source-backed unequal-column PDF preview now uses a bounded convergence pass
   to rewrap top-level paragraphs that remain wholly on a wider physical column
   track, including RTL column order. Paragraphs that cross tracks or do not

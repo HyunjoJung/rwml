@@ -3252,6 +3252,8 @@ impl Document {
             Backend::Docx(d) => {
                 let mut model = d.model.clone();
                 model.blocks.extend(d.notes.iter().cloned());
+                let mut pagination = d.pagination_hints.clone();
+                pagination.extend_from_slice(&d.note_pagination_hints);
                 let mut line_spacing = d.line_spacing_hints.clone();
                 line_spacing.extend_from_slice(&d.note_line_spacing_hints);
                 let mut tab_stops = d.tab_stops.clone();
@@ -3261,7 +3263,7 @@ impl Document {
                 render_document(
                     &model,
                     render::SourceRenderHints {
-                        pagination: &d.pagination_hints,
+                        pagination: &pagination,
                         line_spacing: &line_spacing,
                         tab_stops: &tab_stops,
                         column_break_offsets: &d.column_break_offsets,
