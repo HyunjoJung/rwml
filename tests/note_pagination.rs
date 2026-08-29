@@ -54,6 +54,36 @@ fn note_pagination_docx(seed_line_twips: u32, note_properties: &str, note_text: 
     ])
 }
 
+fn note_boundary_docx(body: &str, notes: &str) -> Vec<u8> {
+    let document = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            {body}
+            <w:sectPr><w:pgSz w:w="4400" w:h="2000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+        </w:body></w:document>"#
+    );
+    let footnotes = format!(
+        r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            {notes}
+        </w:footnotes>"#
+    );
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        ("word/document.xml", &document),
+        ("word/footnotes.xml", &footnotes),
+    ])
+}
+
 fn protected_note_table_xml(
     nested: bool,
     keep_lines: bool,
@@ -158,6 +188,116 @@ fn mixed_endnote_table_pagination_docx(keep_lines: bool, cant_split: bool) -> Ve
         ("word/footnotes.xml", footnotes),
         ("word/endnotes.xml", &endnotes),
     ])
+}
+
+fn mixed_note_boundary_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:spacing w:line="600" w:lineRule="exact"/></w:pPr><w:r><w:t>seed</w:t><w:footnoteReference w:id="1"/><w:endnoteReference w:id="2"/></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="2000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+            </w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="1"><w:p><w:pPr><w:keepNext/><w:spacing w:line="200" w:lineRule="exact"/><w:widowControl w:val="off"/></w:pPr><w:r><w:t>footnote</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="2"><w:p><w:pPr><w:spacing w:line="200" w:lineRule="exact"/><w:widowControl w:val="off"/></w:pPr><w:r><w:t>endnote</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
+#[test]
+fn opened_docx_render_applies_keep_next_within_one_note() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let body = r#"<w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr>
+        <w:r><w:t>seed</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r>
+    </w:p>"#;
+    let baseline_notes = r#"<w:footnote w:id="1">
+        <w:p><w:pPr><w:spacing w:line="200" w:lineRule="exact"/><w:widowControl w:val="off"/></w:pPr><w:r><w:t>heading</w:t></w:r></w:p>
+        <w:p><w:pPr><w:spacing w:line="200" w:lineRule="exact"/><w:widowControl w:val="off"/></w:pPr><w:r><w:t>detail</w:t></w:r></w:p>
+    </w:footnote>"#;
+    let kept_notes = baseline_notes.replacen(
+        r#"<w:spacing w:line="200" w:lineRule="exact"/>"#,
+        r#"<w:keepNext/><w:spacing w:line="200" w:lineRule="exact"/>"#,
+        1,
+    );
+    let baseline = Document::open(&note_boundary_docx(body, baseline_notes))
+        .expect("baseline note fixture opens");
+    let kept =
+        Document::open(&note_boundary_docx(body, &kept_notes)).expect("kept note fixture opens");
+
+    assert_eq!(baseline.model(), kept.model());
+    let baseline_layout = baseline
+        .layout_pages_with_fonts(&fonts)
+        .expect("baseline note layout succeeds");
+    let kept_layout = kept
+        .layout_pages_with_fonts(&fonts)
+        .expect("kept note layout succeeds");
+    assert_eq!(baseline_layout.block_pages, vec![Some(1), Some(1), Some(2)]);
+    assert_eq!(kept_layout.block_pages, vec![Some(1), Some(2), Some(2)]);
+    assert_eq!(kept_layout.pages, 2);
+}
+
+#[test]
+fn opened_docx_render_stops_body_keep_next_at_the_note_boundary() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let body = r#"<w:p><w:pPr><w:spacing w:line="600" w:lineRule="exact"/></w:pPr><w:r><w:t>intro</w:t></w:r></w:p>
+        <w:p><w:pPr><w:keepNext/><w:spacing w:line="200" w:lineRule="exact"/><w:widowControl w:val="off"/></w:pPr>
+            <w:r><w:t>anchor</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r>
+        </w:p>"#;
+    let notes = r#"<w:footnote w:id="1"><w:p><w:pPr><w:spacing w:line="200" w:lineRule="exact"/><w:widowControl w:val="off"/></w:pPr><w:r><w:t>note</w:t></w:r></w:p></w:footnote>"#;
+    let document = Document::open(&note_boundary_docx(body, notes)).expect("note fixture opens");
+
+    let layout = document
+        .layout_pages_with_fonts(&fonts)
+        .expect("note layout succeeds");
+    assert_eq!(layout.block_pages, vec![Some(1), Some(1), Some(2)]);
+    assert_eq!(layout.pages, 2);
+}
+
+#[test]
+fn opened_docx_render_stops_keep_next_between_note_entries() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let body = r#"<w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr>
+        <w:r><w:t>seed</w:t></w:r><w:r><w:footnoteReference w:id="1"/><w:footnoteReference w:id="2"/></w:r>
+    </w:p>"#;
+    let notes = r#"<w:footnote w:id="1"><w:p><w:pPr><w:keepNext/><w:spacing w:line="200" w:lineRule="exact"/><w:widowControl w:val="off"/></w:pPr><w:r><w:t>first</w:t></w:r></w:p></w:footnote>
+        <w:footnote w:id="2"><w:p><w:pPr><w:spacing w:line="200" w:lineRule="exact"/><w:widowControl w:val="off"/></w:pPr><w:r><w:t>second</w:t></w:r></w:p></w:footnote>"#;
+    let document = Document::open(&note_boundary_docx(body, notes)).expect("note fixture opens");
+
+    let layout = document
+        .layout_pages_with_fonts(&fonts)
+        .expect("note layout succeeds");
+    assert_eq!(layout.block_pages, vec![Some(1), Some(1), Some(2)]);
+    assert_eq!(layout.pages, 2);
+}
+
+#[test]
+fn opened_docx_render_stops_keep_next_between_footnotes_and_endnotes() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let document = Document::open(&mixed_note_boundary_docx()).expect("mixed note fixture opens");
+
+    let layout = document
+        .layout_pages_with_fonts(&fonts)
+        .expect("mixed note layout succeeds");
+    assert_eq!(layout.block_pages, vec![Some(1), Some(1), Some(2)]);
+    assert_eq!(layout.pages, 2);
 }
 
 #[test]
