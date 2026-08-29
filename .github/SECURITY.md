@@ -46,7 +46,9 @@ In scope:
 - Silent emission of incorrect/garbled text that could poison a downstream index
 
 Out of scope:
-- Third-party dependencies (report upstream; we update via Dependabot)
+- Defects confined to a third-party dependency should also be reported
+  upstream. If an advisory is reachable through `rwml`, report that impact here
+  as well so we can coordinate an upgrade or mitigation.
 - Issues requiring local machine access or social engineering
 
 ## Disclosure Policy

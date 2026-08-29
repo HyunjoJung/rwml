@@ -18,7 +18,7 @@ jobs:
     name: fmt · clippy · test · doc
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # cargo-semver-checks 0.48.0 supports rustdoc JSON through v57;
@@ -29,8 +29,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install semantic-version compatibility checker
         run: cargo install cargo-semver-checks --version 0.48.0 --locked
+      - name: Install RustSec vulnerability scanner
+        run: cargo install cargo-audit --version 0.22.1 --locked
+      - name: Audit Rust dependencies
+        run: cargo audit
       - name: Install system libraries (fontconfig for the render feature)
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config python3-venv
+      - name: Install pinned Python validation tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rwml-python-tools"
+          "$RUNNER_TEMP/rwml-python-tools/bin/pip" install --disable-pip-version-check --no-cache-dir \
+            PyMuPDF==1.28.2 Pillow==12.3.0 python-docx==1.2.0
+          "$RUNNER_TEMP/rwml-python-tools/bin/python" -c \
+            'import docx, pymupdf, PIL; assert docx.__version__ == "1.2.0"; assert pymupdf.__version__ == "1.28.2"; assert PIL.__version__ == "12.3.0"'
       - name: Check patch-compatible public API
         run: |
           cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --default-features
@@ -38,9 +49,15 @@ jobs:
       - name: Public hygiene audit
         run: python3 scripts/public_hygiene_audit.py
       - name: Python release and evidence tooling tests
-        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
+        run: PYTHONDONTWRITEBYTECODE=1 "$RUNNER_TEMP/rwml-python-tools/bin/python" -m unittest discover -s tests -p 'test_*.py'
       - name: Public corpus determinism
         run: python3 scripts/gen_public_corpus.py --check
+      - name: Package-preserving edit interoperability
+        run: |
+          cargo run --locked --example validate_edit --features docx -- \
+            corpus/public "$RUNNER_TEMP/rwml-edit-validation"
+          "$RUNNER_TEMP/rwml-python-tools/bin/python" scripts/validate_edit_check.py \
+            corpus/public "$RUNNER_TEMP/rwml-edit-validation"
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy (default)
@@ -64,11 +81,31 @@ jobs:
       - name: Doc
         run: cargo doc --no-deps --all-features
 
+  windows-portability:
+    name: Windows corpus and Python tooling
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install pinned Python validation tools
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir PyMuPDF==1.28.2 Pillow==12.3.0 python-docx==1.2.0
+          python -c 'import docx, pymupdf, PIL; assert docx.__version__ == "1.2.0"; assert pymupdf.__version__ == "1.28.2"; assert PIL.__version__ == "12.3.0"'
+      - name: Public corpus determinism
+        run: python scripts/gen_public_corpus.py --check
+      - name: Python release and evidence tooling tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -m unittest discover -s tests -p 'test_*.py'
+
   wasm:
     name: wasm32 build and Node smoke
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -88,7 +125,7 @@ jobs:
     name: MSRV 1.85 · render 1.92
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install system libraries (fontconfig for the render feature)
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config
       - uses: dtolnay/rust-toolchain@1.85.0

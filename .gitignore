@@ -3,3 +3,4 @@ fuzz/target
 __pycache__/
 .pytest_cache/
 *.pdf
+/_bmad-output/

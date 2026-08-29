@@ -1,6 +1,6 @@
 //! Shared XML text helpers for `.docx` parts.
 
-use quick_xml::events::{BytesStart, Event};
+use quick_xml::events::{BytesRef, BytesStart, Event};
 use quick_xml::Reader;
 
 use super::{is_page_break_type, local};
@@ -54,9 +54,19 @@ pub(crate) fn read_text(r: &mut Reader<&[u8]>) -> String {
     let mut s = String::new();
     loop {
         match r.read_event() {
-            Ok(Event::Text(t)) => match t.unescape().ok().map(|c| c.into_owned()) {
+            Ok(Event::Text(t)) => match t.decode().ok().map(|c| c.into_owned()) {
                 Some(c) => s.push_str(&c),
                 None => s.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
+            },
+            Ok(Event::GeneralRef(reference)) => match resolve_reference(&reference) {
+                Some(value) => s.push_str(&value),
+                None => {
+                    // Preserve unknown general entities exactly as the pre-0.41 text
+                    // unescape fallback did; never attempt external entity resolution.
+                    s.push('&');
+                    s.push_str(&String::from_utf8_lossy(reference.as_ref()));
+                    s.push(';');
+                }
             },
             Ok(Event::CData(t)) => s.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -64,6 +74,16 @@ pub(crate) fn read_text(r: &mut Reader<&[u8]>) -> String {
         }
     }
     s
+}
+
+/// Resolve numeric and the five predefined XML entity references. Unknown general
+/// entities intentionally remain unresolved: OOXML does not define a DTD resolver.
+pub(crate) fn resolve_reference(reference: &BytesRef<'_>) -> Option<String> {
+    if let Some(character) = reference.resolve_char_ref().ok()? {
+        return Some(character.to_string());
+    }
+    let name = reference.decode().ok()?;
+    quick_xml::escape::resolve_predefined_entity(&name).map(str::to_owned)
 }
 
 pub(crate) fn read_i64_text(r: &mut Reader<&[u8]>) -> Option<i64> {

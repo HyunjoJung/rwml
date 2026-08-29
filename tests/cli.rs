@@ -223,3 +223,29 @@ fn cli_to_pdf_writes_pdf_and_report_json() {
     assert!(json.contains(r#""pages":"#), "{json}");
     assert!(json.contains(r#""warnings":"#), "{json}");
 }
+
+#[cfg(all(feature = "render", feature = "bundled-fonts"))]
+#[test]
+fn cli_to_pdf_registers_bundled_fonts_when_feature_is_enabled() {
+    let bytes = plain_docx();
+    let input = write_temp_docx("to-pdf-bundled-input", &bytes);
+    let output = temp_output_path_with_ext("to-pdf-bundled-output", "pdf");
+
+    let out = run_rwml(&["to-pdf", input.to_str().unwrap(), output.to_str().unwrap()]);
+    assert!(
+        out.status.success(),
+        "stderr={}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let fonts = vec![
+        rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+        rwml_fonts::noto_sans_arabic_subset().to_vec(),
+        rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+    ];
+    let expected = rwml::Document::open(&bytes)
+        .unwrap()
+        .try_to_pdf_with_fonts(&fonts)
+        .unwrap();
+    assert_eq!(std::fs::read(output).unwrap(), expected);
+}

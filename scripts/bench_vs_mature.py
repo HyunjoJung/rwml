@@ -15,10 +15,11 @@ decide which extractor is "better".
   python scripts/bench_vs_mature.py --corpus DIR [--limit N] [--json]
   python scripts/bench_vs_mature.py --corpus corpus/public/benchmark --json --version 0.1.1 \
     --git-rev "$(git rev-parse HEAD)" --min-poi-recall-mean 0.95 \
-    --min-poi-f1-mean 0.95 --max-errors 0 --min-scored 1 \
+    --min-poi-f1-mean 0.95 --min-lo-recall-mean 0.95 --max-errors 0 \
+    --min-scored 3 --max-scored 3 --min-lo-scored 3 --max-lo-scored 3 \
     --output dist/extract-benchmark.json
 
-The corpus directory must contain:
+The corpus directory must contain an authoritative ``LEGACY_MANIFEST.tsv`` and:
   sample-poi/*.poi.txt        Apache POI golden output
   sample-lo/*.txt             LibreOffice golden output
   sample/*.doc or govdocs/files/*.doc
@@ -36,13 +37,158 @@ import math
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
+from pathlib import PurePosixPath
 
 
 SCHEMA = "rwml.benchmark-report.v1"
 BENCHMARK = "extract-vs-mature"
-COUNT_THRESHOLD_METRICS = {"errors", "scored"}
+COUNT_THRESHOLD_METRICS = {"errors", "scored", "lo_scored"}
 SCORE_THRESHOLD_METRICS = {"poi_recall_mean", "poi_f1_mean", "lo_recall_mean"}
+
+
+@dataclass(frozen=True)
+class LegacyBenchmarkInput:
+    name: str
+    document: Path
+    poi_golden: Path
+    libreoffice_golden: Path
+
+
+def safe_manifest_doc(raw: str) -> PurePosixPath:
+    relative = PurePosixPath(raw)
+    if (
+        not raw
+        or "\\" in raw
+        or ":" in raw
+        or relative.is_absolute()
+        or relative.suffix != ".doc"
+        or any(part in {"", ".", ".."} for part in relative.parts)
+    ):
+        raise ValueError(f"invalid legacy DOC manifest path: {raw!r}")
+    return relative
+
+
+def require_exact_inventory(label: str, expected: set[str], actual: set[str]) -> None:
+    if expected == actual:
+        return
+    missing = sorted(expected - actual)
+    unexpected = sorted(actual - expected)
+    raise ValueError(
+        f"legacy benchmark {label} inventory mismatch: "
+        f"missing={missing} unexpected={unexpected}"
+    )
+
+
+def legacy_benchmark_inputs(corpus: Path) -> list[LegacyBenchmarkInput]:
+    if not corpus.is_dir():
+        raise ValueError(f"legacy benchmark corpus does not exist: {corpus}")
+    manifest = corpus / "LEGACY_MANIFEST.tsv"
+    if not manifest.is_file():
+        raise ValueError(f"legacy benchmark manifest is missing: {manifest}")
+
+    documents: list[PurePosixPath] = []
+    seen_paths: set[PurePosixPath] = set()
+    seen_names: set[str] = set()
+    for line_number, line in enumerate(
+        manifest.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("path\t"):
+            continue
+        relative = safe_manifest_doc(line.split("\t", 1)[0])
+        if relative in seen_paths:
+            raise ValueError(
+                f"{manifest}:{line_number} repeats DOC path: {relative}"
+            )
+        if relative.stem in seen_names:
+            raise ValueError(
+                f"{manifest}:{line_number} repeats DOC basename: {relative.stem}"
+            )
+        seen_paths.add(relative)
+        seen_names.add(relative.stem)
+        documents.append(relative)
+    if not documents:
+        raise ValueError(f"legacy benchmark manifest contains no DOC inputs: {manifest}")
+
+    expected_documents = {str(path) for path in documents}
+    actual_documents = {
+        path.relative_to(corpus).as_posix()
+        for path in corpus.rglob("*.doc")
+        if path.is_file()
+    }
+    require_exact_inventory("DOC", expected_documents, actual_documents)
+
+    expected_poi = {f"{path.stem}.poi.txt" for path in documents}
+    poi_dir = corpus / "sample-poi"
+    actual_poi = (
+        {
+            path.relative_to(poi_dir).as_posix()
+            for path in poi_dir.rglob("*.poi.txt")
+            if path.is_file()
+        }
+        if poi_dir.is_dir()
+        else set()
+    )
+    require_exact_inventory("Apache POI", expected_poi, actual_poi)
+
+    expected_lo = {f"{path.stem}.txt" for path in documents}
+    lo_dir = corpus / "sample-lo"
+    actual_lo = (
+        {
+            path.relative_to(lo_dir).as_posix()
+            for path in lo_dir.rglob("*.txt")
+            if path.is_file()
+        }
+        if lo_dir.is_dir()
+        else set()
+    )
+    require_exact_inventory("LibreOffice", expected_lo, actual_lo)
+
+    return [
+        LegacyBenchmarkInput(
+            name=relative.stem,
+            document=corpus / Path(*relative.parts),
+            poi_golden=poi_dir / f"{relative.stem}.poi.txt",
+            libreoffice_golden=lo_dir / f"{relative.stem}.txt",
+        )
+        for relative in sorted(documents, key=str)
+    ]
+
+
+def resolve_extract_binary(
+    repo: Path,
+    explicit: Path | None,
+    *,
+    environ: dict[str, str] | None = None,
+    platform_name: str | None = None,
+) -> Path:
+    environ = os.environ if environ is None else environ
+    platform_name = os.name if platform_name is None else platform_name
+    if explicit is not None:
+        candidate = explicit if explicit.is_absolute() else repo / explicit
+        if not candidate.is_file():
+            raise ValueError(f"extract binary does not exist: {candidate}")
+        return candidate
+
+    target_dir = Path(environ.get("CARGO_TARGET_DIR", "target"))
+    if not target_dir.is_absolute():
+        target_dir = repo / target_dir
+    base = target_dir / "release" / "examples" / "extract"
+    candidates = (
+        [base.with_suffix(".exe"), base]
+        if platform_name == "nt"
+        else [base, base.with_suffix(".exe")]
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise ValueError(
+        "extract binary does not exist under the active Cargo target directory; "
+        "build it with `cargo build --release --example extract --locked` or pass "
+        "--extract-bin"
+    )
 
 
 def is_finite_number(value: object) -> bool:
@@ -190,6 +336,27 @@ def benchmark_gate(summary: dict, thresholds: dict | None = None) -> dict | None
         ">=",
         thresholds.get("min_scored"),
     )
+    add_threshold_check(
+        checks,
+        "scored",
+        summary.get("scored"),
+        "<=",
+        thresholds.get("max_scored"),
+    )
+    add_threshold_check(
+        checks,
+        "lo_scored",
+        summary.get("lo_scored"),
+        ">=",
+        thresholds.get("min_lo_scored"),
+    )
+    add_threshold_check(
+        checks,
+        "lo_scored",
+        summary.get("lo_scored"),
+        "<=",
+        thresholds.get("max_lo_scored"),
+    )
     if not checks:
         return None
     return {"passed": all(check["passed"] for check in checks), "checks": checks}
@@ -268,8 +435,18 @@ def write_json_report(report: dict, output: Path | None) -> None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    # Keep --help ASCII-only so it is printable on Windows consoles using
+    # legacy code pages such as cp949. The module docstring remains the detailed
+    # design/reference documentation.
+    ap = argparse.ArgumentParser(
+        description="Compare rwml legacy DOC extraction with Apache POI and LibreOffice."
+    )
     ap.add_argument("--corpus", type=Path, default=None)
+    ap.add_argument(
+        "--extract-bin",
+        type=Path,
+        help="exact release-mode rwml extract example to execute",
+    )
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--version", help="release version string to include in JSON output")
@@ -280,6 +457,9 @@ def main() -> int:
     ap.add_argument("--min-lo-recall-mean", type=float)
     ap.add_argument("--max-errors", type=int)
     ap.add_argument("--min-scored", type=int)
+    ap.add_argument("--max-scored", type=int)
+    ap.add_argument("--min-lo-scored", type=int)
+    ap.add_argument("--max-lo-scored", type=int)
     args = ap.parse_args()
     if args.corpus is None:
         env_corpus = os.environ.get("RWML_BENCH_CORPUS")
@@ -288,50 +468,41 @@ def main() -> int:
         args.corpus = Path(env_corpus)
 
     repo = Path(__file__).resolve().parent.parent
-    extract_bin = repo / "target" / "release" / "examples" / "extract.exe"
-    if not extract_bin.exists():
-        extract_bin = repo / "target" / "release" / "examples" / "extract"
-    if not extract_bin.exists():
-        sys.exit("build first: cargo build --release --example extract")
-
-    poi_dir = args.corpus / "sample-poi"
-    lo_dir = args.corpus / "sample-lo"
-    src_dirs = [args.corpus / "sample", args.corpus / "govdocs" / "files"]
-
-    golden = sorted(poi_dir.glob("*.poi.txt"))
+    try:
+        extract_bin = resolve_extract_binary(repo, args.extract_bin)
+        inputs = legacy_benchmark_inputs(args.corpus)
+    except (OSError, ValueError) as error:
+        print(f"bench_vs_mature: {error}", file=sys.stderr)
+        return 2
     if args.limit:
-        golden = golden[: args.limit]
+        inputs = inputs[: args.limit]
 
     rows = []
-    for g in golden:
-        base = g.name[: -len(".poi.txt")]
-        doc = next((d / f"{base}.doc" for d in src_dirs if (d / f"{base}.doc").exists()), None)
-        if doc is None:
-            continue
-        got = rwml_text(extract_bin, doc)
+    for benchmark_input in inputs:
+        got = rwml_text(extract_bin, benchmark_input.document)
         if got is None:
-            rows.append({"file": base, "rwml": "ERROR"})
+            rows.append({"file": benchmark_input.name, "rwml": "ERROR"})
             continue
         gt = toks(got)
-        poi = g.read_text(encoding="utf-8", errors="replace")
+        poi = benchmark_input.poi_golden.read_text(encoding="utf-8", errors="replace")
         rp, pp, fp = prf(toks(poi), gt)
         row = {
-            "file": base,
+            "file": benchmark_input.name,
             "poi_recall": round(rp, 4),
             "poi_prec": round(pp, 4),
             "poi_f1": round(fp, 4),
         }
-        lo_file = lo_dir / f"{base}.txt"
-        if lo_file.exists():
-            lo = lo_file.read_text(encoding="utf-8", errors="replace")
-            rl, pl, fl = prf(toks(lo), gt)
-            row.update(
-                {
-                    "lo_recall": round(rl, 4),
-                    "lo_prec": round(pl, 4),
-                    "lo_f1": round(fl, 4),
-                }
-            )
+        lo = benchmark_input.libreoffice_golden.read_text(
+            encoding="utf-8", errors="replace"
+        )
+        rl, pl, fl = prf(toks(lo), gt)
+        row.update(
+            {
+                "lo_recall": round(rl, 4),
+                "lo_prec": round(pl, 4),
+                "lo_f1": round(fl, 4),
+            }
+        )
         rows.append(row)
 
     thresholds = {
@@ -340,6 +511,9 @@ def main() -> int:
         "min_lo_recall_mean": args.min_lo_recall_mean,
         "max_errors": args.max_errors,
         "min_scored": args.min_scored,
+        "max_scored": args.max_scored,
+        "min_lo_scored": args.min_lo_scored,
+        "max_lo_scored": args.max_lo_scored,
     }
     report = benchmark_report(
         rows,

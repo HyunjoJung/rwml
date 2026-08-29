@@ -11,7 +11,9 @@ use std::collections::HashMap;
 use quick_xml::events::{BytesDecl, BytesStart, Event};
 use quick_xml::Reader;
 
-use super::xml_text::{skip_alternate_content_branch, skip_subtree, AlternateContentBranchState};
+use super::xml_text::{
+    resolve_reference, skip_alternate_content_branch, skip_subtree, AlternateContentBranchState,
+};
 use super::{
     attr_local, attr_local_trimmed, attr_u16, attr_u8, local, parse_rgb_hex_color, toggle_on,
 };
@@ -887,7 +889,7 @@ fn well_formed_xml(xml: &str) -> bool {
                 }
             }
             Ok(Event::Text(e)) => {
-                let Ok(value) = e.unescape() else {
+                let Ok(value) = e.decode() else {
                     return false;
                 };
                 if !valid_xml_chars(&value) {
@@ -900,6 +902,14 @@ fn well_formed_xml(xml: &str) -> bool {
                     if !root_seen {
                         prolog_content_seen = true;
                     }
+                }
+            }
+            Ok(Event::GeneralRef(reference)) => {
+                let Some(value) = resolve_reference(&reference) else {
+                    return false;
+                };
+                if depth == 0 || !valid_xml_chars(&value) {
+                    return false;
                 }
             }
             Ok(Event::CData(e)) => {
@@ -945,7 +955,7 @@ fn valid_xml_attributes(e: &BytesStart<'_>) -> bool {
             return false;
         };
         attribute
-            .unescape_value()
+            .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, e.decoder())
             .ok()
             .is_some_and(|value| valid_xml_chars(&value))
     })

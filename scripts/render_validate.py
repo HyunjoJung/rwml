@@ -1530,7 +1530,12 @@ def hash_similarity(ref: Path, got: Path, size: int = 16) -> float:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    # Keep --help ASCII-only so it remains printable on Windows consoles using
+    # legacy code pages such as cp949. The module docstring remains the detailed
+    # design/reference documentation.
+    ap = argparse.ArgumentParser(
+        description="Validate rwml PDF output against LibreOffice reference renders."
+    )
     ap.add_argument("inputs", nargs="*", type=Path)
     ap.add_argument(
         "--manifest",

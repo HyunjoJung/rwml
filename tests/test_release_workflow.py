@@ -36,12 +36,15 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('"-m", "venv"', text)
         self.assertIn('PYMUPDF_REQUIREMENT = "PyMuPDF==1.28.2"', text)
         self.assertIn('PILLOW_REQUIREMENT = "Pillow==12.3.0"', text)
+        self.assertIn('PYTHON_DOCX_REQUIREMENT = "python-docx==1.2.0"', text)
         self.assertIn("JSONDecoder", text)
         for command in [
             "public_hygiene_audit.py",
             "gen_public_corpus.py",
+            'CARGO, "audit"',
             "render_validate.py",
             "bench_vs_mature.py",
+            "validate_edit_check.py",
             "release_manifest.py",
             "cargo package",
         ]:
@@ -71,7 +74,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("cargo test --doc --all-features", text)
         self.assertIn("cargo doc --no-deps --all-features", text)
         self.assertIn(
-            "python3 -m unittest discover -s tests -p 'test_*.py'", text
+            '"$RUNNER_TEMP/rwml-release-tools/bin/python" -m unittest '
+            "discover -s tests -p 'test_*.py'",
+            text,
         )
         self.assertIn("scripts/release_manifest.py", text)
         self.assertIn("--git-rev \"$GITHUB_SHA\"", text)
@@ -147,6 +152,99 @@ class ReleaseWorkflowTests(unittest.TestCase):
             step.index('exit "$render_status"'),
         )
 
+    def test_release_installs_pinned_python_tools_before_tests_and_reuses_them(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        install = step_body(text, "Install pinned Python validation tools")
+        verify = step_body(text, "Verify the crate builds, tests, and packages")
+        evidence = step_body(text, "Generate strict revision-bound evidence")
+
+        self.assertIn("PyMuPDF==1.28.2 Pillow==12.3.0 python-docx==1.2.0", install)
+        self.assertIn('assert docx.__version__ == "1.2.0"', install)
+        self.assertIn('assert pymupdf.__version__ == "1.28.2"', install)
+        self.assertIn('assert PIL.__version__ == "12.3.0"', install)
+        self.assertIn("rwml-release-tools/bin/python", verify)
+        self.assertIn("rwml-release-tools/bin/python", evidence)
+        self.assertNotIn("pip install", verify)
+        self.assertNotIn("pip install", evidence)
+        self.assertIn(
+            "cargo run --locked --example validate_edit --features docx", verify
+        )
+        self.assertIn("scripts/validate_edit_check.py", verify)
+        self.assertLess(
+            text.index("- name: Install pinned Python validation tools"),
+            text.index("- name: Verify the crate builds, tests, and packages"),
+        )
+
+    def test_release_and_preflight_run_pinned_rustsec_audit(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        preflight = (
+            WORKFLOW.parents[2] / "scripts" / "release_preflight.py"
+        ).read_text(encoding="utf-8")
+        contributing = (
+            WORKFLOW.parents[2] / "CONTRIBUTING.md"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "cargo install cargo-audit --version 0.22.1 --locked", text
+        )
+        self.assertIn("run: cargo audit", text)
+        self.assertIn('run([CARGO, "audit"])', preflight)
+        self.assertIn(
+            "cargo install cargo-audit --version 0.22.1 --locked", contributing
+        )
+        self.assertIn("\ncargo audit\n", contributing)
+
+    def test_contributing_release_reproduction_uses_ignored_preflight_contract(self):
+        contributing = (
+            WORKFLOW.parents[2] / "CONTRIBUTING.md"
+        ).read_text(encoding="utf-8")
+        release_section = contributing[
+            contributing.index("## Release validation") : contributing.index(
+                "## Tests and fixtures"
+            )
+        ]
+
+        self.assertIn(
+            "python3 scripts/release_preflight.py --output-dir target/release-preflight",
+            release_section,
+        )
+        self.assertNotIn("dist/", release_section)
+        self.assertIn("python-docx==1.2.0", release_section)
+        self.assertIn("all 21 package-preserving edit outputs", release_section)
+        self.assertIn("exact three Apache", release_section)
+
+    def test_release_identity_requires_tag_revision_to_be_on_origin_main(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        identity = step_body(text, "Verify release identity")
+
+        self.assertIn("git fetch origin main:refs/remotes/origin/main", identity)
+        self.assertIn(
+            'git merge-base --is-ancestor "$GITHUB_SHA" origin/main', identity
+        )
+        self.assertIn("is not on protected origin/main", identity)
+
+    def test_release_legacy_benchmark_requires_all_three_poi_and_lo_oracles(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        evidence = step_body(text, "Generate strict revision-bound evidence")
+        preflight = (
+            WORKFLOW.parents[2] / "scripts" / "release_preflight.py"
+        ).read_text(encoding="utf-8")
+
+        for token in [
+            "--extract-bin",
+            "--min-lo-recall-mean",
+            "--min-scored",
+            "--max-scored",
+            "--min-lo-scored",
+            "--max-lo-scored",
+        ]:
+            self.assertIn(token, evidence)
+            self.assertIn(f'"{token}"', preflight)
+        self.assertIn(
+            "--min-scored 3 --max-scored 3 --min-lo-scored 3 --max-lo-scored 3",
+            evidence,
+        )
+
     def test_generated_release_evidence_stays_outside_the_package_source(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         gitignore = (WORKFLOW.parents[2] / ".gitignore").read_text(encoding="utf-8")
@@ -157,6 +255,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
     def test_release_evidence_survives_packaging_and_is_validated_before_use(self):
         text = WORKFLOW.read_text(encoding="utf-8")
+        install = step_body(text, "Install pinned Python validation tools")
         evidence = step_body(text, "Generate strict revision-bound evidence")
         manifest = step_body(text, "Generate release manifest")
         upload = step_body(text, "Upload release manifest artifacts")
@@ -165,7 +264,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(
             'evidence_dir="$RUNNER_TEMP/rwml-release-evidence"', evidence
         )
-        self.assertIn("PyMuPDF==1.28.2 Pillow==12.3.0", evidence)
+        self.assertIn("PyMuPDF==1.28.2 Pillow==12.3.0 python-docx==1.2.0", install)
         self.assertNotIn("target/release-evidence", evidence)
         self.assertIn(
             'python3 -m json.tool "$evidence_dir/render-validation.json"',

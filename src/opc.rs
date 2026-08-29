@@ -47,6 +47,9 @@ const CONTENT_TYPES: &str = "[Content_Types].xml";
 
 /// Largest accepted decompressed size for a single part (zip-bomb guard).
 const MAX_PART: u64 = 64 << 20;
+/// Namespace bindings accepted on one OPC metadata element. This mirrors quick-xml's
+/// conservative default explicitly so the untrusted-input memory bound cannot drift.
+const MAX_NAMESPACE_DECLARATIONS_PER_ELEMENT: usize = 256;
 
 // Test-lowerable copy of the per-part budget for the WRITE-side checks (to_zip /
 // add_image_png), so oversize handling is testable without a 64 MiB fixture. `from_zip`
@@ -1179,7 +1182,7 @@ fn attrs_of(e: &quick_xml::events::BytesStart<'_>) -> Result<Vec<(Vec<u8>, Strin
         // Propagate (not swallow) a bad entity reference / non-UTF-8 value: malformed
         // metadata must fail cleanly, never parse to a lossy partial graph.
         let v = a
-            .unescape_value()
+            .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, e.decoder())
             .map_err(|err| Error::Docx(format!("opc attr value: {err}")))?
             .into_owned();
         if v.chars().any(|c| !is_xml_legal_char(c)) {
@@ -1528,6 +1531,8 @@ fn validate_opc_root(
 fn parse_content_types(xml: &[u8]) -> Result<ContentTypes> {
     let mut r = NsReader::from_reader(xml);
     r.config_mut().check_end_names = true; // reject mismatched end tags
+    r.resolver_mut()
+        .set_max_declarations_per_element(MAX_NAMESPACE_DECLARATIONS_PER_ELEMENT);
     let mut ct = ContentTypes::default();
     let mut buf = Vec::new();
     let mut depth: i32 = 0;
@@ -1626,6 +1631,11 @@ fn parse_content_types(xml: &[u8]) -> Result<ContentTypes> {
                 saw_decl = true;
             }
             Ok((_, Event::CData(_))) => {
+                return Err(Error::Docx(
+                    "[Content_Types].xml: character data outside metadata records".into(),
+                ));
+            }
+            Ok((_, Event::GeneralRef(_))) => {
                 return Err(Error::Docx(
                     "[Content_Types].xml: character data outside metadata records".into(),
                 ));
@@ -1843,6 +1853,8 @@ fn rel_record(e: &quick_xml::events::BytesStart<'_>, out: &mut Vec<Rel>) -> Resu
 fn parse_rels(xml: &[u8]) -> Result<Vec<Rel>> {
     let mut r = NsReader::from_reader(xml);
     r.config_mut().check_end_names = true;
+    r.resolver_mut()
+        .set_max_declarations_per_element(MAX_NAMESPACE_DECLARATIONS_PER_ELEMENT);
     let mut out = Vec::new();
     let mut buf = Vec::new();
     let mut depth: i32 = 0;
@@ -1933,6 +1945,11 @@ fn parse_rels(xml: &[u8]) -> Result<Vec<Rel>> {
                     ".rels: character data outside relationship records".into(),
                 ));
             }
+            Ok((_, Event::GeneralRef(_))) => {
+                return Err(Error::Docx(
+                    ".rels: character data outside relationship records".into(),
+                ));
+            }
             Ok((_, Event::DocType(_))) => {
                 return Err(Error::Docx(".rels: doctype is not allowed".into()));
             }
@@ -1966,6 +1983,36 @@ fn parse_rels(xml: &[u8]) -> Result<Vec<Rel>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn namespace_declaration_flood_is_bounded() {
+        fn flooded_root(name: &str, namespace: &str) -> String {
+            let mut xml = format!(r#"<{name} xmlns="{namespace}""#);
+            for index in 0..MAX_NAMESPACE_DECLARATIONS_PER_ELEMENT {
+                xml.push_str(&format!(r#" xmlns:n{index}="urn:n{index}""#));
+            }
+            xml.push_str("/>");
+            xml
+        }
+
+        let content_types = flooded_root("Types", CT_NS);
+        let content_types_error = parse_content_types(content_types.as_bytes())
+            .expect_err("namespace declaration flood must be rejected")
+            .to_string();
+        assert!(
+            content_types_error.contains("namespace bindings"),
+            "unexpected content-types error: {content_types_error}"
+        );
+
+        let relationships = flooded_root("Relationships", REL_NS);
+        let relationships_error = parse_rels(relationships.as_bytes())
+            .expect_err("namespace declaration flood must be rejected")
+            .to_string();
+        assert!(
+            relationships_error.contains("namespace bindings"),
+            "unexpected relationships error: {relationships_error}"
+        );
+    }
 
     /// A `.rels` / `[Content_Types].xml` packing more records than the cap
     /// is rejected rather than amplified into the heap. (Cap lowered for the test;

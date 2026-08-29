@@ -29,7 +29,7 @@ thiserror = "2.0"
 # dependency-light legacy-.doc-only build (`default-features = false`). Mirrors
 # the sibling `rxls` crate's .xlsx feature setup.
 zip = { version = "2.2", default-features = false, features = ["deflate"], optional = true }
-quick-xml = { version = "0.36", optional = true }
+quick-xml = { version = "0.41", optional = true }
 flate2 = { version = "1.0", optional = true }
 # Native typesetting renderer (DocModel → PDF): parley for layout/shaping/CJK
 # line-breaking, krilla for PDF emit with subsetted fonts + selectable text.

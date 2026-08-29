@@ -13,7 +13,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       # Keep rustdoc JSON compatible with the pinned cargo-semver-checks.
@@ -28,6 +28,17 @@ jobs:
         run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
       - name: Install semantic-version compatibility checker
         run: cargo install cargo-semver-checks --version 0.48.0 --locked
+      - name: Install RustSec vulnerability scanner
+        run: cargo install cargo-audit --version 0.22.1 --locked
+      - name: Audit Rust dependencies
+        run: cargo audit
+      - name: Install pinned Python validation tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rwml-release-tools"
+          "$RUNNER_TEMP/rwml-release-tools/bin/pip" install --disable-pip-version-check --no-cache-dir \
+            PyMuPDF==1.28.2 Pillow==12.3.0 python-docx==1.2.0
+          "$RUNNER_TEMP/rwml-release-tools/bin/python" -c \
+            'import docx, pymupdf, PIL; assert docx.__version__ == "1.2.0"; assert pymupdf.__version__ == "1.28.2"; assert PIL.__version__ == "12.3.0"'
 
       - name: Verify release identity
         run: |
@@ -38,6 +49,11 @@ jobs:
           tag_commit=$(git rev-list -n 1 "$GITHUB_REF_NAME")
           if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
             echo "tag $GITHUB_REF_NAME does not point at workflow revision $GITHUB_SHA" >&2
+            exit 1
+          fi
+          git fetch origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "tag revision $GITHUB_SHA is not on protected origin/main" >&2
             exit 1
           fi
           if [[ -n "$(git status --porcelain)" ]]; then
@@ -55,8 +71,12 @@ jobs:
       - name: Verify the crate builds, tests, and packages
         run: |
           python3 scripts/public_hygiene_audit.py
-          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
+          PYTHONDONTWRITEBYTECODE=1 "$RUNNER_TEMP/rwml-release-tools/bin/python" -m unittest discover -s tests -p 'test_*.py'
           python3 scripts/gen_public_corpus.py --check
+          cargo run --locked --example validate_edit --features docx -- \
+            corpus/public "$RUNNER_TEMP/rwml-edit-validation"
+          "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/validate_edit_check.py \
+            corpus/public "$RUNNER_TEMP/rwml-edit-validation"
           cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --default-features
           cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --all-features
           cargo fmt --all -- --check
@@ -80,8 +100,6 @@ jobs:
 
       - name: Generate strict revision-bound evidence
         run: |
-          python3 -m venv "$RUNNER_TEMP/rwml-release-tools"
-          "$RUNNER_TEMP/rwml-release-tools/bin/pip" install --disable-pip-version-check --no-cache-dir PyMuPDF==1.28.2 Pillow==12.3.0
           evidence_dir="$RUNNER_TEMP/rwml-release-evidence"
           mkdir -p "$evidence_dir"
           set +e
@@ -98,9 +116,12 @@ jobs:
           python3 -m json.tool "$evidence_dir/render-validation.json" > /dev/null
           cargo build --release --example extract --locked
           "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/bench_vs_mature.py \
-            --corpus corpus/public/benchmark --json \
+            --corpus corpus/public/benchmark \
+            --extract-bin target/release/examples/extract --json \
             --version "$RWML_VERSION" --git-rev "$GITHUB_SHA" \
-            --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 --min-scored 1 \
+            --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 \
+            --min-lo-recall-mean 0.95 --max-errors 0 \
+            --min-scored 3 --max-scored 3 --min-lo-scored 3 --max-lo-scored 3 \
             --output "$evidence_dir/extract-benchmark.json"
           python3 -m json.tool "$evidence_dir/extract-benchmark.json" > /dev/null
 

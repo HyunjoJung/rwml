@@ -123,6 +123,10 @@ class PublicCorpusGeneratorTests(unittest.TestCase):
                 first = gen_public_corpus.CORPUS[name]()
                 self.assertEqual(first, gen_public_corpus.CORPUS[name]())
                 with zipfile.ZipFile(io.BytesIO(first)) as archive:
+                    self.assertTrue(archive.infolist())
+                    self.assertTrue(
+                        all(info.create_system == 3 for info in archive.infolist())
+                    )
                     document_xml = archive.read("word/document.xml").decode("utf-8")
                     if name == "pagination-keep.docx":
                         styles_xml = archive.read("word/styles.xml").decode("utf-8")

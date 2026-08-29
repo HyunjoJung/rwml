@@ -1,5 +1,7 @@
 import importlib.util
+import os
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -14,6 +16,62 @@ SPEC.loader.exec_module(bench_vs_mature)
 
 
 class BenchVsMatureReportTests(unittest.TestCase):
+    def test_cli_help_is_ascii_safe_under_cp949(self):
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "cp949"
+
+        completed = subprocess.run(
+            [sys.executable, str(SCRIPT), "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        completed.stdout.encode("ascii")
+
+    def test_explicit_windows_extract_binary_is_revision_bound(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            repo = root / "repo"
+            binary = (
+                root
+                / "preflight"
+                / "cargo-target"
+                / "release"
+                / "examples"
+                / "extract.exe"
+            )
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"exact binary")
+
+            resolved = bench_vs_mature.resolve_extract_binary(repo, binary)
+
+            self.assertEqual(resolved, binary)
+
+    def test_extract_binary_follows_cargo_target_dir_on_windows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = pathlib.Path(tmp)
+            binary = (
+                repo
+                / "custom-target"
+                / "release"
+                / "examples"
+                / "extract.exe"
+            )
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"target binary")
+
+            resolved = bench_vs_mature.resolve_extract_binary(
+                repo,
+                None,
+                environ={"CARGO_TARGET_DIR": "custom-target"},
+                platform_name="nt",
+            )
+
+            self.assertEqual(resolved, binary)
+
     def test_clean_golden_removes_bom_and_logging_noise(self):
         text = (
             "\ufeffFirst token\n"
@@ -62,6 +120,7 @@ class BenchVsMatureReportTests(unittest.TestCase):
         self.assertEqual(report["summary"]["poi_recall_mean"], 0.75)
         self.assertEqual(report["summary"]["poi_recall_median"], 0.75)
         self.assertEqual(report["summary"]["poi_f1_mean"], 0.7778)
+        self.assertEqual(report["summary"]["lo_scored"], 1)
         self.assertEqual(report["summary"]["lo_recall_mean"], 0.75)
         self.assertEqual(report["rows"], rows)
         self.assertNotIn("corpus", report)
@@ -179,23 +238,32 @@ class BenchVsMatureReportTests(unittest.TestCase):
                 "min_lo_recall_mean": 0.7,
                 "max_errors": 0,
                 "min_scored": 3,
+                "max_scored": 3,
+                "min_lo_scored": 2,
+                "max_lo_scored": 2,
             },
         )
 
         self.assertFalse(report["gate"]["passed"])
-        checks = {check["metric"]: check for check in report["gate"]["checks"]}
-        self.assertEqual(checks["poi_recall_mean"]["actual"], 0.75)
-        self.assertEqual(checks["poi_recall_mean"]["op"], ">=")
-        self.assertEqual(checks["poi_recall_mean"]["threshold"], 0.8)
-        self.assertFalse(checks["poi_recall_mean"]["passed"])
-        self.assertEqual(checks["poi_f1_mean"]["actual"], 0.7778)
-        self.assertFalse(checks["poi_f1_mean"]["passed"])
-        self.assertEqual(checks["lo_recall_mean"]["actual"], 0.75)
-        self.assertTrue(checks["lo_recall_mean"]["passed"])
-        self.assertEqual(checks["errors"]["actual"], 1)
-        self.assertFalse(checks["errors"]["passed"])
-        self.assertEqual(checks["scored"]["actual"], 2)
-        self.assertFalse(checks["scored"]["passed"])
+        checks = {
+            (check["metric"], check["op"]): check
+            for check in report["gate"]["checks"]
+        }
+        self.assertEqual(checks[("poi_recall_mean", ">=")]["actual"], 0.75)
+        self.assertEqual(checks[("poi_recall_mean", ">=")]["threshold"], 0.8)
+        self.assertFalse(checks[("poi_recall_mean", ">=")]["passed"])
+        self.assertEqual(checks[("poi_f1_mean", ">=")]["actual"], 0.7778)
+        self.assertFalse(checks[("poi_f1_mean", ">=")]["passed"])
+        self.assertEqual(checks[("lo_recall_mean", ">=")]["actual"], 0.75)
+        self.assertTrue(checks[("lo_recall_mean", ">=")]["passed"])
+        self.assertEqual(checks[("errors", "<=")]["actual"], 1)
+        self.assertFalse(checks[("errors", "<=")]["passed"])
+        self.assertEqual(checks[("scored", ">=")]["actual"], 2)
+        self.assertFalse(checks[("scored", ">=")]["passed"])
+        self.assertTrue(checks[("scored", "<=")]["passed"])
+        self.assertEqual(checks[("lo_scored", ">=")]["actual"], 1)
+        self.assertFalse(checks[("lo_scored", ">=")]["passed"])
+        self.assertTrue(checks[("lo_scored", "<=")]["passed"])
 
     def test_benchmark_gate_rejects_non_finite_thresholds(self):
         with self.assertRaisesRegex(ValueError, "non-finite threshold"):
@@ -222,6 +290,25 @@ class BenchVsMatureReportTests(unittest.TestCase):
                 {"min_poi_f1_mean": 1.1},
             )
 
+    def test_exact_three_oracle_gate_rejects_corpus_growth_without_policy_update(self):
+        gate = bench_vs_mature.benchmark_gate(
+            {"scored": 4, "lo_scored": 4},
+            {
+                "min_scored": 3,
+                "max_scored": 3,
+                "min_lo_scored": 3,
+                "max_lo_scored": 3,
+            },
+        )
+
+        self.assertFalse(gate["passed"])
+        failed = {
+            (check["metric"], check["op"])
+            for check in gate["checks"]
+            if not check["passed"]
+        }
+        self.assertEqual(failed, {("scored", "<="), ("lo_scored", "<=")})
+
     def test_write_json_report_rejects_non_finite_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = pathlib.Path(tmp) / "benchmark.json"
@@ -233,6 +320,79 @@ class BenchVsMatureReportTests(unittest.TestCase):
                 )
 
             self.assertFalse(output.exists())
+
+    @staticmethod
+    def write_legacy_corpus(root, names=("alpha", "beta", "gamma")):
+        for directory in ("sample", "sample-poi", "sample-lo"):
+            (root / directory).mkdir(parents=True, exist_ok=True)
+        rows = ["# path\tparagraphs\ttables\tfigures\ttext_chars\twarnings"]
+        for name in names:
+            (root / "sample" / f"{name}.doc").write_bytes(b"doc")
+            (root / "sample-poi" / f"{name}.poi.txt").write_text(
+                name, encoding="utf-8"
+            )
+            (root / "sample-lo" / f"{name}.txt").write_text(
+                name, encoding="utf-8"
+            )
+            rows.append(f"sample/{name}.doc\t1\t0\t0\t{len(name)}\tPackageReadOnly")
+        (root / "LEGACY_MANIFEST.tsv").write_text(
+            "\n".join(rows) + "\n", encoding="utf-8"
+        )
+
+    def test_public_legacy_manifest_resolves_exactly_three_complete_inputs(self):
+        corpus = (
+            pathlib.Path(__file__).resolve().parents[1]
+            / "corpus"
+            / "public"
+            / "benchmark"
+        )
+
+        inputs = bench_vs_mature.legacy_benchmark_inputs(corpus)
+
+        self.assertEqual(len(inputs), 3)
+        self.assertEqual(
+            {item.name for item in inputs},
+            {"floating_text_bearing", "floating_wrap_policy", "nested_tables"},
+        )
+
+    def test_legacy_manifest_accepts_complete_exact_inventory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = pathlib.Path(tmp)
+            self.write_legacy_corpus(corpus)
+
+            inputs = bench_vs_mature.legacy_benchmark_inputs(corpus)
+
+            self.assertEqual([item.name for item in inputs], ["alpha", "beta", "gamma"])
+
+    def test_legacy_manifest_rejects_missing_source_poi_or_libreoffice_input(self):
+        cases = [
+            ("DOC", pathlib.Path("sample/alpha.doc")),
+            ("Apache POI", pathlib.Path("sample-poi/alpha.poi.txt")),
+            ("LibreOffice", pathlib.Path("sample-lo/alpha.txt")),
+        ]
+        for label, relative in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                corpus = pathlib.Path(tmp)
+                self.write_legacy_corpus(corpus)
+                (corpus / relative).unlink()
+
+                with self.assertRaisesRegex(ValueError, f"{label} inventory mismatch"):
+                    bench_vs_mature.legacy_benchmark_inputs(corpus)
+
+    def test_legacy_manifest_rejects_unexpected_source_or_golden(self):
+        cases = [
+            ("DOC", pathlib.Path("sample/extra.doc")),
+            ("Apache POI", pathlib.Path("sample-poi/extra.poi.txt")),
+            ("LibreOffice", pathlib.Path("sample-lo/extra.txt")),
+        ]
+        for label, relative in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as tmp:
+                corpus = pathlib.Path(tmp)
+                self.write_legacy_corpus(corpus)
+                (corpus / relative).write_bytes(b"extra")
+
+                with self.assertRaisesRegex(ValueError, f"{label} inventory mismatch"):
+                    bench_vs_mature.legacy_benchmark_inputs(corpus)
 
 
 if __name__ == "__main__":

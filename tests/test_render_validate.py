@@ -26,6 +26,7 @@ class RenderValidateReportTests(unittest.TestCase):
             )
             env = os.environ.copy()
             env["PYTHONPATH"] = str(modules)
+            env["PYTHONIOENCODING"] = "cp949"
 
             completed = subprocess.run(
                 [sys.executable, str(SCRIPT), "--help"],
