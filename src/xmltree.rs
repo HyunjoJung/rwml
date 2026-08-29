@@ -264,7 +264,7 @@ impl XmlTree {
                     match stack.last().copied() {
                         // Element content: store unescaped (re-escaped on write).
                         Some(parent) => {
-                            tree.push(Node::Text(unescape_bytes(&raw)?), Some(parent))?;
+                            tree.push_text(unescape_bytes(&raw)?, parent)?;
                         }
                         // Prolog/epilog text (e.g. the `\r\n` between the XML
                         // declaration and the root element) is whitespace where
@@ -273,6 +273,15 @@ impl XmlTree {
                             tree.push(Node::Raw(raw.into_owned()), None)?;
                         }
                     }
+                }
+                Event::GeneralRef(reference) => {
+                    let Some(parent) = stack.last().copied() else {
+                        return Err(Error::Docx(
+                            "xml character reference is not allowed outside the root element"
+                                .into(),
+                        ));
+                    };
+                    tree.push_text(resolve_reference(&reference)?, parent)?;
                 }
                 Event::CData(c) => {
                     let mut raw = b"<![CDATA[".to_vec();
@@ -440,6 +449,24 @@ impl XmlTree {
         Ok(id)
     }
 
+    /// Append character data to the previous text node when quick-xml split it at a
+    /// `GeneralRef`. This preserves the pre-0.41 tree shape while retaining fallible
+    /// allocation for hostile inputs.
+    fn push_text(&mut self, text: Vec<u8>, parent: NodeId) -> Result<()> {
+        let previous = self.nodes[parent.0 as usize].children.last().copied();
+        if let Some(previous) = previous {
+            if let Node::Text(existing) = &mut self.nodes[previous.0 as usize].node {
+                existing
+                    .try_reserve(text.len())
+                    .map_err(|_| Error::Docx("xml: out of memory growing text node".into()))?;
+                existing.extend_from_slice(&text);
+                return Ok(());
+            }
+        }
+        self.push(Node::Text(text), Some(parent))?;
+        Ok(())
+    }
+
     fn parent_child_index(&self, target: NodeId) -> Option<(NodeId, usize)> {
         fn rec(t: &XmlTree, parent: NodeId, target: NodeId) -> Option<(NodeId, usize)> {
             for (index, &child) in t.nodes[parent.0 as usize].children.iter().enumerate() {
@@ -507,7 +534,7 @@ fn element_node(e: &quick_xml::events::BytesStart<'_>, self_closing: bool) -> Re
         // survives, then re-serialization canonicalizes it to `&amp;` — silently
         // rewriting malformed XML the edit never targeted.
         let val = a
-            .unescape_value()
+            .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, e.decoder())
             .map_err(|err| Error::Docx(format!("xml attr value: {err}")))?
             .into_owned()
             .into_bytes();
@@ -528,6 +555,23 @@ fn unescape_bytes(raw: &[u8]) -> Result<Vec<u8>> {
     let c =
         quick_xml::escape::unescape(s).map_err(|e| Error::Docx(format!("xml text entity: {e}")))?;
     Ok(c.into_owned().into_bytes())
+}
+
+/// Resolve a quick-xml 0.41 `GeneralRef` event with the same predefined-only
+/// policy used by the old text unescape API. External/custom entities stay errors.
+fn resolve_reference(reference: &quick_xml::events::BytesRef<'_>) -> Result<Vec<u8>> {
+    if let Some(character) = reference
+        .resolve_char_ref()
+        .map_err(|e| Error::Docx(format!("xml text entity: {e}")))?
+    {
+        return Ok(character.to_string().into_bytes());
+    }
+    let name = reference
+        .decode()
+        .map_err(|e| Error::Docx(format!("xml text entity: {e}")))?;
+    quick_xml::escape::resolve_predefined_entity(&name)
+        .map(|value| value.as_bytes().to_vec())
+        .ok_or_else(|| Error::Docx(format!("xml text entity: unknown entity '&{name};'")))
 }
 
 /// XML 1.0 character validity. Edited strings can contain Unicode scalar values
@@ -3700,6 +3744,17 @@ mod tests {
     }
 
     #[test]
+    fn attribute_whitespace_normalization_matches_xml_1_0() {
+        // Literal XML attribute whitespace normalizes to spaces, while whitespace
+        // introduced through character references remains the referenced character.
+        // The serializer re-escapes the latter so another parse has identical meaning.
+        let xml = b"<w:p literal=\"a\tb\r\nc\nd\" refs=\"a&#9;b&#10;c&#13;d\"/>";
+        let out = s(&XmlTree::parse(xml).unwrap());
+        assert_eq!(out, r#"<w:p literal="a b c d" refs="a&#9;b&#10;c&#13;d"/>"#);
+        assert_eq!(s(&XmlTree::parse(out.as_bytes()).unwrap()), out);
+    }
+
+    #[test]
     fn serialize_is_idempotent() {
         let xml = br#"<a><b x="1"><c/>txt</b><!-- note --><d>x &amp; y</d></a>"#;
         let once = XmlTree::parse(xml).unwrap().serialize();
@@ -3855,6 +3910,28 @@ mod tests {
         assert!(r.is_err());
         // Under the cap parses fine.
         assert!(XmlTree::parse(br#"<w:p a0="" a1=""/>"#).is_ok());
+    }
+
+    #[test]
+    fn large_unique_attribute_flood_parses_within_budget() {
+        use std::fmt::Write as _;
+
+        // RUSTSEC-2026-0194's pathological shape: many unique attributes on one
+        // element. Keep the advisory-sized input as a functional regression; the
+        // patched dependency itself is enforced by Cargo.lock and `cargo audit`.
+        const ATTRIBUTE_COUNT: usize = 80_000;
+        let mut xml = String::with_capacity(ATTRIBUTE_COUNT * 12);
+        xml.push_str("<w:p");
+        for index in 0..ATTRIBUTE_COUNT {
+            write!(xml, " a{index}=\"\"").unwrap();
+        }
+        xml.push_str("/>");
+
+        set_test_max_attrs(ATTRIBUTE_COUNT);
+        let result = XmlTree::parse(xml.as_bytes());
+        set_test_max_attrs(MAX_ATTRS_PER_ELEMENT);
+
+        assert!(result.is_ok(), "in-budget attribute flood was rejected");
     }
 
     #[test]

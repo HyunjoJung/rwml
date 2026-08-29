@@ -24,8 +24,38 @@ class CiWorkflowTests(unittest.TestCase):
         text = WORKFLOW.read_text(encoding="utf-8")
 
         self.assertIn(
-            "python3 -m unittest discover -s tests -p 'test_*.py'", text
+            '"$RUNNER_TEMP/rwml-python-tools/bin/python" -m unittest '
+            "discover -s tests -p 'test_*.py'",
+            text,
         )
+
+    def test_ci_installs_pinned_python_tools_before_tests_and_edit_validation(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        install = "- name: Install pinned Python validation tools"
+        tests = "- name: Python release and evidence tooling tests"
+        edits = "- name: Package-preserving edit interoperability"
+
+        self.assertIn("PyMuPDF==1.28.2 Pillow==12.3.0 python-docx==1.2.0", text)
+        self.assertIn('assert docx.__version__ == "1.2.0"', text)
+        self.assertIn('assert pymupdf.__version__ == "1.28.2"', text)
+        self.assertIn('assert PIL.__version__ == "12.3.0"', text)
+        self.assertLess(text.index(install), text.index(tests))
+        self.assertLess(text.index(tests), text.index(edits))
+        self.assertIn(
+            "cargo run --locked --example validate_edit --features docx", text
+        )
+        self.assertIn("scripts/validate_edit_check.py", text)
+
+    def test_windows_python_tests_use_the_same_pinned_tool_environment(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        windows = text[text.index("  windows-portability:\n") : text.index("\n  wasm:\n")]
+
+        self.assertIn("PyMuPDF==1.28.2 Pillow==12.3.0 python-docx==1.2.0", windows)
+        self.assertLess(
+            windows.index("- name: Install pinned Python validation tools"),
+            windows.index("- name: Python release and evidence tooling tests"),
+        )
+        self.assertIn("python -m unittest discover -s tests", windows)
 
     def test_ci_workflow_runs_bundled_font_gate(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -90,6 +120,39 @@ class CiWorkflowTests(unittest.TestCase):
             "--release-type patch --all-features",
             text,
         )
+
+    def test_ci_workflow_runs_pinned_rustsec_audit(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        check_job = text[
+            text.index("  check:\n") : text.index("\n  windows-portability:\n")
+        ]
+
+        self.assertIn(
+            "cargo install cargo-audit --version 0.22.1 --locked", check_job
+        )
+        self.assertIn("run: cargo audit", check_job)
+
+    def test_ci_workflow_runs_windows_portability_gate(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        windows_job = text[
+            text.index("  windows-portability:\n") : text.index("\n  wasm:\n")
+        ]
+
+        for expected in [
+            "runs-on: windows-latest",
+            "actions/checkout@v7",
+            "dtolnay/rust-toolchain@1.92.0",
+            "actions/setup-python@v7",
+            'python-version: "3.13"',
+            "PyMuPDF==1.28.2 Pillow==12.3.0 python-docx==1.2.0",
+            'assert docx.__version__ == "1.2.0"',
+            'assert pymupdf.__version__ == "1.28.2"',
+            'assert PIL.__version__ == "12.3.0"',
+            "python scripts/gen_public_corpus.py --check",
+            "PYTHONDONTWRITEBYTECODE: \"1\"",
+            "python -m unittest discover -s tests -p 'test_*.py'",
+        ]:
+            self.assertIn(expected, windows_job)
 
 
 if __name__ == "__main__":

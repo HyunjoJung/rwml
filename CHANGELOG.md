@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The `rwml` CLI now automatically registers the deterministic OFL font subsets
+  when built with `bundled-fonts`, so `rwml to-pdf` uses the bundled Korean,
+  Arabic, and Hebrew coverage without a separate library call.
+- Public edit and legacy-oracle release validation now use authoritative
+  recursive manifests and fail closed on empty, missing, or partial evidence.
+- `quick-xml` is upgraded to `0.41.0`, including bounded namespace handling and
+  regression coverage for the reachable attribute and namespace denial-of-service
+  advisories.
+- Public contribution guidance now uses a right-sized issue/PR workflow, with
+  optional BMad planning kept external and all review decisions recorded in the
+  public repository.
+
 ## [0.1.3] - 2026-08-24
 
 ### Added
@@ -1053,7 +1067,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   error bodies only when a response body exists. Validation metrics, thresholds,
   publication behavior, and release policy are unchanged.
 
-## [0.1.2] - 2026-08-02
+## 0.1.2 - 2026-08-02 (unpublished)
+
+This version was prepared but never tagged or published; its changes shipped in
+`0.1.3`.
 
 ### Added
 
@@ -1788,8 +1805,7 @@ with no JVM, no Apache POI, no other `.docx` crate, and no subprocess.
   element-tree only.
 
 [Unreleased]: https://github.com/HyunjoJung/rwml/compare/v0.1.3...HEAD
-[0.1.3]: https://github.com/HyunjoJung/rwml/compare/v0.1.2...v0.1.3
-[0.1.2]: https://github.com/HyunjoJung/rwml/compare/v0.1.1...v0.1.2
+[0.1.3]: https://github.com/HyunjoJung/rwml/compare/v0.1.1...v0.1.3
 [0.1.1]: https://github.com/HyunjoJung/rwml/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/HyunjoJung/rwml/releases/tag/v0.1.0
 [MS-DOC]: https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/

@@ -1,25 +1,63 @@
 ---
 name: Feature request
-about: A format feature, record type, or capability you'd like supported
+about: A public read, write, edit, render, CLI, WASM, or compatibility capability
 title: ''
 labels: enhancement
 assignees: ''
 ---
 
-## What's missing
+## Before filing
 
-The capability you need (e.g. table-structure extraction, Word 6/95 support,
-field-value rendering, encrypted-doc decryption).
+This issue is public. **Do not attach confidential, private, or proprietary
+documents, personal data, credentials, or files you cannot redistribute.** Use
+a synthetic reproducer or clearly licensed public fixture. Report possible
+security vulnerabilities through
+[GitHub private vulnerability reporting](https://github.com/HyunjoJung/rwml/security/advisories/new),
+not this template.
+
+Search open and closed issues before proposing a new capability.
+
+## What
+
+<!-- Describe the requested public behavior or capability. -->
+
+## Affected path
+
+- [ ] Read or export legacy `.doc`
+- [ ] Read or export `.docx`
+- [ ] Write a fresh `.docx`
+- [ ] Edit or preserve an existing `.docx` package
+- [ ] Render a native PDF preview
+- [ ] CLI
+- [ ] WASM or browser example
+- [ ] Other public API
 
 ## Why
 
-The use case, and ideally a sample `.doc` that exercises it.
+<!-- Explain the use case and why existing APIs or diagnostics are insufficient. -->
+
+## Success signal
+
+<!-- State the observable result or acceptance criteria that would complete this request. -->
+
+## Compatibility boundary and non-goals
+
+<!--
+Identify formats, producers, document views, preservation requirements, rendering
+fidelity, or intentionally unsupported cases. Avoid promising Word-exact layout.
+-->
+
+## Public reproducer or evidence
+
+<!--
+Describe the minimal structure involved, or link a synthetic/clearly licensed
+fixture. Never upload a private source document.
+-->
 
 ## References
 
-Relevant [MS-DOC]/[MS-CFB] sections, or how another implementation (Apache POI,
-antiword, LibreOffice ww8) handles it.
+<!-- Cite relevant MS-DOC, MS-CFB, or ECMA-376 sections and public implementations. -->
 
 ## Alternatives
 
-Any workaround you're using today.
+<!-- Describe workarounds or narrower approaches considered. -->

@@ -22,8 +22,10 @@ CARGO = os.environ.get("CARGO", "cargo")
 PYTHON = os.environ.get("PYTHON", sys.executable)
 PYMUPDF_REQUIREMENT = "PyMuPDF==1.28.2"
 PILLOW_REQUIREMENT = "Pillow==12.3.0"
-RENDER_TOOL_CHECK = (
-    "import pymupdf, PIL; "
+PYTHON_DOCX_REQUIREMENT = "python-docx==1.2.0"
+PYTHON_TOOL_CHECK = (
+    "import docx, pymupdf, PIL; "
+    'assert docx.__version__ == "1.2.0"; '
     'assert pymupdf.__version__ == "1.28.2"; '
     'assert PIL.__version__ == "12.3.0"'
 )
@@ -147,6 +149,19 @@ def relative(path: pathlib.Path) -> str:
         return path.as_posix()
 
 
+def cargo_target_directory() -> pathlib.Path:
+    target_dir = pathlib.Path(COMMAND_ENV["CARGO_TARGET_DIR"])
+    return target_dir if target_dir.is_absolute() else ROOT / target_dir
+
+
+def cargo_example_binary(
+    target_dir: pathlib.Path, name: str, *, platform_name: str | None = None
+) -> pathlib.Path:
+    platform_name = os.name if platform_name is None else platform_name
+    filename = f"{name}.exe" if platform_name == "nt" else name
+    return target_dir / "release" / "examples" / filename
+
+
 def run_python(script: str, *arguments: str) -> list[str]:
     return [PYTHON, f"scripts/{script}", *arguments]
 
@@ -155,13 +170,22 @@ def run_python_with(interpreter: str, script: str, *arguments: str) -> list[str]
     return [interpreter, f"scripts/{script}", *arguments]
 
 
-def ensure_render_tools(output_dir: pathlib.Path) -> str:
-    venv_dir = output_dir / "render-tools"
-    interpreter = venv_dir / "bin" / "python"
+def venv_interpreter(
+    venv_dir: pathlib.Path, *, platform_name: str | None = None
+) -> pathlib.Path:
+    platform_name = os.name if platform_name is None else platform_name
+    if platform_name == "nt":
+        return venv_dir / "Scripts" / "python.exe"
+    return venv_dir / "bin" / "python"
+
+
+def ensure_validation_tools(output_dir: pathlib.Path) -> str:
+    venv_dir = output_dir / "python-tools"
+    interpreter = venv_interpreter(venv_dir)
     if not interpreter.is_file():
         run([PYTHON, "-m", "venv", relative(venv_dir)])
     try:
-        run([str(interpreter), "-c", RENDER_TOOL_CHECK])
+        run([str(interpreter), "-c", PYTHON_TOOL_CHECK])
     except subprocess.CalledProcessError:
         run(
             [
@@ -173,9 +197,10 @@ def ensure_render_tools(output_dir: pathlib.Path) -> str:
                 "--no-cache-dir",
                 PYMUPDF_REQUIREMENT,
                 PILLOW_REQUIREMENT,
+                PYTHON_DOCX_REQUIREMENT,
             ]
         )
-        run([str(interpreter), "-c", RENDER_TOOL_CHECK])
+        run([str(interpreter), "-c", PYTHON_TOOL_CHECK])
     return str(interpreter)
 
 
@@ -187,6 +212,7 @@ def build_preflight(output_dir: pathlib.Path) -> dict[str, object]:
 
     run(run_python("public_hygiene_audit.py"))
     run(run_python("gen_public_corpus.py", "--check"))
+    run([CARGO, "audit"])
     run(
         [
             CARGO,
@@ -219,11 +245,46 @@ def build_preflight(output_dir: pathlib.Path) -> dict[str, object]:
     render_report = output_dir / "render-validation.json"
     benchmark_report = output_dir / "extract-benchmark.json"
     manifest = output_dir / "rwml-release-manifest.json"
-    render_python = ensure_render_tools(output_dir)
+    validation_python = ensure_validation_tools(output_dir)
+    run(
+        [
+            validation_python,
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-p",
+            "test_*.py",
+        ]
+    )
+    edit_output = output_dir / "edit-validation"
+    run(
+        [
+            CARGO,
+            "run",
+            "--locked",
+            "--example",
+            "validate_edit",
+            "--features",
+            "docx",
+            "--",
+            "corpus/public",
+            relative(edit_output),
+        ]
+    )
+    run(
+        run_python_with(
+            validation_python,
+            "validate_edit_check.py",
+            "corpus/public",
+            relative(edit_output),
+        )
+    )
     run_to_file(run_python("public_hygiene_audit.py", "--json"), hygiene_report)
     run_json_to_file(
         run_python_with(
-            render_python,
+            validation_python,
             "render_validate.py",
             "--json",
             "--soffice",
@@ -240,15 +301,19 @@ def build_preflight(output_dir: pathlib.Path) -> dict[str, object]:
         ),
         render_report,
     )
+    target_dir = cargo_target_directory()
+    extract_binary = cargo_example_binary(target_dir, "extract")
     run(
         [CARGO, "build", "--release", "--example", "extract", "--locked"]
     )
     run(
         run_python_with(
-            render_python,
+            validation_python,
             "bench_vs_mature.py",
             "--corpus",
             "corpus/public/benchmark",
+            "--extract-bin",
+            relative(extract_binary),
             "--json",
             "--version",
             version,
@@ -258,18 +323,23 @@ def build_preflight(output_dir: pathlib.Path) -> dict[str, object]:
             "0.95",
             "--min-poi-f1-mean",
             "0.95",
+            "--min-lo-recall-mean",
+            "0.95",
             "--max-errors",
             "0",
             "--min-scored",
-            "1",
+            "3",
+            "--max-scored",
+            "3",
+            "--min-lo-scored",
+            "3",
+            "--max-lo-scored",
+            "3",
             "--output",
             relative(benchmark_report),
         )
     )
 
-    target_dir = pathlib.Path(COMMAND_ENV["CARGO_TARGET_DIR"])
-    if not target_dir.is_absolute():
-        target_dir = ROOT / target_dir
     font_artifact = target_dir / "package" / f"rwml-fonts-{version}.crate"
     main_artifact = target_dir / "package" / f"rwml-{version}.crate"
     run(

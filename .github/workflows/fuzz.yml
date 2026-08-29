@@ -13,7 +13,7 @@ jobs:
   fuzz:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
       - name: Install system libraries (fontconfig for the render target)
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config

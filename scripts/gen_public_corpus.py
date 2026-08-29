@@ -55,6 +55,10 @@ def _zip(parts: list[tuple[str, bytes]]) -> bytes:
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
         for name, data in parts:
             zi = zipfile.ZipInfo(name)  # fixed default date (1980-01-01), no per-run drift
+            # ZipInfo otherwise records the host platform (0 on Windows, 3 on
+            # Unix) in the central directory, making byte-for-byte regeneration
+            # fail even though every package part is identical.
+            zi.create_system = 3
             zi.compress_type = zipfile.ZIP_STORED
             z.writestr(zi, data)
     return buf.getvalue()
@@ -685,6 +689,14 @@ CORPUS = {
 }
 
 
+def _display_path(path: str) -> str:
+    """Return a diagnostic path even when cwd and path are on different drives."""
+    try:
+        return os.path.relpath(path)
+    except ValueError:
+        return os.path.abspath(path)
+
+
 def main() -> int:
     check = "--check" in sys.argv
     status = 0
@@ -698,18 +710,18 @@ def main() -> int:
                 with open(path, "rb") as f:
                     current = f.read()
             except FileNotFoundError:
-                print(f"missing {os.path.relpath(path)}", file=sys.stderr)
+                print(f"missing {_display_path(path)}", file=sys.stderr)
                 status = 1
                 continue
             if current != data:
-                print(f"stale {os.path.relpath(path)}", file=sys.stderr)
+                print(f"stale {_display_path(path)}", file=sys.stderr)
                 status = 1
             else:
-                print(f"checked {os.path.relpath(path)} ({len(data)} bytes)")
+                print(f"checked {_display_path(path)} ({len(data)} bytes)")
         else:
             with open(path, "wb") as f:
                 f.write(data)
-            print(f"wrote {os.path.relpath(path)} ({len(data)} bytes)")
+            print(f"wrote {_display_path(path)} ({len(data)} bytes)")
 
     if check and os.path.isdir(OUT_DIR):
         unexpected = sorted(
@@ -719,7 +731,7 @@ def main() -> int:
         )
         for name in unexpected:
             print(
-                f"unexpected {os.path.relpath(os.path.join(OUT_DIR, name))}",
+                f"unexpected {_display_path(os.path.join(OUT_DIR, name))}",
                 file=sys.stderr,
             )
             status = 1

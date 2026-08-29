@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
+use super::xml_text::resolve_reference;
 use super::{attr_local_trimmed, local};
 use crate::model::{Chart, ChartKind, ChartSeries, ChartShape};
 
@@ -33,7 +34,7 @@ pub(crate) fn parse(xml: &str) -> Option<Chart> {
                 }?;
             }
             Ok(Event::Decl(_) | Event::Comment(_) | Event::PI(_)) => {}
-            Ok(Event::Text(text)) if text.unescape().ok()?.trim().is_empty() => {}
+            Ok(Event::Text(text)) if text.decode().ok()?.trim().is_empty() => {}
             Ok(Event::Eof) | Err(_) => return None,
             _ => return None,
         }
@@ -42,7 +43,7 @@ pub(crate) fn parse(xml: &str) -> Option<Chart> {
         match reader.read_event() {
             Ok(Event::Eof) => return Some(chart),
             Ok(Event::Comment(_) | Event::PI(_)) => {}
-            Ok(Event::Text(text)) if text.unescape().ok()?.trim().is_empty() => {}
+            Ok(Event::Text(text)) if text.decode().ok()?.trim().is_empty() => {}
             Err(_) => return None,
             _ => return None,
         }
@@ -53,7 +54,7 @@ fn has_exact_attr(element: &BytesStart<'_>, key: &[u8], value: &str) -> bool {
     element.attributes().flatten().any(|attribute| {
         attribute.key.as_ref() == key
             && attribute
-                .unescape_value()
+                .decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, element.decoder())
                 .ok()
                 .is_some_and(|actual| actual == value)
     })
@@ -181,8 +182,11 @@ fn parse_core(reader: &mut Reader<&[u8]>) -> Option<Chart> {
                 path.pop();
             }
             Ok(Event::Text(text)) => {
-                let value = text.unescape().ok()?.into_owned();
+                let value = text.decode().ok()?.into_owned();
                 state.text(&path, &value)?;
+            }
+            Ok(Event::GeneralRef(reference)) => {
+                state.text(&path, &resolve_reference(&reference)?)?;
             }
             Ok(Event::End(end)) => {
                 let name = local(end.name().as_ref()).to_vec();
@@ -577,8 +581,11 @@ fn parse_extended(reader: &mut Reader<&[u8]>) -> Option<Chart> {
                 path.pop();
             }
             Ok(Event::Text(text)) => {
-                let value = text.unescape().ok()?.into_owned();
+                let value = text.decode().ok()?.into_owned();
                 state.text(&path, &value)?;
+            }
+            Ok(Event::GeneralRef(reference)) => {
+                state.text(&path, &resolve_reference(&reference)?)?;
             }
             Ok(Event::End(end)) => {
                 let name = local(end.name().as_ref()).to_vec();

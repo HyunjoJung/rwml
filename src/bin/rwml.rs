@@ -159,13 +159,22 @@ fn write_file(path: &str, bytes: &[u8]) -> rwml::Result<()> {
 #[cfg(feature = "render")]
 fn render_pdf(input: &str, output: &str, report_json: Option<&str>) -> rwml::Result<()> {
     let doc = read_file(input).and_then(|bytes| rwml::Document::open(&bytes))?;
+    #[cfg(feature = "bundled-fonts")]
+    let fonts = vec![
+        rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+        rwml_fonts::noto_sans_arabic_subset().to_vec(),
+        rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+    ];
+    #[cfg(not(feature = "bundled-fonts"))]
+    let fonts: Vec<Vec<u8>> = Vec::new();
+
     if let Some(report_path) = report_json {
-        let rendered = doc.try_to_pdf_with_report()?;
+        let rendered = doc.try_to_pdf_with_fonts_and_report(&fonts)?;
         write_file(output, &rendered.pdf)?;
         let json = rendered.report.to_json();
         write_file(report_path, json.as_bytes())?;
     } else {
-        let pdf = doc.try_to_pdf()?;
+        let pdf = doc.try_to_pdf_with_fonts(&fonts)?;
         write_file(output, &pdf)?;
     }
     Ok(())

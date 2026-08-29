@@ -5215,7 +5215,9 @@ pub(crate) fn local(name: &[u8]) -> &[u8] {
 pub(crate) fn attr_local(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
     e.attributes().flatten().find_map(|a| {
         if local(a.key.as_ref()) == key {
-            a.unescape_value().ok().map(|v| v.into_owned())
+            a.decoded_and_normalized_value(quick_xml::XmlVersion::Implicit1_0, e.decoder())
+                .ok()
+                .map(|v| v.into_owned())
         } else {
             None
         }
