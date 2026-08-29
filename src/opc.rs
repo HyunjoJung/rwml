@@ -50,6 +50,10 @@ const MAX_PART: u64 = 64 << 20;
 /// Namespace bindings accepted on one OPC metadata element. This mirrors quick-xml's
 /// conservative default explicitly so the untrusted-input memory bound cannot drift.
 const MAX_NAMESPACE_DECLARATIONS_PER_ELEMENT: usize = 256;
+/// Maximum number of simultaneously open elements in an OPC metadata XML part.
+/// Keep this explicit while using quick-xml 0.41, whose reader does not enforce a
+/// nesting limit, so hostile metadata cannot grow its namespace stack without bound.
+const MAX_OPC_XML_DEPTH: usize = 128;
 
 // Test-lowerable copy of the per-part budget for the WRITE-side checks (to_zip /
 // add_image_png), so oversize handling is testable without a 64 MiB fixture. `from_zip`
@@ -1552,6 +1556,11 @@ fn parse_content_types(xml: &[u8]) -> Result<ContentTypes> {
         }
         match r.read_resolved_event_into(&mut buf) {
             Ok((ns, Event::Start(e))) => {
+                if depth >= MAX_OPC_XML_DEPTH as i32 {
+                    return Err(Error::Docx(format!(
+                        "[Content_Types].xml: XML nesting exceeds {MAX_OPC_XML_DEPTH} elements"
+                    )));
+                }
                 if open_record_depth.is_some_and(|d| depth >= d) {
                     return Err(Error::Docx(
                         "[Content_Types].xml: Default/Override must be empty".into(),
@@ -1873,6 +1882,11 @@ fn parse_rels(xml: &[u8]) -> Result<Vec<Rel>> {
         }
         match r.read_resolved_event_into(&mut buf) {
             Ok((ns, Event::Start(e))) => {
+                if depth >= MAX_OPC_XML_DEPTH as i32 {
+                    return Err(Error::Docx(format!(
+                        ".rels: XML nesting exceeds {MAX_OPC_XML_DEPTH} elements"
+                    )));
+                }
                 if open_record_depth.is_some_and(|d| depth >= d) {
                     return Err(Error::Docx(".rels: Relationship must be empty".into()));
                 }
@@ -1984,6 +1998,23 @@ fn parse_rels(xml: &[u8]) -> Result<Vec<Rel>> {
 mod tests {
     use super::*;
 
+    fn nested_metadata(root: &str, namespace: &str, depth: usize) -> String {
+        assert!(depth > 0);
+        let mut xml = format!(r#"<{root} xmlns="{namespace}">"#);
+        for level in 1..depth {
+            if level == 1 {
+                xml.push_str(r#"<x:n xmlns:x="urn:rwml:test">"#);
+            } else {
+                xml.push_str("<x:n>");
+            }
+        }
+        for _ in 1..depth {
+            xml.push_str("</x:n>");
+        }
+        xml.push_str(&format!("</{root}>"));
+        xml
+    }
+
     #[test]
     fn namespace_declaration_flood_is_bounded() {
         fn flooded_root(name: &str, namespace: &str) -> String {
@@ -2011,6 +2042,71 @@ mod tests {
         assert!(
             relationships_error.contains("namespace bindings"),
             "unexpected relationships error: {relationships_error}"
+        );
+    }
+
+    #[test]
+    fn opc_xml_depth_cap_accepts_exact_limit_and_rejects_next_level() {
+        let content_types_at_cap = nested_metadata("Types", CT_NS, MAX_OPC_XML_DEPTH);
+        let content_types_at_cap_result = parse_content_types(content_types_at_cap.as_bytes());
+        assert!(
+            content_types_at_cap_result.is_ok(),
+            "[Content_Types].xml at the exact depth cap must parse: {content_types_at_cap_result:?}"
+        );
+        let content_types_over_cap = nested_metadata("Types", CT_NS, MAX_OPC_XML_DEPTH + 1);
+        let content_types_error = parse_content_types(content_types_over_cap.as_bytes())
+            .expect_err("[Content_Types].xml over the depth cap must be rejected")
+            .to_string();
+        assert!(
+            content_types_error.contains("XML nesting exceeds 128 elements"),
+            "unexpected content-types depth error: {content_types_error}"
+        );
+
+        let relationships_at_cap = nested_metadata("Relationships", REL_NS, MAX_OPC_XML_DEPTH);
+        let relationships_at_cap_result = parse_rels(relationships_at_cap.as_bytes());
+        assert!(
+            relationships_at_cap_result.is_ok(),
+            ".rels at the exact depth cap must parse: {relationships_at_cap_result:?}"
+        );
+        let relationships_over_cap =
+            nested_metadata("Relationships", REL_NS, MAX_OPC_XML_DEPTH + 1);
+        let relationships_error = parse_rels(relationships_over_cap.as_bytes())
+            .expect_err(".rels over the depth cap must be rejected")
+            .to_string();
+        assert!(
+            relationships_error.contains("XML nesting exceeds 128 elements"),
+            "unexpected relationships depth error: {relationships_error}"
+        );
+    }
+
+    #[test]
+    fn over_depth_metadata_is_read_only_and_no_op_preserved() {
+        let content_types = nested_metadata("Types", CT_NS, MAX_OPC_XML_DEPTH + 1);
+        let relationships = nested_metadata("Relationships", REL_NS, MAX_OPC_XML_DEPTH + 1);
+        let zip = build_zip(&[
+            (CONTENT_TYPES, content_types.as_bytes()),
+            ("_rels/.rels", relationships.as_bytes()),
+        ]);
+
+        let package = Package::from_zip(&zip)
+            .expect("over-depth metadata must remain readable for raw passthrough");
+        assert!(
+            package.is_meta_lossy(),
+            "over-depth metadata must make the package read-only"
+        );
+        let saved = package
+            .to_zip()
+            .expect("a no-op save must preserve over-depth metadata");
+        let saved_parts = part_set(&saved);
+        assert_eq!(
+            saved_parts.get(CONTENT_TYPES).map(Vec::as_slice),
+            Some(content_types.as_bytes()),
+            "no-op save changed raw [Content_Types].xml bytes"
+        );
+        assert_eq!(
+            saved_parts.get("_rels/.rels").map(Vec::as_slice),
+            Some(relationships.as_bytes()),
+            "no-op save changed raw .rels bytes"
         );
     }
 
