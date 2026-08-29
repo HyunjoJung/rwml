@@ -13,8 +13,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   formats, and field-level number-format overrides. `LayoutPages` continues to
   report physical page indexes for deterministic layout diagnostics.
 - Strict single-raster WMF/EMF extraction now decodes canonical 16-bit
-  `BI_RGB` DIB payloads as RGB555, including the unused high storage bit.
-  Scaled, composited, alpha-blended, and general vector metafiles remain outside
+  `BI_RGB` DIB payloads as RGB555, including the unused high storage bit, and
+  profile-free sRGB/Windows-color-space V4/V5 DIB headers across the existing
+  palette, `BI_RGB`, and `BI_BITFIELDS` subset. Calibrated/profiled color,
+  alpha masks, scaling, composition, and general vector metafiles remain outside
   this bounded raster subset.
 - Floating shapes in opened DOCX files now anchor to emitted model block indexes
   after a source paragraph expands into a paragraph plus section break. This

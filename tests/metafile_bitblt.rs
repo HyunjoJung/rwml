@@ -30,6 +30,23 @@ fn rgb32_dib() -> Vec<u8> {
     dib
 }
 
+fn extended_rgb32_dib(header_size: usize) -> Vec<u8> {
+    assert!(matches!(header_size, 108 | 124));
+    let mut dib = vec![0u8; header_size + 8];
+    put_u32le(&mut dib, 0, header_size as u32);
+    put_i32le(&mut dib, 4, 2);
+    put_i32le(&mut dib, 8, -1);
+    put_u16le(&mut dib, 12, 1);
+    put_u16le(&mut dib, 14, 32);
+    put_u32le(&mut dib, 20, 8);
+    put_u32le(&mut dib, 56, 0x7352_4742); // LCS_sRGB
+    if header_size == 124 {
+        put_u32le(&mut dib, 108, 4); // LCS_GM_IMAGES
+    }
+    dib[header_size..].copy_from_slice(&[0x33, 0x22, 0x11, 0x00, 0x66, 0x55, 0x44, 0x00]);
+    dib
+}
+
 fn append_emf_eof(bytes: &mut Vec<u8>, record_count: u32) {
     let start = bytes.len();
     bytes.resize(start + 20, 0);
@@ -42,12 +59,17 @@ fn append_emf_eof(bytes: &mut Vec<u8>, record_count: u32) {
 }
 
 fn emf_source_blt(record_type: u32, raster_operation: u32) -> Vec<u8> {
+    emf_source_blt_with_dib(record_type, raster_operation, &rgb32_dib())
+}
+
+fn emf_source_blt_with_dib(record_type: u32, raster_operation: u32, dib: &[u8]) -> Vec<u8> {
     let fixed_size = match record_type {
         76 => 100,
         77 => 108,
         _ => panic!("unsupported test record"),
     };
-    let dib = rgb32_dib();
+    let bmi_len = u32::from_le_bytes(dib[..4].try_into().unwrap()) as usize;
+    let bits_len = dib.len() - bmi_len;
     let mut bytes = vec![0u8; 88];
     put_u32le(&mut bytes, 0, 1);
     put_u32le(&mut bytes, 4, 88);
@@ -67,14 +89,14 @@ fn emf_source_blt(record_type: u32, raster_operation: u32) -> Vec<u8> {
     put_u32le(&mut bytes, start + 52, 1.0f32.to_bits());
     put_u32le(&mut bytes, start + 64, 1.0f32.to_bits());
     put_u32le(&mut bytes, start + 84, fixed_size as u32);
-    put_u32le(&mut bytes, start + 88, 40);
-    put_u32le(&mut bytes, start + 92, (fixed_size + 40) as u32);
-    put_u32le(&mut bytes, start + 96, 8);
+    put_u32le(&mut bytes, start + 88, bmi_len as u32);
+    put_u32le(&mut bytes, start + 92, (fixed_size + bmi_len) as u32);
+    put_u32le(&mut bytes, start + 96, bits_len as u32);
     if record_type == 77 {
         put_i32le(&mut bytes, start + 100, 2);
         put_i32le(&mut bytes, start + 104, 1);
     }
-    bytes[start + fixed_size..start + record_size].copy_from_slice(&dib);
+    bytes[start + fixed_size..start + record_size].copy_from_slice(dib);
     append_emf_eof(&mut bytes, 3);
     bytes
 }
@@ -92,12 +114,15 @@ fn finalize_wmf(bytes: &mut [u8], max_record_words: usize) {
 }
 
 fn wmf_source_dib_blt(function: u16, raster_operation: u32) -> Vec<u8> {
+    wmf_source_dib_blt_with_dib(function, raster_operation, &rgb32_dib())
+}
+
+fn wmf_source_dib_blt_with_dib(function: u16, raster_operation: u32, dib: &[u8]) -> Vec<u8> {
     let fixed_size = match function {
         0x0940 => 22,
         0x0B41 => 26,
         _ => panic!("unsupported test function"),
     };
-    let dib = rgb32_dib();
     let mut bytes = vec![0u8; 40];
     put_u32le(&mut bytes, 0, 0x9AC6_CDD7);
     put_u16le(&mut bytes, 10, 2);
@@ -123,7 +148,7 @@ fn wmf_source_dib_blt(function: u16, raster_operation: u32) -> Vec<u8> {
         }
         _ => unreachable!(),
     }
-    bytes[start + fixed_size..start + record_size].copy_from_slice(&dib);
+    bytes[start + fixed_size..start + record_size].copy_from_slice(dib);
     let eof = bytes.len();
     bytes.resize(eof + 6, 0);
     put_u32le(&mut bytes, eof, 3);
@@ -217,6 +242,35 @@ fn source_bearing_bitblt_metafiles_extract_through_document_and_report_apis() {
         );
         assert_eq!(report.features.metafiles[0].width_px, Some(2), "{name}");
         assert_eq!(report.features.metafiles[0].height_px, Some(1), "{name}");
+        assert!(report.warnings.is_empty(), "{name}: {:?}", report.warnings);
+    }
+}
+
+#[test]
+fn extended_dib_headers_extract_through_document_and_report_apis() {
+    for (name, bytes) in [
+        (
+            "bitblt-v5.emf",
+            emf_source_blt_with_dib(76, SRCCOPY, &extended_rgb32_dib(124)),
+        ),
+        (
+            "dibbitblt-v4.wmf",
+            wmf_source_dib_blt_with_dib(0x0940, SRCCOPY, &extended_rgb32_dib(108)),
+        ),
+    ] {
+        let doc = Document::open(&metafile_docx(name, &bytes)).expect("synthetic DOCX opens");
+        let images = doc.images();
+        assert_eq!(images.len(), 1, "{name}");
+        assert_eq!(images[0].width_px, Some(2), "{name}");
+        assert_eq!(images[0].height_px, Some(1), "{name}");
+        assert_eq!(
+            images[0].bytes.as_deref(),
+            Some([0x11, 0x22, 0x33, 0xFF, 0x44, 0x55, 0x66, 0xFF,].as_slice()),
+            "{name}"
+        );
+
+        let report = doc.report();
+        assert_eq!(report.features.unsupported_metafiles, 0, "{name}");
         assert!(report.warnings.is_empty(), "{name}: {:?}", report.warnings);
     }
 }
