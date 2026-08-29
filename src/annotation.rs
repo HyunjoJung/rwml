@@ -581,6 +581,49 @@ pub(crate) enum FieldTextFormat {
     FirstCap,
 }
 
+pub(crate) fn apply_field_text_format(text: String, format: Option<FieldTextFormat>) -> String {
+    match format {
+        Some(FieldTextFormat::Upper) => text.to_uppercase(),
+        Some(FieldTextFormat::Lower) => text.to_lowercase(),
+        Some(FieldTextFormat::Caps) => capitalize_words(&text),
+        Some(FieldTextFormat::FirstCap) => capitalize_first_word(&text),
+        None => text,
+    }
+}
+
+fn capitalize_first_word(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut changed = false;
+    for ch in text.chars() {
+        if !changed && ch.is_alphabetic() {
+            out.extend(ch.to_uppercase());
+            changed = true;
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn capitalize_words(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut at_word_start = true;
+    for ch in text.chars() {
+        if ch.is_alphabetic() {
+            if at_word_start {
+                out.extend(ch.to_uppercase());
+            } else {
+                out.push(ch);
+            }
+            at_word_start = false;
+        } else {
+            out.push(ch);
+            at_word_start = !ch.is_alphanumeric();
+        }
+    }
+    out
+}
+
 pub(crate) fn field_text_format_switch(part: &str) -> Option<FieldTextFormat> {
     if part.eq_ignore_ascii_case("Upper") {
         Some(FieldTextFormat::Upper)
