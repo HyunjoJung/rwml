@@ -111,12 +111,12 @@ class CiWorkflowTests(unittest.TestCase):
             "cargo install cargo-semver-checks --version 0.48.0 --locked", text
         )
         self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.1 "
+            "cargo semver-checks check-release --baseline-rev v0.1.3 "
             "--release-type patch --default-features",
             text,
         )
         self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.1 "
+            "cargo semver-checks check-release --baseline-rev v0.1.3 "
             "--release-type patch --all-features",
             text,
         )

@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-08-29
+
 ### Changed
 
 - The `rwml` CLI now automatically registers the deterministic OFL font subsets
@@ -17,15 +19,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   current render-stack floor.
 - Public edit and legacy-oracle release validation now use authoritative
   recursive manifests and fail closed on empty, missing, or partial evidence.
-- `quick-xml` is upgraded to `0.41.0`, including bounded namespace handling and
-  regression coverage for the reachable attribute and namespace denial-of-service
-  advisories.
-- OPC content-type and relationship parsing now rejects XML nesting deeper than
-  128 levels while retaining over-depth raw metadata for no-op saves, preventing
-  namespace-depth panic and quadratic-resolution paths on `quick-xml` 0.41.
 - Public contribution guidance now uses a right-sized issue/PR workflow, with
   optional BMad planning kept external and all review decisions recorded in the
   public repository.
+
+### Security
+
+- `quick-xml` is upgraded from 0.36.2 to 0.41.0 to address reachable CPU-
+  exhaustion (RUSTSEC-2026-0194) and namespace-allocation (RUSTSEC-2026-0195)
+  denial-of-service paths, with regression coverage.
+- OPC metadata XML is capped at 256 namespace declarations per element and 128
+  nested elements. Over-depth metadata remains read-only and byte-preserved on
+  no-op saves.
 
 ## [0.1.3] - 2026-08-24
 
@@ -1811,7 +1816,8 @@ with no JVM, no Apache POI, no other `.docx` crate, and no subprocess.
   preserve body-coordinated constructs, so package-preserving editing is
   element-tree only.
 
-[Unreleased]: https://github.com/HyunjoJung/rwml/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/HyunjoJung/rwml/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/HyunjoJung/rwml/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/HyunjoJung/rwml/compare/v0.1.1...v0.1.3
 [0.1.1]: https://github.com/HyunjoJung/rwml/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/HyunjoJung/rwml/releases/tag/v0.1.0
