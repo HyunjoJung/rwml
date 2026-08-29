@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The native PDF preview now lays nested tables out as bounded recursive grids,
+  preserving modeled column proportions, width and alignment, spans, borders,
+  shading, empty rows, and cell-local pagination instead of flattening nested
+  cells into one text stream. Over-tall content still splits at legal boundaries
+  to guarantee progress.
+
 ## [0.1.4] - 2026-08-29
 
 ### Changed
