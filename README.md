@@ -1,9 +1,10 @@
 # rwml
 
-**A native Rust toolkit for Microsoft Word documents.** `rwml` reads legacy
-`.doc` and modern `.docx` into one document model, writes styled `.docx`, edits
-existing `.docx` packages without rewriting untouched parts, and renders native
-preview PDFs.
+**One native Rust toolkit for legacy and modern Microsoft Word files.**
+
+Read `.doc` and `.docx` through one document model. Create styled `.docx`,
+modify existing DOCX packages while preserving untouched parts, export semantic
+text, and render native preview PDFs.
 
 [![Crates.io](https://img.shields.io/crates/v/rwml.svg)](https://crates.io/crates/rwml)
 [![Docs.rs](https://docs.rs/rwml/badge.svg)](https://docs.rs/rwml)
@@ -12,49 +13,58 @@ preview PDFs.
 ![MSRV](https://img.shields.io/badge/MSRV-1.85%20(render%201.92)-orange.svg)
 
 The core library requires no JVM, Apache POI, Microsoft Office automation, or
-subprocess. It is built for document pipelines that need to accept legacy
-codepages, Korean cp949 documents, and untrusted input through bounded parsers
-that return typed errors for malformed or unsupported files.
+subprocess. It handles legacy codepages, including Korean cp949, in-process and
+uses bounded parsers with typed errors for malformed or unsupported input.
 
 ```sh
 cargo add rwml@0.1.4
 ```
 
-## What it does
+## Why rwml
 
-| Input | Read | Create `.docx` | Edit in place | Export | Native PDF |
-|---|:---:|:---:|:---:|---|:---:|
-| `.doc` (Word 97–2003) | ✓ | ✓ conversion | — | text · Markdown · HTML | ✓ preview |
-| `.docx` | ✓ | ✓ styled | ✓ package-preserving | text · Markdown · HTML | ✓ preview |
-| `DocModel` built in Rust | — | ✓ | — | Markdown · HTML | ✓ preview |
+- **One model for both Word generations.** `Document::open` detects DOC or DOCX
+  from its bytes and exposes the same paragraphs, runs, tables, images, fields,
+  notes, metadata, diagnostics, and export surfaces.
+- **Preservation-aware DOCX editing.** Supported edits reserialize only touched
+  XML or media parts. A no-op open/save retains every package-part payload
+  byte-for-byte.
+- **Native Rust.** Legacy OLE2/FIB/piece-table parsing and OOXML/OPC parsing run
+  without Office, LibreOffice, Java, or a helper executable.
+- **Explicit fidelity.** Unsupported and layout-dependent content remains
+  cached or preserved with typed reasons and renderer warnings instead of being
+  silently presented as fully interpreted.
+- **Native preview output.** The optional renderer shapes selectable text,
+  embeds subsetted fonts, handles Korean/CJK and bounded RTL content, and emits
+  PDF without launching an external converter.
+- **Small core dependency set.** A legacy-DOC-only build uses `cfb`,
+  `encoding_rs`, and `thiserror`; DOCX and rendering are additive features.
 
-One model ties the paths together. [`Document::open`] detects the format from
-the bytes, and both readers produce the same [`DocModel`]. Exporters, the DOCX
-writer, diagnostics, and the PDF renderer consume that model.
+## Format support
 
-```text
- .doc  ┐                          ┌→ text · Markdown · HTML
- .docx ┼→ Document::open → DocModel ┼→ write_docx
- Rust  ┘                          ├→ package-preserving .docx edits
-                                 └→ native preview PDF
-```
+| Input | Read into `DocModel` | Write or convert | Preserve and edit | Export and preview |
+|---|:---:|---|:---:|---|
+| `.doc` (Word 97-2003) | Yes | Convert to `.docx` | No | text, Markdown, HTML, PDF preview |
+| `.docx` | Yes | Create styled `.docx` | Yes | text, Markdown, HTML, PDF preview |
+| `DocModel` built in Rust | Already modeled | Create styled `.docx` | Not applicable | Markdown, HTML, PDF preview |
 
-### At a glance
+### Common document surfaces
 
-| Release | Safety and toolchain | Public release evidence |
-|---|---|---|
-| `0.1.4` · MIT | no `unsafe` · core MSRV 1.85 · render MSRV 1.92 | 21 DOCX fixtures / 26 rendered pages · 3 generated DOC oracle fixtures · strict tag-bound manifest |
+The source format changes the parser, not the application-facing model:
 
-Version `0.1.4` is published on
-[crates.io](https://crates.io/crates/rwml/0.1.4) and
-[docs.rs](https://docs.rs/rwml/0.1.4/rwml/). Its exact crates, checksums,
-public-hygiene result, extraction benchmark, render validation, and release
-manifest are attached to the
-[`v0.1.4` release](https://github.com/HyunjoJung/rwml/releases/tag/v0.1.4).
+| Need | API |
+|---|---|
+| Searchable text | `extract_text`, `Document::text` |
+| Rich structure | `Document::model`, `DocModel`, `Block`, `Paragraph`, `Table` |
+| Semantic export | `Document::to_markdown`, `Document::to_html` |
+| Fields and images | `Document::fields`, `Document::images` |
+| Feature diagnostics | `Document::report`, `rwml diagnose` |
+| Fresh authoring | `DocBuilder`, `write_docx` |
+| Package-preserving edits | `Document` edit methods, `EditSession`, `save` |
+| Browser inspection | `rwml::wasm`, `examples/wasm-demo/` |
 
-## Start using rwml
+## Quick start
 
-**Read** either Word format with the same API:
+### Read DOC or DOCX
 
 ```rust
 let bytes = std::fs::read("report.docx")?;
@@ -65,17 +75,17 @@ println!("{}", doc.report().to_json());
 
 let model = doc.model();
 for block in &model.blocks {
-    // Paragraph, Table, Image, PageBreak, or SectionBreak
+    // Paragraph, Table, Image, Chart, PageBreak, or SectionBreak
 }
 ```
 
-For plain-text indexing, the shortest path is:
+For plain-text indexing, use the shorter path:
 
 ```rust
 let text = rwml::extract_text(&std::fs::read("legacy.doc")?)?;
 ```
 
-**Author** a fresh `.docx` from Rust data:
+### Create a styled DOCX
 
 ```rust
 let model = rwml::DocBuilder::new()
@@ -88,7 +98,7 @@ let model = rwml::DocBuilder::new()
 std::fs::write("report.docx", rwml::write_docx(&model))?;
 ```
 
-**Edit** an existing `.docx` while retaining untouched package parts:
+### Edit an existing DOCX
 
 ```rust
 let mut doc = rwml::Document::open(&std::fs::read("template.docx")?)?;
@@ -104,7 +114,7 @@ std::fs::write("final.docx", doc.save()?)?;
 println!("updated package parts: {touched:?}");
 ```
 
-**Inspect or convert** from the CLI:
+### CLI and PDF preview
 
 ```sh
 cargo install rwml --version =0.1.4 --locked
@@ -115,85 +125,60 @@ rwml diagnose file.docx
 rwml to-docx legacy.doc converted.docx
 ```
 
-PDF output is opt-in because it adds the shaping and PDF stack:
+PDF support is opt-in because it adds the shaping and PDF stack. The
+`bundled-fonts` feature includes deterministic OFL Noto subsets for Korean and
+hanja, Arabic, and Hebrew:
 
 ```sh
-cargo add rwml@0.1.4 --features render
-# or build the current checkout with deterministic bundled OFL font subsets;
-# this source version automatically registers them for `to-pdf`
-cargo install --path . --locked --features bundled-fonts
-
+cargo install rwml --version =0.1.4 --locked --features bundled-fonts
 rwml to-pdf file.docx preview.pdf --report-json render.json
 ```
 
-The renderer is a deterministic **preview/report renderer**, not a Word layout
+The renderer is a deterministic preview/report renderer, not a Word layout
 engine. See [Compatibility and limits](#compatibility-and-limits) before using
 it for pagination-sensitive output.
 
-## Choose a path
+## Preservation
 
-Start with the smallest surface that matches the job.
+Package-preserving editing is intentionally narrower than reading. An opened
+DOCX keeps its OPC package and live XML trees alongside the common model.
+Supported mutations update only the owning parts; unrelated fields, shapes,
+content controls, comments, tracked changes, themes, custom XML, and other
+unmodeled content remain in the package.
 
-| Goal | Start here | Cargo feature | Runnable example |
-|---|---|---|---|
-| Search or index Word files | `extract_text` | none for `.doc`; `docx` for `.docx` | `examples/extract.rs` |
-| Inspect rich structure | `Document::open`, `Document::model`, `Document::report` | default `docx` | `examples/roundtrip.rs` |
-| Author a new document | `DocBuilder`, `write_docx` | default `docx` | `examples/report.rs` |
-| Convert `.doc` to `.docx` | `Document::to_docx` | default `docx` | `examples/to_docx.rs` |
-| Preserve and edit an existing package | `Document::open`, edit methods, `save` | default `docx` | `examples/validate_edit.rs` |
-| Render a preview PDF | `try_to_pdf`, `render_pdf` | `render` | `examples/to_pdf.rs` |
-| Run a browser-side inspector | `rwml::wasm` | target-specific `wasm-bindgen` | `examples/wasm-demo/` |
+The edit surface covers focused text, field, content-control, comment, note,
+image, metadata, table, hyperlink, and bounded body-block operations. Capability
+checks reject edits that cannot preserve package structure. `edited_parts()`
+reports the parts changed by the current document, and `EditSession` provides a
+refreshing commit path for batches of supported edits.
 
-API details live on [docs.rs](https://docs.rs/rwml/latest/rwml/), and the
-[`examples/`](examples) directory keeps complete programs that can be run from
-a checkout.
+Fresh DOCX generation is a separate path: `write_docx` serializes the supported
+`DocModel`; it does not pretend to preserve unknown parts from another package.
 
-## Why rwml?
+## Validation
 
-- **One model for old and new Word files.** Callers do not branch between a
-  legacy parser and an OOXML parser before exporting or inspecting content.
-- **Preserve before interpreting.** Package-preserving edits reserialize only
-  touched XML or media parts; a no-op DOCX open/save keeps each part payload
-  byte-stable.
-- **Safe in-process parsing.** The crate forbids `unsafe`, bounds binary and XML
-  work, does not resolve external XML entities, and guards decompression limits.
-- **Explicit fidelity.** Diagnostics report preserved-but-unmodeled objects,
-  cached field fallbacks, read-only edit reasons, and renderer warnings instead
-  of silently claiming Word parity.
-- **Native preview output.** The optional renderer shapes text, embeds subsetted
-  fonts, emits selectable text, and handles Korean/CJK line breaking without
-  launching Office or LibreOffice.
-- **Small core dependency set.** A legacy-DOC-only build uses `cfb`,
-  `encoding_rs`, and `thiserror`; DOCX and rendering remain additive features.
+Version `0.1.4` is published on
+[crates.io](https://crates.io/crates/rwml/0.1.4) and
+[docs.rs](https://docs.rs/rwml/0.1.4/rwml/). Its exact crates, checksums,
+public-hygiene result, extraction benchmark, render validation, and strict
+revision-bound manifest are attached to the
+[`v0.1.4` release](https://github.com/HyunjoJung/rwml/releases/tag/v0.1.4).
 
-## Cargo features
+| Release | Safety and toolchain | Public release evidence |
+|---|---|---|
+| `0.1.4` / MIT | no `unsafe`; core MSRV 1.85; render MSRV 1.92 | 21 DOCX fixtures, 26 rendered pages, 3 generated DOC oracle fixtures, tag-bound package manifest |
 
-| Feature | Default | Surface |
-|---|:---:|---|
-| `docx` | Yes | DOCX read/write, conversion, and package-preserving editing |
-| `render` | No | Native PDF rendering with `parley` and `krilla`; MSRV 1.92 |
-| `bundled-fonts` | No | `render` plus OFL Noto subsets for Korean/hanja, Arabic, and Hebrew |
-
-Use `default-features = false` for the dependency-light legacy `.doc` reader:
-
-```toml
-rwml = { version = "0.1.4", default-features = false }
-```
-
-## Public validation
-
-The release contract depends on redistributable inputs and machine-readable
-evidence, not on private documents.
+The release contract uses only redistributable public inputs:
 
 | Gate | Public input | Release check |
 |---|---|---|
 | DOCX parsing and preservation | 21 generated or permissively licensed documents | expected diagnostics, open/save part stability, bounded edit validation |
-| Legacy DOC extraction | 3 generated Word 97–2003 documents | exact Apache POI 5.2.3 and LibreOffice 26.2.3.2 text oracles |
+| Legacy DOC extraction | 3 generated Word 97-2003 documents | exact Apache POI 5.2.3 and LibreOffice 26.2.3.2 text oracles |
 | PDF preview | the same 21-document manifest, 26 pages | text recall, page counts, visual summaries, zero skipped inputs |
 | Public hygiene | source tree plus bounded Office-package inspection | filenames, metadata, text parts, corpus provenance, and license-clean inputs |
 
-The inputs and their provenance are under
-[`corpus/public/`](corpus/public). To run the fast public checks:
+Inputs and provenance live under [`corpus/public/`](corpus/public). Run the fast
+public checks with:
 
 ```sh
 python3 scripts/gen_public_corpus.py --check
@@ -201,156 +186,121 @@ cargo test --test public_corpus
 cargo test --features render --test public_corpus
 ```
 
-Pull-request and protected-branch CI run the feature/MSRV matrix, formatting,
-clippy, documentation, dependency audit, fuzz-target build, and public-corpus
-checks. The tag-only release workflow adds release-mode performance checks,
-extraction and rendering oracles, exact-package preflight, and release-manifest
-validation. The longer parser/edit/render fuzz smoke is a separate on-demand
-workflow. See [CONTRIBUTING.md](CONTRIBUTING.md#release-validation) to reproduce
-the relevant gates.
+Pull-request CI adds the feature/MSRV matrix, formatting, strict Clippy,
+documentation, dependency audit, fuzz-target build, WASM smoke tests, and
+Python release-tooling tests. Tag-only release validation adds release-mode
+performance, external extraction/render oracles, exact package preflight, and
+manifest verification. See
+[CONTRIBUTING.md](CONTRIBUTING.md#validation-by-change-area) for the commands.
 
-## How it works
+## Architecture
 
-**DOCX** is an OPC ZIP package of XML parts. `rwml` parses the main document,
-styles, numbering, relationships, notes, comments, headers and footers, fields,
-tables, drawings, revisions, and supported metadata into the shared model and
-diagnostic sidecars. The retained package and its live XML trees stay available
-for bounded edits so unrelated parts survive.
+```text
+ .doc  -- OLE2 / FIB / piece table --\
+                                      +--> DocModel --> text / Markdown / HTML
+ .docx -- OPC / WordprocessingML ----/            \--> fresh DOCX / PDF preview
+        \-- retained package + live XML ----------------> bounded DOCX edits
+```
 
-**DOC** is an OLE2 compound file. `rwml` navigates the FIB and piece table,
-decodes UTF-16 or the declared legacy codepage, and performs bounded passes over
-character, paragraph, list, table, section, field, note, image, and style data.
-Malformed, encrypted, and unsupported generations return typed errors rather
-than partial ciphertext or panics.
+**DOC** parsing navigates the compound file, FIB, piece table, codepages,
+formatting bins, styles, lists, tables, sections, fields, notes, annotations,
+and images before assembling the shared model.
 
-**Writing** serializes a `DocModel` into a fresh OOXML package. **Rendering**
-flows that model through deterministic page, paragraph, list, table, image, and
-font-shaping stages before emitting PDF. Opening and resaving an existing DOCX
-uses the separate preservation path rather than regenerating the package from
-the lossy common model.
+**DOCX** parsing walks the OPC package and WordprocessingML parts for body
+content, styles, numbering, relationships, notes, comments, running surfaces,
+fields, tables, drawings, revisions, charts, and supported metadata. The
+retained package remains available for preservation-aware editing.
+
+**Rendering** flows the model through deterministic section, column, paragraph,
+list, table, image, chart, bidi, font-shaping, and page-placement stages before
+emitting PDF. **Writing** serializes a fresh model into OOXML. Opening and saving
+an existing DOCX uses the preservation path instead of regenerating that package
+from the lossy common model.
+
+## Documentation
+
+| Resource | Contents |
+|---|---|
+| [docs.rs](https://docs.rs/rwml/latest/rwml/) | Public Rust API and feature-gated surfaces |
+| [`examples/`](examples) | Read, write, convert, edit, diagnose, render, and WASM programs |
+| [`corpus/public/`](corpus/public) | License-clean fixtures, manifests, oracles, and provenance |
+| [CHANGELOG.md](CHANGELOG.md) | Release history and compatibility changes |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Public workflow, validation matrix, fixtures, and release preflight |
+| [Security policy](.github/SECURITY.md) | Private vulnerability reporting |
+
+## Features and status
+
+| Cargo feature | Default | Surface |
+|---|:---:|---|
+| `docx` | Yes | DOCX read/write, conversion, CLI, and package-preserving editing |
+| `render` | No | Native PDF rendering with `parley` and `krilla`; MSRV 1.92 |
+| `bundled-fonts` | No | `render` plus OFL Noto subsets for Korean/hanja, Arabic, and Hebrew |
+
+Use `default-features = false` for the dependency-light legacy DOC reader:
+
+```toml
+rwml = { version = "0.1.4", default-features = false }
+```
+
+### Built-in surfaces
+
+- **Readers:** paragraphs, rich runs, styles, lists, tables, sections, notes,
+  comments, revisions, fields, hyperlinks, images, charts, metadata, and
+  diagnostic sidecars where the source format exposes them.
+- **Field handling:** deterministic evaluation for a documented bounded subset;
+  unsupported, external-state, and layout-dependent results preserve cached
+  display text with typed fallback reasons.
+- **DOCX authoring:** styled text, lists, tables, links, comments, notes,
+  revisions, fields, content controls, images, charts, sections, running
+  surfaces, and metadata represented by the public model/builders.
+- **Export and diagnostics:** text, Markdown, HTML, image extraction, and
+  machine-readable feature/report JSON.
+- **Portable interfaces:** native library and CLI plus a thin WASM read/report
+  adapter and browser inspector example.
 
 ## Compatibility and limits
 
-`rwml` deliberately distinguishes supported behavior from preserved content and
-preview approximations.
+`rwml` distinguishes interpreted behavior, preserved content, and preview
+approximations:
 
 | Area | Current contract | Important boundary |
 |---|---|---|
-| `.doc` | read, inspect, export, convert, preview | no in-place editing and no legacy `.doc` writer; Word 6/95 and encrypted files are rejected |
+| Legacy `.doc` | read, inspect, export, convert, preview | no in-place editing or DOC writer; Word 6/95 and encrypted files are rejected |
 | `.docx` read | rich model plus diagnostics for major WordprocessingML surfaces | not every producer extension or layout-dependent field can be interpreted |
-| Fresh `.docx` writing | styled text, lists, tables, images, links, comments, notes, revisions, fields, charts, sections, and metadata | fresh output contains the supported model, not unknown source parts |
-| Package-preserving edit | focused text, field, control, comment, note, image, metadata, table, hyperlink, and bounded body-block operations | arbitrary rich nested edits and general cross-block rewriting are not exposed |
-| PDF | selectable-text preview with page geometry, styles, lists, tables, images, links, and bounded floating-shape hints | not Word-exact pagination, floating-object reflow, or complete Office-Art rendering |
-| WASM | extraction, Markdown/HTML, and diagnostics | the included browser example is an inspector, not an editing UI |
+| Fresh `.docx` | styled model-backed document generation | output contains supported model content, not unknown parts from a source package |
+| Package-preserving edit | focused, capability-checked mutations with untouched-part retention | no generic XML/DOM editor or silent package regeneration |
+| PDF | selectable-text preview with page geometry, styles, lists, tables, images, charts, links, and bounded floating-shape hints | not Word-exact pagination, general floating-object reflow, or complete Office-Art rendering |
+| WASM | extraction, Markdown/HTML, and diagnostics | the browser example is an inspector, not an editing UI |
 
-Unknown DOCX parts are retained by the preservation path when the package is
-safe to edit. Unsupported charts, OLE objects, metafiles, floating shapes, and
-layout-dependent fields may appear as diagnostics or preview placeholders. For
+Unknown DOCX parts remain in a safe retained package. Unsupported metafiles,
+floating shapes, embedded objects, chart forms, and layout-dependent fields may
+produce diagnostics, cached text, raster fallbacks, or preview placeholders. For
 Word-exact or archival PDF conversion, use Word or LibreOffice as the renderer.
-
-## Project map
-
-| Path | Purpose |
-|---|---|
-| `src/docx/` | DOCX readers, fields, styles, numbering, revisions, and charts |
-| `src/write/` | fresh DOCX generation |
-| `src/render.rs` | native preview layout and PDF emission |
-| `src/assemble.rs`, `src/chpx.rs`, `src/papx.rs`, `src/stsh.rs` | legacy DOC assembly and formatting |
-| `tests/` | public API, preservation, format, rendering, and workflow contracts |
-| `corpus/public/` | license-clean fixtures, manifests, oracles, and provenance |
-| `examples/` | runnable read, write, edit, render, and WASM entry points |
-| `scripts/` | deterministic corpus, evidence, hygiene, benchmark, and release tools |
 
 ## Roadmap
 
-Work is chosen from reproducible files and focused regression tests.
+Work is selected from public, reproducible inputs and focused regression tests:
 
-| Area | Direction | Boundary to keep explicit |
-|---|---|---|
-| Read and fields | deepen bounded DOC/DOCX parsing and deterministic field evaluation | values requiring Word layout or external state remain cached-with-reason |
-| Editing | add mutations only where preservation and rollback are unambiguous | no generic DOM editor or silent package regeneration |
-| PDF preview | improve model-backed layout, tables, scripts, images, and sections | no promise of Word-exact pagination |
-| RTL and complex scripts | expand verified mixed-script and table behavior | typography and punctuation must be fixture-backed |
-| Corpus and interoperability | add license-clean producer fixtures and mature-tool oracles | private documents are never required to reproduce a public claim |
+- deepen bounded DOC/DOCX parsing and deterministic field evaluation;
+- expand preservation-safe edits only where rollback and ownership are clear;
+- improve model-backed PDF layout, complex scripts, tables, images, and sections;
+- add license-clean producer fixtures and mature-tool oracles.
 
-Open an [issue](https://github.com/HyunjoJung/rwml/issues) with a minimal file or
-structural reproducer when a real document exposes a missing case.
+Values requiring Word layout or external state remain cached with a reason.
+There is no planned generic DOM editor or promise of Word-exact pagination.
+Open an [issue](https://github.com/HyunjoJung/rwml/issues) with a minimal public
+file or structural reproducer when a real document exposes a missing case.
 
-## Contributing: one public path
+## Contributing
 
-Contributions should be understandable from the code, tests, pull request, and
-any related public issue. Do not make a change depend on an unpublished internal
-planning document; summarize any decision that affects the implementation in
-the issue or PR.
+Issues and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) defines
+the focused topic-branch workflow, red-test expectation, validation matrix,
+public-fixture rules, release preflight, and optional AI/BMad guidance. Every
+change must be understandable from public code, tests, issues, and pull-request
+context; never upload a private document or planning artifact.
 
-```text
-issue or change request
-  ├─ clear, bounded change → implement directly
-  └─ broad or uncertain change → prepare only the useful spec/architecture context
-         ↓
-focused code + regression test → local gate → small public PR
-```
-
-The normal path does not require an AI tool:
-
-1. Search existing issues. A small, self-contained fix can go directly to a
-   focused pull request; open an issue first when the behavior, public API, or
-   compatibility boundary needs discussion.
-2. Fork the repository and create a focused topic branch from current `main`.
-3. Add a red regression test before changing behavior. Prefer a synthetic file
-   or a minimal structural fixture over a private document.
-4. Implement one logical change and run the relevant gate.
-5. Open a pull request that links any related issue and explains any deliberately
-   unsupported remainder.
-
-### Optional BMad workflow
-
-Contributors who use an AI coding tool may follow the
-[BMad Method](https://github.com/bmad-code-org/BMAD-METHOD) as a proportional
-planning and implementation path. It is optional, external to `rwml`, and is
-not a runtime or build dependency.
-
-```sh
-# Requires Node.js 20.12+, Python 3.10+, and uv.
-npx bmad-method install
-```
-
-- For a clear one-session issue, invoke `bmad-build` with the issue or change
-  request directly.
-- For a broad change, run `bmad-help` and add only the planning depth the work
-  needs. Carry the resulting decisions into the public issue or PR rather than
-  relying on a private artifact.
-
-Keep local BMad working output and private AI transcripts out of the pull
-request. The tests, code, PR description, and any related public issue must
-contain every decision a reviewer needs.
-
-This mirrors BMad's direct-versus-planned entry model while keeping the same
-review standard for manual and AI-assisted contributions.
-
-The common local gate is:
-
-```sh
-cargo fmt --all -- --check
-cargo clippy --all-targets -- -D warnings
-cargo test --all-targets
-cargo doc --no-deps
-```
-
-Renderer, corpus, release, and full-feature changes have additional gates. Read
-[CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR; it defines safety,
-preservation, dependency, test, and release requirements.
-
-## Documentation and community
-
-- [API documentation](https://docs.rs/rwml/latest/rwml/) — public types and methods
-- [`examples/`](examples) — runnable programs
-- [`corpus/public/`](corpus/public) — validation data and provenance
-- [CHANGELOG.md](CHANGELOG.md) — release history and compatibility notes
-- [CONTRIBUTING.md](CONTRIBUTING.md) — development and review gates
-- [Code of Conduct](.github/CODE_OF_CONDUCT.md) — community expectations
-- [GitHub Issues](https://github.com/HyunjoJung/rwml/issues) — bugs and proposals
-- [Security policy](.github/SECURITY.md) — private vulnerability reporting
+See also the [Code of Conduct](.github/CODE_OF_CONDUCT.md) and
+[Security policy](.github/SECURITY.md).
 
 ## License
 
@@ -361,17 +311,15 @@ subsets retain their upstream OFL licenses and provenance under
 
 ## Trademarks
 
-`rwml` takes its name from **WordprocessingML**, the ECMA-376 markup for
+`rwml` takes its name from WordprocessingML, the ECMA-376 markup for
 word-processing documents. It is an independent open-source project, not
 affiliated with, authorized by, or endorsed by Microsoft. Microsoft, Microsoft
 Word, and the `.doc` / `.docx` file formats are trademarks or registered
-trademarks of Microsoft Corporation, referenced only to indicate format
-compatibility.
+trademarks of Microsoft Corporation, referenced only to indicate compatibility.
 
 The implementation is based on publicly documented [MS-DOC], [MS-CFB], and
-OOXML specifications and contains no Microsoft source code.
+[ECMA-376] specifications and contains no Microsoft source code.
 
 [MS-DOC]: https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/
 [MS-CFB]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-cfb/
-[`Document::open`]: https://docs.rs/rwml/latest/rwml/struct.Document.html#method.open
-[`DocModel`]: https://docs.rs/rwml/latest/rwml/struct.DocModel.html
+[ECMA-376]: https://ecma-international.org/publications-and-standards/standards/ecma-376/
