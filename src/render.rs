@@ -7240,15 +7240,14 @@ fn draw_sunburst_chart(surface: &mut Surface<'_>, chart: &Chart, x: f32, y: f32,
 
 fn draw_box_whisker_chart(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     chart: &Chart,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    rect: ChartRect,
     tcx: &mut TextCx<'_>,
-) {
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
     let Some(series) = chart.series.first() else {
-        return;
+        return Ok(());
     };
     let mut values = series
         .values
@@ -7257,7 +7256,7 @@ fn draw_box_whisker_chart(
         .filter(|value| value.is_finite())
         .collect::<Vec<_>>();
     if values.is_empty() {
-        return;
+        return Ok(());
     }
     values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let min = *values.first().unwrap_or(&0.0);
@@ -7270,14 +7269,15 @@ fn draw_box_whisker_chart(
     for tick in 0..=4 {
         let frac = tick as f32 / 4.0;
         let y_tick = y + h - frac * h;
-        fill_rect_color(
+        project_and_replay_page_scene_fill_rect(
             surface,
+            scene,
             x,
             y_tick,
             w,
             0.35,
             rgb::Color::new(0xE1, 0xE5, 0xEA),
-        );
+        )?;
         let value = min + (max - min) * tick as f64 / 4.0;
         let label = format_chart_tick(value);
         draw_chart_text(
@@ -7305,43 +7305,88 @@ fn draw_box_whisker_chart(
     let box_top = q3_y.min(q1_y);
     let box_h = (q1_y - q3_y).abs().max(1.0);
     let line = rgb::Color::new(0x35, 0x43, 0x52);
-    fill_rect_color(surface, center_x - 0.5, max_y, 1.0, min_y - max_y, line);
-    fill_rect_color(
+    project_and_replay_page_scene_fill_rect(
         surface,
+        scene,
+        center_x - 0.5,
+        max_y,
+        1.0,
+        min_y - max_y,
+        line,
+    )?;
+    project_and_replay_page_scene_fill_rect(
+        surface,
+        scene,
         center_x - box_w * 0.35,
         max_y,
         box_w * 0.7,
         1.0,
         line,
-    );
-    fill_rect_color(
+    )?;
+    project_and_replay_page_scene_fill_rect(
         surface,
+        scene,
         center_x - box_w * 0.35,
         min_y,
         box_w * 0.7,
         1.0,
         line,
-    );
-    fill_rect_color(
+    )?;
+    project_and_replay_page_scene_fill_rect(
         surface,
+        scene,
         center_x - box_w * 0.5,
         box_top,
         box_w,
         box_h,
         rgb::Color::new(0x7A, 0xA0, 0xC8),
-    );
-    fill_rect_color(surface, center_x - box_w * 0.5, box_top, box_w, 1.0, line);
-    fill_rect_color(
+    )?;
+    project_and_replay_page_scene_fill_rect(
         surface,
+        scene,
+        center_x - box_w * 0.5,
+        box_top,
+        box_w,
+        1.0,
+        line,
+    )?;
+    project_and_replay_page_scene_fill_rect(
+        surface,
+        scene,
         center_x - box_w * 0.5,
         box_top + box_h,
         box_w,
         1.0,
         line,
-    );
-    fill_rect_color(surface, center_x - box_w * 0.5, box_top, 1.0, box_h, line);
-    fill_rect_color(surface, center_x + box_w * 0.5, box_top, 1.0, box_h, line);
-    fill_rect_color(surface, center_x - box_w * 0.5, median_y, box_w, 1.3, line);
+    )?;
+    project_and_replay_page_scene_fill_rect(
+        surface,
+        scene,
+        center_x - box_w * 0.5,
+        box_top,
+        1.0,
+        box_h,
+        line,
+    )?;
+    project_and_replay_page_scene_fill_rect(
+        surface,
+        scene,
+        center_x + box_w * 0.5,
+        box_top,
+        1.0,
+        box_h,
+        line,
+    )?;
+    project_and_replay_page_scene_fill_rect(
+        surface,
+        scene,
+        center_x - box_w * 0.5,
+        median_y,
+        box_w,
+        1.3,
+        line,
+    )?;
+    Ok(())
 }
 
 fn percentile(sorted: &[f64], frac: f64) -> f64 {
@@ -7627,7 +7672,18 @@ fn draw_authored_chart(
     }
 
     if chart.kind == ChartKind::BoxWhisker {
-        draw_box_whisker_chart(surface, chart, plot_left, plot_top, plot_w, plot_h, tcx);
+        draw_box_whisker_chart(
+            surface,
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            tcx,
+        )?;
         return Ok(());
     }
 
@@ -14050,6 +14106,87 @@ mod tests {
             } = operation
             else {
                 panic!("treemap operation must be a rectangle: {operation:?}");
+            };
+            assert_close(rect.x, x);
+            assert_close(rect.y, y);
+            assert_close(rect.width, width);
+            assert_close(rect.height, height);
+            assert_eq!(*actual_color, color);
+        }
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn box_whisker_rectangles_enter_the_scene_in_paint_order() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::BoxWhisker,
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![0.0, 10.0, 20.0, 30.0, 40.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+        let line = rgb::Color::new(0x35, 0x43, 0x52);
+        let fill = rgb::Color::new(0x7A, 0xA0, 0xC8);
+        let expected = [
+            (92.0, 164.0, 206.0, 0.35, grid),
+            (92.0, 130.0, 206.0, 0.35, grid),
+            (92.0, 96.0, 206.0, 0.35, grid),
+            (92.0, 62.0, 206.0, 0.35, grid),
+            (92.0, 28.0, 206.0, 0.35, grid),
+            (194.5, 28.0, 1.0, 136.0, line),
+            (174.812, 28.0, 40.376, 1.0, line),
+            (174.812, 164.0, 40.376, 1.0, line),
+            (166.16, 62.0, 57.68, 68.0, fill),
+            (166.16, 62.0, 57.68, 1.0, line),
+            (166.16, 130.0, 57.68, 1.0, line),
+            (166.16, 62.0, 1.0, 68.0, line),
+            (223.84, 62.0, 1.0, 68.0, line),
+            (166.16, 96.0, 57.68, 1.3, line),
+        ];
+        assert_eq!(scene.operations.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in scene.operations[5..].iter().zip(expected)
+        {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("box-whisker operation must be a rectangle: {operation:?}");
             };
             assert_close(rect.x, x);
             assert_close(rect.y, y);
