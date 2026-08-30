@@ -22,6 +22,11 @@ Every file here is safe to redistribute:
   classes for every manifest-listed fixture. It is checked when tests run with
   `--features render` and keeps strict release validation aligned with
   `MANIFEST.tsv`.
+- `RENDER_ORACLE.json` — the versioned external-render campaign lock. It binds
+  every input to exact bytes and SHA-256, public provenance, canonical feature
+  labels, expected page/warning metadata, and explicit resource ceilings.
+  `scripts/render_oracle_contract.py` validates the lock before LibreOffice or
+  rwml receives any input.
 - `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
   Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
   self-contained input for the strict public extraction benchmark.
@@ -49,8 +54,10 @@ For every `.docx` here, rwml must:
 
 For LibreOffice A/B evidence, `scripts/render_validate.py` uses the bundled Noto
 subsets by default and reports the retained page-1 aHash plus bounded all-page
-aHash, foreground ink IoU, and explicit unmatched/capped page counts. Reference
-PDFs remain temporary and are not committed.
+aHash, foreground ink IoU, and explicit unmatched/capped page counts. Strict
+JSON runs additionally bind the report to the corpus root, source revision,
+Cargo lock, harness, platform, tool versions, and recorded LibreOffice identity.
+Reference PDFs remain temporary and are not committed.
 
 Run it with the in-tree example + the python-docx checker:
 

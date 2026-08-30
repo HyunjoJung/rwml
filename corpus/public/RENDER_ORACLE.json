@@ -1,0 +1,406 @@
+{
+  "schema": "rwml.render-oracle-corpus.v1",
+  "campaign": "public-corpus",
+  "limits": {
+    "max_documents": 1024,
+    "max_input_bytes": 67108864,
+    "max_total_input_bytes": 2147483648,
+    "max_pages_per_document": 256
+  },
+  "provenance": [
+    {
+      "id": "python-docx-mit",
+      "kind": "vendored",
+      "license": "MIT",
+      "reference": "ATTRIBUTION.md"
+    },
+    {
+      "id": "rwml-generated",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "PROVENANCE.md"
+    }
+  ],
+  "documents": [
+    {
+      "id": "python-docx-blk-inner-content",
+      "path": "vendored/python-docx/blk-inner-content.docx",
+      "format": "docx",
+      "bytes": 11949,
+      "sha256": "16243dd05f686d6d5fab331843691492ad78ae3eb4f13cc8686077b44718c0ba",
+      "provenance": "python-docx-mit",
+      "features": [
+        "paragraphs",
+        "tables",
+        "vendored"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      }
+    },
+    {
+      "id": "python-docx-having-images",
+      "path": "vendored/python-docx/having-images.docx",
+      "format": "docx",
+      "bytes": 132875,
+      "sha256": "72f40baa1b89e4849e817121dbbf148ed78e51be9bf04d8e6f4bc1494aa517b7",
+      "provenance": "python-docx-mit",
+      "features": [
+        "inline-images",
+        "paragraphs",
+        "vendored"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      }
+    },
+    {
+      "id": "python-docx-sct-inner-content",
+      "path": "vendored/python-docx/sct-inner-content.docx",
+      "format": "docx",
+      "bytes": 12051,
+      "sha256": "d92e9ca7b09fab7b475c57dfba08f6acba2742aff2691cc7284649c640059c73",
+      "provenance": "python-docx-mit",
+      "features": [
+        "sections",
+        "tables",
+        "vendored"
+      ],
+      "expected": {
+        "pages": 3,
+        "warnings": []
+      }
+    },
+    {
+      "id": "python-docx-test",
+      "path": "vendored/python-docx/test.docx",
+      "format": "docx",
+      "bytes": 31773,
+      "sha256": "fba1c76b66ff30982e5281941ca1111eaeaeb092abb6dfbe1730bed3774f40b6",
+      "provenance": "python-docx-mit",
+      "features": [
+        "paragraphs",
+        "styles",
+        "tables",
+        "vendored"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      }
+    },
+    {
+      "id": "synthetic-comments",
+      "path": "synthetic/comments.docx",
+      "format": "docx",
+      "bytes": 2615,
+      "sha256": "604862b8d887e5402800650771529b6c1670a7c7d781eaabde79dbf4afa64dda",
+      "provenance": "rwml-generated",
+      "features": [
+        "comments",
+        "paragraphs"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      }
+    },
+    {
+      "id": "synthetic-fields",
+      "path": "synthetic/fields.docx",
+      "format": "docx",
+      "bytes": 1957,
+      "sha256": "1e1a87ebab2b5633c8812c5f69190943937e1dfb80d8111146ce6bf56d64d182",
+      "provenance": "rwml-generated",
+      "features": [
+        "fields",
+        "hyperlinks"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "UnsupportedFieldEvaluation"
+        ]
+      }
+    },
+    {
+      "id": "synthetic-floating-altcontent-anchor",
+      "path": "synthetic/floating_altcontent_anchor.docx",
+      "format": "docx",
+      "bytes": 2285,
+      "sha256": "78a09fd5e5a217c188d6b905aa4199d32c779fc4d30b40d3eba1a9e30af47859",
+      "provenance": "rwml-generated",
+      "features": [
+        "alternate-content",
+        "floating-shapes",
+        "text-boxes"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      }
+    },
+    {
+      "id": "synthetic-floating-text-bearing",
+      "path": "synthetic/floating_text_bearing.docx",
+      "format": "docx",
+      "bytes": 1840,
+      "sha256": "6f91bc55068f9d2d794058083eebf221d8bd781ac28ae6ae384ae8a88cf38c2a",
+      "provenance": "rwml-generated",
+      "features": [
+        "floating-shapes",
+        "text-boxes"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      }
+    },
+    {
+      "id": "synthetic-floating-wrap-policy",
+      "path": "synthetic/floating_wrap_policy.docx",
+      "format": "docx",
+      "bytes": 2148,
+      "sha256": "dcaab9d6c4e258223d4dadc8c2a598ca7115be1b70b3e2f32170511c086948dd",
+      "provenance": "rwml-generated",
+      "features": [
+        "floating-shapes",
+        "tight-wrap"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      }
+    },
+    {
+      "id": "synthetic-floating-z-order-pair",
+      "path": "synthetic/floating_z_order_pair.docx",
+      "format": "docx",
+      "bytes": 2145,
+      "sha256": "87ee171254182abbfc348f9fe9e23e4d8e4473a9d06d0c0c3d5799fd1ea20265",
+      "provenance": "rwml-generated",
+      "features": [
+        "floating-shapes",
+        "z-order"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      }
+    },
+    {
+      "id": "synthetic-hyperlinks",
+      "path": "synthetic/hyperlinks.docx",
+      "format": "docx",
+      "bytes": 1876,
+      "sha256": "def67e7ed8f4ea271b24edbcd81417042d37d2993200f55b4151f44c575ec75b",
+      "provenance": "rwml-generated",
+      "features": [
+        "hyperlinks"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      }
+    },
+    {
+      "id": "synthetic-kitchen-sink",
+      "path": "synthetic/kitchen_sink.docx",
+      "format": "docx",
+      "bytes": 7140,
+      "sha256": "57d7dd90c53799eacdd486509ac351c3ab9af2120774e2633b5b31563624dcf8",
+      "provenance": "rwml-generated",
+      "features": [
+        "comments",
+        "content-controls",
+        "floating-shapes",
+        "footnotes",
+        "headers-footers",
+        "inline-images",
+        "revisions",
+        "tables",
+        "text-boxes"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      }
+    },
+    {
+      "id": "synthetic-nested-tables",
+      "path": "synthetic/nested_tables.docx",
+      "format": "docx",
+      "bytes": 1419,
+      "sha256": "77bb54f41e5f6148bffb29238985898a62cb14dbc5004f1a2bbe408307f719c0",
+      "provenance": "rwml-generated",
+      "features": [
+        "nested-tables",
+        "tables"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      }
+    },
+    {
+      "id": "synthetic-pagination-keep",
+      "path": "synthetic/pagination-keep.docx",
+      "format": "docx",
+      "bytes": 4507,
+      "sha256": "ac3002711280f78ce473e5d1edc1660735485a70e1b6ecec943e720d5b3593fe",
+      "provenance": "rwml-generated",
+      "features": [
+        "keep-lines",
+        "keep-next",
+        "pagination",
+        "widow-control"
+      ],
+      "expected": {
+        "pages": 3,
+        "warnings": []
+      }
+    },
+    {
+      "id": "synthetic-revisions",
+      "path": "synthetic/revisions.docx",
+      "format": "docx",
+      "bytes": 1843,
+      "sha256": "43deb35d81418c826f8d636fdce019cffd96a4c29949b7535a59a058ec9bddf0",
+      "provenance": "rwml-generated",
+      "features": [
+        "revisions",
+        "tracked-changes"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      }
+    },
+    {
+      "id": "synthetic-rtl-table",
+      "path": "synthetic/rtl-table.docx",
+      "format": "docx",
+      "bytes": 2014,
+      "sha256": "d9d3b7e64e517b0a947a040a28a20d77df1f5cd2a9cfa56b4e72c22bca37855c",
+      "provenance": "rwml-generated",
+      "features": [
+        "bidi",
+        "rtl",
+        "tables"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      }
+    },
+    {
+      "id": "synthetic-style-hidden-tabs-table",
+      "path": "synthetic/style-hidden-tabs-table.docx",
+      "format": "docx",
+      "bytes": 3278,
+      "sha256": "39b5b93f7ce0047538a9b425b8bfea535c42fb67f75325e9ba8e07228a3087fc",
+      "provenance": "rwml-generated",
+      "features": [
+        "hidden-text",
+        "paragraph-geometry",
+        "run-paint",
+        "tables",
+        "tabs"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      }
+    },
+    {
+      "id": "synthetic-table-cell-lists",
+      "path": "synthetic/table-cell-lists.docx",
+      "format": "docx",
+      "bytes": 3606,
+      "sha256": "d06425f0caf53a039530ea3b28a9c543d7e37903ed35cb5421b55a17bbff9fd1",
+      "provenance": "rwml-generated",
+      "features": [
+        "lists",
+        "nested-tables",
+        "rtl",
+        "tables"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      }
+    },
+    {
+      "id": "synthetic-two-columns",
+      "path": "synthetic/two-columns.docx",
+      "format": "docx",
+      "bytes": 4293,
+      "sha256": "66d7bca9ea3ba9286d9b359b993d23a19b802a0d8e7c077c2bee1fbf0291000b",
+      "provenance": "rwml-generated",
+      "features": [
+        "columns",
+        "pagination",
+        "sections"
+      ],
+      "expected": {
+        "pages": 2,
+        "warnings": []
+      }
+    },
+    {
+      "id": "synthetic-unsupported-objects",
+      "path": "synthetic/unsupported_objects.docx",
+      "format": "docx",
+      "bytes": 4323,
+      "sha256": "a07a41d7a114dc1a67f0e9b33423f41f9a3ea39d9e78d23dfbab3edd659f4bf0",
+      "provenance": "rwml-generated",
+      "features": [
+        "charts",
+        "floating-shapes",
+        "metafiles",
+        "ole-objects",
+        "placeholders"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "ChartsPreservedButNotModeled",
+          "FloatingShapePlaceholderOnly",
+          "OleObjectsPreservedButNotModeled",
+          "UnsupportedMetafileImages"
+        ]
+      }
+    },
+    {
+      "id": "synthetic-wrap-top-bottom",
+      "path": "synthetic/wrap-top-bottom.docx",
+      "format": "docx",
+      "bytes": 2243,
+      "sha256": "fb6fae625b6b337ec5e64a9e731abf36a5d0c33d8a325a582958ee49a23f7cf3",
+      "provenance": "rwml-generated",
+      "features": [
+        "floating-shapes",
+        "text-boxes",
+        "top-bottom-wrap"
+      ],
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      }
+    }
+  ]
+}

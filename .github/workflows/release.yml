@@ -104,7 +104,8 @@ jobs:
           mkdir -p "$evidence_dir"
           set +e
           "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/render_validate.py \
-            --json --soffice local --manifest corpus/public/RENDER_MANIFEST.tsv \
+            --json --soffice local --manifest corpus/public/RENDER_ORACLE.json \
+            --source-revision "$GITHUB_SHA" \
             --recall-min 0.97 --min-mean-recall 0.90 --max-skipped 0 --verify-oracle \
             > "$evidence_dir/render-validation.json"
           render_status=$?
