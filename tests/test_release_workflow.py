@@ -36,6 +36,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('"-m", "venv"', text)
         self.assertIn('PYMUPDF_REQUIREMENT = "PyMuPDF==1.28.2"', text)
         self.assertIn('PILLOW_REQUIREMENT = "Pillow==12.3.0"', text)
+        self.assertIn('NUMPY_REQUIREMENT = "numpy==2.4.4"', text)
         self.assertIn('PYTHON_DOCX_REQUIREMENT = "python-docx==1.2.0"', text)
         self.assertIn("JSONDecoder", text)
         for command in [
@@ -73,6 +74,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("cargo test --all-targets --no-default-features", text)
         self.assertIn("cargo test --doc --all-features", text)
         self.assertIn("cargo doc --no-deps --all-features", text)
+        self.assertIn("numpy==2.4.4", text)
         self.assertIn(
             '"$RUNNER_TEMP/rwml-release-tools/bin/python" -m unittest '
             "discover -s tests -p 'test_*.py'",
@@ -160,7 +162,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         verify = step_body(text, "Verify the crate builds, tests, and packages")
         evidence = step_body(text, "Generate strict revision-bound evidence")
 
-        self.assertIn("PyMuPDF==1.28.2 Pillow==12.3.0 python-docx==1.2.0", install)
+        self.assertIn(
+            "PyMuPDF==1.28.2 Pillow==12.3.0 numpy==2.4.4 python-docx==1.2.0",
+            install,
+        )
         self.assertIn('assert docx.__version__ == "1.2.0"', install)
         self.assertIn('assert pymupdf.__version__ == "1.28.2"', install)
         self.assertIn('assert PIL.__version__ == "12.3.0"', install)
@@ -266,7 +271,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(
             'evidence_dir="$RUNNER_TEMP/rwml-release-evidence"', evidence
         )
-        self.assertIn("PyMuPDF==1.28.2 Pillow==12.3.0 python-docx==1.2.0", install)
+        self.assertIn(
+            "PyMuPDF==1.28.2 Pillow==12.3.0 numpy==2.4.4 python-docx==1.2.0",
+            install,
+        )
         self.assertNotIn("target/release-evidence", evidence)
         self.assertIn(
             'python3 -m json.tool "$evidence_dir/render-validation.json"',

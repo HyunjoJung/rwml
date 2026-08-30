@@ -22,10 +22,12 @@ CARGO = os.environ.get("CARGO", "cargo")
 PYTHON = os.environ.get("PYTHON", sys.executable)
 PYMUPDF_REQUIREMENT = "PyMuPDF==1.28.2"
 PILLOW_REQUIREMENT = "Pillow==12.3.0"
+NUMPY_REQUIREMENT = "numpy==2.4.4"
 PYTHON_DOCX_REQUIREMENT = "python-docx==1.2.0"
 PYTHON_TOOL_CHECK = (
-    "import docx, pymupdf, PIL; "
+    "import docx, numpy, pymupdf, PIL; "
     'assert docx.__version__ == "1.2.0"; '
+    'assert numpy.__version__ == "2.4.4"; '
     'assert pymupdf.__version__ == "1.28.2"; '
     'assert PIL.__version__ == "12.3.0"'
 )
@@ -197,6 +199,7 @@ def ensure_validation_tools(output_dir: pathlib.Path) -> str:
                 "--no-cache-dir",
                 PYMUPDF_REQUIREMENT,
                 PILLOW_REQUIREMENT,
+                NUMPY_REQUIREMENT,
                 PYTHON_DOCX_REQUIREMENT,
             ]
         )

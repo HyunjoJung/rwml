@@ -6,6 +6,8 @@ import sys
 import tempfile
 import unittest
 
+from scripts import render_evidence_metrics
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "render_oracle_contract.py"
@@ -65,6 +67,14 @@ def write_manifest(root: pathlib.Path, data: dict, document: bytes = b"fixture")
 
 
 def valid_environment() -> dict:
+    tools = [
+        {"name": "pillow", "version": "12.3.0"},
+        {"name": "pymupdf", "version": "1.28.2"},
+        {"name": "python", "version": "3.13.14"},
+    ]
+    if render_evidence_metrics.numpy_module() is not None:
+        tools.append({"name": "numpy", "version": "test-version"})
+        tools.sort(key=lambda tool: tool["name"])
     return {
         "source_revision": "a" * 40,
         "source_dirty": False,
@@ -82,15 +92,14 @@ def valid_environment() -> dict:
             "release": "6.8.0",
             "machine": "x86_64",
         },
-        "tools": [
-            {"name": "pillow", "version": "12.3.0"},
-            {"name": "pymupdf", "version": "1.28.2"},
-            {"name": "python", "version": "3.13.14"},
-        ],
+        "tools": tools,
     }
 
 
 def valid_core_report() -> dict:
+    integer_metrics = render_evidence_metrics.image_metrics_python(
+        b"\xff\xff\xff", b"\xff\xff\xff", 1, 1
+    )
     return {
         "visual_comparison": {
             "dpi": 110,
@@ -98,7 +107,9 @@ def valid_core_report() -> dict:
             "foreground_threshold": 245,
             "ahash_size": 16,
             "font_mode": "fixed-noto-subsets",
+            "integer_metrics": render_evidence_metrics.metric_contract(),
         },
+        "integer_visual_metrics": integer_metrics,
         "summary": {
             "documents": 1,
             "measured": 1,
@@ -139,6 +150,7 @@ def valid_core_report() -> dict:
                 "capped_matched_pages": 0,
                 "render_warnings": 0,
                 "render_warning_kinds": [],
+                "integer_visual_metrics": integer_metrics,
             }
         ],
     }
@@ -295,7 +307,7 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
             )
             render_oracle_contract.validate_evidence_report(evidence, corpus)
 
-        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v1")
+        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v2")
         self.assertEqual(evidence["campaign"]["name"], "test-campaign")
         self.assertEqual(evidence["campaign"]["documents"], 1)
         self.assertEqual(evidence["campaign"]["expected_pages"], 1)
@@ -395,6 +407,51 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "gate passed"):
                 render_oracle_contract.validate_evidence_report(evidence, corpus)
+
+    def test_evidence_rejects_invalid_or_inconsistent_integer_metrics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(root, valid_manifest())
+            )
+            evidence = render_oracle_contract.bind_evidence_report(
+                valid_core_report(), corpus, valid_environment()
+            )
+            evidence["rows"][0]["integer_visual_metrics"]["pixels"] = 2
+
+            with self.assertRaisesRegex(ValueError, "integer visual"):
+                render_oracle_contract.validate_evidence_report(evidence, corpus)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(root, valid_manifest())
+            )
+            evidence = render_oracle_contract.bind_evidence_report(
+                valid_core_report(), corpus, valid_environment()
+            )
+            evidence["integer_visual_metrics"]["changed_pixels"] = 1
+
+            with self.assertRaisesRegex(ValueError, "integer visual"):
+                render_oracle_contract.validate_evidence_report(evidence, corpus)
+
+    def test_numpy_metric_contract_requires_numpy_environment_identity(self):
+        if render_evidence_metrics.numpy_module() is None:
+            self.skipTest("NumPy is not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(root, valid_manifest())
+            )
+            environment = valid_environment()
+            environment["tools"] = [
+                tool for tool in environment["tools"] if tool["name"] != "numpy"
+            ]
+
+            with self.assertRaisesRegex(ValueError, "NumPy metric implementation"):
+                render_oracle_contract.bind_evidence_report(
+                    valid_core_report(), corpus, environment
+                )
 
     def test_evidence_allows_candidate_to_reference_page_ratio_above_one(self):
         with tempfile.TemporaryDirectory() as tmp:

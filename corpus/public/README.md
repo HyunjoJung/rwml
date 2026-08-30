@@ -65,8 +65,15 @@ For every `.docx` here, rwml must:
 For LibreOffice A/B evidence, `scripts/render_validate.py` uses the bundled Noto
 subsets by default and reports the retained page-1 aHash plus bounded all-page
 aHash, foreground ink IoU, and explicit unmatched/capped page counts. Strict
-JSON runs additionally bind the report to the corpus root, source revision,
-Cargo lock, harness, platform, tool versions, and recorded LibreOffice identity.
+JSON evidence v2 also retains raw integer RGB error counts, integer PPM scores,
+one-pixel-matched foreground/edge/conservative text-ink masks, matched foreground
+color error, three-pixel blurred-luma similarity, and fixed work-unit accounting.
+Document and campaign values are recomputed from raw counts rather than averaging
+rounded page scores. The metric implementation and constants are explicit, and the
+Python reference and pinned NumPy paths are required to produce identical results.
+These diagnostics do not define or relax a fidelity threshold. Strict JSON runs
+additionally bind the report to the corpus root, source revision, Cargo lock,
+harness, platform, tool versions, and recorded LibreOffice identity.
 Local exports seed and initialize fresh per-document LibreOffice profiles before
 conversion. The seed maps observed Office and platform fallback families to the exact
 LibreOffice-bundled Noto files pinned by `oracle/libreoffice-font-lock.json`; the

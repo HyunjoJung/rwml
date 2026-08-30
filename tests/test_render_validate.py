@@ -772,6 +772,7 @@ class RenderValidateReportTests(unittest.TestCase):
                 "foreground_threshold": 240,
                 "ahash_size": 16,
                 "font_mode": "fixed-noto-subsets",
+                "integer_metrics": render_validate.integer_metric_contract(),
             },
         )
         checks = {check["metric"]: check for check in report["gate"]["checks"]}
@@ -881,6 +882,11 @@ class RenderValidateImageMetricTests(unittest.TestCase):
         self.assertEqual(metrics.compared_pages, 2)
         self.assertLess(metrics.mean_page_ahash_similarity, 1.0)
         self.assertEqual(metrics.foreground_ink_iou, 0.5)
+        self.assertEqual(metrics.integer_visual_metrics["pages"], 2)
+        self.assertEqual(metrics.integer_visual_metrics["pixels"], 80_000)
+        self.assertLess(
+            metrics.integer_visual_metrics["foreground_f1_ppm"], 1_000_000
+        )
 
     def test_foreground_iou_detects_small_ink_displacement_on_white_page(self):
         reference = self.page(size=(400, 400), rectangle=(20, 20, 60, 25))
@@ -935,6 +941,62 @@ class RenderValidateImageMetricTests(unittest.TestCase):
         self.assertEqual(metrics.capped_matched_pages, 1)
         self.assertEqual(metrics.mean_page_ahash_similarity, 1.0)
         self.assertEqual(metrics.foreground_ink_iou, 1.0)
+        self.assertEqual(metrics.integer_visual_metrics["pages"], 2)
+        self.assertEqual(metrics.integer_visual_metrics["similarity_ppm"], 1_000_000)
+
+    def test_validation_report_recomputes_integer_visual_summary(self):
+        exact = render_validate.integer_image_metrics(
+            b"\xff\xff\xff", b"\xff\xff\xff", 1, 1
+        )
+        changed = render_validate.integer_image_metrics(
+            b"\xff\xff\xff", b"\x00\x00\x00", 1, 1
+        )
+        rows = [
+            render_validate.ValidationRow(
+                document="exact.docx",
+                status="pass",
+                recall=1.0,
+                compared_pages=1,
+                integer_visual_metrics=exact,
+            ),
+            render_validate.ValidationRow(
+                document="changed.docx",
+                status="pass",
+                recall=1.0,
+                compared_pages=1,
+                integer_visual_metrics=changed,
+            ),
+        ]
+
+        report = render_validate.validation_report(rows, recall_min=0.8)
+
+        aggregate = report["integer_visual_metrics"]
+        self.assertEqual(aggregate["pages"], 2)
+        self.assertEqual(aggregate["pixels"], 2)
+        self.assertEqual(aggregate["changed_pixels"], 1)
+        self.assertEqual(aggregate["similarity_ppm"], 500_000)
+
+    def test_validation_report_rejects_partial_integer_visual_evidence(self):
+        exact = render_validate.integer_image_metrics(
+            b"\xff\xff\xff", b"\xff\xff\xff", 1, 1
+        )
+        rows = [
+            render_validate.ValidationRow(
+                document="with-metrics.docx",
+                status="pass",
+                recall=1.0,
+                compared_pages=1,
+                integer_visual_metrics=exact,
+            ),
+            render_validate.ValidationRow(
+                document="without-metrics.docx",
+                status="pass",
+                recall=1.0,
+            ),
+        ]
+
+        with self.assertRaisesRegex(ValueError, "integer visual evidence is partial"):
+            render_validate.validation_report(rows, recall_min=0.8)
 
     def test_raster_failures_raise_an_explicit_metric_error(self):
         broken_fitz = mock.Mock()

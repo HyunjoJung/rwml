@@ -14,6 +14,21 @@ EDGE_LUMA_DELTA = 32
 TEXT_INK_MAX_LUMA = 192
 METRIC_WORK_UNITS_PER_PIXEL = 128
 PPM = 1_000_000
+METRIC_CONTRACT_KEYS = frozenset(
+    {
+        "schema",
+        "implementation",
+        "foreground_channel_threshold",
+        "edge_luma_delta",
+        "text_ink_max_luma",
+        "match_radius_pixels",
+        "blur_kernel_pixels",
+        "work_units_per_pixel",
+    }
+)
+METRIC_IMPLEMENTATIONS = frozenset(
+    {"python-integer-reference-v1", "numpy-integer-exact-v1"}
+)
 
 MASK_PREFIXES = ("foreground", "edge", "text_ink")
 METRIC_KEYS = frozenset(
@@ -79,6 +94,19 @@ def metric_contract() -> dict[str, object]:
         "blur_kernel_pixels": 3,
         "work_units_per_pixel": METRIC_WORK_UNITS_PER_PIXEL,
     }
+
+
+def validate_metric_contract(contract: object) -> None:
+    if not isinstance(contract, dict) or set(contract) != METRIC_CONTRACT_KEYS:
+        raise ValueError("integer visual metric contract keys are invalid")
+    expected = metric_contract()
+    if contract["schema"] != METRIC_SCHEMA:
+        raise ValueError("integer visual metric contract schema is invalid")
+    if contract["implementation"] not in METRIC_IMPLEMENTATIONS:
+        raise ValueError("integer visual metric implementation is invalid")
+    for key in METRIC_CONTRACT_KEYS - {"schema", "implementation"}:
+        if contract[key] != expected[key]:
+            raise ValueError(f"integer visual metric contract is invalid: {key}")
 
 
 def _ratio_ppm(numerator: int, denominator: int, *, empty: int = 0) -> int:

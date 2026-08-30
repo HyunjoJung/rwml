@@ -21,6 +21,9 @@ and report complementary metrics per document:
                     a configurable hard cap at a reported fixed DPI.
   * ink IoU       — foreground-pixel intersection-over-union across those pages;
                     canvases are white-padded, never stretched, before comparison.
+  * integer image — raw error sums and integer PPM similarity for RGB, foreground,
+                    edge, conservative text-ink, matched color, and blurred luma;
+                    one-pixel mask matching and fixed work accounting are explicit.
   * warnings      — rwml `RenderReport` warning count/kinds for trend tracking.
 
 Local LibreOffice runs seed and initialize a fresh per-document user profile before
@@ -73,6 +76,14 @@ try:
         sfnt_revision,
         validate_pdf_font_identities,
     )
+    from render_evidence_metrics import (
+        METRIC_WORK_UNITS_PER_PIXEL,
+        aggregate_metrics as aggregate_integer_metrics,
+        image_metrics as integer_image_metrics,
+        metric_contract as integer_metric_contract,
+        numpy_module as integer_metric_numpy,
+        validate_metrics as validate_integer_metrics,
+    )
 except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
     from scripts.render_oracle_contract import (
         CorpusDocument,
@@ -87,6 +98,14 @@ except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
         normalized_postscript_name,
         sfnt_revision,
         validate_pdf_font_identities,
+    )
+    from scripts.render_evidence_metrics import (
+        METRIC_WORK_UNITS_PER_PIXEL,
+        aggregate_metrics as aggregate_integer_metrics,
+        image_metrics as integer_image_metrics,
+        metric_contract as integer_metric_contract,
+        numpy_module as integer_metric_numpy,
+        validate_metrics as validate_integer_metrics,
     )
 
 with contextlib.redirect_stdout(sys.stderr):
@@ -119,6 +138,9 @@ MAX_AHASH_SIZE = 64
 MAX_RASTER_PAGE_PIXELS = 40_000_000
 MAX_NORMALIZED_CANVAS_PIXELS = 50_000_000
 MAX_BUFFERED_RASTER_PIXELS = 100_000_000
+MAX_INTEGER_METRIC_WORK_UNITS = (
+    MAX_NORMALIZED_CANVAS_PIXELS * METRIC_WORK_UNITS_PER_PIXEL
+)
 MAX_VOLATILE_REFERENCE_PATH_TOKENS = 8
 OFFICE_DOCUMENT_EXTENSIONS = (".doc", ".docx", ".docm", ".dot", ".dotx", ".rtf")
 
@@ -184,6 +206,7 @@ class ValidationRow:
     unmatched_candidate_pages: int | None = None
     unmatched_reference_pages: int | None = None
     capped_matched_pages: int | None = None
+    integer_visual_metrics: dict[str, int] | None = None
     render_warnings: int | None = None
     render_warning_kinds: list[str] | None = None
     reason: str | None = None
@@ -197,6 +220,7 @@ class VisualMetrics:
     unmatched_candidate_pages: int
     unmatched_reference_pages: int
     capped_matched_pages: int
+    integer_visual_metrics: dict[str, int] | None
 
 
 def is_finite_number(value: object) -> bool:
@@ -602,6 +626,10 @@ def validation_report(
                 if warning in row_warnings:
                     raise ValueError(f"duplicate render warning kind: {warning}")
                 row_warnings.add(warning)
+        if row.integer_visual_metrics is not None:
+            validate_integer_metrics(row.integer_visual_metrics)
+            if row.compared_pages != row.integer_visual_metrics["pages"]:
+                raise ValueError("integer visual page count mismatch")
         if row.status == "skip" and any(
             getattr(row, metric) is not None
             for metric in (
@@ -616,6 +644,7 @@ def validation_report(
                 "unmatched_candidate_pages",
                 "unmatched_reference_pages",
                 "capped_matched_pages",
+                "integer_visual_metrics",
                 "render_warnings",
                 "render_warning_kinds",
             )
@@ -631,6 +660,18 @@ def validation_report(
         raise ValueError(f"recall threshold above one: {recall_min}")
     visual_settings = validate_visual_settings(visual_settings)
     measured = [r for r in rows if r.recall is not None]
+    integer_metric_rows = [
+        r.integer_visual_metrics
+        for r in measured
+        if r.integer_visual_metrics is not None
+    ]
+    if integer_metric_rows and len(integer_metric_rows) != len(measured):
+        raise ValueError("integer visual evidence is partial")
+    integer_metric_summary = (
+        aggregate_integer_metrics(integer_metric_rows)
+        if integer_metric_rows
+        else None
+    )
     summary = {
         "documents": len(rows),
         "measured": len(measured),
@@ -696,7 +737,11 @@ def validation_report(
         ),
     }
     return {
-        "visual_comparison": visual_settings,
+        "visual_comparison": {
+            **visual_settings,
+            "integer_metrics": integer_metric_contract(),
+        },
+        "integer_visual_metrics": integer_metric_summary,
         "summary": summary,
         "gate": validation_gate(summary, thresholds),
         "rows": [row_dict(r) for r in rows],
@@ -976,6 +1021,7 @@ def _harness_sha256() -> str:
     for path in (
         Path(__file__).resolve(),
         Path(__file__).with_name("render_oracle_contract.py").resolve(),
+        Path(__file__).with_name("render_evidence_metrics.py").resolve(),
         Path(__file__).with_name("libreoffice_oracle_fonts.py").resolve(),
         LOCAL_ORACLE_PROFILE,
         LOCAL_ORACLE_FONT_LOCK,
@@ -1042,6 +1088,15 @@ def environment_identity(
     revision, dirty = _source_identity(source_revision)
     pymupdf_version = getattr(fitz, "__version__", "unavailable")
     pillow_version = getattr(Image, "__version__", "unavailable")
+    tools = [
+        {"name": "pillow", "version": str(pillow_version)},
+        {"name": "pymupdf", "version": str(pymupdf_version)},
+        {"name": "python", "version": platform.python_version()},
+    ]
+    numpy = integer_metric_numpy()
+    if numpy is not None:
+        tools.append({"name": "numpy", "version": str(numpy.__version__)})
+        tools.sort(key=lambda tool: tool["name"])
     return {
         "source_revision": revision,
         "source_dirty": dirty,
@@ -1054,11 +1109,7 @@ def environment_identity(
             "release": platform.release() or "unknown",
             "machine": platform.machine() or "unknown",
         },
-        "tools": [
-            {"name": "pillow", "version": str(pillow_version)},
-            {"name": "pymupdf", "version": str(pymupdf_version)},
-            {"name": "python", "version": platform.python_version()},
-        ],
+        "tools": tools,
     }
 
 
@@ -1663,6 +1714,12 @@ def image_ahash(image, size: int = DEFAULT_AHASH_SIZE) -> int:
 
 def image_hash_similarity(reference, candidate, size: int = DEFAULT_AHASH_SIZE) -> float:
     reference, candidate = normalize_page_pair(reference, candidate)
+    return normalized_image_hash_similarity(reference, candidate, size=size)
+
+
+def normalized_image_hash_similarity(
+    reference, candidate, size: int = DEFAULT_AHASH_SIZE
+) -> float:
     difference = image_ahash(reference, size=size) ^ image_ahash(candidate, size=size)
     return 1.0 - bin(difference).count("1") / (size * size)
 
@@ -1675,6 +1732,10 @@ def foreground_ink_iou_images(reference, candidate, threshold: int) -> float:
     ):
         raise ValueError(f"foreground threshold is out of range: {threshold}")
     reference, candidate = normalize_page_pair(reference, candidate)
+    return normalized_foreground_ink_iou(reference, candidate, threshold)
+
+
+def normalized_foreground_ink_iou(reference, candidate, threshold: int) -> float:
     ink_lut = [255 if value < threshold else 0 for value in range(256)]
     reference_mask = reference.convert("L").point(ink_lut)
     candidate_mask = candidate.convert("L").point(ink_lut)
@@ -1727,24 +1788,38 @@ def compare_page_images(
     )
     page_hashes = []
     page_ink_ious = []
+    integer_pages = []
     for index in range(compared_pages):
+        reference_page, candidate_page = normalize_page_pair(
+            reference_pages[index], candidate_pages[index]
+        )
         page_hashes.append(
-            image_hash_similarity(
-                reference_pages[index],
-                candidate_pages[index],
+            normalized_image_hash_similarity(
+                reference_page,
+                candidate_page,
                 size=settings["ahash_size"],
             )
         )
         page_ink_ious.append(
-            foreground_ink_iou_images(
-                reference_pages[index],
-                candidate_pages[index],
+            normalized_foreground_ink_iou(
+                reference_page,
+                candidate_page,
                 threshold=settings["foreground_threshold"],
+            )
+        )
+        integer_pages.append(
+            integer_image_metrics(
+                reference_page.tobytes(),
+                candidate_page.tobytes(),
+                reference_page.width,
+                reference_page.height,
+                max_metric_work_units=MAX_INTEGER_METRIC_WORK_UNITS,
             )
         )
     return visual_metrics_from_scores(
         page_hashes,
         page_ink_ious,
+        integer_pages,
         reference_page_count=reference_page_count,
         candidate_page_count=candidate_page_count,
         page_cap=settings["page_cap"],
@@ -1754,6 +1829,7 @@ def compare_page_images(
 def visual_metrics_from_scores(
     page_hashes: list[float],
     page_ink_ious: list[float],
+    integer_pages: list[dict[str, int]] | None,
     *,
     reference_page_count: int,
     candidate_page_count: int,
@@ -1761,6 +1837,8 @@ def visual_metrics_from_scores(
 ) -> VisualMetrics:
     if len(page_hashes) != len(page_ink_ious):
         raise ValueError("visual page metric count mismatch")
+    if integer_pages is not None and len(page_hashes) != len(integer_pages):
+        raise ValueError("integer visual page metric count mismatch")
     return VisualMetrics(
         mean_page_ahash_similarity=mean(page_hashes),
         foreground_ink_iou=mean(page_ink_ious),
@@ -1770,6 +1848,9 @@ def visual_metrics_from_scores(
         capped_matched_pages=max(
             0,
             min(reference_page_count, candidate_page_count) - page_cap,
+        ),
+        integer_visual_metrics=(
+            aggregate_integer_metrics(integer_pages) if integer_pages else None
         ),
     )
 
@@ -1858,6 +1939,7 @@ def compare_pdf_visuals(
             )
             page_hashes = []
             page_ink_ious = []
+            integer_pages = []
             for index in range(compared_pages):
                 reference_page = rasterize_pdf_page(
                     reference_document,
@@ -1871,23 +1953,36 @@ def compare_pdf_visuals(
                     dpi=settings["dpi"],
                     pdf_name=candidate.name,
                 )
+                reference_page, candidate_page = normalize_page_pair(
+                    reference_page, candidate_page
+                )
                 page_hashes.append(
-                    image_hash_similarity(
+                    normalized_image_hash_similarity(
                         reference_page,
                         candidate_page,
                         size=settings["ahash_size"],
                     )
                 )
                 page_ink_ious.append(
-                    foreground_ink_iou_images(
+                    normalized_foreground_ink_iou(
                         reference_page,
                         candidate_page,
                         threshold=settings["foreground_threshold"],
                     )
                 )
+                integer_pages.append(
+                    integer_image_metrics(
+                        reference_page.tobytes(),
+                        candidate_page.tobytes(),
+                        reference_page.width,
+                        reference_page.height,
+                        max_metric_work_units=MAX_INTEGER_METRIC_WORK_UNITS,
+                    )
+                )
             return visual_metrics_from_scores(
                 page_hashes,
                 page_ink_ious,
+                integer_pages,
                 reference_page_count=reference_page_count,
                 candidate_page_count=candidate_page_count,
                 page_cap=settings["page_cap"],
@@ -2210,6 +2305,7 @@ def main() -> int:
                     unmatched_candidate_pages=visual.unmatched_candidate_pages,
                     unmatched_reference_pages=visual.unmatched_reference_pages,
                     capped_matched_pages=visual.capped_matched_pages,
+                    integer_visual_metrics=visual.integer_visual_metrics,
                     render_warnings=len(kinds) if kinds is not None else None,
                     render_warning_kinds=kinds,
                     **row_identity(src, corpus_documents),

@@ -16,9 +16,22 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+try:
+    from render_evidence_metrics import (
+        aggregate_metrics as aggregate_integer_metrics,
+        validate_metric_contract,
+        validate_metrics as validate_integer_metrics,
+    )
+except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
+    from scripts.render_evidence_metrics import (
+        aggregate_metrics as aggregate_integer_metrics,
+        validate_metric_contract,
+        validate_metrics as validate_integer_metrics,
+    )
+
 
 CORPUS_SCHEMA = "rwml.render-oracle-corpus.v1"
-EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v1"
+EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v2"
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
 MAX_JSON_DEPTH = 64
@@ -53,6 +66,7 @@ EVIDENCE_KEYS = {
     "campaign",
     "environment",
     "visual_comparison",
+    "integer_visual_metrics",
     "summary",
     "gate",
     "rows",
@@ -95,6 +109,7 @@ ROW_KEYS = {
     "unmatched_candidate_pages",
     "unmatched_reference_pages",
     "capped_matched_pages",
+    "integer_visual_metrics",
     "render_warnings",
     "render_warning_kinds",
     "reason",
@@ -114,6 +129,7 @@ VISUAL_COMPARISON_KEYS = {
     "foreground_threshold",
     "ahash_size",
     "font_mode",
+    "integer_metrics",
 }
 SUMMARY_KEYS = {
     "documents",
@@ -685,6 +701,10 @@ def _validate_evidence_row(row: object, document: CorpusDocument) -> None:
         raise ValueError(f"evidence row status is invalid: {document.case_id}")
     if "reason" in row:
         _require_canonical_id(row["reason"], "evidence row reason")
+    if status != "skip":
+        validate_integer_metrics(row["integer_visual_metrics"])
+        if row["integer_visual_metrics"]["pages"] != row["compared_pages"]:
+            raise ValueError("evidence row integer visual page count mismatch")
     for key, value in row.items():
         if key in {
             "recall",
@@ -757,6 +777,34 @@ def _validate_visual_comparison(value: object) -> None:
             raise ValueError(f"visual comparison value is invalid: {key}")
     if value["font_mode"] not in FONT_MODES:
         raise ValueError("visual comparison font mode is invalid")
+    validate_metric_contract(value["integer_metrics"])
+
+
+def _validate_metric_environment(
+    visual_comparison: dict[str, Any], environment: dict[str, Any]
+) -> None:
+    implementation = visual_comparison["integer_metrics"]["implementation"]
+    tool_names = {tool["name"] for tool in environment["tools"]}
+    has_numpy = "numpy" in tool_names
+    uses_numpy = implementation == "numpy-integer-exact-v1"
+    if uses_numpy != has_numpy:
+        raise ValueError("NumPy metric implementation identity is inconsistent")
+
+
+def _validate_integer_visual_aggregate(
+    value: object, rows: list[dict[str, Any]]
+) -> None:
+    measured = [row for row in rows if row["status"] != "skip"]
+    if not measured:
+        if value is not None:
+            raise ValueError("integer visual aggregate requires measured rows")
+        return
+    validate_integer_metrics(value)
+    expected = aggregate_integer_metrics(
+        [row["integer_visual_metrics"] for row in measured]
+    )
+    if value != expected:
+        raise ValueError("integer visual aggregate is inconsistent")
 
 
 def _validate_summary(
@@ -904,7 +952,11 @@ def validate_evidence_report(
         raise ValueError("evidence row coverage mismatch")
     for row, document in zip(rows, corpus.documents, strict=True):
         _validate_evidence_row(row, document)
+    _validate_integer_visual_aggregate(evidence["integer_visual_metrics"], rows)
     _validate_visual_comparison(evidence["visual_comparison"])
+    _validate_metric_environment(
+        evidence["visual_comparison"], evidence["environment"]
+    )
     _validate_summary(evidence["summary"], rows, corpus)
     _validate_gate(evidence["gate"])
     _assert_path_neutral(evidence)
