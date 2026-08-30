@@ -36,7 +36,7 @@ use krilla::color::rgb;
 use krilla::geom::{PathBuilder, Point, Rect, Size, Transform};
 use krilla::image::Image as PdfImage;
 use krilla::num::NormalizedF32;
-use krilla::page::PageSettings;
+use krilla::page::{Page, PageSettings};
 use krilla::paint::{Fill, FillRule};
 use krilla::surface::Surface;
 use krilla::text::{Font, GlyphId, KrillaGlyph};
@@ -161,6 +161,7 @@ const MIN_COLUMN_WIDTH_PT: f32 = 20.0;
 const MAX_SECTION_COLUMNS: usize = 64;
 const MAX_TARGET_COLUMN_REWRAP_PASSES: usize = 4;
 const MAX_PAGE_SCENE_OPERATIONS: usize = 262_144;
+const MAX_PAGE_SCENE_LINKS: usize = 16_384;
 // Keep hostile numeric attributes away from PDF-coordinate overflow while
 // leaving every practical document value untouched.
 const MAX_ABSOLUTE_LINE_HEIGHT_PT: f32 = 1_000_000.0;
@@ -266,8 +267,6 @@ struct RunPaint {
     strikethrough: bool,
 }
 
-type PageLink = (f32, f32, f32, f32, Rc<str>);
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct SceneRect {
     x: f32,
@@ -295,14 +294,79 @@ impl SceneRect {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SceneLinkRect {
+    // Preserve authored annotation bounds without a width subtraction/re-addition round trip.
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+}
+
+impl SceneLinkRect {
+    fn from_ltrb([left, top, right, bottom]: [f32; 4]) -> Option<Self> {
+        if ![left, top, right, bottom].into_iter().all(f32::is_finite)
+            || left >= right
+            || top >= bottom
+        {
+            return None;
+        }
+        Some(Self {
+            left,
+            top,
+            right,
+            bottom,
+        })
+    }
+
+    fn intersection(self, clip: Self) -> Option<Self> {
+        Self::from_ltrb([
+            self.left.max(clip.left),
+            self.top.max(clip.top),
+            self.right.min(clip.right),
+            self.bottom.min(clip.bottom),
+        ])
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum LinkClip {
+    Unbounded,
+    Bounded(SceneLinkRect),
+    Hidden,
+}
+
+impl LinkClip {
+    fn from_ltrb(bounds: [f32; 4]) -> Self {
+        SceneLinkRect::from_ltrb(bounds).map_or(Self::Hidden, Self::Bounded)
+    }
+
+    fn apply(self, rect: SceneLinkRect) -> Option<SceneLinkRect> {
+        match self {
+            Self::Unbounded => Some(rect),
+            Self::Bounded(clip) => rect.intersection(clip),
+            Self::Hidden => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum PageSceneOp {
-    FillRect { rect: SceneRect, color: rgb::Color },
+    FillRect {
+        rect: SceneRect,
+        color: rgb::Color,
+    },
+    Link {
+        rect: SceneLinkRect,
+        target: Rc<str>,
+    },
 }
 
 struct PageScene {
     operations: Vec<PageSceneOp>,
     operation_limit: usize,
+    link_count: usize,
+    link_limit: usize,
 }
 
 impl Default for PageScene {
@@ -310,6 +374,8 @@ impl Default for PageScene {
         Self {
             operations: Vec::new(),
             operation_limit: MAX_PAGE_SCENE_OPERATIONS,
+            link_count: 0,
+            link_limit: MAX_PAGE_SCENE_LINKS,
         }
     }
 }
@@ -320,7 +386,30 @@ impl PageScene {
         Self {
             operations: Vec::new(),
             operation_limit,
+            link_count: 0,
+            link_limit: MAX_PAGE_SCENE_LINKS,
         }
+    }
+
+    #[cfg(test)]
+    fn with_limits(operation_limit: usize, link_limit: usize) -> Self {
+        Self {
+            operations: Vec::new(),
+            operation_limit,
+            link_count: 0,
+            link_limit,
+        }
+    }
+
+    fn push_operation(&mut self, operation: PageSceneOp) -> Result<()> {
+        if self.operations.len() >= self.operation_limit {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-operation limit",
+                self.operation_limit
+            )));
+        }
+        self.operations.push(operation);
+        Ok(())
     }
 
     fn push_fill_rect(
@@ -334,13 +423,21 @@ impl PageScene {
         let Some(rect) = SceneRect::new(x, y, width, height) else {
             return Ok(());
         };
-        if self.operations.len() >= self.operation_limit {
+        self.push_operation(PageSceneOp::FillRect { rect, color })
+    }
+
+    fn push_link_ltrb(&mut self, bounds: [f32; 4], target: Rc<str>, clip: LinkClip) -> Result<()> {
+        let Some(rect) = SceneLinkRect::from_ltrb(bounds).and_then(|rect| clip.apply(rect)) else {
+            return Ok(());
+        };
+        if self.link_count >= self.link_limit {
             return Err(Error::Render(format!(
-                "page scene exceeds the {}-operation limit",
-                self.operation_limit
+                "page scene exceeds the {}-link limit",
+                self.link_limit
             )));
         }
-        self.operations.push(PageSceneOp::FillRect { rect, color });
+        self.push_operation(PageSceneOp::Link { rect, target })?;
+        self.link_count += 1;
         Ok(())
     }
 }
@@ -4468,47 +4565,11 @@ fn fit_image_layout_to_box(
     })
 }
 
-fn push_clipped_page_link(
-    page_links: &mut Vec<PageLink>,
-    link: PageLink,
-    clip_left: f32,
-    clip_top: f32,
-    clip_right: f32,
-    clip_bottom: f32,
-) {
-    let (left, top, right, bottom, url) = link;
-    if ![
-        left,
-        top,
-        right,
-        bottom,
-        clip_left,
-        clip_top,
-        clip_right,
-        clip_bottom,
-    ]
-    .into_iter()
-    .all(f32::is_finite)
-        || clip_left >= clip_right
-        || clip_top >= clip_bottom
-    {
-        return;
-    }
-    let left = left.max(clip_left);
-    let top = top.max(clip_top);
-    let right = right.min(clip_right);
-    let bottom = bottom.min(clip_bottom);
-    if left < right && top < bottom {
-        page_links.push((left, top, right, bottom, url));
-    }
-}
-
 fn draw_running_surface_items(
     surface: &mut Surface<'_>,
     scene: &mut PageScene,
     items: Vec<RunningSurfaceItem>,
     placement: RunningSurfacePaintPlacement,
-    page_links: &mut Vec<PageLink>,
     cx: &mut TextCx<'_>,
 ) -> Result<f32> {
     let (mut y, limit_y) = placement.vertical_bounds;
@@ -4540,14 +4601,11 @@ fn draw_running_surface_items(
                 for run in line.runs {
                     if let Some(url) = run.link.clone() {
                         let left = x0 + run.x;
-                        push_clipped_page_link(
-                            page_links,
-                            (left, y, left + run.width(), y + line.height, url),
-                            0.0,
-                            y,
-                            geom.page_w,
-                            limit_y,
-                        );
+                        scene.push_link_ltrb(
+                            [left, y, left + run.width(), y + line.height],
+                            url,
+                            LinkClip::from_ltrb([0.0, y, geom.page_w, limit_y]),
+                        )?;
                     }
                     draw_run_with_page_context(surface, run, x0, baseline, page_number, cx);
                 }
@@ -4610,7 +4668,6 @@ fn draw_running_surface_items(
                     let row_height = row.height;
                     let row_top = y;
                     let row_bottom = (y + row_height).min(limit_y);
-                    let mut row_links = Vec::new();
                     previous_row_borders = draw_row_layout(
                         surface,
                         scene,
@@ -4619,21 +4676,11 @@ fn draw_running_surface_items(
                             x_offset: geom.left,
                             top: y,
                             page_number,
+                            link_clip: LinkClip::from_ltrb([0.0, row_top, geom.page_w, row_bottom]),
                         },
                         cx,
-                        &mut row_links,
                         previous_row_borders.as_ref(),
                     )?;
-                    for link in row_links {
-                        push_clipped_page_link(
-                            page_links,
-                            link,
-                            0.0,
-                            row_top,
-                            geom.page_w,
-                            row_bottom,
-                        );
-                    }
                     if band_clip {
                         surface.pop();
                         y = limit_y;
@@ -5583,7 +5630,24 @@ fn replay_page_scene_operations(
             PageSceneOp::FillRect { rect, color } => {
                 fill_rect_color(surface, rect.x, rect.y, rect.width, rect.height, *color)
             }
+            PageSceneOp::Link { .. } => {}
         }
+    }
+}
+
+fn replay_page_scene_annotations(page: &mut Page<'_>, scene: &PageScene) {
+    for operation in &scene.operations {
+        let PageSceneOp::Link { rect, target } = operation else {
+            continue;
+        };
+        let Some(rect) = Rect::from_ltrb(rect.left, rect.top, rect.right, rect.bottom) else {
+            continue;
+        };
+        let target = Target::Action(LinkAction::new(target.to_string()).into());
+        page.add_annotation(Annotation::new_link(
+            LinkAnnotation::new(rect, target),
+            None,
+        ));
     }
 }
 
@@ -5631,6 +5695,7 @@ struct CellContentPlacement {
     x: f32,
     top: f32,
     row_height: f32,
+    link_clip: LinkClip,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -5638,6 +5703,7 @@ struct RowPaintPlacement {
     x_offset: f32,
     top: f32,
     page_number: PageDisplayNumber,
+    link_clip: LinkClip,
 }
 
 #[derive(Clone, Copy)]
@@ -5668,7 +5734,6 @@ fn draw_table_cell_content(
     placement: CellContentPlacement,
     page_number: PageDisplayNumber,
     cx: &mut TextCx<'_>,
-    page_links: &mut Vec<PageLink>,
 ) -> Result<()> {
     let offset = cell_vertical_offset(&cell, placement.row_height);
     let clip_left = placement.x;
@@ -5734,9 +5799,9 @@ fn draw_table_cell_content(
                         x_offset: line_x,
                         top: line_top,
                         page_number,
+                        link_clip: placement.link_clip,
                     },
                     cx,
-                    page_links,
                     previous_nested_borders.as_ref(),
                 )?;
                 previous_nested_borders = next;
@@ -5746,13 +5811,11 @@ fn draw_table_cell_content(
                 for run in line.runs {
                     if let Some(url) = run.link.clone() {
                         let left = line_x + run.x;
-                        page_links.push((
-                            left,
-                            line_top,
-                            left + run.width(),
-                            line_top + line_height,
+                        scene.push_link_ltrb(
+                            [left, line_top, left + run.width(), line_top + line_height],
                             url,
-                        ));
+                            placement.link_clip,
+                        )?;
                     }
                     draw_run_with_page_context(surface, run, line_x, baseline, page_number, cx);
                 }
@@ -5772,7 +5835,6 @@ fn draw_row_layout(
     row: RowLayout,
     placement: RowPaintPlacement,
     cx: &mut TextCx<'_>,
-    page_links: &mut Vec<PageLink>,
     previous: Option<&RenderedRowBorders>,
 ) -> Result<Option<RenderedRowBorders>> {
     let table_id = row.table_id;
@@ -5817,10 +5879,10 @@ fn draw_row_layout(
                     x: cell_x,
                     top: placement.top,
                     row_height,
+                    link_clip: placement.link_clip,
                 },
                 placement.page_number,
                 cx,
-                page_links,
             )?;
         }
     } else {
@@ -5851,10 +5913,10 @@ fn draw_row_layout(
                     x: cell_x,
                     top: placement.top,
                     row_height,
+                    link_clip: placement.link_clip,
                 },
                 placement.page_number,
                 cx,
-                page_links,
             )?;
         }
     }
@@ -9966,9 +10028,6 @@ fn render_pdf(
             continue;
         };
         let mut page = document.start_page_with(settings);
-        // Link rects collected while drawing (top-down coords); added as annotations
-        // after the surface is finished (which releases its borrow on the page).
-        let mut page_links: Vec<PageLink> = Vec::new();
         let mut page_scene = PageScene::default();
         let (header_blocks, footer_blocks) = running_header_footer_blocks_for_page(
             &page_section.setup,
@@ -10073,7 +10132,6 @@ fn render_pdf(
                 geom: page_geom,
                 page_number: display_page_number,
             },
-            &mut page_links,
             &mut tcx,
         )?;
         let fy = draw_running_surface_items(
@@ -10085,7 +10143,6 @@ fn render_pdf(
                 geom: page_geom,
                 page_number: display_page_number,
             },
-            &mut page_links,
             &mut tcx,
         )?;
         if page_section.setup.page_numbers && explicit_footer_distance.is_none() {
@@ -10154,7 +10211,11 @@ fn render_pdf(
                     for run in line.runs {
                         if let Some(url) = run.link.clone() {
                             let l = x0 + run.x;
-                            page_links.push((l, top, l + run.width(), top + lh, url));
+                            page_scene.push_link_ltrb(
+                                [l, top, l + run.width(), top + lh],
+                                url,
+                                LinkClip::Unbounded,
+                            )?;
                         }
                         draw_run_with_page_context(
                             &mut surface,
@@ -10178,9 +10239,9 @@ fn render_pdf(
                             x_offset: page_geom.left + column_x,
                             top,
                             page_number: display_page_number,
+                            link_clip: LinkClip::Unbounded,
                         },
                         &mut tcx,
-                        &mut page_links,
                         previous_row_borders.as_ref(),
                     )?;
                 }
@@ -10193,15 +10254,7 @@ fn render_pdf(
             draw_floating_shape_overlay(&mut surface, overlay, &mut tcx);
         }
         surface.finish();
-        for (l, t, r, b, url) in page_links {
-            if let Some(rect) = Rect::from_ltrb(l, t, r, b) {
-                let target = Target::Action(LinkAction::new(url.to_string()).into());
-                page.add_annotation(Annotation::new_link(
-                    LinkAnnotation::new(rect, target),
-                    None,
-                ));
-            }
-        }
+        replay_page_scene_annotations(&mut page, &page_scene);
         page.finish();
     }
     let pdf = document
@@ -10226,12 +10279,12 @@ mod tests {
         first_row_fragment_height, fit_chart_layout_to_box, fit_image_layout_to_box, image_layout,
         image_paint_transform, layout_page_number_line, layout_paragraph, layout_table,
         layout_table_with_row_pagination, page_field_text, paginate, paginate_with_column_gap,
-        push_clipped_page_link, render_pdf, rgb, running_footer_vertical_bounds,
-        running_header_footer_blocks_for_page, running_header_vertical_bounds,
-        running_surface_tab_stops, shape, shape_cell, split_row, unsupported_placeholder_texts,
-        ColumnLayout, FlowItem, Geom, LayoutCapture, LineLayout, PageDisplayNumber,
-        RunningSurfaceDistanceHints, RunningSurfaceTabStopHints, RunningSurfaceVariant,
-        SourceRenderHints, StyledText, TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
+        render_pdf, rgb, running_footer_vertical_bounds, running_header_footer_blocks_for_page,
+        running_header_vertical_bounds, running_surface_tab_stops, shape, shape_cell, split_row,
+        unsupported_placeholder_texts, ColumnLayout, FlowItem, Geom, LayoutCapture, LineLayout,
+        PageDisplayNumber, RunningSurfaceDistanceHints, RunningSurfaceTabStopHints,
+        RunningSurfaceVariant, SourceRenderHints, StyledText, TablePaginationView, TextCx,
+        DEFAULT_TAB_STOP_PT,
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Chart, ChartSeries, Color, DocModel, FieldRole,
@@ -10625,34 +10678,78 @@ mod tests {
     #[test]
     fn running_surface_link_rectangles_are_clipped_to_visible_finite_bounds() {
         let target: Rc<str> = Rc::from("https://example.com/clipped");
-        let mut links = Vec::new();
-        push_clipped_page_link(
-            &mut links,
-            (10.0, 10.0, 50.0, 40.0, target.clone()),
-            20.0,
-            15.0,
-            45.0,
-            30.0,
-        );
-        assert_eq!(links, vec![(20.0, 15.0, 45.0, 30.0, target.clone())]);
+        let later_target: Rc<str> = Rc::from("https://example.com/later");
+        let clip = super::LinkClip::from_ltrb([20.0, 15.0, 45.0, 30.0]);
+        let mut scene = super::PageScene::default();
+        scene
+            .push_link_ltrb([10.0, 10.0, 50.0, 40.0], target.clone(), clip)
+            .expect("visible link projects");
 
-        for link in [
-            (0.0, 0.0, 10.0, 10.0, target.clone()),
-            (50.0, 20.0, 60.0, 25.0, target.clone()),
-            (20.0, 30.0, 30.0, 40.0, target.clone()),
-            (f32::NAN, 20.0, 30.0, 25.0, target.clone()),
+        for bounds in [
+            [0.0, 0.0, 10.0, 10.0],
+            [50.0, 20.0, 60.0, 25.0],
+            [20.0, 30.0, 30.0, 40.0],
+            [f32::NAN, 20.0, 30.0, 25.0],
         ] {
-            push_clipped_page_link(&mut links, link, 20.0, 15.0, 45.0, 30.0);
+            scene
+                .push_link_ltrb(bounds, target.clone(), clip)
+                .expect("hidden or invalid links are ignored");
         }
-        push_clipped_page_link(
-            &mut links,
-            (20.0, 20.0, 30.0, 25.0, target),
-            45.0,
-            15.0,
-            20.0,
-            30.0,
+        scene
+            .push_link_ltrb(
+                [20.0, 20.0, 30.0, 25.0],
+                target.clone(),
+                super::LinkClip::from_ltrb([45.0, 15.0, 20.0, 30.0]),
+            )
+            .expect("invalid clip hides links");
+        scene
+            .push_link_ltrb(
+                [1.0, 2.0, 3.0, 4.0],
+                later_target.clone(),
+                super::LinkClip::Unbounded,
+            )
+            .expect("unbounded link projects");
+
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::Link {
+                    rect: super::SceneLinkRect {
+                        left: 20.0,
+                        top: 15.0,
+                        right: 45.0,
+                        bottom: 30.0,
+                    },
+                    target: target.clone(),
+                },
+                super::PageSceneOp::Link {
+                    rect: super::SceneLinkRect {
+                        left: 1.0,
+                        top: 2.0,
+                        right: 3.0,
+                        bottom: 4.0,
+                    },
+                    target: later_target,
+                },
+            ]
         );
-        assert_eq!(links.len(), 1, "hidden or invalid links must be dropped");
+
+        let mut limited = super::PageScene::with_limits(4, 1);
+        limited
+            .push_link_ltrb(
+                [0.0, 0.0, 1.0, 1.0],
+                target.clone(),
+                super::LinkClip::Unbounded,
+            )
+            .expect("first link fits");
+        let error = limited
+            .push_link_ltrb([1.0, 0.0, 2.0, 1.0], target, super::LinkClip::Unbounded)
+            .expect_err("link ceiling rejects overflow");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 1-link limit"
+        );
+        assert_eq!(limited.operations.len(), 1);
     }
 
     #[test]
