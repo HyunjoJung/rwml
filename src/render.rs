@@ -45,7 +45,6 @@ use std::sync::Arc;
 use krilla::color::rgb;
 use krilla::image::Image as PdfImage;
 use krilla::page::PageSettings;
-use krilla::surface::Surface;
 use krilla::text::{Font, GlyphId, KrillaGlyph};
 use krilla::{Data, Document as PdfDoc};
 use parley::layout::{Alignment, IndentOptions};
@@ -4536,7 +4535,6 @@ fn fit_image_layout_to_box(
 }
 
 fn draw_running_surface_items(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     items: Vec<RunningSurfaceItem>,
     placement: RunningSurfacePaintPlacement,
@@ -4565,11 +4563,11 @@ fn draw_running_surface_items(
                 let baseline = y + line.baseline;
                 let x0 = geom.left + line.x_indent;
                 let clip_content = if line.clip_to_height {
-                    push_page_scene_clip(surface, scene, 0.0, y, line.height, geom.page_w)?
+                    push_page_scene_clip(scene, 0.0, y, line.height, geom.page_w)?
                 } else {
                     false
                 };
-                project_page_scene_line_paint(surface, scene, &line, x0, y, baseline)?;
+                project_page_scene_line_paint(scene, &line, x0, y, baseline)?;
                 for run in line.runs {
                     if let Some(url) = run.link.clone() {
                         let left = x0 + run.x;
@@ -4580,7 +4578,6 @@ fn draw_running_surface_items(
                         )?;
                     }
                     project_page_scene_run_with_page_context(
-                        surface,
                         scene,
                         run,
                         x0,
@@ -4590,7 +4587,7 @@ fn draw_running_surface_items(
                     )?;
                 }
                 if clip_content {
-                    pop_page_scene_clip(surface, scene)?;
+                    pop_page_scene_clip(scene)?;
                 }
                 y += line.height;
             }
@@ -4600,7 +4597,7 @@ fn draw_running_surface_items(
                     break;
                 };
                 let bounds_x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
-                if project_page_scene_image(surface, scene, image, layout, bounds_x, y)? {
+                if project_page_scene_image(scene, image, layout, bounds_x, y)? {
                     y += layout.bounds_h;
                 }
             }
@@ -4610,17 +4607,16 @@ fn draw_running_surface_items(
                     break;
                 };
                 let x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
-                if !push_page_scene_clip(surface, scene, x, y, layout.bounds_h, layout.bounds_w)? {
+                if !push_page_scene_clip(scene, x, y, layout.bounds_h, layout.bounds_w)? {
                     break;
                 }
                 let transform =
                     SceneTransform::from_row(layout.scale, 0.0, 0.0, layout.scale, x, y);
-                if !push_page_scene_transform(surface, scene, transform)? {
-                    pop_page_scene_clip(surface, scene)?;
+                if !push_page_scene_transform(scene, transform)? {
+                    pop_page_scene_clip(scene)?;
                     break;
                 }
                 draw_authored_chart(
-                    surface,
                     scene,
                     &chart,
                     ChartRect {
@@ -4631,8 +4627,8 @@ fn draw_running_surface_items(
                     },
                     cx,
                 )?;
-                pop_page_scene_transform(surface, scene)?;
-                pop_page_scene_clip(surface, scene)?;
+                pop_page_scene_transform(scene)?;
+                pop_page_scene_clip(scene)?;
                 y += layout.bounds_h;
             }
             RunningSurfaceItem::Table { rows } => {
@@ -4644,7 +4640,7 @@ fn draw_running_surface_items(
                     }
                     let clipped = row.height > remaining;
                     let band_clip = if clipped {
-                        if !push_page_scene_clip(surface, scene, 0.0, y, remaining, geom.page_w)? {
+                        if !push_page_scene_clip(scene, 0.0, y, remaining, geom.page_w)? {
                             break;
                         }
                         true
@@ -4655,7 +4651,6 @@ fn draw_running_surface_items(
                     let row_top = y;
                     let row_bottom = (y + row_height).min(limit_y);
                     previous_row_borders = draw_row_layout(
-                        surface,
                         scene,
                         row,
                         RowPaintPlacement {
@@ -4668,7 +4663,7 @@ fn draw_running_surface_items(
                         previous_row_borders.as_ref(),
                     )?;
                     if band_clip {
-                        pop_page_scene_clip(surface, scene)?;
+                        pop_page_scene_clip(scene)?;
                         y = limit_y;
                         break;
                     }
@@ -5234,7 +5229,6 @@ fn collect_blocks_inner(
 }
 
 fn fill_circle_color(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     cx: f32,
     cy: f32,
@@ -5246,7 +5240,6 @@ fn fill_circle_color(
     }
     let steps = 28usize;
     project_page_scene_fill_polygon_iter(
-        surface,
         scene,
         (0..=steps).map(move |step| {
             let angle = std::f32::consts::TAU * step as f32 / steps as f32;
@@ -5257,7 +5250,6 @@ fn fill_circle_color(
 }
 
 fn fill_chart_bar_shape(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     rect: ChartRect,
     shape: ChartShape,
@@ -5271,7 +5263,6 @@ fn fill_chart_bar_shape(
         ChartShape::Cylinder => {
             let radius = (h * 0.5).min(w * 0.5);
             project_page_scene_fill_rect(
-                surface,
                 scene,
                 x + radius * 0.5,
                 y,
@@ -5279,29 +5270,27 @@ fn fill_chart_bar_shape(
                 h,
                 color,
             )?;
-            fill_circle_color(surface, scene, x + radius, y + h * 0.5, radius, color)?;
-            fill_circle_color(surface, scene, x + w - radius, y + h * 0.5, radius, color)?;
+            fill_circle_color(scene, x + radius, y + h * 0.5, radius, color)?;
+            fill_circle_color(scene, x + w - radius, y + h * 0.5, radius, color)?;
         }
         ChartShape::Cone
         | ChartShape::ConeToMax
         | ChartShape::Pyramid
         | ChartShape::PyramidToMax => {
             project_page_scene_fill_polygon(
-                surface,
                 scene,
                 &[(x, y), (x, y + h), (x + w, y + h * 0.5)],
                 color,
             )?;
         }
         ChartShape::Box => {
-            project_page_scene_fill_rect(surface, scene, x, y, w, h, color)?;
+            project_page_scene_fill_rect(scene, x, y, w, h, color)?;
         }
     }
     Ok(())
 }
 
 fn fill_chart_column_shape(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     rect: ChartRect,
     shape: ChartShape,
@@ -5315,7 +5304,6 @@ fn fill_chart_column_shape(
         ChartShape::Cylinder => {
             let radius = (w * 0.5).min(h * 0.5);
             project_page_scene_fill_rect(
-                surface,
                 scene,
                 x,
                 y + radius * 0.5,
@@ -5323,22 +5311,21 @@ fn fill_chart_column_shape(
                 (h - radius).max(1.0),
                 color,
             )?;
-            fill_circle_color(surface, scene, x + w * 0.5, y + radius, radius, color)?;
-            fill_circle_color(surface, scene, x + w * 0.5, y + h - radius, radius, color)?;
+            fill_circle_color(scene, x + w * 0.5, y + radius, radius, color)?;
+            fill_circle_color(scene, x + w * 0.5, y + h - radius, radius, color)?;
         }
         ChartShape::Cone
         | ChartShape::ConeToMax
         | ChartShape::Pyramid
         | ChartShape::PyramidToMax => {
             project_page_scene_fill_polygon(
-                surface,
                 scene,
                 &[(x + w * 0.5, y), (x, y + h), (x + w, y + h)],
                 color,
             )?;
         }
         ChartShape::Box => {
-            project_page_scene_fill_rect(surface, scene, x, y, w, h, color)?;
+            project_page_scene_fill_rect(scene, x, y, w, h, color)?;
         }
     }
     Ok(())
@@ -5520,7 +5507,6 @@ fn project_table_cell_paint(
 }
 
 fn project_page_scene_fill_rect(
-    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     x: f32,
     y: f32,
@@ -5533,7 +5519,6 @@ fn project_page_scene_fill_rect(
 }
 
 fn project_page_scene_fill_polygon(
-    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     points: &[(f32, f32)],
     color: rgb::Color,
@@ -5543,7 +5528,6 @@ fn project_page_scene_fill_polygon(
 }
 
 fn project_page_scene_fill_polygon_iter<I>(
-    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     points: I,
     color: rgb::Color,
@@ -5556,7 +5540,6 @@ where
 }
 
 fn project_page_scene_glyph_run(
-    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     run: RunDraw,
     x_abs: f32,
@@ -5567,7 +5550,6 @@ fn project_page_scene_glyph_run(
 }
 
 fn push_page_scene_clip(
-    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     left: f32,
     top: f32,
@@ -5580,29 +5562,24 @@ fn push_page_scene_clip(
     Ok(true)
 }
 
-fn pop_page_scene_clip(_surface: &mut Surface<'_>, scene: &mut PageScene) -> Result<()> {
+fn pop_page_scene_clip(scene: &mut PageScene) -> Result<()> {
     scene.pop_clip()?;
     Ok(())
 }
 
-fn push_page_scene_transform(
-    _surface: &mut Surface<'_>,
-    scene: &mut PageScene,
-    transform: SceneTransform,
-) -> Result<bool> {
+fn push_page_scene_transform(scene: &mut PageScene, transform: SceneTransform) -> Result<bool> {
     if !scene.push_transform(transform)? {
         return Ok(false);
     }
     Ok(true)
 }
 
-fn pop_page_scene_transform(_surface: &mut Surface<'_>, scene: &mut PageScene) -> Result<()> {
+fn pop_page_scene_transform(scene: &mut PageScene) -> Result<()> {
     scene.pop_transform()?;
     Ok(())
 }
 
 fn project_page_scene_image(
-    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     image: RenderImage,
     layout: ImageLayout,
@@ -5617,14 +5594,12 @@ fn project_page_scene_image(
 }
 
 fn draw_terminal_vertical_junction(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     top: f32,
     line: VerticalBorderLine,
     horizontal_width: f32,
 ) -> Result<()> {
     project_page_scene_fill_rect(
-        surface,
         scene,
         line.x - line.paint.width * 0.5,
         top - horizontal_width * 0.5,
@@ -5635,7 +5610,6 @@ fn draw_terminal_vertical_junction(
 }
 
 fn draw_table_cell_background_and_borders(
-    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     cell: &CellBox,
     placement: TableCellPaintPlacement,
@@ -5687,7 +5661,6 @@ fn cell_vertical_offset(cell: &CellBox, row_height: f32) -> f32 {
 }
 
 fn draw_table_cell_content(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     cell: CellBox,
     placement: CellContentPlacement,
@@ -5706,11 +5679,11 @@ fn draw_table_cell_content(
         let after = line.cell_spacing.after;
         let line_x = cell_line_origin(placement.x, cell.insets, &line);
         let clip_content = if line.clip_to_height {
-            push_page_scene_clip(surface, scene, clip_left, line_top, line_height, clip_width)?
+            push_page_scene_clip(scene, clip_left, line_top, line_height, clip_width)?
         } else {
             false
         };
-        project_page_scene_line_paint(surface, scene, &line, line_x, line_top, baseline)?;
+        project_page_scene_line_paint(scene, &line, line_x, line_top, baseline)?;
         match line.cell_visual {
             Some(CellVisual::Picture { image, layout }) => {
                 previous_nested_borders = None;
@@ -5719,7 +5692,7 @@ fn draw_table_cell_content(
                 let x = placement.x
                     + cell.insets.left
                     + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
-                project_page_scene_image(surface, scene, image, layout, x, line_top)?;
+                project_page_scene_image(scene, image, layout, x, line_top)?;
             }
             Some(CellVisual::Chart {
                 chart,
@@ -5733,19 +5706,11 @@ fn draw_table_cell_content(
                 let x = placement.x
                     + cell.insets.left
                     + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
-                if push_page_scene_clip(
-                    surface,
-                    scene,
-                    x,
-                    line_top,
-                    layout.bounds_h,
-                    layout.bounds_w,
-                )? {
+                if push_page_scene_clip(scene, x, line_top, layout.bounds_h, layout.bounds_w)? {
                     let transform =
                         SceneTransform::from_row(layout.scale, 0.0, 0.0, layout.scale, x, line_top);
-                    if push_page_scene_transform(surface, scene, transform)? {
+                    if push_page_scene_transform(scene, transform)? {
                         draw_authored_chart(
-                            surface,
                             scene,
                             &chart,
                             ChartRect {
@@ -5756,14 +5721,13 @@ fn draw_table_cell_content(
                             },
                             cx,
                         )?;
-                        pop_page_scene_transform(surface, scene)?;
+                        pop_page_scene_transform(scene)?;
                     }
-                    pop_page_scene_clip(surface, scene)?;
+                    pop_page_scene_clip(scene)?;
                 }
             }
             Some(CellVisual::NestedRow { row }) => {
                 let next = draw_row_layout(
-                    surface,
                     scene,
                     *row,
                     RowPaintPlacement {
@@ -5789,7 +5753,6 @@ fn draw_table_cell_content(
                         )?;
                     }
                     project_page_scene_run_with_page_context(
-                        surface,
                         scene,
                         run,
                         line_x,
@@ -5801,7 +5764,7 @@ fn draw_table_cell_content(
             }
         }
         if clip_content {
-            pop_page_scene_clip(surface, scene)?;
+            pop_page_scene_clip(scene)?;
         }
         line_top += line_height + after;
     }
@@ -5809,7 +5772,6 @@ fn draw_table_cell_content(
 }
 
 fn draw_row_layout(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     row: RowLayout,
     placement: RowPaintPlacement,
@@ -5838,7 +5800,6 @@ fn draw_row_layout(
     if junctions.is_empty() {
         for cell in cells {
             draw_table_cell_background_and_borders(
-                surface,
                 scene,
                 &cell,
                 TableCellPaintPlacement {
@@ -5851,7 +5812,6 @@ fn draw_row_layout(
             )?;
             let cell_x = placement.x_offset + cell.x;
             draw_table_cell_content(
-                surface,
                 scene,
                 cell,
                 CellContentPlacement {
@@ -5867,7 +5827,6 @@ fn draw_row_layout(
     } else {
         for cell in &cells {
             draw_table_cell_background_and_borders(
-                surface,
                 scene,
                 cell,
                 TableCellPaintPlacement {
@@ -5880,12 +5839,11 @@ fn draw_row_layout(
             )?;
         }
         for (line, horizontal_width) in junctions {
-            draw_terminal_vertical_junction(surface, scene, placement.top, line, horizontal_width)?;
+            draw_terminal_vertical_junction(scene, placement.top, line, horizontal_width)?;
         }
         for cell in cells {
             let cell_x = placement.x_offset + cell.x;
             draw_table_cell_content(
-                surface,
                 scene,
                 cell,
                 CellContentPlacement {
@@ -5907,7 +5865,6 @@ fn draw_row_layout(
 }
 
 fn project_page_scene_line_paint(
-    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     line: &LineLayout,
     x_abs: f32,
@@ -5989,14 +5946,12 @@ fn project_floating_overlay_frame(
 }
 
 fn draw_floating_shape_overlay(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     overlay: &FloatingShapeOverlay,
     cx: &mut TextCx<'_>,
 ) -> Result<()> {
     project_floating_overlay_frame(scene, overlay)?;
     draw_chart_text(
-        surface,
         scene,
         &overlay.label,
         ChartTextBox {
@@ -6033,7 +5988,6 @@ struct ChartTextBox {
 }
 
 fn draw_chart_text(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     text: &str,
     text_box: ChartTextBox,
@@ -6064,16 +6018,9 @@ fn draw_chart_text(
     .take(2)
     {
         let baseline = y + consumed + line.baseline;
-        project_page_scene_line_paint(
-            surface,
-            scene,
-            &line,
-            x + line.x_indent,
-            y + consumed,
-            baseline,
-        )?;
+        project_page_scene_line_paint(scene, &line, x + line.x_indent, y + consumed, baseline)?;
         for run in line.runs {
-            project_page_scene_glyph_run(surface, scene, run, x + line.x_indent, baseline)?;
+            project_page_scene_glyph_run(scene, run, x + line.x_indent, baseline)?;
         }
         consumed += line.height;
     }
@@ -6168,7 +6115,6 @@ fn format_chart_tick(value: f64) -> String {
 }
 
 fn fill_line_segment(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     start: (f32, f32),
     end: (f32, f32),
@@ -6182,7 +6128,6 @@ fn fill_line_segment(
     let len = (dx * dx + dy * dy).sqrt();
     if len <= 0.01 {
         return project_page_scene_fill_rect(
-            surface,
             scene,
             x1 - width * 0.5,
             y1 - width * 0.5,
@@ -6194,7 +6139,6 @@ fn fill_line_segment(
     let px = -dy / len * width * 0.5;
     let py = dx / len * width * 0.5;
     project_page_scene_fill_polygon(
-        surface,
         scene,
         &[
             (x1 + px, y1 + py),
@@ -6207,7 +6151,6 @@ fn fill_line_segment(
 }
 
 fn fill_area_shape(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     points: &[(f32, f32)],
     baseline_y: f32,
@@ -6220,7 +6163,6 @@ fn fill_area_shape(
         return Ok(());
     };
     project_page_scene_fill_polygon_iter(
-        surface,
         scene,
         std::iter::once((first_x, baseline_y))
             .chain(points.iter().copied())
@@ -6246,12 +6188,7 @@ struct PieSlice {
     sweep: f32,
 }
 
-fn fill_pie_slice(
-    surface: &mut Surface<'_>,
-    scene: &mut PageScene,
-    slice: PieSlice,
-    color: rgb::Color,
-) -> Result<()> {
+fn fill_pie_slice(scene: &mut PageScene, slice: PieSlice, color: rgb::Color) -> Result<()> {
     let PieSlice {
         cx,
         cy,
@@ -6264,7 +6201,6 @@ fn fill_pie_slice(
     }
     let steps = ((sweep.abs() / (std::f32::consts::PI / 24.0)).ceil() as usize).clamp(2, 96);
     project_page_scene_fill_polygon_iter(
-        surface,
         scene,
         std::iter::once((cx, cy)).chain((0..=steps).map(move |step| {
             let angle = start_angle + sweep * step as f32 / steps as f32;
@@ -6286,12 +6222,7 @@ struct RingSlice {
     sweep: f32,
 }
 
-fn fill_ring_slice(
-    surface: &mut Surface<'_>,
-    scene: &mut PageScene,
-    ring: RingSlice,
-    color: rgb::Color,
-) -> Result<()> {
+fn fill_ring_slice(scene: &mut PageScene, ring: RingSlice, color: rgb::Color) -> Result<()> {
     let RingSlice {
         cx,
         cy,
@@ -6318,11 +6249,10 @@ fn fill_ring_slice(
             cy + angle.sin() * inner_radius,
         )
     });
-    project_page_scene_fill_polygon_iter(surface, scene, outer.chain(inner), color)
+    project_page_scene_fill_polygon_iter(scene, outer.chain(inner), color)
 }
 
 fn draw_pie_chart(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     chart: &Chart,
     rect: ChartRect,
@@ -6363,7 +6293,6 @@ fn draw_pie_chart(
         let slice_cx = cx + mid_angle.cos() * explosion;
         let slice_cy = cy + mid_angle.sin() * explosion;
         fill_pie_slice(
-            surface,
             scene,
             PieSlice {
                 cx: slice_cx,
@@ -6378,7 +6307,6 @@ fn draw_pie_chart(
     }
     if doughnut {
         fill_pie_slice(
-            surface,
             scene,
             PieSlice {
                 cx,
@@ -6394,7 +6322,6 @@ fn draw_pie_chart(
 }
 
 fn draw_radar_chart(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     chart: &Chart,
     rect: ChartRect,
@@ -6435,18 +6362,17 @@ fn draw_radar_chart(
         for index in 0..ring_points.len() {
             let (x1, y1) = ring_points[index];
             let (x2, y2) = ring_points[(index + 1) % ring_points.len()];
-            fill_line_segment(surface, scene, (x1, y1), (x2, y2), 0.45, grid)?;
+            fill_line_segment(scene, (x1, y1), (x2, y2), 0.45, grid)?;
         }
     }
     for (index, category) in chart.categories.iter().enumerate() {
         let (spoke_x, spoke_y) = point_at(index, max_value);
-        fill_line_segment(surface, scene, (cx, cy), (spoke_x, spoke_y), 0.45, axis)?;
+        fill_line_segment(scene, (cx, cy), (spoke_x, spoke_y), 0.45, axis)?;
         let angle =
             -std::f32::consts::FRAC_PI_2 + index as f32 / count as f32 * std::f32::consts::TAU;
         let label_x = cx + angle.cos() * label_radius;
         let label_y = cy + angle.sin() * label_radius;
         draw_chart_text(
-            surface,
             scene,
             category,
             ChartTextBox {
@@ -6479,15 +6405,14 @@ fn draw_radar_chart(
         for index in 0..points.len() {
             let (x1, y1) = points[index];
             let (x2, y2) = points[(index + 1) % points.len()];
-            fill_line_segment(surface, scene, (x1, y1), (x2, y2), 1.5, color)?;
-            project_page_scene_fill_rect(surface, scene, x1 - 2.0, y1 - 2.0, 4.0, 4.0, color)?;
+            fill_line_segment(scene, (x1, y1), (x2, y2), 1.5, color)?;
+            project_page_scene_fill_rect(scene, x1 - 2.0, y1 - 2.0, 4.0, 4.0, color)?;
         }
     }
     Ok(())
 }
 
 fn draw_waterfall_chart(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     chart: &Chart,
     rect: ChartRect,
@@ -6523,19 +6448,10 @@ fn draw_waterfall_chart(
     for tick in 0..=4 {
         let frac = tick as f32 / 4.0;
         let y_tick = y + h - frac * h;
-        project_page_scene_fill_rect(
-            surface,
-            scene,
-            x,
-            y_tick,
-            w,
-            0.35,
-            rgb::Color::new(0xE1, 0xE5, 0xEA),
-        )?;
+        project_page_scene_fill_rect(scene, x, y_tick, w, 0.35, rgb::Color::new(0xE1, 0xE5, 0xEA))?;
         let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
         let label = format_chart_tick(value);
         draw_chart_text(
-            surface,
             scene,
             &label,
             ChartTextBox {
@@ -6552,24 +6468,8 @@ fn draw_waterfall_chart(
             tcx,
         )?;
     }
-    project_page_scene_fill_rect(
-        surface,
-        scene,
-        x,
-        zero_y,
-        w,
-        0.8,
-        rgb::Color::new(0x5D, 0x66, 0x70),
-    )?;
-    project_page_scene_fill_rect(
-        surface,
-        scene,
-        x,
-        y,
-        0.8,
-        h,
-        rgb::Color::new(0x5D, 0x66, 0x70),
-    )?;
+    project_page_scene_fill_rect(scene, x, zero_y, w, 0.8, rgb::Color::new(0x5D, 0x66, 0x70))?;
+    project_page_scene_fill_rect(scene, x, y, 0.8, h, rgb::Color::new(0x5D, 0x66, 0x70))?;
 
     let band_w = w / count as f32;
     let bar_w = (band_w * 0.58).max(2.0);
@@ -6586,11 +6486,10 @@ fn draw_waterfall_chart(
         } else {
             rgb::Color::new(0xC7, 0x52, 0x4A)
         };
-        project_page_scene_fill_rect(surface, scene, left, top, bar_w, height, color)?;
+        project_page_scene_fill_rect(scene, left, top, bar_w, height, color)?;
         if index > 0 {
             let prev_x = x + index as f32 * band_w - (band_w - bar_w) * 0.5;
             project_page_scene_fill_rect(
-                surface,
                 scene,
                 prev_x,
                 y_start,
@@ -6601,7 +6500,6 @@ fn draw_waterfall_chart(
         }
         if let Some(category) = chart.categories.get(index) {
             draw_chart_text(
-                surface,
                 scene,
                 category,
                 ChartTextBox {
@@ -6623,7 +6521,6 @@ fn draw_waterfall_chart(
 }
 
 fn draw_treemap_chart(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     chart: &Chart,
     rect: ChartRect,
@@ -6669,9 +6566,8 @@ fn draw_treemap_chart(
         };
         remaining = (remaining - value).max(0.0);
         let color = chart_series_color(index);
-        project_page_scene_fill_rect(surface, scene, cell_x, cell_y, cell_w, cell_h, color)?;
+        project_page_scene_fill_rect(scene, cell_x, cell_y, cell_w, cell_h, color)?;
         project_page_scene_fill_rect(
-            surface,
             scene,
             cell_x,
             cell_y,
@@ -6680,7 +6576,6 @@ fn draw_treemap_chart(
             rgb::Color::new(0xFF, 0xFF, 0xFF),
         )?;
         project_page_scene_fill_rect(
-            surface,
             scene,
             cell_x,
             cell_y + cell_h - 0.75,
@@ -6689,7 +6584,6 @@ fn draw_treemap_chart(
             rgb::Color::new(0xFF, 0xFF, 0xFF),
         )?;
         project_page_scene_fill_rect(
-            surface,
             scene,
             cell_x,
             cell_y,
@@ -6698,7 +6592,6 @@ fn draw_treemap_chart(
             rgb::Color::new(0xFF, 0xFF, 0xFF),
         )?;
         project_page_scene_fill_rect(
-            surface,
             scene,
             cell_x + cell_w - 0.75,
             cell_y,
@@ -6708,7 +6601,6 @@ fn draw_treemap_chart(
         )?;
         if let Some(category) = chart.categories.get(index) {
             draw_chart_text(
-                surface,
                 scene,
                 category,
                 ChartTextBox {
@@ -6730,7 +6622,6 @@ fn draw_treemap_chart(
 }
 
 fn draw_sunburst_chart(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     chart: &Chart,
     x: f32,
@@ -6762,7 +6653,6 @@ fn draw_sunburst_chart(
     let cx = x + w * 0.5;
     let cy = y + h * 0.5;
     fill_circle_color(
-        surface,
         scene,
         cx,
         cy,
@@ -6776,7 +6666,6 @@ fn draw_sunburst_chart(
         }
         let sweep = (*value / total) as f32 * std::f32::consts::TAU;
         fill_ring_slice(
-            surface,
             scene,
             RingSlice {
                 cx,
@@ -6789,7 +6678,6 @@ fn draw_sunburst_chart(
             chart_series_color(index),
         )?;
         fill_ring_slice(
-            surface,
             scene,
             RingSlice {
                 cx,
@@ -6807,7 +6695,6 @@ fn draw_sunburst_chart(
 }
 
 fn draw_box_whisker_chart(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     chart: &Chart,
     rect: ChartRect,
@@ -6837,19 +6724,10 @@ fn draw_box_whisker_chart(
     for tick in 0..=4 {
         let frac = tick as f32 / 4.0;
         let y_tick = y + h - frac * h;
-        project_page_scene_fill_rect(
-            surface,
-            scene,
-            x,
-            y_tick,
-            w,
-            0.35,
-            rgb::Color::new(0xE1, 0xE5, 0xEA),
-        )?;
+        project_page_scene_fill_rect(scene, x, y_tick, w, 0.35, rgb::Color::new(0xE1, 0xE5, 0xEA))?;
         let value = min + (max - min) * tick as f64 / 4.0;
         let label = format_chart_tick(value);
         draw_chart_text(
-            surface,
             scene,
             &label,
             ChartTextBox {
@@ -6876,17 +6754,8 @@ fn draw_box_whisker_chart(
     let box_top = q3_y.min(q1_y);
     let box_h = (q1_y - q3_y).abs().max(1.0);
     let line = rgb::Color::new(0x35, 0x43, 0x52);
+    project_page_scene_fill_rect(scene, center_x - 0.5, max_y, 1.0, min_y - max_y, line)?;
     project_page_scene_fill_rect(
-        surface,
-        scene,
-        center_x - 0.5,
-        max_y,
-        1.0,
-        min_y - max_y,
-        line,
-    )?;
-    project_page_scene_fill_rect(
-        surface,
         scene,
         center_x - box_w * 0.35,
         max_y,
@@ -6895,7 +6764,6 @@ fn draw_box_whisker_chart(
         line,
     )?;
     project_page_scene_fill_rect(
-        surface,
         scene,
         center_x - box_w * 0.35,
         min_y,
@@ -6904,7 +6772,6 @@ fn draw_box_whisker_chart(
         line,
     )?;
     project_page_scene_fill_rect(
-        surface,
         scene,
         center_x - box_w * 0.5,
         box_top,
@@ -6912,17 +6779,8 @@ fn draw_box_whisker_chart(
         box_h,
         rgb::Color::new(0x7A, 0xA0, 0xC8),
     )?;
+    project_page_scene_fill_rect(scene, center_x - box_w * 0.5, box_top, box_w, 1.0, line)?;
     project_page_scene_fill_rect(
-        surface,
-        scene,
-        center_x - box_w * 0.5,
-        box_top,
-        box_w,
-        1.0,
-        line,
-    )?;
-    project_page_scene_fill_rect(
-        surface,
         scene,
         center_x - box_w * 0.5,
         box_top + box_h,
@@ -6930,33 +6788,9 @@ fn draw_box_whisker_chart(
         1.0,
         line,
     )?;
-    project_page_scene_fill_rect(
-        surface,
-        scene,
-        center_x - box_w * 0.5,
-        box_top,
-        1.0,
-        box_h,
-        line,
-    )?;
-    project_page_scene_fill_rect(
-        surface,
-        scene,
-        center_x + box_w * 0.5,
-        box_top,
-        1.0,
-        box_h,
-        line,
-    )?;
-    project_page_scene_fill_rect(
-        surface,
-        scene,
-        center_x - box_w * 0.5,
-        median_y,
-        box_w,
-        1.3,
-        line,
-    )?;
+    project_page_scene_fill_rect(scene, center_x - box_w * 0.5, box_top, 1.0, box_h, line)?;
+    project_page_scene_fill_rect(scene, center_x + box_w * 0.5, box_top, 1.0, box_h, line)?;
+    project_page_scene_fill_rect(scene, center_x - box_w * 0.5, median_y, box_w, 1.3, line)?;
     Ok(())
 }
 
@@ -6976,7 +6810,6 @@ fn percentile(sorted: &[f64], frac: f64) -> f64 {
 }
 
 fn draw_funnel_chart(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     chart: &Chart,
     rect: ChartRect,
@@ -7015,7 +6848,6 @@ fn draw_funnel_chart(
         let top_y = y + index as f32 * stage_h + 1.0;
         let bottom_y = y + (index + 1) as f32 * stage_h - 1.0;
         project_page_scene_fill_polygon(
-            surface,
             scene,
             &[
                 (center_x - top_w * 0.5, top_y),
@@ -7027,7 +6859,6 @@ fn draw_funnel_chart(
         )?;
         if let Some(category) = chart.categories.get(index) {
             draw_chart_text(
-                surface,
                 scene,
                 category,
                 ChartTextBox {
@@ -7066,7 +6897,6 @@ fn project_chart_frame(
 }
 
 fn draw_authored_chart(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     chart: &Chart,
     rect: ChartRect,
@@ -7080,7 +6910,6 @@ fn draw_authored_chart(
     let mut content_top = y + 8.0;
     if let Some(title) = chart.title.as_deref() {
         let used = draw_chart_text(
-            surface,
             scene,
             title,
             ChartTextBox {
@@ -7123,7 +6952,6 @@ fn draw_authored_chart(
             | ChartKind::ExplodedDoughnut
     ) {
         draw_pie_chart(
-            surface,
             scene,
             chart,
             ChartRect {
@@ -7148,7 +6976,6 @@ fn draw_authored_chart(
                 break;
             }
             project_page_scene_fill_rect(
-                surface,
                 scene,
                 legend_x,
                 legend_y + 3.0,
@@ -7157,7 +6984,6 @@ fn draw_authored_chart(
                 chart_series_color(index),
             )?;
             let used = draw_chart_text(
-                surface,
                 scene,
                 category,
                 ChartTextBox {
@@ -7183,7 +7009,6 @@ fn draw_authored_chart(
         ChartKind::Radar | ChartKind::RadarWithMarkers | ChartKind::FilledRadar
     ) {
         draw_radar_chart(
-            surface,
             scene,
             chart,
             ChartRect {
@@ -7201,7 +7026,6 @@ fn draw_authored_chart(
                 break;
             }
             project_page_scene_fill_rect(
-                surface,
                 scene,
                 legend_x,
                 legend_y + 3.0,
@@ -7210,7 +7034,6 @@ fn draw_authored_chart(
                 chart_series_color(index),
             )?;
             let used = draw_chart_text(
-                surface,
                 scene,
                 &series.name,
                 ChartTextBox {
@@ -7233,7 +7056,6 @@ fn draw_authored_chart(
 
     if chart.kind == ChartKind::Waterfall {
         draw_waterfall_chart(
-            surface,
             scene,
             chart,
             ChartRect {
@@ -7249,7 +7071,6 @@ fn draw_authored_chart(
 
     if chart.kind == ChartKind::Treemap {
         draw_treemap_chart(
-            surface,
             scene,
             chart,
             ChartRect {
@@ -7264,13 +7085,12 @@ fn draw_authored_chart(
     }
 
     if chart.kind == ChartKind::Sunburst {
-        draw_sunburst_chart(surface, scene, chart, plot_left, plot_top, plot_w, plot_h)?;
+        draw_sunburst_chart(scene, chart, plot_left, plot_top, plot_w, plot_h)?;
         return Ok(());
     }
 
     if chart.kind == ChartKind::BoxWhisker {
         draw_box_whisker_chart(
-            surface,
             scene,
             chart,
             ChartRect {
@@ -7286,7 +7106,6 @@ fn draw_authored_chart(
 
     if chart.kind == ChartKind::Funnel {
         draw_funnel_chart(
-            surface,
             scene,
             chart,
             ChartRect {
@@ -7349,14 +7168,13 @@ fn draw_authored_chart(
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let x_tick = plot_left + frac * plot_w;
-                project_page_scene_fill_rect(surface, scene, x_tick, plot_top, 0.35, plot_h, grid)?;
+                project_page_scene_fill_rect(scene, x_tick, plot_top, 0.35, plot_h, grid)?;
                 let label = if percent {
                     format!("{}%", tick * 25)
                 } else {
                     format_chart_tick(max_value * tick as f64 / 4.0)
                 };
                 draw_chart_text(
-                    surface,
                     scene,
                     &label,
                     ChartTextBox {
@@ -7373,16 +7191,8 @@ fn draw_authored_chart(
                     tcx,
                 )?;
             }
-            project_page_scene_fill_rect(surface, scene, plot_left, plot_top, 0.8, plot_h, axis)?;
-            project_page_scene_fill_rect(
-                surface,
-                scene,
-                plot_left,
-                plot_bottom,
-                plot_w,
-                0.8,
-                axis,
-            )?;
+            project_page_scene_fill_rect(scene, plot_left, plot_top, 0.8, plot_h, axis)?;
+            project_page_scene_fill_rect(scene, plot_left, plot_bottom, plot_w, 0.8, axis)?;
 
             let band_h = plot_h / category_count as f32;
             let bar_h = (band_h * 0.68).max(3.0);
@@ -7390,7 +7200,6 @@ fn draw_authored_chart(
                 let band_top = plot_top + category_index as f32 * band_h;
                 let label_y = band_top + (band_h - 9.0).max(0.0) * 0.5;
                 draw_chart_text(
-                    surface,
                     scene,
                     category,
                     ChartTextBox {
@@ -7431,7 +7240,6 @@ fn draw_authored_chart(
                         ChartKind::StackedBar3D | ChartKind::PercentStackedBar3D
                     ) {
                         fill_chart_bar_shape(
-                            surface,
                             scene,
                             ChartRect {
                                 x: segment_left,
@@ -7444,7 +7252,6 @@ fn draw_authored_chart(
                         )?;
                     } else {
                         project_page_scene_fill_rect(
-                            surface,
                             scene,
                             segment_left,
                             bar_top,
@@ -7461,11 +7268,10 @@ fn draw_authored_chart(
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let x_tick = plot_left + frac * plot_w;
-                project_page_scene_fill_rect(surface, scene, x_tick, plot_top, 0.35, plot_h, grid)?;
+                project_page_scene_fill_rect(scene, x_tick, plot_top, 0.35, plot_h, grid)?;
                 let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
                 let label = format_chart_tick(value);
                 draw_chart_text(
-                    surface,
                     scene,
                     &label,
                     ChartTextBox {
@@ -7482,16 +7288,8 @@ fn draw_authored_chart(
                     tcx,
                 )?;
             }
-            project_page_scene_fill_rect(surface, scene, zero_x, plot_top, 0.8, plot_h, axis)?;
-            project_page_scene_fill_rect(
-                surface,
-                scene,
-                plot_left,
-                plot_bottom,
-                plot_w,
-                0.8,
-                axis,
-            )?;
+            project_page_scene_fill_rect(scene, zero_x, plot_top, 0.8, plot_h, axis)?;
+            project_page_scene_fill_rect(scene, plot_left, plot_bottom, plot_w, 0.8, axis)?;
 
             let band_h = plot_h / category_count as f32;
             let group_h = (band_h * 0.68).max(3.0);
@@ -7500,7 +7298,6 @@ fn draw_authored_chart(
                 let band_top = plot_top + category_index as f32 * band_h;
                 let label_y = band_top + (band_h - 9.0).max(0.0) * 0.5;
                 draw_chart_text(
-                    surface,
                     scene,
                     category,
                     ChartTextBox {
@@ -7532,7 +7329,6 @@ fn draw_authored_chart(
                     let color = chart_series_color(series_index);
                     if chart.kind == ChartKind::Bar3D {
                         fill_chart_bar_shape(
-                            surface,
                             scene,
                             ChartRect {
                                 x: bar_left,
@@ -7545,7 +7341,7 @@ fn draw_authored_chart(
                         )?;
                     } else {
                         project_page_scene_fill_rect(
-                            surface, scene, bar_left, bar_top, bar_width, bar_h, color,
+                            scene, bar_left, bar_top, bar_width, bar_h, color,
                         )?;
                     }
                 }
@@ -7585,13 +7381,10 @@ fn draw_authored_chart(
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let y_tick = plot_bottom - frac * plot_h;
-                project_page_scene_fill_rect(
-                    surface, scene, plot_left, y_tick, plot_w, 0.35, grid,
-                )?;
+                project_page_scene_fill_rect(scene, plot_left, y_tick, plot_w, 0.35, grid)?;
                 let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
                 let label = format_chart_tick(value);
                 draw_chart_text(
-                    surface,
                     scene,
                     &label,
                     ChartTextBox {
@@ -7608,14 +7401,13 @@ fn draw_authored_chart(
                     tcx,
                 )?;
             }
-            project_page_scene_fill_rect(surface, scene, plot_left, zero_y, plot_w, 0.8, axis)?;
-            project_page_scene_fill_rect(surface, scene, plot_left, plot_top, 0.8, plot_h, axis)?;
+            project_page_scene_fill_rect(scene, plot_left, zero_y, plot_w, 0.8, axis)?;
+            project_page_scene_fill_rect(scene, plot_left, plot_top, 0.8, plot_h, axis)?;
 
             let band_w = plot_w / category_count as f32;
             for (category_index, category) in chart.categories.iter().enumerate() {
                 let center_x = plot_left + category_index as f32 * band_w + band_w * 0.5;
                 draw_chart_text(
-                    surface,
                     scene,
                     category,
                     ChartTextBox {
@@ -7669,7 +7461,6 @@ fn draw_authored_chart(
                                 ChartKind::StackedColumn3D | ChartKind::PercentStackedColumn3D
                             ) {
                                 fill_chart_column_shape(
-                                    surface,
                                     scene,
                                     ChartRect {
                                         x: column_left,
@@ -7682,7 +7473,6 @@ fn draw_authored_chart(
                                 )?;
                             } else {
                                 project_page_scene_fill_rect(
-                                    surface,
                                     scene,
                                     column_left,
                                     segment_top,
@@ -7714,7 +7504,6 @@ fn draw_authored_chart(
                             let color = chart_series_color(series_index);
                             if chart.kind == ChartKind::Column3D {
                                 fill_chart_column_shape(
-                                    surface,
                                     scene,
                                     ChartRect {
                                         x: column_left,
@@ -7727,7 +7516,6 @@ fn draw_authored_chart(
                                 )?;
                             } else {
                                 project_page_scene_fill_rect(
-                                    surface,
                                     scene,
                                     column_left,
                                     column_top,
@@ -7777,7 +7565,7 @@ fn draw_authored_chart(
                                     value_y(value).clamp(plot_top, plot_bottom),
                                 ));
                             }
-                            fill_area_shape(surface, scene, &points, zero_y, color)?;
+                            fill_area_shape(scene, &points, zero_y, color)?;
                         }
                     } else {
                         for (series_index, series) in chart.series.iter().enumerate() {
@@ -7795,12 +7583,11 @@ fn draw_authored_chart(
                                     value_y(value).clamp(plot_top, plot_bottom),
                                 ));
                             }
-                            fill_area_shape(surface, scene, &points, zero_y, color)?;
+                            fill_area_shape(scene, &points, zero_y, color)?;
                             let mut previous: Option<(f32, f32)> = None;
                             for (point_x, point_y) in points {
                                 if let Some((prev_x, prev_y)) = previous {
                                     fill_line_segment(
-                                        surface,
                                         scene,
                                         (prev_x, prev_y),
                                         (point_x, point_y),
@@ -7809,7 +7596,6 @@ fn draw_authored_chart(
                                     )?;
                                 }
                                 project_page_scene_fill_rect(
-                                    surface,
                                     scene,
                                     point_x - 2.0,
                                     point_y - 2.0,
@@ -7862,7 +7648,6 @@ fn draw_authored_chart(
                             let point_y = value_y(value).clamp(plot_top, plot_bottom);
                             if let Some((prev_x, prev_y)) = previous {
                                 fill_line_segment(
-                                    surface,
                                     scene,
                                     (prev_x, prev_y),
                                     (point_x, point_y),
@@ -7872,7 +7657,6 @@ fn draw_authored_chart(
                             }
                             if chart.kind != ChartKind::LineNoMarkers {
                                 project_page_scene_fill_rect(
-                                    surface,
                                     scene,
                                     point_x - 2.0,
                                     point_y - 2.0,
@@ -7907,7 +7691,6 @@ fn draw_authored_chart(
                         let y_low = value_y(low).clamp(plot_top, plot_bottom);
                         let y_high = value_y(high).clamp(plot_top, plot_bottom);
                         project_page_scene_fill_rect(
-                            surface,
                             scene,
                             point_x - 0.7,
                             y_high,
@@ -7919,7 +7702,6 @@ fn draw_authored_chart(
                             if let Some(open) = values.first().copied() {
                                 let y_open = value_y(open).clamp(plot_top, plot_bottom);
                                 project_page_scene_fill_rect(
-                                    surface,
                                     scene,
                                     point_x - band_w * 0.18,
                                     y_open - 0.8,
@@ -7937,7 +7719,6 @@ fn draw_authored_chart(
                             };
                             let y_close = value_y(close).clamp(plot_top, plot_bottom);
                             project_page_scene_fill_rect(
-                                surface,
                                 scene,
                                 point_x,
                                 y_close - 0.8,
@@ -7968,7 +7749,6 @@ fn draw_authored_chart(
                             if chart.kind != ChartKind::ScatterMarkers {
                                 if let Some((prev_x, prev_y)) = previous {
                                     fill_line_segment(
-                                        surface,
                                         scene,
                                         (prev_x, prev_y),
                                         (point_x, point_y),
@@ -7982,7 +7762,6 @@ fn draw_authored_chart(
                                 ChartKind::ScatterLines | ChartKind::ScatterSmoothNoMarkers
                             ) {
                                 project_page_scene_fill_rect(
-                                    surface,
                                     scene,
                                     point_x - 2.5,
                                     point_y - 2.5,
@@ -8017,7 +7796,7 @@ fn draw_authored_chart(
                             let point_y = value_y(value).clamp(plot_top, plot_bottom);
                             let radius = ((size / max_bubble_size).sqrt() as f32 * max_radius)
                                 .clamp(2.5, max_radius);
-                            fill_circle_color(surface, scene, point_x, point_y, radius, color)?;
+                            fill_circle_color(scene, point_x, point_y, radius, color)?;
                         }
                     }
                 }
@@ -8027,7 +7806,6 @@ fn draw_authored_chart(
                     for (series_index, series) in chart.series.iter().enumerate() {
                         let row_top = plot_top + series_index as f32 * cell_h;
                         draw_chart_text(
-                            surface,
                             scene,
                             &series.name,
                             ChartTextBox {
@@ -8059,10 +7837,9 @@ fn draw_authored_chart(
                             let cell_h_inner = (cell_h - 2.0).max(1.0);
                             if chart.wireframe {
                                 project_page_scene_fill_rect(
-                                    surface, scene, cell_left, cell_top, cell_w, 0.45, color,
+                                    scene, cell_left, cell_top, cell_w, 0.45, color,
                                 )?;
                                 project_page_scene_fill_rect(
-                                    surface,
                                     scene,
                                     cell_left,
                                     cell_top + cell_h_inner,
@@ -8071,7 +7848,6 @@ fn draw_authored_chart(
                                     color,
                                 )?;
                                 project_page_scene_fill_rect(
-                                    surface,
                                     scene,
                                     cell_left,
                                     cell_top,
@@ -8080,7 +7856,6 @@ fn draw_authored_chart(
                                     color,
                                 )?;
                                 project_page_scene_fill_rect(
-                                    surface,
                                     scene,
                                     cell_left + cell_w,
                                     cell_top,
@@ -8090,7 +7865,6 @@ fn draw_authored_chart(
                                 )?;
                             } else {
                                 project_page_scene_fill_rect(
-                                    surface,
                                     scene,
                                     cell_left,
                                     cell_top,
@@ -8099,7 +7873,7 @@ fn draw_authored_chart(
                                     color,
                                 )?;
                                 project_page_scene_fill_rect(
-                                    surface, scene, cell_left, cell_top, cell_w, 0.35, grid,
+                                    scene, cell_left, cell_top, cell_w, 0.35, grid,
                                 )?;
                             }
                         }
@@ -8154,7 +7928,6 @@ fn draw_authored_chart(
             break;
         }
         project_page_scene_fill_rect(
-            surface,
             scene,
             legend_x,
             legend_y + 3.0,
@@ -8163,7 +7936,6 @@ fn draw_authored_chart(
             chart_series_color(index),
         )?;
         let used = draw_chart_text(
-            surface,
             scene,
             &series.name,
             ChartTextBox {
@@ -8185,7 +7957,6 @@ fn draw_authored_chart(
 }
 
 fn project_page_scene_run_with_page_context(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     run: RunDraw,
     x_abs: f32,
@@ -8194,14 +7965,14 @@ fn project_page_scene_run_with_page_context(
     tcx: &mut TextCx<'_>,
 ) -> Result<()> {
     let Some(dynamic) = run.dynamic.clone() else {
-        return project_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
+        return project_page_scene_glyph_run(scene, run, x_abs, baseline_y);
     };
 
     let text = match dynamic.kind {
         DynamicTextKind::PageNumber => dynamic_page_number_text(&dynamic, page_number),
     };
     let Some(text) = text else {
-        return project_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
+        return project_page_scene_glyph_run(scene, run, x_abs, baseline_y);
     };
     let Some(line) = shape(
         &text,
@@ -8213,11 +7984,11 @@ fn project_page_scene_run_with_page_context(
     )
     .into_iter()
     .next() else {
-        return project_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
+        return project_page_scene_glyph_run(scene, run, x_abs, baseline_y);
     };
 
     for replacement in line.runs {
-        project_page_scene_glyph_run(surface, scene, replacement, x_abs + run.x, baseline_y)?;
+        project_page_scene_glyph_run(scene, replacement, x_abs + run.x, baseline_y)?;
     }
     Ok(())
 }
@@ -8372,7 +8143,6 @@ struct SectionColumnPaintHints<'a> {
 }
 
 fn draw_section_column_separators(
-    surface: &mut Surface<'_>,
     scene: &mut PageScene,
     geom: Geom,
     setup: &SectionSetup,
@@ -8389,7 +8159,6 @@ fn draw_section_column_separators(
             continue;
         };
         project_page_scene_fill_rect(
-            surface,
             scene,
             geom.left + separator_x - COLUMN_SEPARATOR_WIDTH_PT * 0.5,
             top,
@@ -10246,7 +10015,6 @@ fn render_pdf(
         let Some(settings) = PageSettings::from_wh(page_geom.page_w, page_geom.page_h) else {
             continue;
         };
-        let mut page = document.start_page_with(settings);
         let mut page_scene = PageScene::default();
         let (header_blocks, footer_blocks) = running_header_footer_blocks_for_page(
             &page_section.setup,
@@ -10333,17 +10101,15 @@ fn render_pdf(
             explicit_footer_distance,
             running_surface_items_extent(&footer_items, page_geom),
         );
-        let mut surface = page.surface();
         for overlay in floating_shape_overlays
             .iter()
             .filter(|overlay| overlay.page_index == page_index && overlay.behind_doc)
         {
-            draw_floating_shape_overlay(&mut surface, &mut page_scene, overlay, &mut tcx)?;
+            draw_floating_shape_overlay(&mut page_scene, overlay, &mut tcx)?;
         }
         // Running surfaces are bounded to their margin bands so text and images
         // cannot bleed into body content or beyond the physical page.
         draw_running_surface_items(
-            &mut surface,
             &mut page_scene,
             header_items,
             RunningSurfacePaintPlacement {
@@ -10354,7 +10120,6 @@ fn render_pdf(
             &mut tcx,
         )?;
         let fy = draw_running_surface_items(
-            &mut surface,
             &mut page_scene,
             footer_items,
             RunningSurfacePaintPlacement {
@@ -10369,22 +10134,9 @@ fn render_pdf(
                 if fy + line.height <= page_geom.page_h {
                     let baseline = fy + line.baseline;
                     let x0 = page_geom.left + line.x_indent;
-                    project_page_scene_line_paint(
-                        &mut surface,
-                        &mut page_scene,
-                        &line,
-                        x0,
-                        fy,
-                        baseline,
-                    )?;
+                    project_page_scene_line_paint(&mut page_scene, &line, x0, fy, baseline)?;
                     for run in line.runs {
-                        project_page_scene_glyph_run(
-                            &mut surface,
-                            &mut page_scene,
-                            run,
-                            x0,
-                            baseline,
-                        )?;
+                        project_page_scene_glyph_run(&mut page_scene, run, x0, baseline)?;
                     }
                 }
             }
@@ -10395,7 +10147,6 @@ fn render_pdf(
             .or_else(|| section_column_paint_hints.last().copied())
             .unwrap_or_default();
         draw_section_column_separators(
-            &mut surface,
             &mut page_scene,
             page_geom,
             &page_section.setup,
@@ -10422,19 +10173,11 @@ fn render_pdf(
                     let bounds_x = page_geom.left
                         + column_x
                         + ((placed.width - layout.bounds_w) * 0.5).max(0.0);
-                    project_page_scene_image(
-                        &mut surface,
-                        &mut page_scene,
-                        image,
-                        layout,
-                        bounds_x,
-                        top,
-                    )?;
+                    project_page_scene_image(&mut page_scene, image, layout, bounds_x, top)?;
                 }
                 FlowItem::Chart { chart, w, h } => {
                     let x = page_geom.left + column_x + ((placed.width - w) * 0.5).max(0.0);
                     draw_authored_chart(
-                        &mut surface,
                         &mut page_scene,
                         &chart,
                         ChartRect { x, y: top, w, h },
@@ -10446,25 +10189,11 @@ fn render_pdf(
                     let x0 = page_geom.left + column_x + line.x_indent;
                     let lh = line.height;
                     let clip_content = if line.clip_to_height {
-                        push_page_scene_clip(
-                            &mut surface,
-                            &mut page_scene,
-                            0.0,
-                            top,
-                            lh,
-                            page_geom.page_w,
-                        )?
+                        push_page_scene_clip(&mut page_scene, 0.0, top, lh, page_geom.page_w)?
                     } else {
                         false
                     };
-                    project_page_scene_line_paint(
-                        &mut surface,
-                        &mut page_scene,
-                        &line,
-                        x0,
-                        top,
-                        baseline,
-                    )?;
+                    project_page_scene_line_paint(&mut page_scene, &line, x0, top, baseline)?;
                     for run in line.runs {
                         if let Some(url) = run.link.clone() {
                             let l = x0 + run.x;
@@ -10475,7 +10204,6 @@ fn render_pdf(
                             )?;
                         }
                         project_page_scene_run_with_page_context(
-                            &mut surface,
                             &mut page_scene,
                             run,
                             x0,
@@ -10485,12 +10213,11 @@ fn render_pdf(
                         )?;
                     }
                     if clip_content {
-                        pop_page_scene_clip(&mut surface, &mut page_scene)?;
+                        pop_page_scene_clip(&mut page_scene)?;
                     }
                 }
                 FlowItem::Row(row) => {
                     previous_row_borders = draw_row_layout(
-                        &mut surface,
                         &mut page_scene,
                         row,
                         RowPaintPlacement {
@@ -10509,9 +10236,11 @@ fn render_pdf(
             .iter()
             .filter(|overlay| overlay.page_index == page_index && !overlay.behind_doc)
         {
-            draw_floating_shape_overlay(&mut surface, &mut page_scene, overlay, &mut tcx)?;
+            draw_floating_shape_overlay(&mut page_scene, overlay, &mut tcx)?;
         }
         page_scene.ensure_balanced()?;
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
         pdf::replay_complete_page_scene(&mut surface, &page_scene)?;
         surface.finish();
         pdf::replay_annotations(&mut page, &page_scene);
@@ -13895,16 +13624,11 @@ mod tests {
             columns: Some(2),
             ..SectionSetup::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
-        super::draw_terminal_vertical_junction(&mut surface, &mut scene, 40.0, junction, 2.0)
+        super::draw_terminal_vertical_junction(&mut scene, 40.0, junction, 2.0)
             .expect("junction paints");
         super::draw_section_column_separators(
-            &mut surface,
             &mut scene,
             geom,
             &setup,
@@ -13915,9 +13639,6 @@ mod tests {
             },
         )
         .expect("column separator paints");
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
 
         assert_eq!(
             scene.operations,
@@ -13942,14 +13663,9 @@ mod tests {
             margin_pt: 20.0,
             ..PageSetup::default()
         });
-        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
-        let mut document = super::PdfDoc::new();
 
-        let mut page = document.start_page_with(settings.clone());
-        let mut surface = page.surface();
         let mut junction_scene = super::PageScene::with_operation_limit(0);
         let junction_result = super::draw_terminal_vertical_junction(
-            &mut surface,
             &mut junction_scene,
             40.0,
             super::VerticalBorderLine {
@@ -13961,14 +13677,9 @@ mod tests {
             },
             2.0,
         );
-        surface.finish();
-        page.finish();
 
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut separator_scene = super::PageScene::with_operation_limit(0);
         let separator_result = super::draw_section_column_separators(
-            &mut surface,
             &mut separator_scene,
             geom,
             &SectionSetup {
@@ -13981,9 +13692,6 @@ mod tests {
                 separator: true,
             },
         );
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
 
         for (result, scene) in [
             (junction_result, junction_scene),
@@ -14041,13 +13749,8 @@ mod tests {
         assert_eq!(line.runs.len(), 2);
 
         let geom = Geom::from_setup(&PageSetup::default());
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
         let consumed = super::draw_running_surface_items(
-            &mut surface,
             &mut scene,
             vec![super::RunningSurfaceItem::Line(line)],
             super::RunningSurfacePaintPlacement {
@@ -14061,9 +13764,6 @@ mod tests {
             &mut tcx,
         )
         .expect("running text paints");
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
 
         assert!(consumed > 24.0);
         assert_eq!(scene_glyph_texts(&scene), ["Header 1", "VII"]);
@@ -14095,13 +13795,8 @@ mod tests {
         .next()
         .expect("running text shapes");
         let geom = Geom::from_setup(&PageSetup::default());
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::with_operation_limit(0);
         let result = super::draw_running_surface_items(
-            &mut surface,
             &mut scene,
             vec![super::RunningSurfaceItem::Line(line)],
             super::RunningSurfacePaintPlacement {
@@ -14111,9 +13806,6 @@ mod tests {
             },
             &mut tcx,
         );
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
 
         let error = result.expect_err("glyph operation ceiling must propagate");
         assert_eq!(
@@ -14209,13 +13901,8 @@ mod tests {
             layout_cx: &mut layout_cx,
             font_cache: &mut font_cache,
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
         super::draw_running_surface_items(
-            &mut surface,
             &mut scene,
             vec![super::RunningSurfaceItem::Line(line)],
             super::RunningSurfacePaintPlacement {
@@ -14226,9 +13913,6 @@ mod tests {
             &mut tcx,
         )
         .expect("running line paints");
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
 
         let first_glyph = scene
             .operations
@@ -14311,16 +13995,9 @@ mod tests {
             },
         ];
 
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(240.0, 160.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
-        super::project_page_scene_line_paint(&mut surface, &mut scene, &line, 10.0, 20.0, 30.0)
+        super::project_page_scene_line_paint(&mut scene, &line, 10.0, 20.0, 30.0)
             .expect("leader styles paint");
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
 
         let expected = [
             (10.0, 29.0, 1.0, 1.0),
@@ -14380,13 +14057,8 @@ mod tests {
             layout_cx: &mut layout_cx,
             font_cache: &mut font_cache,
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::with_operation_limit(1);
         let result = super::draw_running_surface_items(
-            &mut surface,
             &mut scene,
             vec![super::RunningSurfaceItem::Line(line)],
             super::RunningSurfacePaintPlacement {
@@ -14396,9 +14068,6 @@ mod tests {
             },
             &mut tcx,
         );
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
 
         let error = result.expect_err("glyph must exceed capacity after the background");
         assert_eq!(
@@ -14437,14 +14106,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -14487,10 +14151,6 @@ mod tests {
             scene_glyph_texts(&scene),
             vec!["0", "2.5", "5", "7.5", "10", "Low", "High", "Series"]
         );
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -14514,14 +14174,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -14570,29 +14225,20 @@ mod tests {
             scene_glyph_texts(&scene),
             vec!["0", "2.5", "5", "7.5", "10", "Low", "High", "Mid", "Series"]
         );
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
     fn area_shape_preserves_short_series_and_path_point_limits() {
         let color = rgb::Color::new(0x24, 0x68, 0xAC);
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::with_path_point_limit(3);
 
-        super::fill_area_shape(&mut surface, &mut scene, &[], 20.0, color)
-            .expect("empty area is ignored");
-        super::fill_area_shape(&mut surface, &mut scene, &[(10.0, 5.0)], f32::NAN, color)
+        super::fill_area_shape(&mut scene, &[], 20.0, color).expect("empty area is ignored");
+        super::fill_area_shape(&mut scene, &[(10.0, 5.0)], f32::NAN, color)
             .expect("non-finite area is ignored");
         assert!(scene.operations.is_empty());
         assert_eq!(scene.path_point_count, 0);
 
-        super::fill_area_shape(&mut surface, &mut scene, &[(10.0, 5.0)], 20.0, color)
+        super::fill_area_shape(&mut scene, &[(10.0, 5.0)], 20.0, color)
             .expect("one-point area keeps its closed path");
         assert_eq!(scene.path_point_count, 3);
         assert_eq!(
@@ -14609,17 +14255,13 @@ mod tests {
         );
 
         let unchanged = (scene.operations.len(), scene.path_point_count);
-        let error = super::fill_area_shape(&mut surface, &mut scene, &[(10.0, 5.0)], 20.0, color)
+        let error = super::fill_area_shape(&mut scene, &[(10.0, 5.0)], 20.0, color)
             .expect_err("point ceiling rejects another area");
         assert_eq!(
             error.to_string(),
             "render failed: page scene exceeds the 3-path-point limit"
         );
         assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -14643,14 +14285,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -14697,29 +14334,21 @@ mod tests {
         let labels = scene_glyph_texts(&scene);
         assert_eq!(labels.len(), 8);
         assert_eq!(&labels[5..], ["Small", "Large", "Series"]);
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
     fn circle_sampling_is_finite_and_path_point_bounded() {
         let color = rgb::Color::new(0x24, 0x68, 0xAC);
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::with_path_point_limit(29);
 
-        super::fill_circle_color(&mut surface, &mut scene, 20.0, 20.0, 0.0, color)
+        super::fill_circle_color(&mut scene, 20.0, 20.0, 0.0, color)
             .expect("zero-radius circle is ignored");
-        super::fill_circle_color(&mut surface, &mut scene, 20.0, 20.0, f32::NAN, color)
+        super::fill_circle_color(&mut scene, 20.0, 20.0, f32::NAN, color)
             .expect("non-finite circle is ignored");
         assert!(scene.operations.is_empty());
         assert_eq!(scene.path_point_count, 0);
 
-        super::fill_circle_color(&mut surface, &mut scene, 20.0, 20.0, 5.0, color)
+        super::fill_circle_color(&mut scene, 20.0, 20.0, 5.0, color)
             .expect("one sampled circle fits the exact point budget");
         assert_eq!(scene.path_point_count, 29);
         let super::PageSceneOp::FillPolygon {
@@ -14736,17 +14365,13 @@ mod tests {
         assert_eq!(*actual_color, color);
 
         let unchanged = (scene.operations.len(), scene.path_point_count);
-        let error = super::fill_circle_color(&mut surface, &mut scene, 20.0, 20.0, 5.0, color)
+        let error = super::fill_circle_color(&mut scene, 20.0, 20.0, 5.0, color)
             .expect_err("point ceiling rejects another circle");
         assert_eq!(
             error.to_string(),
             "render failed: page scene exceeds the 29-path-point limit"
         );
         assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -14770,14 +14395,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -14847,10 +14467,6 @@ mod tests {
         assert_eq!(*color, super::chart_series_color(1));
         assert_eq!(scene.font_resources.len(), 1);
         assert_eq!(scene.glyph_count, 9);
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -14874,14 +14490,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -14922,23 +14533,14 @@ mod tests {
             assert_close(first[point_index].x, x);
             assert_close(first[point_index].y, y);
         }
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
     fn sampled_sectors_preserve_invalid_inputs_and_path_point_limits() {
         let color = rgb::Color::new(0x24, 0x68, 0xAC);
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::with_path_point_limit(26);
 
         super::fill_pie_slice(
-            &mut surface,
             &mut scene,
             super::PieSlice {
                 cx: 20.0,
@@ -14951,7 +14553,6 @@ mod tests {
         )
         .expect("zero-radius fan is ignored");
         super::fill_pie_slice(
-            &mut surface,
             &mut scene,
             super::PieSlice {
                 cx: 20.0,
@@ -14964,7 +14565,6 @@ mod tests {
         )
         .expect("non-finite fan is ignored");
         super::fill_ring_slice(
-            &mut surface,
             &mut scene,
             super::RingSlice {
                 cx: 20.0,
@@ -14980,7 +14580,6 @@ mod tests {
         assert!(scene.operations.is_empty());
 
         super::fill_pie_slice(
-            &mut surface,
             &mut scene,
             super::PieSlice {
                 cx: 20.0,
@@ -14995,7 +14594,6 @@ mod tests {
         assert_eq!(scene.path_point_count, 26);
         let unchanged = (scene.operations.len(), scene.path_point_count);
         let error = super::fill_ring_slice(
-            &mut surface,
             &mut scene,
             super::RingSlice {
                 cx: 20.0,
@@ -15016,7 +14614,6 @@ mod tests {
 
         let mut ring_scene = super::PageScene::with_path_point_limit(50);
         super::fill_ring_slice(
-            &mut surface,
             &mut ring_scene,
             super::RingSlice {
                 cx: 20.0,
@@ -15037,23 +14634,14 @@ mod tests {
             );
         };
         assert_eq!(points.len(), 50);
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
     fn chart_3d_shape_bodies_enter_the_scene_before_cylinder_caps() {
         let color = rgb::Color::new(0x24, 0x68, 0xAC);
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(120.0, 100.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::fill_chart_bar_shape(
-            &mut surface,
             &mut scene,
             super::ChartRect {
                 x: 10.0,
@@ -15066,7 +14654,6 @@ mod tests {
         )
         .expect("horizontal cylinder paints");
         super::fill_chart_bar_shape(
-            &mut surface,
             &mut scene,
             super::ChartRect {
                 x: 60.0,
@@ -15079,7 +14666,6 @@ mod tests {
         )
         .expect("horizontal pyramid paints");
         super::fill_chart_bar_shape(
-            &mut surface,
             &mut scene,
             super::ChartRect {
                 x: 90.0,
@@ -15092,7 +14678,6 @@ mod tests {
         )
         .expect("horizontal box paints");
         super::fill_chart_column_shape(
-            &mut surface,
             &mut scene,
             super::ChartRect {
                 x: 10.0,
@@ -15105,7 +14690,6 @@ mod tests {
         )
         .expect("vertical cylinder paints");
         super::fill_chart_column_shape(
-            &mut surface,
             &mut scene,
             super::ChartRect {
                 x: 30.0,
@@ -15118,7 +14702,6 @@ mod tests {
         )
         .expect("vertical pyramid paints");
         super::fill_chart_column_shape(
-            &mut surface,
             &mut scene,
             super::ChartRect {
                 x: 50.0,
@@ -15199,23 +14782,14 @@ mod tests {
                 color,
             }
         );
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
     fn chart_3d_shape_bodies_propagate_scene_limits() {
         let color = rgb::Color::new(0x24, 0x68, 0xAC);
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
 
         let mut operation_limited = super::PageScene::with_operation_limit(0);
         let error = super::fill_chart_bar_shape(
-            &mut surface,
             &mut operation_limited,
             super::ChartRect {
                 x: 10.0,
@@ -15235,7 +14809,6 @@ mod tests {
 
         let mut point_limited = super::PageScene::with_path_point_limit(2);
         let error = super::fill_chart_column_shape(
-            &mut surface,
             &mut point_limited,
             super::ChartRect {
                 x: 10.0,
@@ -15256,7 +14829,6 @@ mod tests {
 
         let mut invalid = super::PageScene::default();
         super::fill_chart_bar_shape(
-            &mut surface,
             &mut invalid,
             super::ChartRect {
                 x: 10.0,
@@ -15269,30 +14841,15 @@ mod tests {
         )
         .expect("invalid body remains a no-op");
         assert!(invalid.operations.is_empty());
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
     fn degenerate_line_segment_projects_a_bounded_square() {
         let color = rgb::Color::new(0x24, 0x68, 0xAC);
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
-        super::fill_line_segment(
-            &mut surface,
-            &mut scene,
-            (12.0, 14.0),
-            (12.0, 14.0),
-            2.0,
-            color,
-        )
-        .expect("degenerate line paints a square");
+        super::fill_line_segment(&mut scene, (12.0, 14.0), (12.0, 14.0), 2.0, color)
+            .expect("degenerate line paints a square");
         assert_eq!(
             scene.operations,
             vec![super::PageSceneOp::FillRect {
@@ -15302,24 +14859,13 @@ mod tests {
         );
 
         let mut limited = super::PageScene::with_operation_limit(0);
-        let error = super::fill_line_segment(
-            &mut surface,
-            &mut limited,
-            (12.0, 14.0),
-            (12.0, 14.0),
-            2.0,
-            color,
-        )
-        .expect_err("scene operation ceiling rejects degenerate line");
+        let error = super::fill_line_segment(&mut limited, (12.0, 14.0), (12.0, 14.0), 2.0, color)
+            .expect_err("scene operation ceiling rejects degenerate line");
         assert_eq!(
             error.to_string(),
             "render failed: page scene exceeds the 0-operation limit"
         );
         assert!(limited.operations.is_empty());
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -15343,14 +14889,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -15397,10 +14938,6 @@ mod tests {
         let labels = scene_glyph_texts(&scene);
         assert_eq!(labels.len(), 8);
         assert_eq!(&labels[5..], ["Q1", "Q2", "Series"]);
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -15428,14 +14965,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -15487,10 +15019,6 @@ mod tests {
             scene_glyph_texts(&scene),
             vec!["0", "3", "6", "9", "12", "Start", "Change", "Total"]
         );
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -15514,14 +15042,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -15566,10 +15089,6 @@ mod tests {
             assert_eq!(*actual_color, color);
         }
         assert_eq!(scene_glyph_texts(&scene), vec!["Primary", "Secondary"]);
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -15592,14 +15111,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -15648,10 +15162,6 @@ mod tests {
             assert_eq!(*actual_color, color);
         }
         assert_eq!(scene_glyph_texts(&scene), vec!["0", "10", "20", "30", "40"]);
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -15680,14 +15190,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -15759,10 +15264,6 @@ mod tests {
             scene_glyph_texts(&scene),
             vec!["North", "East", "South", "West", "Series"]
         );
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -15790,14 +15291,9 @@ mod tests {
             }],
             ..Chart::default()
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
         super::draw_authored_chart(
-            &mut surface,
             &mut scene,
             &chart,
             super::ChartRect {
@@ -15856,10 +15352,6 @@ mod tests {
             scene_glyph_texts(&scene),
             vec!["Leads", "Qualified", "Closed"]
         );
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -18707,14 +18199,9 @@ mod tests {
             w: 80.0,
             h: 40.0,
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(120.0, 100.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::default();
 
-        super::draw_floating_shape_overlay(&mut surface, &mut scene, &overlay, &mut tcx)
-            .expect("overlay paints");
+        super::draw_floating_shape_overlay(&mut scene, &overlay, &mut tcx).expect("overlay paints");
 
         assert_eq!(scene.operations.len(), 6);
         let super::PageSceneOp::GlyphRun(run) = &scene.operations[5] else {
@@ -18730,10 +18217,6 @@ mod tests {
         assert!(!run.is_rtl);
         assert_eq!(scene.font_resources.len(), 1);
         assert_eq!(scene.glyph_count, 5);
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
@@ -18756,24 +18239,15 @@ mod tests {
             w: 80.0,
             h: 40.0,
         };
-        let mut document = super::PdfDoc::new();
-        let settings = super::PageSettings::from_wh(120.0, 100.0).expect("finite page");
-        let mut page = document.start_page_with(settings);
-        let mut surface = page.surface();
         let mut scene = super::PageScene::with_operation_limit(5);
 
-        let error =
-            super::draw_floating_shape_overlay(&mut surface, &mut scene, &overlay, &mut tcx)
-                .expect_err("label must honor the operation ceiling after its frame");
+        let error = super::draw_floating_shape_overlay(&mut scene, &overlay, &mut tcx)
+            .expect_err("label must honor the operation ceiling after its frame");
         assert_eq!(
             error.to_string(),
             "render failed: page scene exceeds the 5-operation limit"
         );
         assert_eq!(scene.operations.len(), 5);
-
-        surface.finish();
-        page.finish();
-        document.finish().expect("test PDF finishes");
     }
 
     #[test]
