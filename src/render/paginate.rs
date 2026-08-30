@@ -1,5 +1,6 @@
 //! Bounded flow placement across section pages and columns.
 
+use super::paragraph_flow::{layout_paragraph, BodyFlowEntry};
 use super::*;
 
 /// Place an item at the current `y` on the last page, then advance `y`.
@@ -931,8 +932,17 @@ pub(super) fn paginate_body_flow_with_column_gap(
     final_column_layout: Option<&SectionColumnLayoutHints>,
     final_column_rtl: bool,
 ) -> Pagination {
+    let mut items = Vec::with_capacity(flow.ready_item_count());
+    for entry in flow.into_entries() {
+        match entry {
+            BodyFlowEntry::Ready(item) => items.push(item),
+            BodyFlowEntry::Paragraph(request) => {
+                layout_paragraph(request, &mut items, cx, capture);
+            }
+        }
+    }
     paginate_with_column_gap(
-        flow.lower(cx, capture),
+        items,
         geom,
         final_section_setup,
         final_column_gap_pt,
