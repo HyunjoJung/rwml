@@ -644,6 +644,82 @@ struct PaginationPlan<'a> {
     paragraphs: Vec<PlannedParagraphFlow<'a>>,
 }
 
+struct PlannedPaginationItem {
+    item_index: usize,
+    item: FlowItem,
+    paragraph_index: Option<usize>,
+}
+
+struct PaginationItemCursor<'plan, 'source> {
+    items: std::vec::IntoIter<FlowItem>,
+    item_index: usize,
+    paragraphs: &'plan [PlannedParagraphFlow<'source>],
+    next_paragraph: usize,
+}
+
+impl<'plan, 'source> PaginationItemCursor<'plan, 'source> {
+    fn new(items: Vec<FlowItem>, paragraphs: &'plan [PlannedParagraphFlow<'source>]) -> Self {
+        Self {
+            items: items.into_iter(),
+            item_index: 0,
+            paragraphs,
+            next_paragraph: 0,
+        }
+    }
+
+    fn next_item(&mut self) -> Option<PlannedPaginationItem> {
+        let item_index = self.item_index;
+        let item = self.items.next()?;
+        self.item_index = self.item_index.saturating_add(1);
+        let paragraph_index = self.paragraph_starting_at(item_index);
+        Some(PlannedPaginationItem {
+            item_index,
+            item,
+            paragraph_index,
+        })
+    }
+
+    fn paragraph_starting_at(&mut self, item_index: usize) -> Option<usize> {
+        loop {
+            let paragraph = self.paragraphs.get(self.next_paragraph)?;
+            if paragraph.item_range.is_empty() || paragraph.item_range.start < item_index {
+                self.next_paragraph += 1;
+                continue;
+            }
+            if paragraph.item_range.start == item_index {
+                let paragraph_index = self.next_paragraph;
+                self.next_paragraph += 1;
+                return Some(paragraph_index);
+            }
+            return None;
+        }
+    }
+
+    // Live substitution will consume this after receiving a candidate's first eager item.
+    #[cfg_attr(not(test), allow(dead_code))]
+    fn skip_paragraph_fallback(&mut self, paragraph_index: usize) -> bool {
+        let Some(paragraph) = self.paragraphs.get(paragraph_index) else {
+            return false;
+        };
+        let Some(after_start) = paragraph.item_range.start.checked_add(1) else {
+            return false;
+        };
+        if self.item_index != after_start
+            || paragraph.item_range.end < self.item_index
+            || paragraph.item_range.end - self.item_index > self.items.len()
+        {
+            return false;
+        }
+        while self.item_index < paragraph.item_range.end {
+            let Some(_) = self.items.next() else {
+                return false;
+            };
+            self.item_index += 1;
+        }
+        true
+    }
+}
+
 #[derive(Clone, Copy)]
 struct PlannedItemContext<'a> {
     geom: Geom,
@@ -1332,6 +1408,7 @@ fn paginate_with_state(
         "retained paragraph fallback spans and source sidecars stay valid"
     );
     let items = std::mem::take(&mut plan.items);
+    let mut item_cursor = PaginationItemCursor::new(items, &plan.paragraphs);
     let PlacementCoordinator {
         mut pages,
         mut page_sections,
@@ -1342,7 +1419,17 @@ fn paginate_with_state(
         mut block_cursor,
         mut block_exclusions,
     } = state;
-    for (item_index, item) in items.into_iter().enumerate() {
+    while let Some(planned_item) = item_cursor.next_item() {
+        let PlannedPaginationItem {
+            item_index,
+            item,
+            paragraph_index,
+        } = planned_item;
+        debug_assert!(paragraph_index.is_none_or(|paragraph_index| {
+            plan.paragraphs
+                .get(paragraph_index)
+                .is_some_and(|paragraph| paragraph.item_range.start == item_index)
+        }));
         let context = plan
             .item_context(item_index)
             .expect("pagination plan keeps item contexts aligned");
@@ -2812,5 +2899,128 @@ mod tests {
         assert!(exclusions.pending_top_bottom_bands.is_empty());
         assert_eq!(exclusions.active_top_bottom_bands.len(), 1);
         assert_eq!(exclusions.active_top_bottom_bands[0].page_index, 1);
+    }
+
+    #[test]
+    fn pagination_item_cursor_preserves_eager_order_and_skips_exact_span() {
+        let empty = Paragraph::default();
+        let candidate = Paragraph {
+            runs: vec![Run {
+                text: "candidate".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let broken = Paragraph {
+            runs: vec![Run {
+                text: "broken".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let broken_offsets = [broken.text().chars().count()];
+        let geom = Geom::from_setup(&PageSetup::default());
+        let request = |paragraph, column_break_offsets| ParagraphFlowRequest {
+            paragraph,
+            marker: None,
+            tab_stops: &[],
+            column_break_offsets,
+            default_tab_stop_pt: None,
+            line_spacing_hint: None,
+            geom,
+            page_field_indices: None,
+        };
+        let paragraphs = vec![
+            PlannedParagraphFlow {
+                request: request(&candidate, &[]),
+                item_range: 1..3,
+                classification: ParagraphFragmentClassification::Candidate(
+                    ParagraphFragmentCandidate {
+                        block_start_index: 0,
+                        pagination: PaginationHint::default(),
+                    },
+                ),
+            },
+            PlannedParagraphFlow {
+                request: request(&empty, &[]),
+                item_range: 3..3,
+                classification: ParagraphFragmentClassification::EagerFallback(
+                    ParagraphFragmentFallbackReason::NoVisibleText,
+                ),
+            },
+            PlannedParagraphFlow {
+                request: request(&broken, &broken_offsets),
+                item_range: 5..7,
+                classification: ParagraphFragmentClassification::EagerFallback(
+                    ParagraphFragmentFallbackReason::ColumnBreak,
+                ),
+            },
+        ];
+        let items = || {
+            vec![
+                FlowItem::BlockStart {
+                    index: 0,
+                    pagination: PaginationHint::default(),
+                },
+                line(10.0),
+                line(11.0),
+                FlowItem::Gap(2.0),
+                FlowItem::BlockStart {
+                    index: 1,
+                    pagination: PaginationHint::default(),
+                },
+                line(12.0),
+                FlowItem::ColumnBreak,
+                FlowItem::PageBreak,
+            ]
+        };
+        let kind = |item: &FlowItem| match item {
+            FlowItem::BlockStart { .. } => "block",
+            FlowItem::Line(_) => "line",
+            FlowItem::Gap(_) => "gap",
+            FlowItem::ColumnBreak => "column-break",
+            FlowItem::PageBreak => "page-break",
+            _ => "other",
+        };
+
+        let mut eager = PaginationItemCursor::new(items(), &paragraphs);
+        let mut eager_snapshot = Vec::new();
+        while let Some(item) = eager.next_item() {
+            eager_snapshot.push((item.item_index, kind(&item.item), item.paragraph_index));
+        }
+        assert_eq!(
+            eager_snapshot,
+            vec![
+                (0, "block", None),
+                (1, "line", Some(0)),
+                (2, "line", None),
+                (3, "gap", None),
+                (4, "block", None),
+                (5, "line", Some(2)),
+                (6, "column-break", None),
+                (7, "page-break", None),
+            ]
+        );
+
+        let mut skipped = PaginationItemCursor::new(items(), &paragraphs);
+        assert!(!skipped.skip_paragraph_fallback(0));
+        assert_eq!(skipped.next_item().expect("block").item_index, 0);
+        let start = skipped.next_item().expect("candidate start");
+        assert_eq!((start.item_index, start.paragraph_index), (1, Some(0)));
+        assert!(skipped.skip_paragraph_fallback(0));
+        let mut remaining = Vec::new();
+        while let Some(item) = skipped.next_item() {
+            remaining.push((item.item_index, kind(&item.item), item.paragraph_index));
+        }
+        assert_eq!(
+            remaining,
+            vec![
+                (3, "gap", None),
+                (4, "block", None),
+                (5, "line", Some(2)),
+                (6, "column-break", None),
+                (7, "page-break", None),
+            ]
+        );
     }
 }
