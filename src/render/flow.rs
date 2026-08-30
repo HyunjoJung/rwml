@@ -35,6 +35,88 @@ struct ParagraphFragment {
     next: Option<ParagraphFragmentCursor>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct FragmentTrackSlot {
+    page_index: usize,
+    column_index: usize,
+    x: f32,
+    track: FragmentTrack,
+}
+
+struct SlottedParagraphFragment {
+    slot: FragmentTrackSlot,
+    fragment: ParagraphFragment,
+}
+
+struct ParagraphTrackFragments {
+    fragments: Vec<SlottedParagraphFragment>,
+    next: Option<ParagraphFragmentCursor>,
+}
+
+fn column_fragment_tracks(
+    columns: ColumnLayout,
+    page_index: usize,
+    height: f32,
+    rtl: bool,
+) -> Vec<FragmentTrackSlot> {
+    (0..columns.count)
+        .map(|offset| {
+            let column_index = if rtl {
+                columns.count - 1 - offset
+            } else {
+                offset
+            };
+            FragmentTrackSlot {
+                page_index,
+                column_index,
+                x: columns.x(column_index),
+                track: FragmentTrack {
+                    width: columns.width(column_index),
+                    height,
+                },
+            }
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shape_paragraph_across_tracks(
+    paragraph: &Paragraph,
+    marker: Option<&str>,
+    tab_stops: &[TabStop],
+    default_tab_stop_pt: Option<f32>,
+    line_spacing_hint: Option<LineSpacingHint>,
+    tracks: &[FragmentTrackSlot],
+    cursor: ParagraphFragmentCursor,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+) -> ParagraphTrackFragments {
+    let mut fragments = Vec::new();
+    let mut next = Some(cursor);
+    for slot in tracks {
+        let Some(cursor) = next.take() else {
+            break;
+        };
+        let fragment = shape_paragraph_fragment(
+            paragraph,
+            marker,
+            tab_stops,
+            default_tab_stop_pt,
+            line_spacing_hint,
+            slot.track,
+            cursor,
+            cx,
+            capture,
+        );
+        next = fragment.next.clone();
+        fragments.push(SlottedParagraphFragment {
+            slot: *slot,
+            fragment,
+        });
+    }
+    ParagraphTrackFragments { fragments, next }
+}
+
 fn paragraph_source_chars(paragraph: &Paragraph) -> usize {
     paragraph
         .runs
@@ -217,7 +299,7 @@ mod tests {
     use parley::{FontContext, LayoutContext};
 
     use super::*;
-    use crate::model::Indent;
+    use crate::model::{Indent, SectionColumnHint};
 
     type RunSnapshot = (u32, u32, usize, Option<String>);
     type LineSnapshot = (Option<(usize, usize)>, u32, Vec<RunSnapshot>);
@@ -735,5 +817,146 @@ mod tests {
         assert!(media_fragment.lines.is_empty());
         assert_eq!(media_fragment.images, vec![visible]);
         assert!(media_fragment.next.is_none());
+    }
+
+    #[test]
+    fn paragraph_track_driver_crosses_page_then_column_with_tabs() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 10.0,
+            ..PageSetup::default()
+        });
+        let layout = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 70.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 110.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let columns = ColumnLayout::new_with_layout(geom, Some(2), None, Some(&layout));
+        let page_zero = column_fragment_tracks(columns, 0, 1.0, true);
+        let page_one = column_fragment_tracks(columns, 1, 1.0, true);
+
+        assert_eq!(
+            page_zero
+                .iter()
+                .map(|slot| (slot.page_index, slot.column_index, slot.x, slot.track.width))
+                .collect::<Vec<_>>(),
+            vec![(0, 1, 90.0, 110.0), (0, 0, 0.0, 70.0)]
+        );
+        assert_eq!(
+            page_one
+                .iter()
+                .map(|slot| (slot.page_index, slot.column_index, slot.x, slot.track.width))
+                .collect::<Vec<_>>(),
+            vec![(1, 1, 90.0, 110.0), (1, 0, 0.0, 70.0)]
+        );
+
+        let mut tracks = vec![page_zero[1], page_one[0], page_one[1]];
+        tracks[2].track.height = 1_000.0;
+        let paragraph = Paragraph {
+            props: ParaProps {
+                indent: Indent {
+                    left_pt: Some(5.0),
+                    ..Indent::default()
+                },
+                list: Some(ListInfo {
+                    level: 0,
+                    ordered: true,
+                    label: "4.".to_string(),
+                }),
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron\nA\tB"
+                    .to_string(),
+                ..Run::default()
+            }],
+        };
+        let tab_stops = [TabStop {
+            position_pt: 45.0,
+            alignment: TabAlignment::Left,
+            leader: TabLeader::Dot,
+        }];
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let result = shape_paragraph_across_tracks(
+            &paragraph,
+            Some("4."),
+            &tab_stops,
+            Some(DEFAULT_TAB_STOP_PT),
+            None,
+            &tracks,
+            ParagraphFragmentCursor::default(),
+            &mut text_cx,
+            &mut capture,
+        );
+
+        assert!(result.next.is_none());
+        assert_eq!(result.fragments.len(), 3);
+        assert_eq!(
+            result
+                .fragments
+                .iter()
+                .map(|placed| (placed.slot.page_index, placed.slot.column_index))
+                .collect::<Vec<_>>(),
+            vec![(0, 0), (1, 1), (1, 0)]
+        );
+        let ranges = result
+            .fragments
+            .iter()
+            .map(|placed| {
+                let first = placed
+                    .fragment
+                    .lines
+                    .first()
+                    .and_then(|line| line.char_range)
+                    .expect("fragment start");
+                let last = placed
+                    .fragment
+                    .lines
+                    .last()
+                    .and_then(|line| line.char_range)
+                    .expect("fragment end");
+                (first.start, last.end)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(ranges[0].0, 0);
+        assert_eq!(ranges[0].1, ranges[1].0);
+        assert_eq!(ranges[1].1, ranges[2].0);
+        assert_eq!(ranges[2].1, paragraph.text().chars().count());
+
+        assert!(result.fragments[0]
+            .fragment
+            .lines
+            .iter()
+            .flat_map(|line| &line.runs)
+            .any(|run| run.text.contains("4. ")));
+        assert!(result.fragments[1..]
+            .iter()
+            .flat_map(|placed| &placed.fragment.lines)
+            .flat_map(|line| &line.runs)
+            .all(|run| !run.text.contains("4. ")));
+        let tab_line = result.fragments[1..]
+            .iter()
+            .flat_map(|placed| &placed.fragment.lines)
+            .find(|line| !line.leaders.is_empty())
+            .expect("continued tab line");
+        assert_eq!(tab_line.leaders.len(), 1);
+        assert_eq!(tab_line.leaders[0].style, TabLeader::Dot);
+        assert!((tab_line.x_indent + tab_line.leaders[0].end - 45.0).abs() <= 0.1);
     }
 }
