@@ -5208,8 +5208,7 @@ fn draw_running_surface_items(
                 } else {
                     false
                 };
-                draw_line_background(surface, &line, x0, y);
-                draw_line_leaders(surface, &line, x0, y, baseline);
+                project_and_replay_page_scene_line_paint(surface, scene, &line, x0, y, baseline)?;
                 for run in line.runs {
                     if let Some(url) = run.link.clone() {
                         let left = x0 + run.x;
@@ -6514,8 +6513,9 @@ fn draw_table_cell_content(
         } else {
             false
         };
-        draw_line_background(surface, &line, line_x, line_top);
-        draw_line_leaders(surface, &line, line_x, line_top, baseline);
+        project_and_replay_page_scene_line_paint(
+            surface, scene, &line, line_x, line_top, baseline,
+        )?;
         match line.cell_visual {
             Some(CellVisual::Picture { image, layout }) => {
                 previous_nested_borders = None;
@@ -6711,26 +6711,18 @@ fn draw_row_layout(
     }))
 }
 
-fn draw_line_background(surface: &mut Surface<'_>, line: &LineLayout, x_abs: f32, top: f32) {
-    if let Some(background) = line.background {
-        fill_rect_color(
-            surface,
-            x_abs,
-            top,
-            background.width,
-            line.height,
-            background.color,
-        );
-    }
-}
-
-fn draw_line_leaders(
+fn project_and_replay_page_scene_line_paint(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     line: &LineLayout,
     x_abs: f32,
     top: f32,
     baseline: f32,
-) {
+) -> Result<()> {
+    let operation_start = scene.operations.len();
+    if let Some(background) = line.background {
+        scene.push_fill_rect(x_abs, top, background.width, line.height, background.color)?;
+    }
     for leader in &line.leaders {
         let start = x_abs + leader.start.min(leader.end);
         let end = x_abs + leader.start.max(leader.end);
@@ -6738,14 +6730,13 @@ fn draw_line_leaders(
             continue;
         }
         if leader.style == TabLeader::Bar {
-            fill_rect_color(
-                surface,
+            scene.push_fill_rect(
                 start - 0.4,
                 top + 1.0,
                 0.8,
                 (line.height - 2.0).max(0.8),
                 leader.color,
-            );
+            )?;
             continue;
         }
         let (dash, gap, y, height): (f32, f32, f32, f32) = match leader.style {
@@ -6763,11 +6754,13 @@ fn draw_line_leaders(
         let mut segments = 0usize;
         while x < end && segments < 2048 {
             let width = dash.min(end - x);
-            fill_rect_color(surface, x, y, width, height, leader.color);
+            scene.push_fill_rect(x, y, width, height, leader.color)?;
             x += dash + gap;
             segments += 1;
         }
     }
+    replay_page_scene_operations(surface, scene, operation_start..scene.operations.len());
+    Ok(())
 }
 
 fn project_floating_overlay_frame(
@@ -6879,7 +6872,14 @@ fn draw_chart_text(
     .take(2)
     {
         let baseline = y + consumed + line.baseline;
-        draw_line_background(surface, &line, x + line.x_indent, y + consumed);
+        project_and_replay_page_scene_line_paint(
+            surface,
+            scene,
+            &line,
+            x + line.x_indent,
+            y + consumed,
+            baseline,
+        )?;
         for run in line.runs {
             project_and_replay_page_scene_glyph_run(
                 surface,
@@ -11259,8 +11259,14 @@ fn render_pdf(
                 if fy + line.height <= page_geom.page_h {
                     let baseline = fy + line.baseline;
                     let x0 = page_geom.left + line.x_indent;
-                    draw_line_background(&mut surface, &line, x0, fy);
-                    draw_line_leaders(&mut surface, &line, x0, fy, baseline);
+                    project_and_replay_page_scene_line_paint(
+                        &mut surface,
+                        &mut page_scene,
+                        &line,
+                        x0,
+                        fy,
+                        baseline,
+                    )?;
                     for run in line.runs {
                         project_and_replay_page_scene_glyph_run(
                             &mut surface,
@@ -11340,8 +11346,14 @@ fn render_pdf(
                     } else {
                         false
                     };
-                    draw_line_background(&mut surface, &line, x0, top);
-                    draw_line_leaders(&mut surface, &line, x0, top, baseline);
+                    project_and_replay_page_scene_line_paint(
+                        &mut surface,
+                        &mut page_scene,
+                        &line,
+                        x0,
+                        top,
+                        baseline,
+                    )?;
                     for run in line.runs {
                         if let Some(url) = run.link.clone() {
                             let l = x0 + run.x;
@@ -14674,6 +14686,304 @@ mod tests {
             "render failed: page scene exceeds the 0-operation limit"
         );
         assert!(scene.operations.is_empty());
+        assert!(scene.font_resources.is_empty());
+        assert_eq!(scene.glyph_count, 0);
+    }
+
+    #[test]
+    fn running_line_background_and_leaders_enter_the_scene_before_glyphs() {
+        let shading = rgb::Color::new(0xEE, 0xF1, 0xF4);
+        let mut lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                shading: Some(Color::rgb(0xEE, 0xF1, 0xF4)),
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "A\tB\tC".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[
+                TabStop {
+                    position_pt: 100.0,
+                    alignment: TabAlignment::Right,
+                    leader: TabLeader::Dot,
+                },
+                TabStop {
+                    position_pt: 140.0,
+                    alignment: TabAlignment::Bar,
+                    leader: TabLeader::None,
+                },
+            ],
+        );
+        assert_eq!(lines.len(), 1);
+        let line = lines.remove(0);
+        assert_eq!(line.leaders.len(), 2);
+
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let top = 24.0;
+        let x_abs = geom.left + line.x_indent;
+        let baseline = top + line.baseline;
+        let background = line.background.expect("paragraph shading reaches the line");
+        let mut expected = vec![(
+            super::SceneRect::new(x_abs, top, background.width, line.height).unwrap(),
+            shading,
+        )];
+        for leader in &line.leaders {
+            let start = x_abs + leader.start.min(leader.end);
+            let end = x_abs + leader.start.max(leader.end);
+            match leader.style {
+                TabLeader::Dot => {
+                    let mut x = start;
+                    let mut segments = 0;
+                    while x < end && segments < 2048 {
+                        let width = 1.0_f32.min(end - x);
+                        expected.push((
+                            super::SceneRect::new(x, baseline - 1.0, width, 1.0).unwrap(),
+                            leader.color,
+                        ));
+                        x += 4.0;
+                        segments += 1;
+                    }
+                }
+                TabLeader::Bar => expected.push((
+                    super::SceneRect::new(
+                        start - 0.4,
+                        top + 1.0,
+                        0.8,
+                        (line.height - 2.0).max(0.8),
+                    )
+                    .unwrap(),
+                    leader.color,
+                )),
+                style => panic!("unexpected test leader style: {style:?}"),
+            }
+        }
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+        super::draw_running_surface_items(
+            &mut surface,
+            &mut scene,
+            vec![super::RunningSurfaceItem::Line(line)],
+            super::RunningSurfacePaintPlacement {
+                vertical_bounds: (top, 200.0),
+                geom,
+                page_number: PageDisplayNumber::decimal(1),
+            },
+            &mut tcx,
+        )
+        .expect("running line paints");
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+
+        let first_glyph = scene
+            .operations
+            .iter()
+            .position(|operation| matches!(operation, super::PageSceneOp::GlyphRun(_)))
+            .expect("line text enters the scene");
+        assert_eq!(first_glyph, expected.len());
+        let actual = scene.operations[..first_glyph]
+            .iter()
+            .map(|operation| match operation {
+                super::PageSceneOp::FillRect { rect, color } => (*rect, *color),
+                operation => panic!("line paint must use fill rectangles: {operation:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn line_paint_projects_every_bounded_leader_style() {
+        let mut line = paragraph_lines(
+            ParaProps::default(),
+            vec![Run {
+                text: "line".to_string(),
+                ..Run::default()
+            }],
+        )
+        .remove(0);
+        line.height = 12.0;
+        line.background = None;
+        line.runs.clear();
+        let color = rgb::Color::new(0x12, 0x34, 0x56);
+        line.leaders = vec![
+            super::TabLeaderSpan {
+                start: 0.0,
+                end: 9.0,
+                style: TabLeader::Dot,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 20.0,
+                end: 31.0,
+                style: TabLeader::Hyphen,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 40.0,
+                end: 50.0,
+                style: TabLeader::Underscore,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 60.0,
+                end: 71.0,
+                style: TabLeader::Heavy,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 80.0,
+                end: 91.0,
+                style: TabLeader::MiddleDot,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 100.0,
+                end: 110.0,
+                style: TabLeader::None,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 120.0,
+                end: 120.0,
+                style: TabLeader::Bar,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: f32::NAN,
+                end: 10.0,
+                style: TabLeader::Dot,
+                color,
+            },
+        ];
+
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(240.0, 160.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+        super::project_and_replay_page_scene_line_paint(
+            &mut surface,
+            &mut scene,
+            &line,
+            10.0,
+            20.0,
+            30.0,
+        )
+        .expect("leader styles paint");
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+
+        let expected = [
+            (10.0, 29.0, 1.0, 1.0),
+            (14.0, 29.0, 1.0, 1.0),
+            (18.0, 29.0, 1.0, 1.0),
+            (30.0, 28.8, 3.0, 0.8),
+            (36.0, 28.8, 3.0, 0.8),
+            (50.0, 31.0, 10.0, 0.8),
+            (70.0, 28.2, 4.0, 1.6),
+            (76.0, 28.2, 4.0, 1.6),
+            (90.0, 28.2, 2.0, 1.8),
+            (95.0, 28.2, 2.0, 1.8),
+            (100.0, 28.2, 1.0, 1.8),
+            (10.0 + 120.0 - 0.4, 21.0, 0.8, 10.0),
+        ];
+        assert_eq!(scene.operations.len(), expected.len());
+        for (operation, (x, y, width, height)) in scene.operations.iter().zip(expected) {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("leader style must project as a rectangle: {operation:?}");
+            };
+            assert_eq!(*rect, super::SceneRect::new(x, y, width, height).unwrap());
+            assert_eq!(*actual_color, color);
+        }
+    }
+
+    #[test]
+    fn line_background_consumes_scene_capacity_before_glyphs() {
+        let mut lines = paragraph_lines(
+            ParaProps {
+                shading: Some(Color::rgb(0xEE, 0xF1, 0xF4)),
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "Bounded line".to_string(),
+                ..Run::default()
+            }],
+        );
+        let line = lines.remove(0);
+        let geom = Geom::from_setup(&PageSetup::default());
+        let expected_background = super::SceneRect::new(
+            geom.left + line.x_indent,
+            24.0,
+            line.background.expect("line is shaded").width,
+            line.height,
+        )
+        .unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::with_operation_limit(1);
+        let result = super::draw_running_surface_items(
+            &mut surface,
+            &mut scene,
+            vec![super::RunningSurfaceItem::Line(line)],
+            super::RunningSurfacePaintPlacement {
+                vertical_bounds: (24.0, 100.0),
+                geom,
+                page_number: PageDisplayNumber::decimal(1),
+            },
+            &mut tcx,
+        );
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+
+        let error = result.expect_err("glyph must exceed capacity after the background");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 1-operation limit"
+        );
+        assert_eq!(
+            scene.operations,
+            vec![super::PageSceneOp::FillRect {
+                rect: expected_background,
+                color: rgb::Color::new(0xEE, 0xF1, 0xF4),
+            }]
+        );
         assert!(scene.font_resources.is_empty());
         assert_eq!(scene.glyph_count, 0);
     }
