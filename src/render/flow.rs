@@ -4,11 +4,12 @@ use std::rc::Rc;
 
 use super::*;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 struct ParagraphFragmentCursor {
     source_char: usize,
     marker_emitted: bool,
     page_field_indices: Rc<[Option<usize>]>,
+    pending_images: Rc<[Image]>,
 }
 
 impl Default for ParagraphFragmentCursor {
@@ -17,6 +18,7 @@ impl Default for ParagraphFragmentCursor {
             source_char: 0,
             marker_emitted: false,
             page_field_indices: Rc::from(Vec::<Option<usize>>::new()),
+            pending_images: Rc::from(Vec::<Image>::new()),
         }
     }
 }
@@ -29,6 +31,7 @@ struct FragmentTrack {
 
 struct ParagraphFragment {
     lines: Vec<LineLayout>,
+    images: Vec<Image>,
     next: Option<ParagraphFragmentCursor>,
 }
 
@@ -94,30 +97,45 @@ fn shape_paragraph_fragment(
 ) -> ParagraphFragment {
     let total_chars = paragraph_source_chars(paragraph);
     let source_start = cursor.source_char.min(total_chars);
+    let initialized = cursor.page_field_indices.len() == paragraph.runs.len();
+    let (page_field_indices, pending_images) = if initialized {
+        (
+            cursor.page_field_indices.clone(),
+            cursor.pending_images.clone(),
+        )
+    } else {
+        (
+            Rc::from(
+                paragraph
+                    .runs
+                    .iter()
+                    .map(|run| {
+                        if run.props.hidden {
+                            None
+                        } else {
+                            page_field_index_for_field(&run.field, capture)
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+            Rc::from(
+                paragraph
+                    .runs
+                    .iter()
+                    .filter(|run| !run.props.hidden)
+                    .filter_map(|run| run.image.clone())
+                    .collect::<Vec<_>>(),
+            ),
+        )
+    };
     if source_start == total_chars {
         return ParagraphFragment {
             lines: Vec::new(),
+            images: pending_images.to_vec(),
             next: None,
         };
     }
 
-    let page_field_indices = if cursor.page_field_indices.len() == paragraph.runs.len() {
-        cursor.page_field_indices.clone()
-    } else {
-        Rc::from(
-            paragraph
-                .runs
-                .iter()
-                .map(|run| {
-                    if run.props.hidden {
-                        None
-                    } else {
-                        page_field_index_for_field(&run.field, capture)
-                    }
-                })
-                .collect::<Vec<_>>(),
-        )
-    };
     let (tail, original_run_indices) = paragraph_tail(paragraph, source_start);
     let tail_page_field_indices = original_run_indices
         .iter()
@@ -167,14 +185,28 @@ fn shape_paragraph_fragment(
     }
 
     if lines.is_empty() || advanced_to <= source_start {
-        return ParagraphFragment { lines, next: None };
+        return ParagraphFragment {
+            lines,
+            images: pending_images.to_vec(),
+            next: None,
+        };
     }
-    let next = (advanced_to < total_chars).then_some(ParagraphFragmentCursor {
+    let next = (advanced_to < total_chars).then(|| ParagraphFragmentCursor {
         source_char: advanced_to,
         marker_emitted: cursor.marker_emitted || fragment_marker.is_some(),
         page_field_indices,
+        pending_images: pending_images.clone(),
     });
-    ParagraphFragment { lines, next }
+    let images = if next.is_none() {
+        pending_images.to_vec()
+    } else {
+        Vec::new()
+    };
+    ParagraphFragment {
+        lines,
+        images,
+        next,
+    }
 }
 
 #[cfg(test)]
@@ -599,5 +631,109 @@ mod tests {
         assert_eq!(capture.page_fields.len(), 1);
         assert!(!dynamic_indices.is_empty());
         assert!(dynamic_indices.iter().all(|index| *index == Some(0)));
+    }
+
+    #[test]
+    fn paragraph_cursor_emits_visible_inline_media_once_after_text() {
+        let visible = Image {
+            alt: Some("visible-before-cursor".to_string()),
+            ..Image::default()
+        };
+        let paragraph = Paragraph {
+            runs: vec![
+                Run {
+                    text: "lead ".to_string(),
+                    ..Run::default()
+                },
+                Run {
+                    image: Some(visible.clone()),
+                    ..Run::default()
+                },
+                Run {
+                    image: Some(Image {
+                        alt: Some("hidden".to_string()),
+                        ..Image::default()
+                    }),
+                    props: CharProps {
+                        hidden: true,
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: std::iter::repeat_n("alpha beta gamma delta", 8)
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        };
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let first = shape_paragraph_fragment(
+            &paragraph,
+            None,
+            &[],
+            Some(DEFAULT_TAB_STOP_PT),
+            None,
+            FragmentTrack {
+                width: 80.0,
+                height: 1.0,
+            },
+            ParagraphFragmentCursor::default(),
+            &mut text_cx,
+            &mut capture,
+        );
+        let second = shape_paragraph_fragment(
+            &paragraph,
+            None,
+            &[],
+            Some(DEFAULT_TAB_STOP_PT),
+            None,
+            FragmentTrack {
+                width: 180.0,
+                height: 1_000.0,
+            },
+            first.next.clone().expect("text must continue"),
+            &mut text_cx,
+            &mut capture,
+        );
+
+        assert!(first.images.is_empty());
+        assert_eq!(second.images, vec![visible.clone()]);
+        assert!(second.next.is_none());
+
+        let media_only = Paragraph {
+            runs: vec![Run {
+                image: Some(visible.clone()),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let media_fragment = shape_paragraph_fragment(
+            &media_only,
+            None,
+            &[],
+            Some(DEFAULT_TAB_STOP_PT),
+            None,
+            FragmentTrack {
+                width: 80.0,
+                height: 1.0,
+            },
+            ParagraphFragmentCursor::default(),
+            &mut text_cx,
+            &mut capture,
+        );
+        assert!(media_fragment.lines.is_empty());
+        assert_eq!(media_fragment.images, vec![visible]);
+        assert!(media_fragment.next.is_none());
     }
 }
