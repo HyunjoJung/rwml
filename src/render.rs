@@ -7069,15 +7069,14 @@ fn draw_waterfall_chart(
 
 fn draw_treemap_chart(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     chart: &Chart,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    rect: ChartRect,
     tcx: &mut TextCx<'_>,
-) {
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
     let Some(series) = chart.series.first() else {
-        return;
+        return Ok(());
     };
     let values: Vec<f64> = series
         .values
@@ -7115,39 +7114,45 @@ fn draw_treemap_chart(
         };
         remaining = (remaining - value).max(0.0);
         let color = chart_series_color(index);
-        fill_rect_color(surface, cell_x, cell_y, cell_w, cell_h, color);
-        fill_rect_color(
+        project_and_replay_page_scene_fill_rect(
+            surface, scene, cell_x, cell_y, cell_w, cell_h, color,
+        )?;
+        project_and_replay_page_scene_fill_rect(
             surface,
+            scene,
             cell_x,
             cell_y,
             cell_w,
             0.75,
             rgb::Color::new(0xFF, 0xFF, 0xFF),
-        );
-        fill_rect_color(
+        )?;
+        project_and_replay_page_scene_fill_rect(
             surface,
+            scene,
             cell_x,
             cell_y + cell_h - 0.75,
             cell_w,
             0.75,
             rgb::Color::new(0xFF, 0xFF, 0xFF),
-        );
-        fill_rect_color(
+        )?;
+        project_and_replay_page_scene_fill_rect(
             surface,
+            scene,
             cell_x,
             cell_y,
             0.75,
             cell_h,
             rgb::Color::new(0xFF, 0xFF, 0xFF),
-        );
-        fill_rect_color(
+        )?;
+        project_and_replay_page_scene_fill_rect(
             surface,
+            scene,
             cell_x + cell_w - 0.75,
             cell_y,
             0.75,
             cell_h,
             rgb::Color::new(0xFF, 0xFF, 0xFF),
-        );
+        )?;
         if let Some(category) = chart.categories.get(index) {
             draw_chart_text(
                 surface,
@@ -7165,6 +7170,7 @@ fn draw_treemap_chart(
             );
         }
     }
+    Ok(())
 }
 
 fn draw_sunburst_chart(surface: &mut Surface<'_>, chart: &Chart, x: f32, y: f32, w: f32, h: f32) {
@@ -7600,7 +7606,18 @@ fn draw_authored_chart(
     }
 
     if chart.kind == ChartKind::Treemap {
-        draw_treemap_chart(surface, chart, plot_left, plot_top, plot_w, plot_h, tcx);
+        draw_treemap_chart(
+            surface,
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            tcx,
+        )?;
         return Ok(());
     }
 
@@ -13955,6 +13972,84 @@ mod tests {
             } = operation
             else {
                 panic!("waterfall operation must be a rectangle: {operation:?}");
+            };
+            assert_close(rect.x, x);
+            assert_close(rect.y, y);
+            assert_close(rect.width, width);
+            assert_close(rect.height, height);
+            assert_eq!(*actual_color, color);
+        }
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn treemap_rectangles_enter_the_scene_in_paint_order() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Treemap,
+            categories: vec!["Primary".to_string(), "Secondary".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![3.0, 1.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let white = rgb::Color::new(0xFF, 0xFF, 0xFF);
+        let first = super::chart_series_color(0);
+        let second = super::chart_series_color(1);
+        let expected = [
+            (92.0, 28.0, 154.5, 136.0, first),
+            (92.0, 28.0, 154.5, 0.75, white),
+            (92.0, 163.25, 154.5, 0.75, white),
+            (92.0, 28.0, 0.75, 136.0, white),
+            (245.75, 28.0, 0.75, 136.0, white),
+            (246.5, 28.0, 51.5, 136.0, second),
+            (246.5, 28.0, 51.5, 0.75, white),
+            (246.5, 163.25, 51.5, 0.75, white),
+            (246.5, 28.0, 0.75, 136.0, white),
+            (297.25, 28.0, 0.75, 136.0, white),
+        ];
+        assert_eq!(scene.operations.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in scene.operations[5..].iter().zip(expected)
+        {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("treemap operation must be a rectangle: {operation:?}");
             };
             assert_close(rect.x, x);
             assert_close(rect.y, y);
