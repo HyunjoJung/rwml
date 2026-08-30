@@ -117,6 +117,18 @@ fn shape_paragraph_across_tracks(
     ParagraphTrackFragments { fragments, next }
 }
 
+fn record_fragment_page_fields(
+    fragments: &[SlottedParagraphFragment],
+    page_fields: &mut [Option<usize>],
+) {
+    for placed in fragments {
+        let page_number = placed.slot.page_index.saturating_add(1);
+        for line in &placed.fragment.lines {
+            record_line_page_fields(line, page_number, page_fields);
+        }
+    }
+}
+
 fn paragraph_source_chars(paragraph: &Paragraph) -> usize {
     paragraph
         .runs
@@ -293,7 +305,7 @@ fn shape_paragraph_fragment(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{BTreeSet, HashMap};
 
     use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
     use parley::{FontContext, LayoutContext};
@@ -958,5 +970,111 @@ mod tests {
         assert_eq!(tab_line.leaders.len(), 1);
         assert_eq!(tab_line.leaders[0].style, TabLeader::Dot);
         assert!((tab_line.x_indent + tab_line.leaders[0].end - 45.0).abs() <= 0.1);
+    }
+
+    #[test]
+    fn paragraph_track_driver_projects_links_and_page_fields_by_physical_page() {
+        let paragraph = Paragraph {
+            runs: vec![
+                Run {
+                    text: std::iter::repeat_n("linked alpha beta gamma", 8)
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    field: FieldRole::Hyperlink {
+                        url: "https://example.invalid/across-pages".to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: " page field ".to_string(),
+                    ..Run::default()
+                },
+                Run {
+                    text: "9".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: "PAGE".to_string(),
+                    },
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        };
+        let tracks = [
+            FragmentTrackSlot {
+                page_index: 0,
+                column_index: 0,
+                x: 0.0,
+                track: FragmentTrack {
+                    width: 80.0,
+                    height: 1.0,
+                },
+            },
+            FragmentTrackSlot {
+                page_index: 1,
+                column_index: 0,
+                x: 0.0,
+                track: FragmentTrack {
+                    width: 150.0,
+                    height: 1_000.0,
+                },
+            },
+        ];
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::page_fields();
+        let result = shape_paragraph_across_tracks(
+            &paragraph,
+            None,
+            &[],
+            Some(DEFAULT_TAB_STOP_PT),
+            None,
+            &tracks,
+            ParagraphFragmentCursor::default(),
+            &mut text_cx,
+            &mut capture,
+        );
+
+        assert!(result.next.is_none());
+        assert_eq!(result.fragments.len(), 2);
+        let linked_pages = result
+            .fragments
+            .iter()
+            .filter(|placed| {
+                placed
+                    .fragment
+                    .lines
+                    .iter()
+                    .flat_map(|line| &line.runs)
+                    .any(|run| run.link.as_deref() == Some("https://example.invalid/across-pages"))
+            })
+            .map(|placed| placed.slot.page_index)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(linked_pages, BTreeSet::from([0, 1]));
+
+        let dynamic_pages = result
+            .fragments
+            .iter()
+            .flat_map(|placed| {
+                placed
+                    .fragment
+                    .lines
+                    .iter()
+                    .flat_map(|line| &line.runs)
+                    .filter_map(|run| run.dynamic.as_ref())
+                    .map(|dynamic| (placed.slot.page_index, dynamic.page_field_index))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(dynamic_pages, vec![(1, Some(0))]);
+        assert_eq!(capture.page_fields, vec![None]);
+
+        let mut projected_page_fields = capture.page_fields.clone();
+        record_fragment_page_fields(&result.fragments, &mut projected_page_fields);
+        assert_eq!(projected_page_fields, vec![Some(2)]);
     }
 }
