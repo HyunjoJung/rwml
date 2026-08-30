@@ -35,7 +35,11 @@ mod shape;
 mod table;
 
 use paginate::*;
-use paragraph_flow::{layout_paragraph, reserve_paragraph_page_fields, ParagraphFlowRequest};
+#[cfg(test)]
+use paragraph_flow::layout_paragraph;
+use paragraph_flow::{
+    reserve_paragraph_page_fields, BlockFlowSink, BodyFlowQueue, ParagraphFlowRequest,
+};
 use shape::*;
 use table::*;
 
@@ -3060,13 +3064,13 @@ struct BodyCollectionSidecars<'a> {
     top_bottom_bands: &'a [Vec<TopBottomBand>],
 }
 
-fn collect_blocks_with_block_anchors(
-    blocks: &[Block],
-    out: &mut Vec<FlowItem>,
+fn collect_blocks_with_block_anchors<'a, S: BlockFlowSink<'a>>(
+    blocks: &'a [Block],
+    out: &mut S,
     geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-    sidecars: BodyCollectionSidecars<'_>,
+    sidecars: BodyCollectionSidecars<'a>,
 ) {
     collect_blocks_inner(
         blocks,
@@ -3098,13 +3102,13 @@ fn collect_blocks_with_block_anchors(
     );
 }
 
-fn collect_blocks_inner(
-    blocks: &[Block],
-    out: &mut Vec<FlowItem>,
+fn collect_blocks_inner<'a, S: BlockFlowSink<'a>>(
+    blocks: &'a [Block],
+    out: &mut S,
     geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-    options: BlockCollectionOptions<'_>,
+    options: BlockCollectionOptions<'a>,
 ) {
     let mut lists = ListState::default();
     for (block_index, b) in blocks.iter().enumerate() {
@@ -3112,7 +3116,7 @@ fn collect_blocks_inner(
             .pagination_boundaries
             .is_some_and(|boundaries| boundaries.binary_search(&block_index).is_ok())
         {
-            out.push(FlowItem::PaginationBoundary);
+            out.ready_items().push(FlowItem::PaginationBoundary);
         }
         let section_geom = options
             .section_geometries
@@ -3137,7 +3141,7 @@ fn collect_blocks_inner(
             })
             .unwrap_or(section_geom);
         if options.include_block_anchors {
-            out.push(FlowItem::BlockStart {
+            out.ready_items().push(FlowItem::BlockStart {
                 index: block_index,
                 pagination: options
                     .pagination_hints
@@ -3156,26 +3160,23 @@ fn collect_blocks_inner(
                     .filter(|width| width.is_finite() && *width > 0.0)
                     .map(|width| section_geom.with_content_width(width))
                     .unwrap_or(block_geom);
-                if p.props.page_break_before
-                    && out
-                        .iter()
-                        .any(|item| !matches!(item, FlowItem::BlockStart { .. }))
-                {
-                    out.push(FlowItem::PageBreak);
+                if p.props.page_break_before && out.has_non_anchor(cx, capture) {
+                    out.ready_items().push(FlowItem::PageBreak);
                 }
                 if let Some(bands) = options
                     .top_bottom_bands
                     .and_then(|bands| bands.get(block_index))
                 {
-                    out.extend(bands.iter().map(|band| FlowItem::TopBottomBand {
-                        top: band.top,
-                        bottom: band.bottom,
-                        anchor_offset: band.anchor_offset,
-                    }));
+                    out.ready_items()
+                        .extend(bands.iter().map(|band| FlowItem::TopBottomBand {
+                            top: band.top,
+                            bottom: band.bottom,
+                            anchor_offset: band.anchor_offset,
+                        }));
                 }
                 let marker = paragraph_list_marker(p, &mut lists);
                 if let Some(before) = p.props.spacing.before_pt.filter(|b| *b > 0.0) {
-                    out.push(FlowItem::Gap(before));
+                    out.ready_items().push(FlowItem::Gap(before));
                 }
                 let tab_stops = options
                     .tab_stops
@@ -3193,7 +3194,7 @@ fn collect_blocks_inner(
                     .copied()
                     .flatten();
                 let page_field_indices = reserve_paragraph_page_fields(p, capture);
-                layout_paragraph(
+                out.push_paragraph(
                     ParagraphFlowRequest {
                         paragraph: p,
                         marker: marker.map(Cow::Owned),
@@ -3204,7 +3205,6 @@ fn collect_blocks_inner(
                         geom: paragraph_geom,
                         page_field_indices,
                     },
-                    out,
                     cx,
                     capture,
                 );
@@ -3216,7 +3216,7 @@ fn collect_blocks_inner(
                     .map(|value| value.max(0.0))
                     .unwrap_or(PARA_GAP);
                 if after > 0.0 {
-                    out.push(FlowItem::Gap(after));
+                    out.ready_items().push(FlowItem::Gap(after));
                 }
             }
             Block::Table(t) => {
@@ -3238,7 +3238,7 @@ fn collect_blocks_inner(
                     .and_then(|tables| tables.get(block_index));
                 layout_table_with_row_pagination_and_lists(
                     t,
-                    out,
+                    out.ready_items(),
                     block_geom,
                     cx,
                     capture,
@@ -3253,35 +3253,36 @@ fn collect_blocks_inner(
                     },
                     &mut lists,
                 );
-                out.push(FlowItem::Gap(PARA_GAP));
+                out.ready_items().push(FlowItem::Gap(PARA_GAP));
             }
             Block::Image(img) => {
                 if let Some(item) = image_flow_item(img, block_geom) {
-                    out.push(item);
-                    out.push(FlowItem::Gap(PARA_GAP));
+                    out.ready_items().push(item);
+                    out.ready_items().push(FlowItem::Gap(PARA_GAP));
                 }
             }
             Block::Chart(chart) => {
                 if let Some(item) = chart_flow_item(chart, block_geom) {
-                    out.push(item);
-                    out.push(FlowItem::Gap(PARA_GAP));
+                    out.ready_items().push(item);
+                    out.ready_items().push(FlowItem::Gap(PARA_GAP));
                 }
             }
-            Block::PageBreak => out.push(FlowItem::PageBreak),
+            Block::PageBreak => out.ready_items().push(FlowItem::PageBreak),
             Block::SectionBreak(section) => {
                 if let Some(gap_pt) = options
                     .section_column_gap_pt
                     .and_then(|gaps| gaps.get(block_index).copied())
                     .flatten()
                 {
-                    out.push(FlowItem::SectionColumnGap(gap_pt));
+                    out.ready_items().push(FlowItem::SectionColumnGap(gap_pt));
                 }
                 if let Some(layout) = options
                     .section_column_layouts
                     .and_then(|layouts| layouts.get(block_index).copied())
                     .flatten()
                 {
-                    out.push(FlowItem::SectionColumnLayout(Rc::new(layout.clone())));
+                    out.ready_items()
+                        .push(FlowItem::SectionColumnLayout(Rc::new(layout.clone())));
                 }
                 if options
                     .section_column_rtl
@@ -3289,9 +3290,10 @@ fn collect_blocks_inner(
                     .copied()
                     .unwrap_or(false)
                 {
-                    out.push(FlowItem::SectionColumnRtl);
+                    out.ready_items().push(FlowItem::SectionColumnRtl);
                 }
-                out.push(FlowItem::SectionBreak(section.clone()));
+                out.ready_items()
+                    .push(FlowItem::SectionBreak(section.clone()));
             }
         }
     }
@@ -6386,7 +6388,7 @@ fn collect_pdf_flow_items_with_paragraph_widths(
     unsupported_features: Option<&FeatureInventory>,
     paragraph_widths: Option<&[Option<f32>]>,
 ) -> Vec<FlowItem> {
-    let mut items: Vec<FlowItem> = Vec::new();
+    let mut body_flow = BodyFlowQueue::default();
     let final_section_setup = SectionSetup::from(&model.setup);
     let body_columns = section_columns_by_block(&model.blocks, final_section_setup.columns);
     let body_column_gaps = section_column_gaps_by_block(
@@ -6403,7 +6405,7 @@ fn collect_pdf_flow_items_with_paragraph_widths(
     let top_bottom_bands = top_bottom_bands_by_block(model, floating_shapes, geom);
     collect_blocks_with_block_anchors(
         &model.blocks,
-        &mut items,
+        &mut body_flow,
         geom,
         tcx,
         capture,
@@ -6428,6 +6430,7 @@ fn collect_pdf_flow_items_with_paragraph_widths(
             top_bottom_bands: &top_bottom_bands,
         },
     );
+    let mut items = body_flow.lower(tcx, capture);
     items.push(FlowItem::PaginationBoundary);
     let final_column_geom = geom.with_content_width(
         ColumnLayout::new_with_layout(
