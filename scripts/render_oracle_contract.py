@@ -22,16 +22,32 @@ try:
         validate_metric_contract,
         validate_metrics as validate_integer_metrics,
     )
+    from render_pdf_diagnostics import (
+        aggregate_geometry_reports as aggregate_pdf_geometry_reports,
+        aggregate_semantic_reports as aggregate_pdf_semantic_reports,
+        validate_diagnostic_contract,
+        validate_geometry_report as validate_pdf_geometry_report,
+        validate_geometry_summary as validate_pdf_geometry_summary,
+        validate_semantic_report as validate_pdf_semantic_report,
+    )
 except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
     from scripts.render_evidence_metrics import (
         aggregate_metrics as aggregate_integer_metrics,
         validate_metric_contract,
         validate_metrics as validate_integer_metrics,
     )
+    from scripts.render_pdf_diagnostics import (
+        aggregate_geometry_reports as aggregate_pdf_geometry_reports,
+        aggregate_semantic_reports as aggregate_pdf_semantic_reports,
+        validate_diagnostic_contract,
+        validate_geometry_report as validate_pdf_geometry_report,
+        validate_geometry_summary as validate_pdf_geometry_summary,
+        validate_semantic_report as validate_pdf_semantic_report,
+    )
 
 
 CORPUS_SCHEMA = "rwml.render-oracle-corpus.v1"
-EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v2"
+EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v3"
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
 MAX_JSON_DEPTH = 64
@@ -67,6 +83,9 @@ EVIDENCE_KEYS = {
     "environment",
     "visual_comparison",
     "integer_visual_metrics",
+    "pdf_diagnostic_contract",
+    "pdf_point_geometry",
+    "semantic_text_metrics",
     "summary",
     "gate",
     "rows",
@@ -110,6 +129,8 @@ ROW_KEYS = {
     "unmatched_reference_pages",
     "capped_matched_pages",
     "integer_visual_metrics",
+    "pdf_point_geometry",
+    "semantic_text_metrics",
     "render_warnings",
     "render_warning_kinds",
     "reason",
@@ -705,6 +726,12 @@ def _validate_evidence_row(row: object, document: CorpusDocument) -> None:
         validate_integer_metrics(row["integer_visual_metrics"])
         if row["integer_visual_metrics"]["pages"] != row["compared_pages"]:
             raise ValueError("evidence row integer visual page count mismatch")
+        validate_pdf_geometry_report(row["pdf_point_geometry"])
+        if row["pdf_point_geometry"]["summary"]["pages"] != row["compared_pages"]:
+            raise ValueError("evidence row PDF point geometry page count mismatch")
+        validate_pdf_semantic_report(row["semantic_text_metrics"])
+        if row["semantic_text_metrics"]["pages"] != row["compared_pages"]:
+            raise ValueError("evidence row semantic text page count mismatch")
     for key, value in row.items():
         if key in {
             "recall",
@@ -805,6 +832,32 @@ def _validate_integer_visual_aggregate(
     )
     if value != expected:
         raise ValueError("integer visual aggregate is inconsistent")
+
+
+def _validate_pdf_diagnostic_aggregates(
+    contract: object,
+    geometry: object,
+    semantics: object,
+    rows: list[dict[str, Any]],
+) -> None:
+    validate_diagnostic_contract(contract)
+    measured = [row for row in rows if row["status"] != "skip"]
+    if not measured:
+        if geometry is not None or semantics is not None:
+            raise ValueError("PDF diagnostics require measured rows")
+        return
+    validate_pdf_geometry_summary(geometry)
+    expected_geometry = aggregate_pdf_geometry_reports(
+        [row["pdf_point_geometry"] for row in measured]
+    )
+    if geometry != expected_geometry:
+        raise ValueError("PDF point geometry aggregate is inconsistent")
+    validate_pdf_semantic_report(semantics)
+    expected_semantics = aggregate_pdf_semantic_reports(
+        [row["semantic_text_metrics"] for row in measured]
+    )
+    if semantics != expected_semantics:
+        raise ValueError("semantic text aggregate is inconsistent")
 
 
 def _validate_summary(
@@ -953,6 +1006,12 @@ def validate_evidence_report(
     for row, document in zip(rows, corpus.documents, strict=True):
         _validate_evidence_row(row, document)
     _validate_integer_visual_aggregate(evidence["integer_visual_metrics"], rows)
+    _validate_pdf_diagnostic_aggregates(
+        evidence["pdf_diagnostic_contract"],
+        evidence["pdf_point_geometry"],
+        evidence["semantic_text_metrics"],
+        rows,
+    )
     _validate_visual_comparison(evidence["visual_comparison"])
     _validate_metric_environment(
         evidence["visual_comparison"], evidence["environment"]

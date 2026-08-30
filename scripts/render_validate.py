@@ -24,6 +24,10 @@ and report complementary metrics per document:
   * integer image — raw error sums and integer PPM similarity for RGB, foreground,
                     edge, conservative text-ink, matched color, and blurred luma;
                     one-pixel mask matching and fixed work accounting are explicit.
+  * PDF geometry  — page, MediaBox, and CropBox coordinates in integer
+                    millipoints, with exact candidate-minus-reference deltas.
+  * semantics     — privacy-preserving token, codepoint, and token-bigram counts
+                    and integer PPM precision/recall/F1; no document text is kept.
   * warnings      — rwml `RenderReport` warning count/kinds for trend tracking.
 
 Local LibreOffice runs seed and initialize a fresh per-document user profile before
@@ -84,6 +88,21 @@ try:
         numpy_module as integer_metric_numpy,
         validate_metrics as validate_integer_metrics,
     )
+    from render_pdf_diagnostics import (
+        MAX_SEMANTIC_CODEPOINTS,
+        MAX_SEMANTIC_TOKENS,
+        aggregate_geometry_reports as aggregate_pdf_geometry_reports,
+        aggregate_semantic_reports as aggregate_pdf_semantic_reports,
+        canonical_page_geometry as canonical_pdf_page_geometry,
+        diagnostic_contract as pdf_diagnostic_contract,
+        geometry_report as pdf_geometry_report,
+        normalize_semantic_tokens as normalize_pdf_semantic_tokens,
+        page_geometry_metrics as pdf_page_geometry_metrics,
+        semantic_metrics as pdf_semantic_metrics,
+        semantic_report as pdf_semantic_report,
+        validate_geometry_report as validate_pdf_geometry_report,
+        validate_semantic_report as validate_pdf_semantic_report,
+    )
 except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
     from scripts.render_oracle_contract import (
         CorpusDocument,
@@ -106,6 +125,21 @@ except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
         metric_contract as integer_metric_contract,
         numpy_module as integer_metric_numpy,
         validate_metrics as validate_integer_metrics,
+    )
+    from scripts.render_pdf_diagnostics import (
+        MAX_SEMANTIC_CODEPOINTS,
+        MAX_SEMANTIC_TOKENS,
+        aggregate_geometry_reports as aggregate_pdf_geometry_reports,
+        aggregate_semantic_reports as aggregate_pdf_semantic_reports,
+        canonical_page_geometry as canonical_pdf_page_geometry,
+        diagnostic_contract as pdf_diagnostic_contract,
+        geometry_report as pdf_geometry_report,
+        normalize_semantic_tokens as normalize_pdf_semantic_tokens,
+        page_geometry_metrics as pdf_page_geometry_metrics,
+        semantic_metrics as pdf_semantic_metrics,
+        semantic_report as pdf_semantic_report,
+        validate_geometry_report as validate_pdf_geometry_report,
+        validate_semantic_report as validate_pdf_semantic_report,
     )
 
 with contextlib.redirect_stdout(sys.stderr):
@@ -207,6 +241,8 @@ class ValidationRow:
     unmatched_reference_pages: int | None = None
     capped_matched_pages: int | None = None
     integer_visual_metrics: dict[str, int] | None = None
+    pdf_point_geometry: dict[str, object] | None = None
+    semantic_text_metrics: dict[str, int] | None = None
     render_warnings: int | None = None
     render_warning_kinds: list[str] | None = None
     reason: str | None = None
@@ -221,6 +257,8 @@ class VisualMetrics:
     unmatched_reference_pages: int
     capped_matched_pages: int
     integer_visual_metrics: dict[str, int] | None
+    pdf_point_geometry: dict[str, object] | None
+    semantic_text_metrics: dict[str, int] | None
 
 
 def is_finite_number(value: object) -> bool:
@@ -630,6 +668,14 @@ def validation_report(
             validate_integer_metrics(row.integer_visual_metrics)
             if row.compared_pages != row.integer_visual_metrics["pages"]:
                 raise ValueError("integer visual page count mismatch")
+        if row.pdf_point_geometry is not None:
+            validate_pdf_geometry_report(row.pdf_point_geometry)
+            if row.compared_pages != row.pdf_point_geometry["summary"]["pages"]:
+                raise ValueError("PDF point geometry page count mismatch")
+        if row.semantic_text_metrics is not None:
+            validate_pdf_semantic_report(row.semantic_text_metrics)
+            if row.compared_pages != row.semantic_text_metrics["pages"]:
+                raise ValueError("semantic text metric page count mismatch")
         if row.status == "skip" and any(
             getattr(row, metric) is not None
             for metric in (
@@ -645,6 +691,8 @@ def validation_report(
                 "unmatched_reference_pages",
                 "capped_matched_pages",
                 "integer_visual_metrics",
+                "pdf_point_geometry",
+                "semantic_text_metrics",
                 "render_warnings",
                 "render_warning_kinds",
             )
@@ -671,6 +719,24 @@ def validation_report(
         aggregate_integer_metrics(integer_metric_rows)
         if integer_metric_rows
         else None
+    )
+    geometry_rows = [
+        r.pdf_point_geometry for r in measured if r.pdf_point_geometry is not None
+    ]
+    if geometry_rows and len(geometry_rows) != len(measured):
+        raise ValueError("PDF point geometry is partial")
+    geometry_summary = (
+        aggregate_pdf_geometry_reports(geometry_rows) if geometry_rows else None
+    )
+    semantic_rows = [
+        r.semantic_text_metrics
+        for r in measured
+        if r.semantic_text_metrics is not None
+    ]
+    if semantic_rows and len(semantic_rows) != len(measured):
+        raise ValueError("semantic text evidence is partial")
+    semantic_summary = (
+        aggregate_pdf_semantic_reports(semantic_rows) if semantic_rows else None
     )
     summary = {
         "documents": len(rows),
@@ -742,6 +808,9 @@ def validation_report(
             "integer_metrics": integer_metric_contract(),
         },
         "integer_visual_metrics": integer_metric_summary,
+        "pdf_diagnostic_contract": pdf_diagnostic_contract(),
+        "pdf_point_geometry": geometry_summary,
+        "semantic_text_metrics": semantic_summary,
         "summary": summary,
         "gate": validation_gate(summary, thresholds),
         "rows": [row_dict(r) for r in rows],
@@ -1022,6 +1091,7 @@ def _harness_sha256() -> str:
         Path(__file__).resolve(),
         Path(__file__).with_name("render_oracle_contract.py").resolve(),
         Path(__file__).with_name("render_evidence_metrics.py").resolve(),
+        Path(__file__).with_name("render_pdf_diagnostics.py").resolve(),
         Path(__file__).with_name("libreoffice_oracle_fonts.py").resolve(),
         LOCAL_ORACLE_PROFILE,
         LOCAL_ORACLE_FONT_LOCK,
@@ -1669,6 +1739,28 @@ def page_count(pdf: Path) -> int:
     return fitz.open(pdf).page_count
 
 
+def pymupdf_page_geometry(page) -> dict[str, int]:
+    rect = page.rect
+    media = page.mediabox
+    crop = page.cropbox
+    return canonical_pdf_page_geometry(
+        page_size=(rect.width, rect.height),
+        media_box=(media.x0, media.y0, media.x1, media.y1),
+        crop_box=(crop.x0, crop.y0, crop.x1, crop.y1),
+        rotation_degrees=page.rotation,
+    )
+
+
+def pymupdf_page_semantic_tokens(
+    page, *, max_codepoints: int, max_tokens: int
+) -> tuple[str, ...]:
+    return normalize_pdf_semantic_tokens(
+        page.get_text(),
+        max_codepoints=max_codepoints,
+        max_tokens=max_tokens,
+    )
+
+
 def opaque_rgb(image):
     if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
         rgba = image.convert("RGBA")
@@ -1834,6 +1926,8 @@ def visual_metrics_from_scores(
     reference_page_count: int,
     candidate_page_count: int,
     page_cap: int,
+    pdf_point_geometry: dict[str, object] | None = None,
+    semantic_text_metrics: dict[str, int] | None = None,
 ) -> VisualMetrics:
     if len(page_hashes) != len(page_ink_ious):
         raise ValueError("visual page metric count mismatch")
@@ -1852,6 +1946,8 @@ def visual_metrics_from_scores(
         integer_visual_metrics=(
             aggregate_integer_metrics(integer_pages) if integer_pages else None
         ),
+        pdf_point_geometry=pdf_point_geometry,
+        semantic_text_metrics=semantic_text_metrics,
     )
 
 
@@ -1940,7 +2036,40 @@ def compare_pdf_visuals(
             page_hashes = []
             page_ink_ious = []
             integer_pages = []
+            geometry_pages = []
+            semantic_pages = []
+            reference_codepoints = 0
+            reference_tokens = 0
+            candidate_codepoints = 0
+            candidate_tokens = 0
             for index in range(compared_pages):
+                reference_source_page = reference_document[index]
+                candidate_source_page = candidate_document[index]
+                geometry_pages.append(
+                    pdf_page_geometry_metrics(
+                        pymupdf_page_geometry(reference_source_page),
+                        pymupdf_page_geometry(candidate_source_page),
+                    )
+                )
+                reference_page_tokens = pymupdf_page_semantic_tokens(
+                    reference_source_page,
+                    max_codepoints=MAX_SEMANTIC_CODEPOINTS - reference_codepoints,
+                    max_tokens=MAX_SEMANTIC_TOKENS - reference_tokens,
+                )
+                candidate_page_tokens = pymupdf_page_semantic_tokens(
+                    candidate_source_page,
+                    max_codepoints=MAX_SEMANTIC_CODEPOINTS - candidate_codepoints,
+                    max_tokens=MAX_SEMANTIC_TOKENS - candidate_tokens,
+                )
+                reference_codepoints += sum(map(len, reference_page_tokens))
+                reference_tokens += len(reference_page_tokens)
+                candidate_codepoints += sum(map(len, candidate_page_tokens))
+                candidate_tokens += len(candidate_page_tokens)
+                semantic_pages.append(
+                    pdf_semantic_metrics(
+                        reference_page_tokens, candidate_page_tokens
+                    )
+                )
                 reference_page = rasterize_pdf_page(
                     reference_document,
                     index,
@@ -1986,12 +2115,18 @@ def compare_pdf_visuals(
                 reference_page_count=reference_page_count,
                 candidate_page_count=candidate_page_count,
                 page_cap=settings["page_cap"],
+                pdf_point_geometry=(
+                    pdf_geometry_report(geometry_pages) if geometry_pages else None
+                ),
+                semantic_text_metrics=(
+                    pdf_semantic_report(semantic_pages) if semantic_pages else None
+                ),
             )
     except VisualMetricError:
         raise
     except Exception as exc:
         raise VisualMetricError(
-            f"rasterization failed for {reference.name} / {candidate.name}: {exc}"
+            f"visual diagnostics failed for {reference.name} / {candidate.name}: {exc}"
         ) from exc
 
 
@@ -2306,6 +2441,8 @@ def main() -> int:
                     unmatched_reference_pages=visual.unmatched_reference_pages,
                     capped_matched_pages=visual.capped_matched_pages,
                     integer_visual_metrics=visual.integer_visual_metrics,
+                    pdf_point_geometry=visual.pdf_point_geometry,
+                    semantic_text_metrics=visual.semantic_text_metrics,
                     render_warnings=len(kinds) if kinds is not None else None,
                     render_warning_kinds=kinds,
                     **row_identity(src, corpus_documents),

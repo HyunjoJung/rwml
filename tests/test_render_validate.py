@@ -4,6 +4,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 from urllib.parse import unquote, urlparse
@@ -996,6 +997,99 @@ class RenderValidateImageMetricTests(unittest.TestCase):
         ]
 
         with self.assertRaisesRegex(ValueError, "integer visual evidence is partial"):
+            render_validate.validation_report(rows, recall_min=0.8)
+
+    def test_pymupdf_page_diagnostics_are_canonical_and_content_free(self):
+        page = types.SimpleNamespace(
+            rect=types.SimpleNamespace(width=612.0005, height=792),
+            mediabox=types.SimpleNamespace(x0=-1, y0=-2, x1=611, y1=790),
+            cropbox=types.SimpleNamespace(x0=0, y0=0, x1=612, y1=792),
+            rotation=90,
+            get_text=lambda: "Cafe\u0301 \u200fשלום",
+        )
+
+        geometry = render_validate.pymupdf_page_geometry(page)
+        tokens = render_validate.pymupdf_page_semantic_tokens(
+            page, max_codepoints=64, max_tokens=8
+        )
+
+        self.assertEqual(geometry["page_width_millipoints"], 612_001)
+        self.assertEqual(geometry["media_x0_millipoints"], -1_000)
+        self.assertEqual(geometry["rotation_degrees"], 90)
+        self.assertEqual(tokens, ("Café", "שלום"))
+
+    def test_validation_report_recomputes_pdf_diagnostic_aggregates(self):
+        integer = render_validate.integer_image_metrics(
+            b"\xff\xff\xff", b"\xff\xff\xff", 1, 1
+        )
+        reference = render_validate.canonical_pdf_page_geometry(
+            page_size=(612, 792),
+            media_box=(0, 0, 612, 792),
+            crop_box=(0, 0, 612, 792),
+            rotation_degrees=0,
+        )
+        candidate = render_validate.canonical_pdf_page_geometry(
+            page_size=(612.001, 792),
+            media_box=(0, 0, 612.001, 792),
+            crop_box=(0, 0, 612.001, 792),
+            rotation_degrees=0,
+        )
+        geometry = render_validate.pdf_geometry_report(
+            [render_validate.pdf_page_geometry_metrics(reference, candidate)]
+        )
+        semantic = render_validate.pdf_semantic_report(
+            [render_validate.pdf_semantic_metrics(("a", "b"), ("a", "c"))]
+        )
+        row = render_validate.ValidationRow(
+            document="diagnostic.docx",
+            status="pass",
+            recall=1.0,
+            compared_pages=1,
+            integer_visual_metrics=integer,
+            pdf_point_geometry=geometry,
+            semantic_text_metrics=semantic,
+        )
+
+        report = render_validate.validation_report([row], recall_min=0.8)
+
+        self.assertEqual(report["pdf_diagnostic_contract"]["content_retained"], False)
+        self.assertEqual(report["pdf_point_geometry"]["pages"], 1)
+        self.assertEqual(report["pdf_point_geometry"]["max_abs_delta_millipoints"], 1)
+        self.assertEqual(report["semantic_text_metrics"]["pages"], 1)
+        self.assertEqual(report["semantic_text_metrics"]["semantic_token_f1_ppm"], 500_000)
+
+    def test_validation_report_rejects_partial_pdf_diagnostics(self):
+        integer = render_validate.integer_image_metrics(
+            b"\xff\xff\xff", b"\xff\xff\xff", 1, 1
+        )
+        reference = render_validate.canonical_pdf_page_geometry(
+            page_size=(612, 792),
+            media_box=(0, 0, 612, 792),
+            crop_box=(0, 0, 612, 792),
+            rotation_degrees=0,
+        )
+        geometry = render_validate.pdf_geometry_report(
+            [render_validate.pdf_page_geometry_metrics(reference, reference)]
+        )
+        rows = [
+            render_validate.ValidationRow(
+                document="complete.docx",
+                status="pass",
+                recall=1.0,
+                compared_pages=1,
+                integer_visual_metrics=integer,
+                pdf_point_geometry=geometry,
+            ),
+            render_validate.ValidationRow(
+                document="missing.docx",
+                status="pass",
+                recall=1.0,
+                compared_pages=1,
+                integer_visual_metrics=integer,
+            ),
+        ]
+
+        with self.assertRaisesRegex(ValueError, "PDF point geometry is partial"):
             render_validate.validation_report(rows, recall_min=0.8)
 
     def test_raster_failures_raise_an_explicit_metric_error(self):

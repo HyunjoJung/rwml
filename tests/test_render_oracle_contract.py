@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-from scripts import render_evidence_metrics
+from scripts import render_evidence_metrics, render_pdf_diagnostics
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -100,6 +100,18 @@ def valid_core_report() -> dict:
     integer_metrics = render_evidence_metrics.image_metrics_python(
         b"\xff\xff\xff", b"\xff\xff\xff", 1, 1
     )
+    geometry = render_pdf_diagnostics.canonical_page_geometry(
+        page_size=(612, 792),
+        media_box=(0, 0, 612, 792),
+        crop_box=(0, 0, 612, 792),
+        rotation_degrees=0,
+    )
+    geometry_report = render_pdf_diagnostics.geometry_report(
+        [render_pdf_diagnostics.page_geometry_metrics(geometry, geometry)]
+    )
+    semantic_report = render_pdf_diagnostics.semantic_report(
+        [render_pdf_diagnostics.semantic_metrics(("fixture",), ("fixture",))]
+    )
     return {
         "visual_comparison": {
             "dpi": 110,
@@ -110,6 +122,11 @@ def valid_core_report() -> dict:
             "integer_metrics": render_evidence_metrics.metric_contract(),
         },
         "integer_visual_metrics": integer_metrics,
+        "pdf_diagnostic_contract": render_pdf_diagnostics.diagnostic_contract(),
+        "pdf_point_geometry": render_pdf_diagnostics.aggregate_geometry_reports(
+            [geometry_report]
+        ),
+        "semantic_text_metrics": semantic_report,
         "summary": {
             "documents": 1,
             "measured": 1,
@@ -151,6 +168,8 @@ def valid_core_report() -> dict:
                 "render_warnings": 0,
                 "render_warning_kinds": [],
                 "integer_visual_metrics": integer_metrics,
+                "pdf_point_geometry": geometry_report,
+                "semantic_text_metrics": semantic_report,
             }
         ],
     }
@@ -307,7 +326,7 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
             )
             render_oracle_contract.validate_evidence_report(evidence, corpus)
 
-        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v2")
+        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v3")
         self.assertEqual(evidence["campaign"]["name"], "test-campaign")
         self.assertEqual(evidence["campaign"]["documents"], 1)
         self.assertEqual(evidence["campaign"]["expected_pages"], 1)
@@ -452,6 +471,35 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
                 render_oracle_contract.bind_evidence_report(
                     valid_core_report(), corpus, environment
                 )
+
+    def test_evidence_rejects_tampered_pdf_diagnostics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(root, valid_manifest())
+            )
+            evidence = render_oracle_contract.bind_evidence_report(
+                valid_core_report(), corpus, valid_environment()
+            )
+            evidence["rows"][0]["pdf_point_geometry"]["summary"][
+                "point_mismatched_pages"
+            ] = 1
+
+            with self.assertRaisesRegex(ValueError, "geometry"):
+                render_oracle_contract.validate_evidence_report(evidence, corpus)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(root, valid_manifest())
+            )
+            evidence = render_oracle_contract.bind_evidence_report(
+                valid_core_report(), corpus, valid_environment()
+            )
+            evidence["semantic_text_metrics"]["semantic_token_matched_items"] = 0
+
+            with self.assertRaisesRegex(ValueError, "semantic_token"):
+                render_oracle_contract.validate_evidence_report(evidence, corpus)
 
     def test_evidence_allows_candidate_to_reference_page_ratio_above_one(self):
         with tempfile.TemporaryDirectory() as tmp:
