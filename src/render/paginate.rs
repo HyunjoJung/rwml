@@ -304,6 +304,78 @@ impl BlockPlacementCursor {
     }
 }
 
+#[derive(Default)]
+struct BlockExclusionState {
+    pending_top_bottom_bands: Vec<PendingTopBottomBand>,
+    active_top_bottom_bands: Vec<ActiveTopBottomBand>,
+    deferred_top_bottom_bands: Vec<ActiveTopBottomBand>,
+    previous_keep_next: bool,
+    defer_current_top_bottom_bands: bool,
+}
+
+impl BlockExclusionState {
+    fn begin_block(&mut self, pagination: PaginationHint) {
+        let protected_by_previous_keep = self.previous_keep_next;
+        if !protected_by_previous_keep {
+            self.active_top_bottom_bands
+                .append(&mut self.deferred_top_bottom_bands);
+        }
+        self.previous_keep_next = pagination.keep_next;
+        self.defer_current_top_bottom_bands = protected_by_previous_keep
+            || pagination.keep_next
+            || pagination.keep_lines
+            || pagination.widow_control;
+        self.pending_top_bottom_bands.clear();
+    }
+
+    fn reset_boundary(&mut self) {
+        self.pending_top_bottom_bands.clear();
+        self.active_top_bottom_bands.clear();
+        self.deferred_top_bottom_bands.clear();
+        self.previous_keep_next = false;
+        self.defer_current_top_bottom_bands = false;
+    }
+
+    fn active_bands(&self) -> &[ActiveTopBottomBand] {
+        &self.active_top_bottom_bands
+    }
+
+    fn push_pending(
+        &mut self,
+        current_block: Option<usize>,
+        anchor_offset: usize,
+        top: f32,
+        bottom: f32,
+        geom: Geom,
+    ) {
+        if top < bottom && self.pending_top_bottom_bands.len() < MAX_FLOATING_SHAPE_OVERLAYS {
+            self.pending_top_bottom_bands.push(PendingTopBottomBand {
+                owner_block: current_block,
+                anchor_offset,
+                top: top.max(geom.top()),
+                bottom: bottom.min(geom.bottom()),
+            });
+        }
+    }
+
+    fn activate_reached(
+        &mut self,
+        current_block: Option<usize>,
+        line_range: Option<LineCharRange>,
+        page_index: usize,
+    ) {
+        activate_reached_top_bottom_bands(
+            &mut self.pending_top_bottom_bands,
+            &mut self.active_top_bottom_bands,
+            &mut self.deferred_top_bottom_bands,
+            self.defer_current_top_bottom_bands,
+            current_block,
+            line_range,
+            page_index,
+        );
+    }
+}
+
 fn section_columns_by_item(items: &[FlowItem], final_columns: Option<u16>) -> Vec<Option<u16>> {
     let mut columns = vec![final_columns; items.len()];
     let mut section_start = 0usize;
@@ -673,11 +745,7 @@ struct PlacementCoordinator {
     active_track: ActivePlacementTrack,
     block_projection: BlockProjectionState,
     block_cursor: BlockPlacementCursor,
-    pending_top_bottom_bands: Vec<PendingTopBottomBand>,
-    active_top_bottom_bands: Vec<ActiveTopBottomBand>,
-    deferred_top_bottom_bands: Vec<ActiveTopBottomBand>,
-    previous_keep_next: bool,
-    defer_current_top_bottom_bands: bool,
+    block_exclusions: BlockExclusionState,
 }
 
 impl PlacementCoordinator {
@@ -720,11 +788,7 @@ impl PlacementCoordinator {
             active_track,
             block_projection: BlockProjectionState::default(),
             block_cursor: BlockPlacementCursor::default(),
-            pending_top_bottom_bands: Vec::new(),
-            active_top_bottom_bands: Vec::new(),
-            deferred_top_bottom_bands: Vec::new(),
-            previous_keep_next: false,
-            defer_current_top_bottom_bands: false,
+            block_exclusions: BlockExclusionState::default(),
         }
     }
 }
@@ -949,11 +1013,7 @@ fn paginate_with_state(
         mut active_track,
         mut block_projection,
         mut block_cursor,
-        mut pending_top_bottom_bands,
-        mut active_top_bottom_bands,
-        mut deferred_top_bottom_bands,
-        mut previous_keep_next,
-        mut defer_current_top_bottom_bands,
+        mut block_exclusions,
     } = state;
     for (item_index, item) in items.into_iter().enumerate() {
         let context = plan
@@ -967,16 +1027,7 @@ fn paginate_with_state(
                 pagination,
             } => {
                 let cursor = &mut active_track.cursor;
-                let protected_by_previous_keep = previous_keep_next;
-                if !protected_by_previous_keep {
-                    active_top_bottom_bands.append(&mut deferred_top_bottom_bands);
-                }
-                previous_keep_next = pagination.keep_next;
-                defer_current_top_bottom_bands = protected_by_previous_keep
-                    || pagination.keep_next
-                    || pagination.keep_lines
-                    || pagination.widow_control;
-                pending_top_bottom_bands.clear();
+                block_exclusions.begin_block(pagination);
                 block_projection.record_pending_page(pages.len().saturating_sub(1));
                 if let Some(metric) = context.block_metric {
                     if pagination.keep_next {
@@ -990,7 +1041,7 @@ fn paginate_with_state(
                                 cursor,
                                 height,
                                 active_geom,
-                                &active_top_bottom_bands,
+                                block_exclusions.active_bands(),
                             );
                         }
                     }
@@ -1004,7 +1055,7 @@ fn paginate_with_state(
                             cursor,
                             metric.last_line_extent,
                             active_geom,
-                            &active_top_bottom_bands,
+                            block_exclusions.active_bands(),
                         );
                     }
                 }
@@ -1014,25 +1065,20 @@ fn paginate_with_state(
             FlowItem::PaginationBoundary => {
                 block_projection.record_pending_page(pages.len().saturating_sub(1));
                 block_cursor.reset();
-                pending_top_bottom_bands.clear();
-                active_top_bottom_bands.clear();
-                deferred_top_bottom_bands.clear();
-                previous_keep_next = false;
-                defer_current_top_bottom_bands = false;
+                block_exclusions.reset_boundary();
             }
             FlowItem::TopBottomBand {
                 top,
                 bottom,
                 anchor_offset,
             } => {
-                if top < bottom && pending_top_bottom_bands.len() < MAX_FLOATING_SHAPE_OVERLAYS {
-                    pending_top_bottom_bands.push(PendingTopBottomBand {
-                        owner_block: block_cursor.current_block,
-                        anchor_offset,
-                        top: top.max(active_geom.top()),
-                        bottom: bottom.min(active_geom.bottom()),
-                    });
-                }
+                block_exclusions.push_pending(
+                    block_cursor.current_block,
+                    anchor_offset,
+                    top,
+                    bottom,
+                    active_geom,
+                );
             }
             FlowItem::Gap(g) => active_track.cursor.y += g,
             FlowItem::Line(l) => {
@@ -1043,7 +1089,7 @@ fn paginate_with_state(
                     cursor,
                     h,
                     active_geom,
-                    &active_top_bottom_bands,
+                    block_exclusions.active_bands(),
                     None,
                 );
                 if let Some(metric) = block_cursor
@@ -1067,7 +1113,7 @@ fn paginate_with_state(
                                 cursor.y,
                                 pages.len().saturating_sub(1),
                                 active_geom,
-                                &active_top_bottom_bands,
+                                block_exclusions.active_bands(),
                             );
                             if fits < remaining {
                                 if fits < 2 && cursor.column_nonempty {
@@ -1102,7 +1148,7 @@ fn paginate_with_state(
                     cursor,
                     h,
                     active_geom,
-                    &active_top_bottom_bands,
+                    block_exclusions.active_bands(),
                     None,
                 );
                 let page_index = pages.len().saturating_sub(1);
@@ -1115,11 +1161,7 @@ fn paginate_with_state(
                 );
                 let line_range = l.char_range;
                 place_item(&mut pages, cursor, FlowItem::Line(l), h);
-                activate_reached_top_bottom_bands(
-                    &mut pending_top_bottom_bands,
-                    &mut active_top_bottom_bands,
-                    &mut deferred_top_bottom_bands,
-                    defer_current_top_bottom_bands,
+                block_exclusions.activate_reached(
                     block_cursor.current_block,
                     line_range,
                     page_index,
@@ -1133,7 +1175,7 @@ fn paginate_with_state(
                     cursor,
                     layout.bounds_h,
                     active_geom,
-                    &active_top_bottom_bands,
+                    block_exclusions.active_bands(),
                     block_cursor.current_block,
                 );
                 block_projection.record_pending_page(pages.len().saturating_sub(1));
@@ -1151,7 +1193,7 @@ fn paginate_with_state(
                     cursor,
                     h,
                     active_geom,
-                    &active_top_bottom_bands,
+                    block_exclusions.active_bands(),
                     None,
                 );
                 block_projection.record_pending_page(pages.len().saturating_sub(1));
@@ -1211,7 +1253,7 @@ fn paginate_with_state(
                     cursor,
                     h,
                     active_geom,
-                    &active_top_bottom_bands,
+                    block_exclusions.active_bands(),
                     None,
                 );
                 block_projection.record_pending_page(pages.len().saturating_sub(1));
@@ -1947,6 +1989,57 @@ mod tests {
         assert_eq!(track.cursor.y, geom.top());
         assert!(!track.cursor.column_nonempty);
         assert_eq!(projection.block_pages.get(&8), Some(&1));
+    }
+
+    #[test]
+    fn block_exclusion_state_preserves_keep_protected_deferred_bands() {
+        let mut state = BlockExclusionState::default();
+        state.deferred_top_bottom_bands.push(ActiveTopBottomBand {
+            owner_block: Some(1),
+            page_index: 0,
+            top: 20.0,
+            bottom: 40.0,
+        });
+        state.pending_top_bottom_bands.push(PendingTopBottomBand {
+            owner_block: Some(2),
+            anchor_offset: 3,
+            top: 30.0,
+            bottom: 50.0,
+        });
+
+        state.begin_block(PaginationHint {
+            keep_next: true,
+            ..PaginationHint::default()
+        });
+        assert_eq!(state.active_top_bottom_bands.len(), 1);
+        assert!(state.deferred_top_bottom_bands.is_empty());
+        assert!(state.pending_top_bottom_bands.is_empty());
+        assert!(state.previous_keep_next);
+        assert!(state.defer_current_top_bottom_bands);
+
+        state.deferred_top_bottom_bands.push(ActiveTopBottomBand {
+            owner_block: Some(2),
+            page_index: 0,
+            top: 50.0,
+            bottom: 70.0,
+        });
+        state.begin_block(PaginationHint::default());
+        assert_eq!(state.active_top_bottom_bands.len(), 1);
+        assert_eq!(state.deferred_top_bottom_bands.len(), 1);
+        assert!(!state.previous_keep_next);
+        assert!(state.defer_current_top_bottom_bands);
+
+        state.begin_block(PaginationHint::default());
+        assert_eq!(state.active_top_bottom_bands.len(), 2);
+        assert!(state.deferred_top_bottom_bands.is_empty());
+        assert!(!state.defer_current_top_bottom_bands);
+
+        state.reset_boundary();
+        assert!(state.pending_top_bottom_bands.is_empty());
+        assert!(state.active_top_bottom_bands.is_empty());
+        assert!(state.deferred_top_bottom_bands.is_empty());
+        assert!(!state.previous_keep_next);
+        assert!(!state.defer_current_top_bottom_bands);
     }
 
     #[test]
