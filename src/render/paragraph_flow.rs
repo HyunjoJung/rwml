@@ -51,9 +51,12 @@ pub(super) struct BodyFlowQueue<'a> {
 }
 
 impl<'a> BodyFlowQueue<'a> {
-    #[cfg(test)]
     pub(super) fn push_ready(&mut self, item: FlowItem) {
         self.ready.push(item);
+    }
+
+    pub(super) fn extend_ready(&mut self, items: impl IntoIterator<Item = FlowItem>) {
+        self.ready.extend(items);
     }
 
     pub(super) fn push_paragraph(&mut self, request: ParagraphFlowRequest<'a>) {

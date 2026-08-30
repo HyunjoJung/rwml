@@ -3021,56 +3021,56 @@ fn collect_blocks(
 }
 
 #[derive(Default)]
-struct BlockCollectionOptions<'a> {
+struct BlockCollectionOptions<'source, 'options> {
     include_block_anchors: bool,
-    paragraph_widths: Option<&'a [Option<f32>]>,
-    section_columns: Option<&'a [Option<u16>]>,
-    section_column_gap_pt: Option<&'a [Option<f32>]>,
-    section_column_layouts: Option<&'a [Option<&'a SectionColumnLayoutHints>]>,
-    section_column_rtl: Option<&'a [bool]>,
-    section_geometries: Option<&'a [Geom]>,
-    pagination_hints: Option<&'a [PaginationHint]>,
-    pagination_boundaries: Option<&'a [usize]>,
-    line_spacing_hints: Option<&'a [Option<LineSpacingHint>]>,
-    tab_stops: Option<&'a [Vec<TabStop>]>,
-    column_break_offsets: Option<&'a [Vec<usize>]>,
+    paragraph_widths: Option<&'options [Option<f32>]>,
+    section_columns: Option<&'options [Option<u16>]>,
+    section_column_gap_pt: Option<&'options [Option<f32>]>,
+    section_column_layouts: Option<&'options [Option<&'options SectionColumnLayoutHints>]>,
+    section_column_rtl: Option<&'options [bool]>,
+    section_geometries: Option<&'options [Geom]>,
+    pagination_hints: Option<&'options [PaginationHint]>,
+    pagination_boundaries: Option<&'options [usize]>,
+    line_spacing_hints: Option<&'options [Option<LineSpacingHint>]>,
+    tab_stops: Option<&'source [Vec<TabStop>]>,
+    column_break_offsets: Option<&'source [Vec<usize>]>,
     default_tab_stop_pt: Option<f32>,
-    table_row_pagination: Option<&'a [Vec<TableRowPaginationHint>]>,
-    table_cell_pagination: Option<&'a [TableCellPaginationHints]>,
-    table_cell_line_spacing: Option<&'a [TableCellLineSpacingHints]>,
-    table_nested_pagination: Option<&'a [TableCellNestedPaginationHints]>,
-    table_cell_tab_stops: Option<&'a [TableCellTabStopHints]>,
-    top_bottom_bands: Option<&'a [Vec<TopBottomBand>]>,
+    table_row_pagination: Option<&'options [Vec<TableRowPaginationHint>]>,
+    table_cell_pagination: Option<&'options [TableCellPaginationHints]>,
+    table_cell_line_spacing: Option<&'options [TableCellLineSpacingHints]>,
+    table_nested_pagination: Option<&'options [TableCellNestedPaginationHints]>,
+    table_cell_tab_stops: Option<&'options [TableCellTabStopHints]>,
+    top_bottom_bands: Option<&'options [Vec<TopBottomBand>]>,
 }
 
-struct BodyCollectionSidecars<'a> {
-    paragraph_widths: Option<&'a [Option<f32>]>,
-    section_columns: &'a [Option<u16>],
-    section_column_gap_pt: &'a [Option<f32>],
-    section_column_layouts: &'a [Option<&'a SectionColumnLayoutHints>],
-    section_column_rtl: &'a [bool],
-    section_geometries: &'a [Geom],
-    pagination_hints: &'a [PaginationHint],
-    pagination_boundaries: &'a [usize],
-    line_spacing_hints: &'a [Option<LineSpacingHint>],
-    tab_stops: &'a [Vec<TabStop>],
-    column_break_offsets: &'a [Vec<usize>],
+struct BodyCollectionSidecars<'source, 'options> {
+    paragraph_widths: Option<&'options [Option<f32>]>,
+    section_columns: &'options [Option<u16>],
+    section_column_gap_pt: &'options [Option<f32>],
+    section_column_layouts: &'options [Option<&'options SectionColumnLayoutHints>],
+    section_column_rtl: &'options [bool],
+    section_geometries: &'options [Geom],
+    pagination_hints: &'options [PaginationHint],
+    pagination_boundaries: &'options [usize],
+    line_spacing_hints: &'options [Option<LineSpacingHint>],
+    tab_stops: &'source [Vec<TabStop>],
+    column_break_offsets: &'source [Vec<usize>],
     default_tab_stop_pt: Option<f32>,
-    table_row_pagination: &'a [Vec<TableRowPaginationHint>],
-    table_cell_pagination: &'a [TableCellPaginationHints],
-    table_cell_line_spacing: &'a [TableCellLineSpacingHints],
-    table_nested_pagination: &'a [TableCellNestedPaginationHints],
-    table_cell_tab_stops: &'a [TableCellTabStopHints],
-    top_bottom_bands: &'a [Vec<TopBottomBand>],
+    table_row_pagination: &'options [Vec<TableRowPaginationHint>],
+    table_cell_pagination: &'options [TableCellPaginationHints],
+    table_cell_line_spacing: &'options [TableCellLineSpacingHints],
+    table_nested_pagination: &'options [TableCellNestedPaginationHints],
+    table_cell_tab_stops: &'options [TableCellTabStopHints],
+    top_bottom_bands: &'options [Vec<TopBottomBand>],
 }
 
-fn collect_blocks_with_block_anchors<'a, S: BlockFlowSink<'a>>(
-    blocks: &'a [Block],
+fn collect_blocks_with_block_anchors<'source, 'options, S: BlockFlowSink<'source>>(
+    blocks: &'source [Block],
     out: &mut S,
     geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-    sidecars: BodyCollectionSidecars<'a>,
+    sidecars: BodyCollectionSidecars<'source, 'options>,
 ) {
     collect_blocks_inner(
         blocks,
@@ -3102,13 +3102,13 @@ fn collect_blocks_with_block_anchors<'a, S: BlockFlowSink<'a>>(
     );
 }
 
-fn collect_blocks_inner<'a, S: BlockFlowSink<'a>>(
-    blocks: &'a [Block],
+fn collect_blocks_inner<'source, 'options, S: BlockFlowSink<'source>>(
+    blocks: &'source [Block],
     out: &mut S,
     geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-    options: BlockCollectionOptions<'a>,
+    options: BlockCollectionOptions<'source, 'options>,
 ) {
     let mut lists = ListState::default();
     for (block_index, b) in blocks.iter().enumerate() {
@@ -6356,16 +6356,39 @@ struct PendingTopBottomBand {
     bottom: f32,
 }
 
-fn collect_pdf_flow_items(
-    model: &DocModel,
+#[cfg(test)]
+fn collect_pdf_flow_items<'source>(
+    model: &'source DocModel,
     geom: Geom,
     tcx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-    source_hints: SourceRenderHints<'_>,
+    source_hints: SourceRenderHints<'source>,
     floating_shapes: &[FloatingShape],
     unsupported_features: Option<&FeatureInventory>,
 ) -> Vec<FlowItem> {
-    collect_pdf_flow_items_with_paragraph_widths(
+    collect_pdf_body_flow(
+        model,
+        geom,
+        tcx,
+        capture,
+        source_hints,
+        floating_shapes,
+        unsupported_features,
+    )
+    .lower(tcx, capture)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_pdf_body_flow<'source>(
+    model: &'source DocModel,
+    geom: Geom,
+    tcx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    source_hints: SourceRenderHints<'source>,
+    floating_shapes: &[FloatingShape],
+    unsupported_features: Option<&FeatureInventory>,
+) -> BodyFlowQueue<'source> {
+    collect_pdf_body_flow_with_paragraph_widths(
         model,
         geom,
         tcx,
@@ -6378,16 +6401,16 @@ fn collect_pdf_flow_items(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn collect_pdf_flow_items_with_paragraph_widths(
-    model: &DocModel,
+fn collect_pdf_body_flow_with_paragraph_widths<'source>(
+    model: &'source DocModel,
     geom: Geom,
     tcx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-    source_hints: SourceRenderHints<'_>,
+    source_hints: SourceRenderHints<'source>,
     floating_shapes: &[FloatingShape],
     unsupported_features: Option<&FeatureInventory>,
     paragraph_widths: Option<&[Option<f32>]>,
-) -> Vec<FlowItem> {
+) -> BodyFlowQueue<'source> {
     let mut body_flow = BodyFlowQueue::default();
     let final_section_setup = SectionSetup::from(&model.setup);
     let body_columns = section_columns_by_block(&model.blocks, final_section_setup.columns);
@@ -6430,8 +6453,7 @@ fn collect_pdf_flow_items_with_paragraph_widths(
             top_bottom_bands: &top_bottom_bands,
         },
     );
-    let mut items = body_flow.lower(tcx, capture);
-    items.push(FlowItem::PaginationBoundary);
+    body_flow.push_ready(FlowItem::PaginationBoundary);
     let final_column_geom = geom.with_content_width(
         ColumnLayout::new_with_layout(
             geom,
@@ -6447,41 +6469,47 @@ fn collect_pdf_flow_items_with_paragraph_widths(
             floating_shapes.len().min(MAX_FLOATING_SHAPE_OVERLAYS),
         );
         if !placeholders.is_empty() {
-            if !items.is_empty() {
-                items.push(FlowItem::Gap(PARA_GAP));
-            }
-            collect_blocks(&placeholders, &mut items, final_column_geom, tcx, capture);
+            body_flow.push_ready(FlowItem::Gap(PARA_GAP));
+            let mut placeholder_items = Vec::new();
+            collect_blocks(
+                &placeholders,
+                &mut placeholder_items,
+                final_column_geom,
+                tcx,
+                capture,
+            );
+            body_flow.extend_ready(placeholder_items);
         }
     }
     let missing_image_placeholders =
         missing_image_placeholder_blocks(count_missing_image_bytes(&model.blocks));
     if !missing_image_placeholders.is_empty() {
-        if !items.is_empty() {
-            items.push(FlowItem::Gap(PARA_GAP));
-        }
+        body_flow.push_ready(FlowItem::Gap(PARA_GAP));
+        let mut placeholder_items = Vec::new();
         collect_blocks(
             &missing_image_placeholders,
-            &mut items,
+            &mut placeholder_items,
             final_column_geom,
             tcx,
             capture,
         );
+        body_flow.extend_ready(placeholder_items);
     }
     let undecodable_placeholders =
         undecodable_image_placeholder_blocks(count_undecodable_images(&model.blocks));
     if !undecodable_placeholders.is_empty() {
-        if !items.is_empty() {
-            items.push(FlowItem::Gap(PARA_GAP));
-        }
+        body_flow.push_ready(FlowItem::Gap(PARA_GAP));
+        let mut placeholder_items = Vec::new();
         collect_blocks(
             &undecodable_placeholders,
-            &mut items,
+            &mut placeholder_items,
             final_column_geom,
             tcx,
             capture,
         );
+        body_flow.extend_ready(placeholder_items);
     }
-    items
+    body_flow
 }
 
 fn section_columns_by_block(blocks: &[Block], final_columns: Option<u16>) -> Vec<Option<u16>> {
@@ -6716,28 +6744,18 @@ fn paragraph_width_maps_equal(left: &[Option<f32>], right: &[Option<f32>]) -> bo
 }
 
 #[allow(clippy::too_many_arguments)]
-fn collect_and_paginate_pdf_flow(
-    model: &DocModel,
+fn collect_and_paginate_pdf_flow<'source>(
+    model: &'source DocModel,
     geom: Geom,
     tcx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-    source_hints: SourceRenderHints<'_>,
+    source_hints: SourceRenderHints<'source>,
     floating_shapes: &[FloatingShape],
     unsupported_features: Option<&FeatureInventory>,
 ) -> Pagination {
     let final_section_setup = SectionSetup::from(&model.setup);
-    let paginate = |items| {
-        paginate_with_column_gap(
-            items,
-            geom,
-            &final_section_setup,
-            source_hints.final_section_column_gap_pt,
-            source_hints.final_section_column_layout,
-            source_hints.final_section_column_rtl,
-        )
-    };
     if !has_source_column_width_variants(source_hints) {
-        return paginate(collect_pdf_flow_items(
+        let flow = collect_pdf_body_flow(
             model,
             geom,
             tcx,
@@ -6745,7 +6763,17 @@ fn collect_and_paginate_pdf_flow(
             source_hints,
             floating_shapes,
             unsupported_features,
-        ));
+        );
+        return paginate_body_flow_with_column_gap(
+            flow,
+            tcx,
+            capture,
+            geom,
+            &final_section_setup,
+            source_hints.final_section_column_gap_pt,
+            source_hints.final_section_column_layout,
+            source_hints.final_section_column_rtl,
+        );
     }
 
     let shaping_widths = paragraph_shaping_widths_by_block(model, geom, source_hints);
@@ -6757,7 +6785,7 @@ fn collect_and_paginate_pdf_flow(
     // the conservative narrowest-column width.
     for _ in 0..MAX_TARGET_COLUMN_REWRAP_PASSES {
         let mut scratch_capture = LayoutCapture::default();
-        let items = collect_pdf_flow_items_with_paragraph_widths(
+        let flow = collect_pdf_body_flow_with_paragraph_widths(
             model,
             geom,
             tcx,
@@ -6770,7 +6798,16 @@ fn collect_and_paginate_pdf_flow(
                 .any(Option::is_some)
                 .then_some(paragraph_widths.as_slice()),
         );
-        let pagination = paginate(items);
+        let pagination = paginate_body_flow_with_column_gap(
+            flow,
+            tcx,
+            &mut scratch_capture,
+            geom,
+            &final_section_setup,
+            source_hints.final_section_column_gap_pt,
+            source_hints.final_section_column_layout,
+            source_hints.final_section_column_rtl,
+        );
         suppress_unstable_target_paragraphs(&pagination, &paragraph_widths, &mut suppressed);
         let next = target_column_paragraph_widths(
             model,
@@ -6792,7 +6829,7 @@ fn collect_and_paginate_pdf_flow(
         .iter()
         .any(Option::is_some)
         .then_some(paragraph_widths.as_slice());
-    paginate(collect_pdf_flow_items_with_paragraph_widths(
+    let flow = collect_pdf_body_flow_with_paragraph_widths(
         model,
         geom,
         tcx,
@@ -6801,7 +6838,17 @@ fn collect_and_paginate_pdf_flow(
         floating_shapes,
         unsupported_features,
         paragraph_widths,
-    ))
+    );
+    paginate_body_flow_with_column_gap(
+        flow,
+        tcx,
+        capture,
+        geom,
+        &final_section_setup,
+        source_hints.final_section_column_gap_pt,
+        source_hints.final_section_column_layout,
+        source_hints.final_section_column_rtl,
+    )
 }
 
 fn strict_font_context(fonts: &[Vec<u8>]) -> Result<FontContext> {
