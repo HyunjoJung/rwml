@@ -42,6 +42,45 @@ enum BodyFlowNode<'a> {
     Paragraph(ParagraphFlowRequest<'a>),
 }
 
+pub(super) enum BodyFlowEntry<'a> {
+    Ready(FlowItem),
+    Paragraph(ParagraphFlowRequest<'a>),
+}
+
+pub(super) struct BodyFlowEntries<'a> {
+    nodes: std::vec::IntoIter<BodyFlowNode<'a>>,
+    ready: std::vec::IntoIter<FlowItem>,
+    ready_remaining: usize,
+}
+
+impl<'a> Iterator for BodyFlowEntries<'a> {
+    type Item = BodyFlowEntry<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.ready_remaining > 0 {
+                self.ready_remaining -= 1;
+                let item = self.ready.next();
+                debug_assert!(item.is_some(), "ready-node count exceeds ready buffer");
+                return item.map(BodyFlowEntry::Ready);
+            }
+            match self.nodes.next() {
+                Some(BodyFlowNode::Ready(count)) => self.ready_remaining = count,
+                Some(BodyFlowNode::Paragraph(request)) => {
+                    return Some(BodyFlowEntry::Paragraph(request));
+                }
+                None => {
+                    debug_assert!(
+                        self.ready.as_slice().is_empty(),
+                        "ready buffer exceeds node counts"
+                    );
+                    return None;
+                }
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct BodyFlowQueue<'a> {
     nodes: Vec<BodyFlowNode<'a>>,
@@ -64,23 +103,32 @@ impl<'a> BodyFlowQueue<'a> {
         self.nodes.push(BodyFlowNode::Paragraph(request));
     }
 
-    pub(super) fn lower(
-        mut self,
-        cx: &mut TextCx<'_>,
-        capture: &mut LayoutCapture,
-    ) -> Vec<FlowItem> {
+    pub(super) fn ready_item_count(&self) -> usize {
+        self.ready.len()
+    }
+
+    pub(super) fn into_entries(mut self) -> BodyFlowEntries<'a> {
         self.flush_ready();
-        lower_body_flow_nodes(self.nodes, self.ready, cx, capture)
+        BodyFlowEntries {
+            nodes: self.nodes.into_iter(),
+            ready: self.ready.into_iter(),
+            ready_remaining: 0,
+        }
+    }
+
+    #[cfg(test)]
+    pub(super) fn lower(self, cx: &mut TextCx<'_>, capture: &mut LayoutCapture) -> Vec<FlowItem> {
+        lower_body_flow_entries(self.into_entries(), cx, capture)
     }
 
     fn materialize(&mut self, cx: &mut TextCx<'_>, capture: &mut LayoutCapture) {
         self.flush_ready();
-        let items = lower_body_flow_nodes(
-            std::mem::take(&mut self.nodes),
-            std::mem::take(&mut self.ready),
-            cx,
-            capture,
-        );
+        let entries = BodyFlowEntries {
+            nodes: std::mem::take(&mut self.nodes).into_iter(),
+            ready: std::mem::take(&mut self.ready).into_iter(),
+            ready_remaining: 0,
+        };
+        let items = lower_body_flow_entries(entries, cx, capture);
         self.ready = items;
         self.segment_start = self.ready.len();
         self.nodes.push(BodyFlowNode::Ready(self.ready.len()));
@@ -103,23 +151,18 @@ impl<'a> BodyFlowQueue<'a> {
     }
 }
 
-fn lower_body_flow_nodes(
-    nodes: Vec<BodyFlowNode<'_>>,
-    ready: Vec<FlowItem>,
+fn lower_body_flow_entries(
+    entries: BodyFlowEntries<'_>,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) -> Vec<FlowItem> {
-    let mut ready = ready.into_iter();
-    let mut items = Vec::with_capacity(ready.len());
-    for node in nodes {
-        match node {
-            BodyFlowNode::Ready(count) => items.extend(ready.by_ref().take(count)),
-            BodyFlowNode::Paragraph(request) => {
-                layout_paragraph(request, &mut items, cx, capture);
-            }
+    let mut items = Vec::with_capacity(entries.ready.len());
+    for entry in entries {
+        match entry {
+            BodyFlowEntry::Ready(item) => items.push(item),
+            BodyFlowEntry::Paragraph(request) => layout_paragraph(request, &mut items, cx, capture),
         }
     }
-    debug_assert!(ready.next().is_none());
     items
 }
 
@@ -424,6 +467,85 @@ mod tests {
         assert!(matches!(items[4], FlowItem::ColumnBreak));
         assert!(matches!(items[5], FlowItem::Table { .. }));
         assert_eq!(items.len(), 6);
+    }
+
+    #[test]
+    fn body_flow_entry_cursor_exposes_ready_items_and_paragraphs_in_source_order() {
+        let first = page_field_paragraph("1", false);
+        let second = page_field_paragraph("2", false);
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut capture = LayoutCapture::page_fields();
+        let first_indices = reserve_paragraph_page_fields(&first, &mut capture);
+        let second_indices = reserve_paragraph_page_fields(&second, &mut capture);
+        let mut queue = BodyFlowQueue::default();
+        queue.push_ready(FlowItem::PageBreak);
+        queue.push_paragraph(ParagraphFlowRequest {
+            paragraph: &first,
+            marker: None,
+            tab_stops: &[],
+            column_break_offsets: &[],
+            default_tab_stop_pt: None,
+            line_spacing_hint: None,
+            geom,
+            page_field_indices: first_indices,
+        });
+        queue.push_ready(FlowItem::Table {
+            rows: Vec::new(),
+            header_rows: 0,
+        });
+        queue.push_paragraph(ParagraphFlowRequest {
+            paragraph: &second,
+            marker: None,
+            tab_stops: &[],
+            column_break_offsets: &[],
+            default_tab_stop_pt: None,
+            line_spacing_hint: None,
+            geom,
+            page_field_indices: second_indices,
+        });
+        queue.push_ready(FlowItem::PaginationBoundary);
+
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut entries = queue.into_entries();
+
+        assert!(matches!(
+            entries.next(),
+            Some(BodyFlowEntry::Ready(FlowItem::PageBreak))
+        ));
+        let Some(BodyFlowEntry::Paragraph(first_request)) = entries.next() else {
+            panic!("first deferred paragraph");
+        };
+        let mut first_items = Vec::new();
+        layout_paragraph(first_request, &mut first_items, &mut text_cx, &mut capture);
+        assert_eq!(dynamic_page_field_indices(&first_items), vec![Some(0)]);
+        assert!(matches!(
+            entries.next(),
+            Some(BodyFlowEntry::Ready(FlowItem::Table { .. }))
+        ));
+        let Some(BodyFlowEntry::Paragraph(second_request)) = entries.next() else {
+            panic!("second deferred paragraph");
+        };
+        let mut second_items = Vec::new();
+        layout_paragraph(
+            second_request,
+            &mut second_items,
+            &mut text_cx,
+            &mut capture,
+        );
+        assert_eq!(dynamic_page_field_indices(&second_items), vec![Some(1)]);
+        assert!(matches!(
+            entries.next(),
+            Some(BodyFlowEntry::Ready(FlowItem::PaginationBoundary))
+        ));
+        assert!(entries.next().is_none());
+        assert_eq!(capture.page_fields, vec![None, None]);
     }
 
     #[test]
