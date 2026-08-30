@@ -786,6 +786,100 @@ fn admit_block_start(
     block_cursor.begin(input.block_index, input.item_index);
 }
 
+struct LineAdmission<'a> {
+    line: LineLayout,
+    block_metric: Option<&'a BlockPaginationMetrics>,
+}
+
+fn admit_line(
+    pages: &mut Pages,
+    track: &mut ActivePlacementTrack,
+    block_projection: &mut BlockProjectionState,
+    block_cursor: &mut BlockPlacementCursor,
+    block_exclusions: &mut BlockExclusionState,
+    input: LineAdmission<'_>,
+) {
+    let active_geom = track.geom;
+    let cursor = &mut track.cursor;
+    let line = input.line;
+    let height = line.height;
+    ensure_outside_top_bottom_bands(
+        pages,
+        cursor,
+        height,
+        active_geom,
+        block_exclusions.active_bands(),
+        None,
+    );
+    if let Some(metric) = input
+        .block_metric
+        .filter(|metric| metric.pagination.widow_control)
+    {
+        loop {
+            if block_cursor.take_due_widow_break() {
+                cursor.advance(pages, active_geom);
+                continue;
+            }
+            if block_cursor.widow_break_before.is_none()
+                && block_cursor.current_line_index < metric.line_heights.len()
+            {
+                let remaining = metric.line_heights.len() - block_cursor.current_line_index;
+                let fits = fitting_line_count_with_bands(
+                    &metric.line_heights[block_cursor.current_line_index..],
+                    cursor.y,
+                    pages.len().saturating_sub(1),
+                    active_geom,
+                    block_exclusions.active_bands(),
+                );
+                if fits < remaining {
+                    if fits < 2 && cursor.column_nonempty {
+                        cursor.advance(pages, active_geom);
+                        continue;
+                    }
+                    if remaining - fits == 1 {
+                        let bottom_lines = fits.saturating_sub(1);
+                        if bottom_lines >= 2 {
+                            block_cursor.schedule_widow_break(bottom_lines);
+                        } else {
+                            let remaining_height = metric.line_heights
+                                [block_cursor.current_line_index..]
+                                .iter()
+                                .sum::<f32>();
+                            if cursor.column_nonempty
+                                && remaining_height <= active_geom.bottom() - active_geom.top()
+                            {
+                                cursor.advance(pages, active_geom);
+                                continue;
+                            }
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
+    ensure_outside_top_bottom_bands(
+        pages,
+        cursor,
+        height,
+        active_geom,
+        block_exclusions.active_bands(),
+        None,
+    );
+    let page_index = pages.len().saturating_sub(1);
+    block_projection.record_pending_page(page_index);
+    block_projection.record_line(
+        block_cursor.current_block,
+        &line,
+        page_index,
+        cursor.columns.width(cursor.column_index),
+    );
+    let line_range = line.char_range;
+    place_item(pages, cursor, FlowItem::Line(line), height);
+    block_exclusions.activate_reached(block_cursor.current_block, line_range, page_index);
+    block_cursor.advance_line();
+}
+
 #[cfg(test)]
 impl PaginationPlan<'static> {
     #[allow(clippy::too_many_arguments)]
@@ -1294,92 +1388,19 @@ fn paginate_with_state(
                 );
             }
             FlowItem::Gap(g) => active_track.cursor.y += g,
-            FlowItem::Line(l) => {
-                let cursor = &mut active_track.cursor;
-                let h = l.height;
-                ensure_outside_top_bottom_bands(
-                    &mut pages,
-                    cursor,
-                    h,
-                    active_geom,
-                    block_exclusions.active_bands(),
-                    None,
-                );
-                if let Some(metric) = block_cursor
+            FlowItem::Line(line) => {
+                let block_metric = block_cursor
                     .current_block_start
                     .and_then(|start| plan.block_metrics.get(start))
-                    .and_then(Option::as_ref)
-                    .filter(|metric| metric.pagination.widow_control)
-                {
-                    loop {
-                        if block_cursor.take_due_widow_break() {
-                            cursor.advance(&mut pages, active_geom);
-                            continue;
-                        }
-                        if block_cursor.widow_break_before.is_none()
-                            && block_cursor.current_line_index < metric.line_heights.len()
-                        {
-                            let remaining =
-                                metric.line_heights.len() - block_cursor.current_line_index;
-                            let fits = fitting_line_count_with_bands(
-                                &metric.line_heights[block_cursor.current_line_index..],
-                                cursor.y,
-                                pages.len().saturating_sub(1),
-                                active_geom,
-                                block_exclusions.active_bands(),
-                            );
-                            if fits < remaining {
-                                if fits < 2 && cursor.column_nonempty {
-                                    cursor.advance(&mut pages, active_geom);
-                                    continue;
-                                }
-                                if remaining - fits == 1 {
-                                    let bottom_lines = fits.saturating_sub(1);
-                                    if bottom_lines >= 2 {
-                                        block_cursor.schedule_widow_break(bottom_lines);
-                                    } else {
-                                        let remaining_height = metric.line_heights
-                                            [block_cursor.current_line_index..]
-                                            .iter()
-                                            .sum::<f32>();
-                                        if cursor.column_nonempty
-                                            && remaining_height
-                                                <= active_geom.bottom() - active_geom.top()
-                                        {
-                                            cursor.advance(&mut pages, active_geom);
-                                            continue;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    }
-                }
-                ensure_outside_top_bottom_bands(
+                    .and_then(Option::as_ref);
+                admit_line(
                     &mut pages,
-                    cursor,
-                    h,
-                    active_geom,
-                    block_exclusions.active_bands(),
-                    None,
+                    &mut active_track,
+                    &mut block_projection,
+                    &mut block_cursor,
+                    &mut block_exclusions,
+                    LineAdmission { line, block_metric },
                 );
-                let page_index = pages.len().saturating_sub(1);
-                block_projection.record_pending_page(page_index);
-                block_projection.record_line(
-                    block_cursor.current_block,
-                    &l,
-                    page_index,
-                    cursor.columns.width(cursor.column_index),
-                );
-                let line_range = l.char_range;
-                place_item(&mut pages, cursor, FlowItem::Line(l), h);
-                block_exclusions.activate_reached(
-                    block_cursor.current_block,
-                    line_range,
-                    page_index,
-                );
-                block_cursor.advance_line();
             }
             FlowItem::Picture { image, layout } => {
                 let cursor = &mut active_track.cursor;
@@ -2732,5 +2753,64 @@ mod tests {
                 ParagraphFragmentFallbackReason::InlineMedia,
             )
         );
+    }
+
+    #[test]
+    fn line_admission_moves_track_and_projects_source_state() {
+        let geom = Geom::from_section(&SectionSetup {
+            page: PageSetup {
+                width_pt: 200.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        });
+        let FlowItem::Line(mut source_line) = line(10.0) else {
+            unreachable!("line helper")
+        };
+        source_line.char_range = Some(LineCharRange { start: 0, end: 5 });
+        let mut pages: Pages = vec![Vec::new()];
+        let mut track = ActivePlacementTrack::new(geom, Some(1), None, None, false);
+        track.cursor.y = 75.0;
+        track.cursor.column_nonempty = true;
+        let mut projection = BlockProjectionState::default();
+        projection.mark_pending(3);
+        let mut block_cursor = BlockPlacementCursor::default();
+        block_cursor.begin(3, 0);
+        let mut exclusions = BlockExclusionState::default();
+        exclusions.push_pending(Some(3), 4, 30.0, 40.0, geom);
+
+        admit_line(
+            &mut pages,
+            &mut track,
+            &mut projection,
+            &mut block_cursor,
+            &mut exclusions,
+            LineAdmission {
+                line: source_line,
+                block_metric: None,
+            },
+        );
+
+        assert_eq!(pages.len(), 2);
+        assert!(pages[0].is_empty());
+        assert_eq!(pages[1].len(), 1);
+        assert!((pages[1][0].top - geom.top()).abs() < 0.01);
+        assert!(matches!(pages[1][0].item, FlowItem::Line(_)));
+        assert!((track.cursor.y - (geom.top() + 10.0)).abs() < 0.01);
+        assert_eq!(projection.block_pages.get(&3), Some(&1));
+        assert_eq!(
+            projection.block_line_pages.get(&3),
+            Some(&vec![BlockLinePage {
+                page_index: 1,
+                range: LineCharRange { start: 0, end: 5 },
+            }])
+        );
+        assert_eq!(projection.block_line_widths.get(&3), Some(&vec![160.0]));
+        assert_eq!(block_cursor.current_line_index, 1);
+        assert!(exclusions.pending_top_bottom_bands.is_empty());
+        assert_eq!(exclusions.active_top_bottom_bands.len(), 1);
+        assert_eq!(exclusions.active_top_bottom_bands[0].page_index, 1);
     }
 }
