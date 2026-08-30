@@ -8396,7 +8396,7 @@ mod tests {
         let mut flow = Vec::new();
         let mut capture = LayoutCapture::default();
         layout_paragraph(
-            ParagraphFlowRequest {
+            &ParagraphFlowRequest {
                 paragraph: &Paragraph { props, runs },
                 marker: marker.map(Cow::Borrowed),
                 tab_stops,

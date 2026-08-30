@@ -1360,7 +1360,7 @@ fn lower_body_flow_entries_with_metrics(
             }
             BodyFlowEntry::Paragraph(request) => {
                 let start = items.len();
-                layout_paragraph(request, &mut items, cx, capture);
+                layout_paragraph(&request, &mut items, cx, capture);
                 for item in &items[start..] {
                     block_metrics.observe(item);
                 }

@@ -160,7 +160,9 @@ fn lower_body_flow_entries(
     for entry in entries {
         match entry {
             BodyFlowEntry::Ready(item) => items.push(item),
-            BodyFlowEntry::Paragraph(request) => layout_paragraph(request, &mut items, cx, capture),
+            BodyFlowEntry::Paragraph(request) => {
+                layout_paragraph(&request, &mut items, cx, capture)
+            }
         }
     }
     items
@@ -190,7 +192,7 @@ impl<'a> BlockFlowSink<'a> for Vec<FlowItem> {
         cx: &mut TextCx<'_>,
         capture: &mut LayoutCapture,
     ) {
-        layout_paragraph(request, self, cx, capture);
+        layout_paragraph(&request, self, cx, capture);
     }
 
     fn has_non_anchor(&mut self, _cx: &mut TextCx<'_>, _capture: &mut LayoutCapture) -> bool {
@@ -222,7 +224,7 @@ impl<'a> BlockFlowSink<'a> for BodyFlowQueue<'a> {
 }
 
 pub(super) fn layout_paragraph(
-    request: ParagraphFlowRequest<'_>,
+    request: &ParagraphFlowRequest<'_>,
     out: &mut Vec<FlowItem>,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
@@ -389,14 +391,14 @@ mod tests {
         };
         let mut second_items = Vec::new();
         layout_paragraph(
-            request(&second, second_indices),
+            &request(&second, second_indices),
             &mut second_items,
             &mut text_cx,
             &mut capture,
         );
         let mut first_items = Vec::new();
         layout_paragraph(
-            request(&first, first_indices),
+            &request(&first, first_indices),
             &mut first_items,
             &mut text_cx,
             &mut capture,
@@ -405,6 +407,43 @@ mod tests {
         assert_eq!(capture.page_fields, vec![None, None]);
         assert_eq!(dynamic_page_field_indices(&first_items), vec![Some(0)]);
         assert_eq!(dynamic_page_field_indices(&second_items), vec![Some(1)]);
+    }
+
+    #[test]
+    fn paragraph_request_can_be_lowered_repeatedly_by_shared_reference() {
+        let paragraph = Paragraph {
+            runs: vec![Run {
+                text: "retained request".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let request = ParagraphFlowRequest {
+            paragraph: &paragraph,
+            marker: Some(Cow::Owned("3.".to_string())),
+            tab_stops: &[],
+            column_break_offsets: &[],
+            default_tab_stop_pt: None,
+            line_spacing_hint: None,
+            geom: Geom::from_setup(&PageSetup::default()),
+            page_field_indices: None,
+        };
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let mut first = Vec::new();
+        let mut second = Vec::new();
+
+        layout_paragraph(&request, &mut first, &mut text_cx, &mut capture);
+        layout_paragraph(&request, &mut second, &mut text_cx, &mut capture);
+
+        assert_eq!(flow_snapshot(&first), flow_snapshot(&second));
     }
 
     #[test]
@@ -523,7 +562,7 @@ mod tests {
             panic!("first deferred paragraph");
         };
         let mut first_items = Vec::new();
-        layout_paragraph(first_request, &mut first_items, &mut text_cx, &mut capture);
+        layout_paragraph(&first_request, &mut first_items, &mut text_cx, &mut capture);
         assert_eq!(dynamic_page_field_indices(&first_items), vec![Some(0)]);
         assert!(matches!(
             entries.next(),
@@ -534,7 +573,7 @@ mod tests {
         };
         let mut second_items = Vec::new();
         layout_paragraph(
-            second_request,
+            &second_request,
             &mut second_items,
             &mut text_cx,
             &mut capture,
