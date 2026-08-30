@@ -53,6 +53,38 @@ Compare actual font selection and locked payloads before interpreting geometry
 differences as renderer behavior. Oracle font validation remains independently
 required for every primary and repeated reference PDF.
 
+## Shared diagnostic font sources
+
+`shared-font-lock.json` is an optional v2 source-pack contract. It binds the
+unchanged eight-font v1 lock by SHA-256 and adds exact upstream Git commits,
+paths, blob identities, SHA-256 digests, sizes, and license payloads for
+[Noto Sans CJK KR](https://github.com/notofonts/noto-cjk/tree/523d033d6cb47f4a80c58a35753646f5c3608a78)
+and [Noto Emoji](https://github.com/google/fonts/tree/b979dba422e445492b0eb9951ac52ee0b4d648c3/ofl/notoemoji).
+Its `font_order` is the explicit native fallback order, not directory order.
+
+Supply a directory containing exactly the ten named font files and a separate
+directory containing the two additional license files, named
+`NotoSansCJKkr-LICENSE.txt` and `NotoEmoji-OFL.txt`. Obtain those bytes from the
+immutable source locations recorded in the locks. Preparation and verification
+are offline; neither command downloads, installs, or discovers host fonts.
+
+```sh
+python3 scripts/shared_oracle_fonts.py prepare \
+  --font-dir <exact-font-directory> \
+  --license-dir <exact-license-directory> \
+  --output target/render-oracle/shared-font-pack
+python3 scripts/shared_oracle_fonts.py verify \
+  --output target/render-oracle/shared-font-pack
+```
+
+Preparation requires a fresh output and validates all inputs before writing.
+Verification rechecks every payload and recomputes the path-neutral manifest;
+missing, extra, altered, symlinked, oversized, or identity-mismatched inputs and
+receipts fail. Source metadata checks do not attest PDF Type 1/CFF subsets,
+glyph shaping, or general variable-font fidelity. This pack is not yet wired
+into general campaign acceptance and does not change the release gate or the
+existing eight-font PDF attestation contract below.
+
 ## LibreOffice regression font lock
 
 `libreoffice-font-lock.json` pins eight LibreOffice-bundled Noto Sans, Noto Sans
