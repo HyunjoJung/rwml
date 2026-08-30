@@ -346,7 +346,7 @@ fn same_section_column_layout(
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 struct BlockPaginationMetrics {
     pagination: PaginationHint,
     next_start: Option<usize>,
@@ -421,14 +421,12 @@ impl BlockPaginationMetricAccumulator {
     }
 }
 
-#[cfg(test)]
 struct PendingBlockPaginationMetrics {
     start: usize,
     pagination: PaginationHint,
     metric: BlockPaginationMetricAccumulator,
 }
 
-#[cfg(test)]
 #[derive(Default)]
 struct StreamingBlockPaginationMetrics {
     active: Option<PendingBlockPaginationMetrics>,
@@ -436,7 +434,6 @@ struct StreamingBlockPaginationMetrics {
     item_count: usize,
 }
 
-#[cfg(test)]
 impl StreamingBlockPaginationMetrics {
     fn observe(&mut self, item: &FlowItem) {
         let index = self.item_count;
@@ -477,6 +474,11 @@ impl StreamingBlockPaginationMetrics {
             active.metric.finish(active.pagination, next_start),
         ));
     }
+}
+
+struct LoweredBodyFlow {
+    items: Vec<FlowItem>,
+    block_metrics: Vec<Option<BlockPaginationMetrics>>,
 }
 
 fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMetrics>> {
@@ -612,8 +614,30 @@ pub(super) fn paginate(
     paginate_with_column_gap(items, geom, final_section_setup, None, None, false)
 }
 
+#[cfg(test)]
 pub(super) fn paginate_with_column_gap(
     items: Vec<FlowItem>,
+    geom: Geom,
+    final_section_setup: &SectionSetup,
+    final_column_gap_pt: Option<f32>,
+    final_column_layout: Option<&SectionColumnLayoutHints>,
+    final_column_rtl: bool,
+) -> Pagination {
+    paginate_with_column_gap_and_metrics(
+        items,
+        None,
+        geom,
+        final_section_setup,
+        final_column_gap_pt,
+        final_column_layout,
+        final_column_rtl,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paginate_with_column_gap_and_metrics(
+    items: Vec<FlowItem>,
+    _observed_block_metrics: Option<Vec<Option<BlockPaginationMetrics>>>,
     geom: Geom,
     final_section_setup: &SectionSetup,
     final_column_gap_pt: Option<f32>,
@@ -628,6 +652,10 @@ pub(super) fn paginate_with_column_gap(
     let column_rtl_by_item = section_column_rtl_by_item(&items, final_column_rtl);
     let geometries_by_item = section_geometries_by_item(&items, geom);
     let block_metrics = block_pagination_metrics(&items);
+    #[cfg(test)]
+    if let Some(observed) = _observed_block_metrics.as_ref() {
+        assert_eq!(observed, &block_metrics);
+    }
     let mut pages: Pages = vec![Vec::new()];
     let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
     let mut section_start_page_index = 0usize;
@@ -1019,9 +1047,10 @@ pub(super) fn paginate_body_flow_with_column_gap(
     final_column_layout: Option<&SectionColumnLayoutHints>,
     final_column_rtl: bool,
 ) -> Pagination {
-    let items = lower_body_flow_entries_with_observer(flow, cx, capture, |_| {});
-    paginate_with_column_gap(
-        items,
+    let lowered = lower_body_flow_entries_with_metrics(flow, cx, capture);
+    paginate_with_column_gap_and_metrics(
+        lowered.items,
+        Some(lowered.block_metrics),
         geom,
         final_section_setup,
         final_column_gap_pt,
@@ -1030,29 +1059,32 @@ pub(super) fn paginate_body_flow_with_column_gap(
     )
 }
 
-fn lower_body_flow_entries_with_observer(
+fn lower_body_flow_entries_with_metrics(
     flow: BodyFlowQueue<'_>,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-    mut observe: impl FnMut(&FlowItem),
-) -> Vec<FlowItem> {
+) -> LoweredBodyFlow {
     let mut items = Vec::with_capacity(flow.ready_item_count());
+    let mut block_metrics = StreamingBlockPaginationMetrics::default();
     for entry in flow.into_entries() {
         match entry {
             BodyFlowEntry::Ready(item) => {
-                observe(&item);
+                block_metrics.observe(&item);
                 items.push(item);
             }
             BodyFlowEntry::Paragraph(request) => {
                 let start = items.len();
                 layout_paragraph(request, &mut items, cx, capture);
                 for item in &items[start..] {
-                    observe(item);
+                    block_metrics.observe(item);
                 }
             }
         }
     }
-    items
+    LoweredBodyFlow {
+        items,
+        block_metrics: block_metrics.finish(),
+    }
 }
 
 #[cfg(test)]
@@ -1290,17 +1322,15 @@ mod tests {
             layout_cx: &mut layout_cx,
             font_cache: &mut font_cache,
         };
-        let mut streamed = StreamingBlockPaginationMetrics::default();
-        let items =
-            lower_body_flow_entries_with_observer(flow, &mut text_cx, &mut capture, |item| {
-                streamed.observe(item)
-            });
-        let streamed = streamed.finish();
-        let scanned = block_pagination_metrics(&items);
+        let lowered = lower_body_flow_entries_with_metrics(flow, &mut text_cx, &mut capture);
+        let scanned = block_pagination_metrics(&lowered.items);
 
-        assert_eq!(metric_snapshots(&streamed), metric_snapshots(&scanned));
         assert_eq!(
-            dynamic_page_field_indices(&items),
+            metric_snapshots(&lowered.block_metrics),
+            metric_snapshots(&scanned)
+        );
+        assert_eq!(
+            dynamic_page_field_indices(&lowered.items),
             vec![Some(0), Some(1), Some(2)]
         );
         assert_eq!(capture.page_fields, vec![None, None, None]);
