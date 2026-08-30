@@ -1,11 +1,24 @@
 //! Resumable flow-fragment prototypes.
 
+use std::rc::Rc;
+
 use super::*;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct ParagraphFragmentCursor {
     source_char: usize,
     marker_emitted: bool,
+    page_field_indices: Rc<[Option<usize>]>,
+}
+
+impl Default for ParagraphFragmentCursor {
+    fn default() -> Self {
+        Self {
+            source_char: 0,
+            marker_emitted: false,
+            page_field_indices: Rc::from(Vec::<Option<usize>>::new()),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -36,14 +49,16 @@ fn text_after_chars(text: &str, count: usize) -> String {
         .map_or_else(String::new, |(byte, _)| text[byte..].to_owned())
 }
 
-fn paragraph_tail(paragraph: &Paragraph, source_char: usize) -> Paragraph {
+fn paragraph_tail(paragraph: &Paragraph, source_char: usize) -> (Paragraph, Vec<usize>) {
     let mut remaining = source_char;
     let mut runs = Vec::new();
-    for run in &paragraph.runs {
+    let mut original_run_indices = Vec::new();
+    for (run_index, run) in paragraph.runs.iter().enumerate() {
         let run_chars = run.text.chars().count();
         if run_chars == 0 {
             if remaining == 0 {
                 runs.push(run.clone());
+                original_run_indices.push(run_index);
             }
             continue;
         }
@@ -54,6 +69,7 @@ fn paragraph_tail(paragraph: &Paragraph, source_char: usize) -> Paragraph {
         let mut tail = run.clone();
         tail.text = text_after_chars(&tail.text, remaining);
         runs.push(tail);
+        original_run_indices.push(run_index);
         remaining = 0;
     }
     let mut props = paragraph.props.clone();
@@ -61,7 +77,7 @@ fn paragraph_tail(paragraph: &Paragraph, source_char: usize) -> Paragraph {
         props.indent.first_line_pt = None;
         props.indent.hanging_pt = None;
     }
-    Paragraph { props, runs }
+    (Paragraph { props, runs }, original_run_indices)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -85,7 +101,28 @@ fn shape_paragraph_fragment(
         };
     }
 
-    let tail = paragraph_tail(paragraph, source_start);
+    let page_field_indices = if cursor.page_field_indices.len() == paragraph.runs.len() {
+        cursor.page_field_indices.clone()
+    } else {
+        Rc::from(
+            paragraph
+                .runs
+                .iter()
+                .map(|run| {
+                    if run.props.hidden {
+                        None
+                    } else {
+                        page_field_index_for_field(&run.field, capture)
+                    }
+                })
+                .collect::<Vec<_>>(),
+        )
+    };
+    let (tail, original_run_indices) = paragraph_tail(paragraph, source_start);
+    let tail_page_field_indices = original_run_indices
+        .iter()
+        .map(|run_index| page_field_indices[*run_index])
+        .collect::<Vec<_>>();
     let fragment_marker = (!cursor.marker_emitted && source_start == 0)
         .then_some(marker)
         .flatten();
@@ -99,7 +136,7 @@ fn shape_paragraph_fragment(
     } else {
         0.0
     };
-    let shaped = shape_paragraph_content(
+    let shaped = shape_paragraph_content_with_page_fields(
         &tail,
         fragment_marker,
         tab_stops,
@@ -109,6 +146,7 @@ fn shape_paragraph_fragment(
         cx,
         capture,
         true,
+        Some(&tail_page_field_indices),
     );
 
     let mut lines = Vec::new();
@@ -134,6 +172,7 @@ fn shape_paragraph_fragment(
     let next = (advanced_to < total_chars).then_some(ParagraphFragmentCursor {
         source_char: advanced_to,
         marker_emitted: cursor.marker_emitted || fragment_marker.is_some(),
+        page_field_indices,
     });
     ParagraphFragment { lines, next }
 }
@@ -259,6 +298,7 @@ mod tests {
             },
             first
                 .next
+                .clone()
                 .expect("the narrow track must leave a continuation"),
             &mut text_cx,
             &mut capture,
@@ -270,7 +310,7 @@ mod tests {
     fn paragraph_cursor_resumes_styled_linked_list_text_across_unequal_tracks() {
         let (paragraph, first, second) = unequal_track_fragments();
         let total_chars = paragraph.text().chars().count();
-        let continuation = first.next.expect("first fragment continues");
+        let continuation = first.next.clone().expect("first fragment continues");
 
         assert_eq!(first.lines.len(), 2);
         assert_eq!(first.lines[0].char_range.map(|range| range.start), Some(0));
@@ -457,7 +497,7 @@ mod tests {
                     width: f32::NAN,
                     height: 0.0,
                 },
-                cursor,
+                cursor.clone(),
                 &mut text_cx,
                 &mut capture,
             );
@@ -478,5 +518,86 @@ mod tests {
             assert!(next.source_char > cursor.source_char);
             cursor = next;
         }
+    }
+
+    #[test]
+    fn paragraph_cursor_reuses_page_field_identity_after_reshaping() {
+        let paragraph = Paragraph {
+            runs: vec![
+                Run {
+                    text: "hidden page".to_string(),
+                    props: CharProps {
+                        hidden: true,
+                        ..CharProps::default()
+                    },
+                    field: FieldRole::Simple {
+                        instruction: "PAGE".to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: std::iter::repeat_n("alpha beta gamma delta", 8)
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                    ..Run::default()
+                },
+                Run {
+                    text: "9".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: "PAGE".to_string(),
+                    },
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        };
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::page_fields();
+        let first = shape_paragraph_fragment(
+            &paragraph,
+            None,
+            &[],
+            Some(DEFAULT_TAB_STOP_PT),
+            None,
+            FragmentTrack {
+                width: 80.0,
+                height: 1.0,
+            },
+            ParagraphFragmentCursor::default(),
+            &mut text_cx,
+            &mut capture,
+        );
+        let second = shape_paragraph_fragment(
+            &paragraph,
+            None,
+            &[],
+            Some(DEFAULT_TAB_STOP_PT),
+            None,
+            FragmentTrack {
+                width: 180.0,
+                height: 1_000.0,
+            },
+            first.next.expect("plain prefix leaves the PAGE field"),
+            &mut text_cx,
+            &mut capture,
+        );
+        let dynamic_indices = second
+            .lines
+            .iter()
+            .flat_map(|line| &line.runs)
+            .filter_map(|run| run.dynamic.as_ref())
+            .map(|dynamic| dynamic.page_field_index)
+            .collect::<Vec<_>>();
+
+        assert_eq!(capture.page_fields.len(), 1);
+        assert!(!dynamic_indices.is_empty());
+        assert!(dynamic_indices.iter().all(|index| *index == Some(0)));
     }
 }

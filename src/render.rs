@@ -2177,6 +2177,33 @@ fn shape_paragraph_content<'a>(
     capture: &mut LayoutCapture,
     track_source_ranges: bool,
 ) -> ShapedParagraph<'a> {
+    shape_paragraph_content_with_page_fields(
+        p,
+        marker,
+        tab_stops,
+        default_tab_stop_pt,
+        line_spacing_hint,
+        available_width,
+        cx,
+        capture,
+        track_source_ranges,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shape_paragraph_content_with_page_fields<'a>(
+    p: &'a Paragraph,
+    marker: Option<&str>,
+    tab_stops: &[TabStop],
+    default_tab_stop_pt: Option<f32>,
+    line_spacing_hint: Option<LineSpacingHint>,
+    available_width: f32,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    track_source_ranges: bool,
+    page_field_indices: Option<&[Option<usize>]>,
+) -> ShapedParagraph<'a> {
     let list_level = p.props.list.as_ref().map(|l| l.level).unwrap_or(0) as f32;
     let indent = paragraph_indent_layout(&p.props, available_width, list_level * LIST_INDENT);
 
@@ -2214,7 +2241,7 @@ fn shape_paragraph_content<'a>(
             }
         }
     }
-    for r in &p.runs {
+    for (run_index, r) in p.runs.iter().enumerate() {
         let run_source_chars = source_char_ranges
             .as_ref()
             .map_or(0, |_| r.text.chars().count());
@@ -2227,7 +2254,10 @@ fn shape_paragraph_content<'a>(
         if let Some(img) = &r.image {
             images.push(img);
         }
-        let page_field_index = page_field_index_for_field(&r.field, capture);
+        let page_field_index = match page_field_indices {
+            Some(indices) => indices.get(run_index).copied().flatten(),
+            None => page_field_index_for_field(&r.field, capture),
+        };
         if r.text.is_empty() {
             continue;
         }
