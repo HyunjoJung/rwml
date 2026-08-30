@@ -164,6 +164,7 @@ const MAX_TARGET_COLUMN_REWRAP_PASSES: usize = 4;
 const MAX_PAGE_SCENE_OPERATIONS: usize = 262_144;
 const MAX_PAGE_SCENE_LINKS: usize = 16_384;
 const MAX_PAGE_SCENE_IMAGE_RESOURCES: usize = 4_096;
+const MAX_PAGE_SCENE_STATE_DEPTH: usize = 128;
 // Keep hostile numeric attributes away from PDF-coordinate overflow while
 // leaving every practical document value untouched.
 const MAX_ABSOLUTE_LINE_HEIGHT_PT: f32 = 1_000_000.0;
@@ -385,6 +386,11 @@ impl SceneImageResource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SceneImageId(usize);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SceneStateKind {
+    Clip,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct SceneTransform {
     sx: f32,
@@ -458,6 +464,10 @@ enum PageSceneOp {
         height: f32,
         transform: SceneTransform,
     },
+    PushClipRect {
+        rect: SceneRect,
+    },
+    PopClip,
 }
 
 struct PageScene {
@@ -467,6 +477,8 @@ struct PageScene {
     link_limit: usize,
     image_resources: Vec<SceneImageResource>,
     image_limit: usize,
+    state_stack: Vec<SceneStateKind>,
+    state_limit: usize,
 }
 
 impl Default for PageScene {
@@ -478,6 +490,8 @@ impl Default for PageScene {
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
             image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
+            state_stack: Vec::new(),
+            state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
         }
     }
 }
@@ -492,6 +506,8 @@ impl PageScene {
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
             image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
+            state_stack: Vec::new(),
+            state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
         }
     }
 
@@ -504,6 +520,8 @@ impl PageScene {
             link_limit,
             image_resources: Vec::new(),
             image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
+            state_stack: Vec::new(),
+            state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
         }
     }
 
@@ -516,6 +534,22 @@ impl PageScene {
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
             image_limit,
+            state_stack: Vec::new(),
+            state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_state_limit(state_limit: usize) -> Self {
+        Self {
+            operations: Vec::new(),
+            operation_limit: MAX_PAGE_SCENE_OPERATIONS,
+            link_count: 0,
+            link_limit: MAX_PAGE_SCENE_LINKS,
+            image_resources: Vec::new(),
+            image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
+            state_stack: Vec::new(),
+            state_limit,
         }
     }
 
@@ -607,6 +641,44 @@ impl PageScene {
             transform,
         });
         Ok(Some(operation_index))
+    }
+
+    fn push_clip_rect(&mut self, x: f32, y: f32, width: f32, height: f32) -> Result<bool> {
+        let Some(rect) = SceneRect::new(x, y, width, height) else {
+            return Ok(false);
+        };
+        if self.state_stack.len() >= self.state_limit {
+            return Err(Error::Render(format!(
+                "page scene state depth exceeds the {}-level limit",
+                self.state_limit
+            )));
+        }
+        self.push_operation(PageSceneOp::PushClipRect { rect })?;
+        self.state_stack.push(SceneStateKind::Clip);
+        Ok(true)
+    }
+
+    fn pop_clip(&mut self) -> Result<()> {
+        match self.state_stack.last() {
+            Some(SceneStateKind::Clip) => {}
+            None => {
+                return Err(Error::Render("page scene clip stack underflow".to_string()));
+            }
+        }
+        self.push_operation(PageSceneOp::PopClip)?;
+        self.state_stack.pop();
+        Ok(())
+    }
+
+    fn ensure_balanced(&self) -> Result<()> {
+        if self.state_stack.is_empty() {
+            return Ok(());
+        }
+        Err(Error::Render(format!(
+            "page scene has {} unclosed state operation{}",
+            self.state_stack.len(),
+            if self.state_stack.len() == 1 { "" } else { "s" }
+        )))
     }
 }
 
@@ -4783,8 +4855,11 @@ fn draw_running_surface_items(
                 }
                 let baseline = y + line.baseline;
                 let x0 = geom.left + line.x_indent;
-                let clip_content = line.clip_to_height
-                    && push_vertical_line_clip(surface, 0.0, y, line.height, geom.page_w);
+                let clip_content = if line.clip_to_height {
+                    push_page_scene_clip(surface, scene, 0.0, y, line.height, geom.page_w)?
+                } else {
+                    false
+                };
                 draw_line_background(surface, &line, x0, y);
                 draw_line_leaders(surface, &line, x0, y, baseline);
                 for run in line.runs {
@@ -4799,7 +4874,7 @@ fn draw_running_surface_items(
                     draw_run_with_page_context(surface, run, x0, baseline, page_number, cx);
                 }
                 if clip_content {
-                    surface.pop();
+                    pop_page_scene_clip(surface, scene)?;
                 }
                 y += line.height;
             }
@@ -4820,7 +4895,7 @@ fn draw_running_surface_items(
                     break;
                 };
                 let x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
-                if !push_vertical_line_clip(surface, x, y, layout.bounds_h, layout.bounds_w) {
+                if !push_page_scene_clip(surface, scene, x, y, layout.bounds_h, layout.bounds_w)? {
                     break;
                 }
                 surface.push_transform(&Transform::from_row(
@@ -4833,7 +4908,7 @@ fn draw_running_surface_items(
                 ));
                 draw_authored_chart(surface, &chart, 0.0, 0.0, w, h, cx);
                 surface.pop();
-                surface.pop();
+                pop_page_scene_clip(surface, scene)?;
                 y += layout.bounds_h;
             }
             RunningSurfaceItem::Table { rows } => {
@@ -4845,7 +4920,7 @@ fn draw_running_surface_items(
                     }
                     let clipped = row.height > remaining;
                     let band_clip = if clipped {
-                        if !push_vertical_line_clip(surface, 0.0, y, remaining, geom.page_w) {
+                        if !push_page_scene_clip(surface, scene, 0.0, y, remaining, geom.page_w)? {
                             break;
                         }
                         true
@@ -4869,7 +4944,7 @@ fn draw_running_surface_items(
                         previous_row_borders.as_ref(),
                     )?;
                     if band_clip {
-                        surface.pop();
+                        pop_page_scene_clip(surface, scene)?;
                         y = limit_y;
                         break;
                     }
@@ -5455,27 +5530,12 @@ fn fill_rect_color(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32, co
     }
 }
 
-fn push_vertical_line_clip(
-    surface: &mut Surface<'_>,
-    left: f32,
-    top: f32,
-    height: f32,
-    width: f32,
-) -> bool {
-    if !left.is_finite()
-        || !top.is_finite()
-        || !height.is_finite()
-        || !width.is_finite()
-        || height <= 0.0
-        || width <= 0.0
-    {
-        return false;
-    }
+fn push_pdf_rect_clip(surface: &mut Surface<'_>, rect: SceneRect) -> bool {
     let mut path = PathBuilder::new();
-    path.move_to(left, top);
-    path.line_to(left + width, top);
-    path.line_to(left + width, top + height);
-    path.line_to(left, top + height);
+    path.move_to(rect.x, rect.y);
+    path.line_to(rect.x + rect.width, rect.y);
+    path.line_to(rect.x + rect.width, rect.y + rect.height);
+    path.line_to(rect.x, rect.y + rect.height);
     path.close();
     let Some(path) = path.finish() else {
         return false;
@@ -5817,9 +5877,36 @@ fn replay_page_scene_operations(
             PageSceneOp::FillRect { rect, color } => {
                 fill_rect_color(surface, rect.x, rect.y, rect.width, rect.height, *color)
             }
+            PageSceneOp::PushClipRect { rect } => {
+                push_pdf_rect_clip(surface, *rect);
+            }
+            PageSceneOp::PopClip => surface.pop(),
             PageSceneOp::Link { .. } | PageSceneOp::Image { .. } => {}
         }
     }
+}
+
+fn push_page_scene_clip(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    left: f32,
+    top: f32,
+    height: f32,
+    width: f32,
+) -> Result<bool> {
+    let start = scene.operations.len();
+    if !scene.push_clip_rect(left, top, width, height)? {
+        return Ok(false);
+    }
+    replay_page_scene_operations(surface, scene, start..scene.operations.len());
+    Ok(true)
+}
+
+fn pop_page_scene_clip(surface: &mut Surface<'_>, scene: &mut PageScene) -> Result<()> {
+    let start = scene.operations.len();
+    scene.pop_clip()?;
+    replay_page_scene_operations(surface, scene, start..scene.operations.len());
+    Ok(())
 }
 
 fn replay_page_scene_image(
@@ -5983,8 +6070,11 @@ fn draw_table_cell_content(
         let line_height = line.height;
         let after = line.cell_spacing.after;
         let line_x = cell_line_origin(placement.x, cell.insets, &line);
-        let clip_content = line.clip_to_height
-            && push_vertical_line_clip(surface, clip_left, line_top, line_height, clip_width);
+        let clip_content = if line.clip_to_height {
+            push_page_scene_clip(surface, scene, clip_left, line_top, line_height, clip_width)?
+        } else {
+            false
+        };
         draw_line_background(surface, &line, line_x, line_top);
         draw_line_leaders(surface, &line, line_x, line_top, baseline);
         match line.cell_visual {
@@ -6009,7 +6099,14 @@ fn draw_table_cell_content(
                 let x = placement.x
                     + cell.insets.left
                     + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
-                if push_vertical_line_clip(surface, x, line_top, layout.bounds_h, layout.bounds_w) {
+                if push_page_scene_clip(
+                    surface,
+                    scene,
+                    x,
+                    line_top,
+                    layout.bounds_h,
+                    layout.bounds_w,
+                )? {
                     surface.push_transform(&Transform::from_row(
                         layout.scale,
                         0.0,
@@ -6020,7 +6117,7 @@ fn draw_table_cell_content(
                     ));
                     draw_authored_chart(surface, &chart, 0.0, 0.0, width, height, cx);
                     surface.pop();
-                    surface.pop();
+                    pop_page_scene_clip(surface, scene)?;
                 }
             }
             Some(CellVisual::NestedRow { row }) => {
@@ -6055,7 +6152,7 @@ fn draw_table_cell_content(
             }
         }
         if clip_content {
-            surface.pop();
+            pop_page_scene_clip(surface, scene)?;
         }
         line_top += line_height + after;
     }
@@ -10460,8 +10557,18 @@ fn render_pdf(
                     let baseline = top + line.baseline;
                     let x0 = page_geom.left + column_x + line.x_indent;
                     let lh = line.height;
-                    let clip_content = line.clip_to_height
-                        && push_vertical_line_clip(&mut surface, 0.0, top, lh, page_geom.page_w);
+                    let clip_content = if line.clip_to_height {
+                        push_page_scene_clip(
+                            &mut surface,
+                            &mut page_scene,
+                            0.0,
+                            top,
+                            lh,
+                            page_geom.page_w,
+                        )?
+                    } else {
+                        false
+                    };
                     draw_line_background(&mut surface, &line, x0, top);
                     draw_line_leaders(&mut surface, &line, x0, top, baseline);
                     for run in line.runs {
@@ -10483,7 +10590,7 @@ fn render_pdf(
                         );
                     }
                     if clip_content {
-                        surface.pop();
+                        pop_page_scene_clip(&mut surface, &mut page_scene)?;
                     }
                 }
                 FlowItem::Row(row) => {
@@ -10509,6 +10616,7 @@ fn render_pdf(
         {
             draw_floating_shape_overlay(&mut surface, &mut page_scene, overlay, &mut tcx)?;
         }
+        page_scene.ensure_balanced()?;
         surface.finish();
         replay_page_scene_annotations(&mut page, &page_scene);
         page.finish();
@@ -11136,6 +11244,96 @@ mod tests {
         );
         assert!(resource_limited.operations.is_empty());
         assert!(resource_limited.image_resources.is_empty());
+    }
+
+    #[test]
+    fn page_scene_clip_stack_is_ordered_balanced_and_bounded() {
+        let mut scene = super::PageScene::default();
+        assert!(scene
+            .push_clip_rect(1.0, 2.0, 30.0, 40.0)
+            .expect("outer clip projects"));
+        assert!(scene
+            .push_clip_rect(5.0, 6.0, 7.0, 8.0)
+            .expect("inner clip projects"));
+        scene.pop_clip().expect("inner clip closes");
+        scene.pop_clip().expect("outer clip closes");
+        scene.ensure_balanced().expect("clip stack is balanced");
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::PushClipRect {
+                    rect: super::SceneRect {
+                        x: 1.0,
+                        y: 2.0,
+                        width: 30.0,
+                        height: 40.0,
+                    },
+                },
+                super::PageSceneOp::PushClipRect {
+                    rect: super::SceneRect {
+                        x: 5.0,
+                        y: 6.0,
+                        width: 7.0,
+                        height: 8.0,
+                    },
+                },
+                super::PageSceneOp::PopClip,
+                super::PageSceneOp::PopClip,
+            ]
+        );
+
+        let unchanged = scene.operations.len();
+        assert!(!scene
+            .push_clip_rect(f32::NAN, 0.0, 1.0, 1.0)
+            .expect("invalid clip is ignored"));
+        assert_eq!(scene.operations.len(), unchanged);
+
+        let mut underflow = super::PageScene::default();
+        let error = underflow
+            .pop_clip()
+            .expect_err("empty clip stack rejects pop");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene clip stack underflow"
+        );
+        assert!(underflow.operations.is_empty());
+
+        let mut operation_limited = super::PageScene::with_operation_limit(0);
+        let error = operation_limited
+            .push_clip_rect(0.0, 0.0, 1.0, 1.0)
+            .expect_err("operation ceiling rejects clip");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(operation_limited.operations.is_empty());
+        operation_limited
+            .ensure_balanced()
+            .expect("failed push does not mutate the stack");
+
+        let mut depth_limited = super::PageScene::with_state_limit(1);
+        assert!(depth_limited
+            .push_clip_rect(0.0, 0.0, 2.0, 2.0)
+            .expect("first clip fits"));
+        let error = depth_limited
+            .push_clip_rect(0.5, 0.5, 1.0, 1.0)
+            .expect_err("state depth ceiling rejects nested clip");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene state depth exceeds the 1-level limit"
+        );
+        assert_eq!(depth_limited.operations.len(), 1);
+        let error = depth_limited
+            .ensure_balanced()
+            .expect_err("unclosed clip is reported");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene has 1 unclosed state operation"
+        );
+        depth_limited.pop_clip().expect("remaining clip closes");
+        depth_limited
+            .ensure_balanced()
+            .expect("closed depth-limited stack is balanced");
     }
 
     #[test]
