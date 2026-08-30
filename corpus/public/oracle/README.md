@@ -23,3 +23,30 @@ python3 scripts/render_oracle_contract.py \
 The generated `RENDER_ORACLE.json` uses the same bounded, path-neutral corpus contract
 as the release render campaign. The lock is an input identity contract, not a claim of
 Word parity and not a release threshold.
+
+`scripts/table_oracle_topology.py` reduces a complete directory of `<case-id>.pdf`
+outputs to content-safe structural evidence. Its producer metadata input contains only
+the producer name, canonical mode, version, identity SHA-256, and platform identity.
+The report retains exact input/PDF identities, page geometry, the campaign's synthetic
+cell-token boxes, normalized axis-aligned table borders, and consecutive continuation
+segments; it never retains arbitrary document text or local paths. Capture reports can
+then be compared without defining or weakening a fidelity threshold:
+
+```sh
+python3 scripts/table_oracle_topology.py extract \
+  --manifest target/render-oracle/unequal-table-v1/RENDER_ORACLE.json \
+  --pdf-dir <complete-pdf-directory> \
+  --producer-metadata <producer-identity.json> \
+  --source-revision <full-git-sha> \
+  --output <capture.json>
+
+python3 scripts/table_oracle_topology.py compare \
+  --manifest target/render-oracle/unequal-table-v1/RENDER_ORACLE.json \
+  --candidate <candidate-capture.json> \
+  --reference <oracle-capture.json> \
+  --output <comparison.json>
+```
+
+Use `--require-normalized-exact` only when comparing two independent captures from the
+same producer. Cross-producer comparisons are diagnostic until authoritative Word
+evidence is reviewed.

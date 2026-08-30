@@ -77,7 +77,9 @@ python3 scripts/render_oracle_contract.py \
 Its checked-in lock covers all 48 combinations of physical column layout,
 table-width policy, row-fragment class, and column/page handoff. The lock proves
 input identity only; external-render results remain diagnostic until separately
-reviewed and accepted.
+reviewed and accepted. `scripts/table_oracle_topology.py` can reduce complete
+PDF output sets to path-neutral synthetic-token, page, border, and continuation-
+segment evidence without retaining arbitrary document text.
 
 Run it with the in-tree example + the python-docx checker:
 
