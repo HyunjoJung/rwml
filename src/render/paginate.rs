@@ -589,9 +589,17 @@ impl StreamingBlockPaginationMetrics {
     }
 }
 
-struct LoweredBodyFlow {
+// The pagination-plan transport will consume these beside their eager fallback spans.
+#[cfg_attr(not(test), allow(dead_code))]
+struct RetainedParagraphFlow<'a> {
+    request: ParagraphFlowRequest<'a>,
+    item_range: std::ops::Range<usize>,
+}
+
+struct LoweredBodyFlow<'a> {
     items: Vec<FlowItem>,
     block_metrics: Vec<Option<BlockPaginationMetrics>>,
+    paragraphs: Vec<RetainedParagraphFlow<'a>>,
 }
 
 struct PaginationPlan {
@@ -1328,15 +1336,16 @@ pub(super) fn paginate_body_flow_with_column_gap(
     final_column_layout: Option<&SectionColumnLayoutHints>,
     final_column_rtl: bool,
 ) -> Pagination {
-    let lowered = lower_body_flow_entries_with_metrics(flow, cx, capture);
+    let LoweredBodyFlow {
+        items,
+        block_metrics,
+        paragraphs: _paragraphs,
+    } = lower_body_flow_entries_with_metrics(flow, cx, capture);
     #[cfg(test)]
-    assert_eq!(
-        lowered.block_metrics,
-        block_pagination_metrics(&lowered.items)
-    );
+    assert_eq!(block_metrics, block_pagination_metrics(&items));
     paginate_with_column_gap_and_metrics(
-        lowered.items,
-        Some(lowered.block_metrics),
+        items,
+        Some(block_metrics),
         geom,
         final_section_setup,
         final_column_gap_pt,
@@ -1345,13 +1354,14 @@ pub(super) fn paginate_body_flow_with_column_gap(
     )
 }
 
-fn lower_body_flow_entries_with_metrics(
-    flow: BodyFlowQueue<'_>,
+fn lower_body_flow_entries_with_metrics<'a>(
+    flow: BodyFlowQueue<'a>,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-) -> LoweredBodyFlow {
+) -> LoweredBodyFlow<'a> {
     let mut items = Vec::with_capacity(flow.ready_item_count());
     let mut block_metrics = StreamingBlockPaginationMetrics::default();
+    let mut paragraphs = Vec::new();
     for entry in flow.into_entries() {
         match entry {
             BodyFlowEntry::Ready(item) => {
@@ -1364,12 +1374,17 @@ fn lower_body_flow_entries_with_metrics(
                 for item in &items[start..] {
                     block_metrics.observe(item);
                 }
+                paragraphs.push(RetainedParagraphFlow {
+                    request,
+                    item_range: start..items.len(),
+                });
             }
         }
     }
     LoweredBodyFlow {
         items,
         block_metrics: block_metrics.finish(),
+        paragraphs,
     }
 }
 
@@ -2220,5 +2235,78 @@ mod tests {
             vec![Some(0), Some(1), Some(2)]
         );
         assert_eq!(capture.page_fields, vec![None, None, None]);
+    }
+
+    #[test]
+    fn lowered_body_flow_retains_requests_with_exact_fallback_ranges() {
+        let first = Paragraph {
+            runs: vec![Run {
+                text: "alpha".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let second = Paragraph {
+            runs: vec![Run {
+                text: "beta".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let first_breaks = [first.text().chars().count()];
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut flow = BodyFlowQueue::default();
+        flow.push_ready(FlowItem::PageBreak);
+        flow.push_paragraph(ParagraphFlowRequest {
+            paragraph: &first,
+            marker: Some(std::borrow::Cow::Owned("1.".to_string())),
+            tab_stops: &[],
+            column_break_offsets: &first_breaks,
+            default_tab_stop_pt: None,
+            line_spacing_hint: None,
+            geom,
+            page_field_indices: None,
+        });
+        flow.push_ready(FlowItem::Gap(3.0));
+        flow.push_paragraph(ParagraphFlowRequest {
+            paragraph: &second,
+            marker: Some(std::borrow::Cow::Owned("2.".to_string())),
+            tab_stops: &[],
+            column_break_offsets: &[],
+            default_tab_stop_pt: None,
+            line_spacing_hint: None,
+            geom,
+            page_field_indices: None,
+        });
+
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+
+        let lowered = lower_body_flow_entries_with_metrics(flow, &mut text_cx, &mut capture);
+
+        assert_eq!(lowered.paragraphs.len(), 2);
+        assert!(std::ptr::eq(
+            lowered.paragraphs[0].request.paragraph,
+            &first
+        ));
+        assert_eq!(lowered.paragraphs[0].request.marker.as_deref(), Some("1."));
+        assert_eq!(lowered.paragraphs[0].item_range, 1..3);
+        assert!(matches!(lowered.items[1], FlowItem::Line(_)));
+        assert!(matches!(lowered.items[2], FlowItem::ColumnBreak));
+        assert!(matches!(lowered.items[3], FlowItem::Gap(gap) if gap == 3.0));
+        assert!(std::ptr::eq(
+            lowered.paragraphs[1].request.paragraph,
+            &second
+        ));
+        assert_eq!(lowered.paragraphs[1].request.marker.as_deref(), Some("2."));
+        assert_eq!(lowered.paragraphs[1].item_range, 4..5);
+        assert!(matches!(lowered.items[4], FlowItem::Line(_)));
     }
 }
