@@ -522,6 +522,92 @@ impl PaginationPlan {
     }
 }
 
+struct PlacementCoordinator {
+    pages: Pages,
+    page_sections: Vec<Option<RenderPageSection>>,
+    section_start_page_index: usize,
+    section_index: usize,
+    active_geom: Geom,
+    active_columns: Option<u16>,
+    active_column_gap_pt: Option<f32>,
+    active_column_layout: Option<Rc<SectionColumnLayoutHints>>,
+    cursor: FlowCursor,
+    active_column_rtl: bool,
+    block_pages: HashMap<usize, usize>,
+    block_line_pages: HashMap<usize, Vec<BlockLinePage>>,
+    block_line_widths: HashMap<usize, Vec<f32>>,
+    pending_block: Option<usize>,
+    current_block: Option<usize>,
+    current_block_start: Option<usize>,
+    current_line_index: usize,
+    widow_break_before: Option<usize>,
+    pending_top_bottom_bands: Vec<PendingTopBottomBand>,
+    active_top_bottom_bands: Vec<ActiveTopBottomBand>,
+    deferred_top_bottom_bands: Vec<ActiveTopBottomBand>,
+    previous_keep_next: bool,
+    defer_current_top_bottom_bands: bool,
+}
+
+impl PlacementCoordinator {
+    fn new(
+        plan: &PaginationPlan,
+        geom: Geom,
+        final_section_setup: &SectionSetup,
+        final_column_gap_pt: Option<f32>,
+        final_column_rtl: bool,
+    ) -> Self {
+        let active_geom = plan.geometries_by_item.first().copied().unwrap_or(geom);
+        let active_columns = plan
+            .columns_by_item
+            .first()
+            .copied()
+            .unwrap_or(final_section_setup.columns);
+        let active_column_gap_pt = plan
+            .column_gaps_by_item
+            .first()
+            .copied()
+            .unwrap_or(final_column_gap_pt);
+        let active_column_layout = plan.column_layouts_by_item.first().cloned().flatten();
+        let active_column_rtl = plan
+            .column_rtl_by_item
+            .first()
+            .copied()
+            .unwrap_or(final_column_rtl);
+        let cursor = FlowCursor::new(
+            active_geom,
+            active_columns,
+            active_column_gap_pt,
+            active_column_layout.as_deref(),
+            active_column_rtl,
+        );
+        Self {
+            pages: vec![Vec::new()],
+            page_sections: vec![None],
+            section_start_page_index: 0,
+            section_index: 0,
+            active_geom,
+            active_columns,
+            active_column_gap_pt,
+            active_column_layout,
+            cursor,
+            active_column_rtl,
+            block_pages: HashMap::new(),
+            block_line_pages: HashMap::new(),
+            block_line_widths: HashMap::new(),
+            pending_block: None,
+            current_block: None,
+            current_block_start: None,
+            current_line_index: 0,
+            widow_break_before: None,
+            pending_top_bottom_bands: Vec::new(),
+            active_top_bottom_bands: Vec::new(),
+            deferred_top_bottom_bands: Vec::new(),
+            previous_keep_next: false,
+            defer_current_top_bottom_bands: false,
+        }
+    }
+}
+
 fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMetrics>> {
     let starts = items
         .iter()
@@ -710,6 +796,27 @@ fn paginate_plan(
     final_column_gap_pt: Option<f32>,
     final_column_rtl: bool,
 ) -> Pagination {
+    let state = PlacementCoordinator::new(
+        &plan,
+        geom,
+        final_section_setup,
+        final_column_gap_pt,
+        final_column_rtl,
+    );
+    state.paginate(plan, final_section_setup)
+}
+
+impl PlacementCoordinator {
+    fn paginate(self, plan: PaginationPlan, final_section_setup: &SectionSetup) -> Pagination {
+        paginate_with_state(self, plan, final_section_setup)
+    }
+}
+
+fn paginate_with_state(
+    state: PlacementCoordinator,
+    plan: PaginationPlan,
+    final_section_setup: &SectionSetup,
+) -> Pagination {
     // Paginate flow items top-to-bottom through section columns and then across
     // pages. Tables repeat headers after each break and split oversized rows.
     let PaginationPlan {
@@ -721,47 +828,31 @@ fn paginate_plan(
         geometries_by_item,
         block_metrics,
     } = plan;
-    let mut pages: Pages = vec![Vec::new()];
-    let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
-    let mut section_start_page_index = 0usize;
-    let mut section_index = 0usize;
-    let mut active_geom = geometries_by_item.first().copied().unwrap_or(geom);
-    let mut active_columns = columns_by_item
-        .first()
-        .copied()
-        .unwrap_or(final_section_setup.columns);
-    let mut active_column_gap_pt = column_gaps_by_item
-        .first()
-        .copied()
-        .unwrap_or(final_column_gap_pt);
-    let mut active_column_layout = column_layouts_by_item.first().cloned().flatten();
-    let mut cursor = FlowCursor::new(
-        active_geom,
-        active_columns,
-        active_column_gap_pt,
-        active_column_layout.as_deref(),
-        column_rtl_by_item
-            .first()
-            .copied()
-            .unwrap_or(final_column_rtl),
-    );
-    let mut active_column_rtl = column_rtl_by_item
-        .first()
-        .copied()
-        .unwrap_or(final_column_rtl);
-    let mut block_pages = HashMap::new();
-    let mut block_line_pages: HashMap<usize, Vec<BlockLinePage>> = HashMap::new();
-    let mut block_line_widths: HashMap<usize, Vec<f32>> = HashMap::new();
-    let mut pending_block = None;
-    let mut current_block = None;
-    let mut current_block_start = None;
-    let mut current_line_index = 0usize;
-    let mut widow_break_before = None;
-    let mut pending_top_bottom_bands = Vec::new();
-    let mut active_top_bottom_bands = Vec::new();
-    let mut deferred_top_bottom_bands = Vec::new();
-    let mut previous_keep_next = false;
-    let mut defer_current_top_bottom_bands = false;
+    let PlacementCoordinator {
+        mut pages,
+        mut page_sections,
+        mut section_start_page_index,
+        mut section_index,
+        mut active_geom,
+        mut active_columns,
+        mut active_column_gap_pt,
+        mut active_column_layout,
+        mut cursor,
+        mut active_column_rtl,
+        mut block_pages,
+        mut block_line_pages,
+        mut block_line_widths,
+        mut pending_block,
+        mut current_block,
+        mut current_block_start,
+        mut current_line_index,
+        mut widow_break_before,
+        mut pending_top_bottom_bands,
+        mut active_top_bottom_bands,
+        mut deferred_top_bottom_bands,
+        mut previous_keep_next,
+        mut defer_current_top_bottom_bands,
+    } = state;
     for (item_index, item) in items.into_iter().enumerate() {
         let item_geom = geometries_by_item[item_index];
         if item_geom != active_geom {
@@ -1542,6 +1633,54 @@ mod tests {
             vector.final_section_start_page_index
         );
         assert_eq!(section_snapshot(&planned), section_snapshot(&vector));
+    }
+
+    #[test]
+    fn placement_coordinator_initializes_from_the_first_planned_track() {
+        let ending = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let final_section = SectionSetup {
+            columns: Some(1),
+            ..SectionSetup::default()
+        };
+        let geom = Geom::from_section(&final_section);
+        let items = vec![
+            FlowItem::BlockStart {
+                index: 0,
+                pagination: PaginationHint::default(),
+            },
+            line(10.0),
+            FlowItem::SectionColumnGap(8.0),
+            FlowItem::SectionColumnRtl,
+            FlowItem::SectionBreak(ending.clone()),
+        ];
+        let metrics = block_pagination_metrics(&items);
+        let plan = PaginationPlan::new(
+            items,
+            Some(metrics),
+            geom,
+            &final_section,
+            Some(5.0),
+            None,
+            false,
+        );
+
+        let state = PlacementCoordinator::new(&plan, geom, &final_section, Some(5.0), false);
+
+        assert_eq!(state.pages.len(), 1);
+        assert_eq!(state.page_sections.len(), 1);
+        assert!(state.page_sections[0].is_none());
+        assert!(state.active_geom == Geom::from_section(&ending));
+        assert_eq!(state.active_columns, Some(2));
+        assert_eq!(state.active_column_gap_pt, Some(8.0));
+        assert!(state.active_column_rtl);
+        assert_eq!(state.cursor.columns.count, 2);
+        assert_eq!(state.cursor.y, state.active_geom.top());
+        assert!(state.block_pages.is_empty());
+        assert!(state.block_line_pages.is_empty());
+        assert!(state.block_line_widths.is_empty());
     }
 
     #[test]
