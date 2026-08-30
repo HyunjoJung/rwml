@@ -357,6 +357,70 @@ struct BlockPaginationMetrics {
     is_paragraph: bool,
 }
 
+struct BlockPaginationMetricAccumulator {
+    line_heights: Vec<f32>,
+    extent: f32,
+    first_line_extent: Option<f32>,
+    last_line_extent: f32,
+    is_paragraph: bool,
+}
+
+impl Default for BlockPaginationMetricAccumulator {
+    fn default() -> Self {
+        Self {
+            line_heights: Vec::new(),
+            extent: 0.0,
+            first_line_extent: None,
+            last_line_extent: 0.0,
+            is_paragraph: true,
+        }
+    }
+}
+
+impl BlockPaginationMetricAccumulator {
+    fn observe(&mut self, item: &FlowItem) {
+        match item {
+            FlowItem::Gap(height) => self.extent += height.max(0.0),
+            FlowItem::Line(line) => {
+                let height = line.height.max(0.0);
+                self.extent += height;
+                self.first_line_extent.get_or_insert(self.extent);
+                self.last_line_extent = self.extent;
+                self.line_heights.push(height);
+            }
+            FlowItem::BlockStart { .. } => unreachable!("block span excludes next anchor"),
+            FlowItem::TopBottomBand { .. } => {}
+            FlowItem::PaginationBoundary
+            | FlowItem::Row(_)
+            | FlowItem::PageBreak
+            | FlowItem::ColumnBreak
+            | FlowItem::SectionColumnGap(_)
+            | FlowItem::SectionColumnLayout(_)
+            | FlowItem::SectionColumnRtl
+            | FlowItem::SectionBreak(_)
+            | FlowItem::Table { .. }
+            | FlowItem::Picture { .. }
+            | FlowItem::Chart { .. } => self.is_paragraph = false,
+        }
+    }
+
+    fn finish(
+        self,
+        pagination: PaginationHint,
+        next_start: Option<usize>,
+    ) -> BlockPaginationMetrics {
+        BlockPaginationMetrics {
+            pagination,
+            next_start,
+            first_line_extent: self.first_line_extent.unwrap_or(0.0),
+            last_line_extent: self.last_line_extent,
+            total_height: self.extent,
+            is_paragraph: self.is_paragraph && !self.line_heights.is_empty(),
+            line_heights: self.line_heights,
+        }
+    }
+}
+
 fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMetrics>> {
     let starts = items
         .iter()
@@ -384,46 +448,11 @@ fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMet
             FlowItem::BlockStart { pagination, .. } => pagination,
             _ => PaginationHint::default(),
         };
-        let mut line_heights = Vec::new();
-        let mut extent = 0.0;
-        let mut first_line_extent = None;
-        let mut last_line_extent = 0.0;
-        let mut is_paragraph = true;
+        let mut metric = BlockPaginationMetricAccumulator::default();
         for item in &items[start + 1..end] {
-            match item {
-                FlowItem::Gap(height) => extent += height.max(0.0),
-                FlowItem::Line(line) => {
-                    let height = line.height.max(0.0);
-                    extent += height;
-                    first_line_extent.get_or_insert(extent);
-                    last_line_extent = extent;
-                    line_heights.push(height);
-                }
-                FlowItem::BlockStart { .. } => unreachable!("block span excludes next anchor"),
-                FlowItem::TopBottomBand { .. } => {}
-                FlowItem::PaginationBoundary
-                | FlowItem::Row(_)
-                | FlowItem::PageBreak
-                | FlowItem::ColumnBreak
-                | FlowItem::SectionColumnGap(_)
-                | FlowItem::SectionColumnLayout(_)
-                | FlowItem::SectionColumnRtl
-                | FlowItem::SectionBreak(_)
-                | FlowItem::Table { .. }
-                | FlowItem::Picture { .. }
-                | FlowItem::Chart { .. } => is_paragraph = false,
-            }
+            metric.observe(item);
         }
-        is_paragraph &= !line_heights.is_empty();
-        metrics[start] = Some(BlockPaginationMetrics {
-            pagination,
-            next_start,
-            line_heights,
-            first_line_extent: first_line_extent.unwrap_or(0.0),
-            last_line_extent,
-            total_height: extent,
-            is_paragraph,
-        });
+        metrics[start] = Some(metric.finish(pagination, next_start));
     }
     metrics
 }
@@ -949,4 +978,109 @@ pub(super) fn paginate_body_flow_with_column_gap(
         final_column_layout,
         final_column_rtl,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(height: f32) -> FlowItem {
+        FlowItem::Line(LineLayout {
+            height,
+            baseline: height * 0.8,
+            clip_to_height: false,
+            x_indent: 0.0,
+            char_range: None,
+            background: None,
+            cell_spacing: CellLineSpacing::default(),
+            cell_paragraph: None,
+            cell_cant_split_group: None,
+            cell_visual: None,
+            leaders: Vec::new(),
+            runs: Vec::new(),
+        })
+    }
+
+    #[test]
+    fn block_metric_accumulator_preserves_paragraph_extent_semantics() {
+        let pagination = PaginationHint {
+            keep_next: true,
+            widow_control: true,
+            ..PaginationHint::default()
+        };
+        let mut metric = BlockPaginationMetricAccumulator::default();
+        for item in [
+            FlowItem::Gap(5.0),
+            FlowItem::TopBottomBand {
+                top: 10.0,
+                bottom: 20.0,
+                anchor_offset: 0,
+            },
+            line(10.0),
+            line(12.0),
+            FlowItem::Gap(7.0),
+        ] {
+            metric.observe(&item);
+        }
+        let metric = metric.finish(pagination, Some(8));
+
+        assert_eq!(metric.pagination, pagination);
+        assert_eq!(metric.next_start, Some(8));
+        assert_eq!(metric.line_heights, vec![10.0, 12.0]);
+        assert_eq!(metric.first_line_extent, 15.0);
+        assert_eq!(metric.last_line_extent, 27.0);
+        assert_eq!(metric.total_height, 34.0);
+        assert!(metric.is_paragraph);
+
+        let mut controlled = BlockPaginationMetricAccumulator::default();
+        for item in [
+            FlowItem::Gap(3.0),
+            line(9.0),
+            FlowItem::ColumnBreak,
+            FlowItem::Gap(4.0),
+        ] {
+            controlled.observe(&item);
+        }
+        let controlled = controlled.finish(PaginationHint::default(), None);
+        assert_eq!(controlled.first_line_extent, 12.0);
+        assert_eq!(controlled.last_line_extent, 12.0);
+        assert_eq!(controlled.total_height, 16.0);
+        assert!(!controlled.is_paragraph);
+
+        let mut empty = BlockPaginationMetricAccumulator::default();
+        empty.observe(&FlowItem::Gap(6.0));
+        let empty = empty.finish(PaginationHint::default(), None);
+        assert!(empty.line_heights.is_empty());
+        assert_eq!(empty.total_height, 6.0);
+        assert!(!empty.is_paragraph);
+    }
+
+    #[test]
+    fn block_metric_scan_stops_at_pagination_boundary() {
+        let items = vec![
+            FlowItem::BlockStart {
+                index: 0,
+                pagination: PaginationHint::default(),
+            },
+            FlowItem::Gap(2.0),
+            line(10.0),
+            FlowItem::PaginationBoundary,
+            FlowItem::Gap(99.0),
+            FlowItem::BlockStart {
+                index: 1,
+                pagination: PaginationHint::default(),
+            },
+            line(8.0),
+        ];
+        let metrics = block_pagination_metrics(&items);
+        let first = metrics[0].as_ref().expect("first block metric");
+
+        assert_eq!(first.next_start, None);
+        assert_eq!(first.line_heights, vec![10.0]);
+        assert_eq!(first.first_line_extent, 12.0);
+        assert_eq!(first.last_line_extent, 12.0);
+        assert_eq!(first.total_height, 12.0);
+        assert!(first.is_paragraph);
+        assert!(metrics[5].is_some());
+    }
 }
