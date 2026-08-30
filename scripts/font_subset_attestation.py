@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Attest a Type 1 subset against locked CJK source glyphs in a bounded container."""
+"""Attest Type 1 or mapped CFF subsets against locked source glyphs in a container."""
 
 from __future__ import annotations
 
@@ -138,9 +138,13 @@ def validate_result(result: dict, request: dict) -> None:
         or subset != sorted(subset)
     ):
         raise ValueError("proof glyph identity differs")
-    if worker.glyph_mapping(dict.fromkeys(source), dict.fromkeys(subset)) != list(
-        zip(subset, source)
-    ):
+    if request["subset"]["representation"] == "cid-cff":
+        pairs = worker.cff_glyph_mapping(
+            dict.fromkeys(source), dict.fromkeys(subset), request["subset"]["glyph_map"]
+        )
+    else:
+        pairs = worker.glyph_mapping(dict.fromkeys(source), dict.fromkeys(subset))
+    if pairs != list(zip(subset, source)):
         raise ValueError("proof glyph mapping differs")
     identity = {"matrix": proof["matrix"], "glyphs": rows}
     if proof["outline_sha256"] != worker.digest(worker.canonical(identity)):
@@ -149,14 +153,25 @@ def validate_result(result: dict, request: dict) -> None:
 
 
 def attest_program(
-    program: bytes, source: bytes, entry: dict, wheel: Path, *, timeout: float = 30
+    program: bytes,
+    source: bytes,
+    entry: dict,
+    wheel: Path,
+    *,
+    timeout: float = 30,
+    glyph_map: list | None = None,
 ) -> dict:
     if not math.isfinite(timeout) or not 0 < timeout <= 30:
         raise ValueError("font attestation timeout is outside its bound")
+    if glyph_map is not None:
+        worker.validate_cff_map(glyph_map)
+    prefix = b"%!FontType1-" if glyph_map is None else b"\x01\x00"
     if not 0 < len(program) <= worker.MAX_SUBSET_BYTES or not program.startswith(
-        b"%!FontType1-"
+        prefix
     ):
-        raise ValueError("font subset is not bounded Type 1/PFA")
+        raise ValueError(
+            "font subset is not bounded Type 1/PFA or explicitly mapped CFF"
+        )
     _positive_int(entry["bytes"], "source bytes", worker.MAX_SOURCE_BYTES)
     _positive_int(entry["sfnt_revision"], "source revision", 0xFFFFFFFF)
     name = entry["postscript_name"]
@@ -186,13 +201,16 @@ def attest_program(
         "subset": {
             "bytes": len(program),
             "sha256": worker.digest(program),
-            "representation": "type1-pfa",
+            "representation": "type1-pfa" if glyph_map is None else "cid-cff",
         },
         "worker_sha256": worker.digest(code),
     }
+    if glyph_map is not None:
+        request["subset"]["glyph_map"] = glyph_map
+    worker.validate_request(request)
     files = {
         "source.otf": source,
-        "subset.pfa": program,
+        "subset.bin": program,
         "fonttools.whl": wheel_bytes,
         "worker.py": code,
         "request.json": worker.canonical(request),
@@ -241,11 +259,31 @@ def verify_receipt(payload: bytes, recomputed: dict) -> None:
         raise ValueError("receipt differs from independently recomputed proof")
 
 
+def load_cff_map(payload: bytes, source: bytes, subset: bytes) -> list:
+    if not 0 < len(payload) <= 65536:
+        raise ValueError("CFF map size exceeds its bound")
+    value = worker.strict_json(payload)
+    if not isinstance(value, dict):
+        raise ValueError("CFF map must be an object")
+    _require_exact_keys(
+        value, {"schema", "source_sha256", "subset_sha256", "glyphs"}, "CFF map"
+    )
+    if (
+        value["schema"] != "rwml.cff-glyph-map.v1"
+        or value["source_sha256"] != worker.digest(source)
+        or value["subset_sha256"] != worker.digest(subset)
+    ):
+        raise ValueError("CFF map input identity differs")
+    worker.validate_cff_map(value["glyphs"])
+    return value["glyphs"]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--font-pack", type=Path, required=True)
     parser.add_argument("--fonttools-wheel", type=Path, required=True)
     parser.add_argument("--program", type=Path, required=True)
+    parser.add_argument("--cff-glyph-map", type=Path)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--output", type=Path)
     mode.add_argument("--verify", type=Path)
@@ -268,10 +306,20 @@ def main() -> int:
             args.font_pack / "fonts" / entry["name"], entry["bytes"]
         )
         program = runtime.read_regular_file(args.program, worker.MAX_SUBSET_BYTES)
-        result = attest_program(program, source, entry, args.fonttools_wheel)
+        options = {}
+        mapping_bytes = None
+        if args.cff_glyph_map:
+            mapping_bytes = runtime.read_regular_file(args.cff_glyph_map, 65536)
+            options["glyph_map"] = load_cff_map(mapping_bytes, source, program)
+        result = attest_program(program, source, entry, args.fonttools_wheel, **options)
         shared.verify_pack(args.font_pack, lock)
         if runtime.read_regular_file(args.program, worker.MAX_SUBSET_BYTES) != program:
             raise ValueError("subset input changed")
+        if (
+            args.cff_glyph_map
+            and runtime.read_regular_file(args.cff_glyph_map, 65536) != mapping_bytes
+        ):
+            raise ValueError("CFF map input changed")
         if args.verify:
             verify_receipt(retained, result)
             if (

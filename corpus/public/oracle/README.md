@@ -90,8 +90,9 @@ existing eight-font PDF attestation contract below.
 `scripts/font_subset_attestation.py` checks a LibreOffice-style Type 1/PFA
 program against the shared pack's exact Noto Sans CJK KR OTF. It compares every
 subset glyph, including `.notdef`, using CID names, widths, font matrix, and
-exact outline commands. It rejects missing or aliased CIDs, changed geometry,
-unsupported commands, and native CID-keyed CFF input. Hinting, PDF encodings,
+exact outline commands. The default mode rejects missing or aliased CIDs,
+changed geometry, unsupported commands, and raw CFF without an explicit map.
+Hinting, PDF encodings,
 text shaping, placement, and raster equivalence are not covered by this proof.
 
 The parser runs only inside the digest-locked Linux image described below,
@@ -140,6 +141,56 @@ RWML_FONTTOOLS_WHEEL=<locked-FontTools-wheel> \
 The explicit integration gate fails rather than skips when its runtime or
 wheel is unavailable. It is diagnostic tooling validation, not a release gate
 or evidence of Word pagination parity.
+
+### Native renumbered CFF
+
+The same tool accepts standalone CID-keyed CFF only with an explicit
+`--cff-glyph-map`. The native subsetter renumbers CIDs; they cannot be treated
+as original source CIDs. Unicode cmap lookup alone is also insufficient when
+shaping selects alternate source glyphs. The map is an untrusted lookup
+witness, not an assertion the verifier accepts without checking outlines.
+
+Supply a JSON object with this structure, replacing the illustrative hashes
+and glyph pairs with the complete map for the actual program:
+
+```json
+{
+  "schema": "rwml.cff-glyph-map.v1",
+  "source_sha256": "<source-OTF-SHA-256>",
+  "subset_sha256": "<raw-CFF-SHA-256>",
+  "glyphs": [[".notdef", ".notdef"], ["cid00001", "cid63157"]]
+}
+```
+
+Both hashes must be 64 lowercase hexadecimal characters. Glyph pairs must
+cover the complete subset in consecutive CID order, beginning with `.notdef`.
+Every source glyph must exist and be unique. The 64-KiB map and 1,024-glyph
+limits apply before font parsing; every mapped source glyph is then independently
+compared with the actual subset glyph. A plausible map with changed geometry
+still fails. The source and subset top matrices must agree; absent or identity
+Font DICT matrices are supported, while other transforms fail explicitly.
+
+```sh
+python3 scripts/font_subset_attestation.py \
+  --font-pack target/render-oracle/shared-font-pack \
+  --fonttools-wheel <locked-FontTools-wheel> \
+  --program <subset.cff> --cff-glyph-map <glyph-map.json> \
+  --output <fresh-receipt.json>
+python3 scripts/font_subset_attestation.py \
+  --font-pack target/render-oracle/shared-font-pack \
+  --fonttools-wheel <locked-FontTools-wheel> \
+  --program <subset.cff> --cff-glyph-map <glyph-map.json> \
+  --verify <receipt.json>
+```
+
+The map is bound into the recomputed receipt. CFF2, non-CID programs,
+nonconsecutive native CIDs, additional fonts, invalid selectors, and unsupported
+transforms are rejected. Type 1 remains the default and still rejects raw CFF
+without a map. Both modes share the same locked parser/resource boundary and
+explicit integration gate above. Automatic mapping discovery, bounded PDF
+extraction, and general campaign integration are not provided by this command.
+An outline proof does not establish Unicode semantics, font selection parity,
+shaping correctness, or Word layout fidelity.
 
 ## LibreOffice regression font lock
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded Type 1 glyph comparison; parsing runs only in the locked Linux worker."""
+"""Bounded subset glyph comparison; parsing runs only in the locked Linux worker."""
 
 from __future__ import annotations
 
@@ -126,6 +126,44 @@ def glyph_mapping(source, subset) -> list[tuple[str, str]]:
     return rows
 
 
+def validate_cff_map(mapping: object) -> list[tuple[str, str]]:
+    if not isinstance(mapping, list) or not 2 <= len(mapping) <= LIMITS["max_glyphs"]:
+        raise SubsetError("cff_mapping_count")
+    rows, seen = [], set()
+    for index, row in enumerate(mapping):
+        if (
+            not isinstance(row, list)
+            or len(row) != 2
+            or any(type(name) is not str for name in row)
+        ):
+            raise SubsetError("cff_mapping_row")
+        subset, source = row
+        expected = ".notdef" if index == 0 else f"cid{index:05d}"
+        if subset != expected or source in seen:
+            raise SubsetError("cff_mapping_identity")
+        if index == 0:
+            valid = source == ".notdef"
+        else:
+            valid = (
+                re.fullmatch(r"cid[0-9]{5}", source) is not None
+                and 0 < int(source[3:]) <= 65535
+            )
+        if not valid:
+            raise SubsetError("cff_mapping_source")
+        seen.add(source)
+        rows.append((subset, source))
+    return rows
+
+
+def cff_glyph_mapping(source, subset, mapping) -> list[tuple[str, str]]:
+    rows = validate_cff_map(mapping)
+    if set(subset) != {name for name, _ in rows} or any(
+        name not in source for _, name in rows
+    ):
+        raise SubsetError("cff_mapping_coverage")
+    return rows
+
+
 def compare_glyphs(
     source,
     subset,
@@ -133,6 +171,7 @@ def compare_glyphs(
     subset_matrix,
     *,
     command_limit=LIMITS["max_commands"],
+    mapping=None,
 ):
     if (
         not isinstance(source_matrix, (list, tuple))
@@ -146,7 +185,12 @@ def compare_glyphs(
         raise SubsetError("font_matrix_mismatch")
     budget = Budget(command_limit)
     rows = []
-    for name, source_name in glyph_mapping(source, subset):
+    pairs = (
+        glyph_mapping(source, subset)
+        if mapping is None
+        else cff_glyph_mapping(source, subset, mapping)
+    )
+    for name, source_name in pairs:
         source_pen, subset_pen = BoundedPen(budget), BoundedPen(budget)
         source[source_name].draw(source_pen)
         subset[name].draw(subset_pen)
@@ -240,13 +284,20 @@ def validate_request(request: object) -> None:
         or request["schema"] != "rwml.font-subset-request.v1"
     ):
         raise SubsetError("request_schema")
+    subset_fields = {"bytes", "sha256", "representation"}
+    is_cff = (
+        isinstance(request["subset"], dict)
+        and request["subset"].get("representation") == "cid-cff"
+    )
+    if is_cff:
+        subset_fields.add("glyph_map")
     for key, fields, maximum in (
         (
             "source",
             {"bytes", "sha256", "postscript_name", "sfnt_revision"},
             MAX_SOURCE_BYTES,
         ),
-        ("subset", {"bytes", "sha256", "representation"}, MAX_SUBSET_BYTES),
+        ("subset", subset_fields, MAX_SUBSET_BYTES),
     ):
         entry = request[key]
         if (
@@ -266,9 +317,66 @@ def validate_request(request: object) -> None:
         or re.fullmatch(r"[A-Za-z0-9_.-]{1,127}", source["postscript_name"]) is None
         or type(source["sfnt_revision"]) is not int
         or not 0 < source["sfnt_revision"] <= 0xFFFFFFFF
-        or request["subset"]["representation"] != "type1-pfa"
+        or request["subset"]["representation"] not in ("type1-pfa", "cid-cff")
     ):
         raise SubsetError("request_font_identity")
+    if is_cff:
+        validate_cff_map(request["subset"]["glyph_map"])
+
+
+def require_identity_fd_matrices(top) -> None:
+    for entry in getattr(top, "FDArray", []):
+        if "FontMatrix" in entry.rawDict:
+            matrix = entry.FontMatrix
+            if (
+                not isinstance(matrix, (list, tuple))
+                or len(matrix) != 6
+                or tuple(number(value) for value in matrix)
+                != tuple(number(value) for value in (1, 0, 0, 1, 0, 0))
+            ):
+                raise SubsetError("cff_fd_matrix_unsupported")
+
+
+def read_cff_subset(program: bytes, name: str):
+    from fontTools.cffLib import CFFFontSet
+    from fontTools.ttLib import TTFont
+
+    cff = CFFFontSet()
+    cff.decompile(io.BytesIO(program), TTFont(), isCFF2=False)
+    if cff.fontNames != [name] or len(cff.topDictIndex) != 1:
+        raise SubsetError("cff_font_identity")
+    top = cff.topDictIndex[0]
+    if (
+        canonical(getattr(top, "ROS", None)) != canonical(["Adobe", "Identity", 0])
+        or top.CharstringType != 2
+        or top.PaintType != 0
+        or any(
+            key in top.rawDict
+            for key in ("SyntheticBase", "PostScript", "BaseFontBlend", "BaseFontName")
+        )
+    ):
+        raise SubsetError("cff_font_kind")
+    names = top.charset
+    if not 2 <= len(names) <= LIMITS["max_glyphs"] or names != [
+        ".notdef",
+        *[f"cid{index:05d}" for index in range(1, len(names))],
+    ]:
+        raise SubsetError("cff_charset")
+    if (
+        len(top.CharStrings.charStringsIndex) != len(names)
+        or set(top.CharStrings.keys()) != set(names)
+        or type(top.CIDCount) is not int
+        or not len(names) <= top.CIDCount <= 65535
+        or not 1 <= len(top.FDArray) <= 256
+        or len(top.FDSelect.gidArray) != len(names)
+        or any(
+            type(index) is not int or not 0 <= index < len(top.FDArray)
+            for index in top.FDSelect.gidArray
+        )
+    ):
+        raise SubsetError("cff_structure")
+    require_identity_fd_matrices(top)
+    return {name: top.CharStrings[name] for name in names}, top.FontMatrix
 
 
 def run_worker(directory: Path, output: Path) -> dict:
@@ -276,13 +384,15 @@ def run_worker(directory: Path, output: Path) -> dict:
     request = strict_json(read_bounded(directory / "request.json", 65536))
     validate_request(request)
     source = read_bounded(directory / "source.otf", MAX_SOURCE_BYTES)
-    program = read_bounded(directory / "subset.pfa", MAX_SUBSET_BYTES)
+    program = read_bounded(directory / "subset.bin", MAX_SUBSET_BYTES)
     wheel = read_bounded(directory / "fonttools.whl", WHEEL_BYTES)
     if len(wheel) != WHEEL_BYTES or digest(wheel) != WHEEL_SHA256:
         raise SubsetError("fonttools_identity")
     if request["worker_sha256"] != digest(read_bounded(Path(__file__), 1024 * 1024)):
         raise SubsetError("worker_identity")
-    if not program.startswith(b"%!FontType1-") or source[:4] != b"OTTO":
+    is_cff = request["subset"]["representation"] == "cid-cff"
+    prefix = b"\x01\x00" if is_cff else b"%!FontType1-"
+    if not program.startswith(prefix) or source[:4] != b"OTTO":
         raise SubsetError("font_representation")
     for entry, payload in ((request["source"], source), (request["subset"], program)):
         if (
@@ -324,17 +434,26 @@ def run_worker(directory: Path, output: Path) -> dict:
     ):
         raise SubsetError("source_font_identity")
     top = font["CFF "].cff.topDictIndex[0]
-    if any("FontMatrix" in entry.rawDict for entry in getattr(top, "FDArray", [])):
-        raise SubsetError("source_fd_matrix_unsupported")
-    subset = T1Font(subset_path, kind="OTHER")
-    if (
-        re.sub(r"^[A-Z]{6}\+", "", subset["FontName"]) != name
-        or subset["FontType"] != 1
-        or subset["PaintType"] != 0
-    ):
-        raise SubsetError("subset_font_identity")
+    if is_cff:
+        require_identity_fd_matrices(top)
+        subset_glyphs, subset_matrix = read_cff_subset(program, name)
+    else:
+        if any("FontMatrix" in entry.rawDict for entry in getattr(top, "FDArray", [])):
+            raise SubsetError("source_fd_matrix_unsupported")
+        subset = T1Font(subset_path, kind="OTHER")
+        if (
+            re.sub(r"^[A-Z]{6}\+", "", subset["FontName"]) != name
+            or subset["FontType"] != 1
+            or subset["PaintType"] != 0
+        ):
+            raise SubsetError("subset_font_identity")
+        subset_glyphs, subset_matrix = subset.getGlyphSet(), subset["FontMatrix"]
     proof = compare_glyphs(
-        font.getGlyphSet(), subset.getGlyphSet(), top.FontMatrix, subset["FontMatrix"]
+        font.getGlyphSet(),
+        subset_glyphs,
+        top.FontMatrix,
+        subset_matrix,
+        mapping=request["subset"].get("glyph_map"),
     )
     font.close()
     return {

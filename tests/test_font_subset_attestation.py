@@ -100,6 +100,49 @@ class FontSubsetAttestationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             attestation.validate_result(invalid, sample_request())
 
+    def test_cff_proof_must_follow_the_bound_map_not_identity_cids(self):
+        request = sample_request()
+        request["subset"]["representation"] = "cid-cff"
+        request["subset"]["glyph_map"] = [
+            [".notdef", ".notdef"],
+            ["cid00001", "cid63157"],
+        ]
+        result = sample_result()
+        result["subset"] = request["subset"]
+        proof = result["proof"]
+        proof["glyphs"][1].update(subset="cid00001", source="cid63157")
+        proof["outline_sha256"] = worker.digest(
+            worker.canonical({"matrix": proof["matrix"], "glyphs": proof["glyphs"]})
+        )
+        attestation.validate_result(result, request)
+        proof["glyphs"][1]["source"] = "cid00001"
+        proof["outline_sha256"] = worker.digest(
+            worker.canonical({"matrix": proof["matrix"], "glyphs": proof["glyphs"]})
+        )
+        with self.assertRaisesRegex(ValueError, "mapping"):
+            attestation.validate_result(result, request)
+
+    def test_cff_map_requires_original_source_and_subset_digests(self):
+        source, subset = b"source", b"subset"
+        mapping = {
+            "schema": "rwml.cff-glyph-map.v1",
+            "source_sha256": worker.digest(source),
+            "subset_sha256": worker.digest(subset),
+            "glyphs": [[".notdef", ".notdef"], ["cid00001", "cid63157"]],
+        }
+        self.assertEqual(
+            attestation.load_cff_map(worker.canonical(mapping), source, subset),
+            mapping["glyphs"],
+        )
+        for key, value in (
+            ("source_sha256", "a" * 64),
+            ("subset_sha256", "b" * 64),
+            ("extra", True),
+        ):
+            changed = {**mapping, key: value}
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                attestation.load_cff_map(worker.canonical(changed), source, subset)
+
     def test_command_preserves_container_isolation_with_bundled_python(self):
         with tempfile.TemporaryDirectory() as temporary:
             command = attestation.worker_command(
@@ -115,6 +158,12 @@ class FontSubsetAttestationTests(unittest.TestCase):
             command[-5:], ["-B", "-s", "-S", "-P", "/oracle/source/worker.py"]
         )
         self.assertIn("--read-only", command)
+
+    def test_deeply_nested_mapping_is_a_typed_failure(self):
+        with self.assertRaises(ValueError):
+            attestation.load_cff_map(
+                b"[" * 2000 + b"0" + b"]" * 2000, b"source", b"subset"
+            )
 
     def test_changed_or_missing_wheel_is_rejected_before_execution(self):
         with tempfile.TemporaryDirectory() as temporary:

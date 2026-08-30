@@ -134,6 +134,53 @@ class FontSubsetWorkerTests(unittest.TestCase):
                 with self.assertRaises(worker.SubsetError):
                     worker.validate_request(changed)
 
+    def test_native_cff_mapping_does_not_assume_original_cids(self):
+        source = {".notdef": Glyph(), "cid63157": Glyph()}
+        subset = {".notdef": Glyph(), "cid00001": Glyph()}
+        mapping = [[".notdef", ".notdef"], ["cid00001", "cid63157"]]
+        result = worker.compare_glyphs(
+            source, subset, self.matrix, self.matrix, mapping=mapping
+        )
+        self.assertEqual(result["glyphs"][1]["source"], "cid63157")
+        source["cid63157"].width = 999
+        with self.assertRaisesRegex(worker.SubsetError, "width"):
+            worker.compare_glyphs(
+                source, subset, self.matrix, self.matrix, mapping=mapping
+            )
+
+    def test_native_cff_mapping_requires_canonical_complete_unique_witness(self):
+        valid = [[".notdef", ".notdef"], ["cid00001", "cid63157"]]
+        self.assertEqual(worker.validate_cff_map(valid), [tuple(row) for row in valid])
+        for invalid in (
+            [],
+            valid[:1],
+            valid[::-1],
+            [valid[0], ["cid1", "cid63157"]],
+            [valid[0], ["cid00002", "cid63157"]],
+            [valid[0], ["cid00001", ".notdef"]],
+            [valid[0], ["cid00001", "cid65536"]],
+            [valid[0], [True, "cid63157"]],
+            valid + [["cid00002", "cid63157"]],
+            valid + [["cid00002", "cid00000"]],
+        ):
+            with self.subTest(invalid=invalid), self.assertRaises(worker.SubsetError):
+                worker.validate_cff_map(invalid)
+
+    def test_native_cff_missing_or_extra_glyphs_do_not_pass(self):
+        mapping = [[".notdef", ".notdef"], ["cid00001", "cid00001"]]
+        for source, subset in (
+            ({".notdef": Glyph()}, {".notdef": Glyph(), "cid00001": Glyph()}),
+            (self.source, {".notdef": Glyph()}),
+            (
+                self.source,
+                {".notdef": Glyph(), "cid00001": Glyph(), "cid00002": Glyph()},
+            ),
+        ):
+            with self.assertRaises(worker.SubsetError):
+                worker.compare_glyphs(
+                    source, subset, self.matrix, self.matrix, mapping=mapping
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
