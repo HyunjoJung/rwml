@@ -4,6 +4,8 @@ use std::rc::Rc;
 
 use super::*;
 
+const MAX_WIDOW_TRACK_PROBES: usize = 4;
+
 #[derive(Clone, Debug, PartialEq)]
 struct ParagraphFragmentCursor {
     source_char: usize,
@@ -33,6 +35,7 @@ struct ParagraphFragment {
     lines: Vec<LineLayout>,
     images: Vec<Image>,
     next: Option<ParagraphFragmentCursor>,
+    deferred: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,6 +43,7 @@ struct FragmentTrackSlot {
     page_index: usize,
     column_index: usize,
     x: f32,
+    fresh: bool,
     track: FragmentTrack,
 }
 
@@ -70,6 +74,7 @@ fn column_fragment_tracks(
                 page_index,
                 column_index,
                 x: columns.x(column_index),
+                fresh: true,
                 track: FragmentTrack {
                     width: columns.width(column_index),
                     height,
@@ -91,24 +96,144 @@ fn shape_paragraph_across_tracks(
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) -> ParagraphTrackFragments {
+    shape_paragraph_across_tracks_with_pagination(
+        paragraph,
+        marker,
+        tab_stops,
+        default_tab_stop_pt,
+        line_spacing_hint,
+        PaginationHint::default(),
+        tracks,
+        cursor,
+        cx,
+        capture,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shape_paragraph_across_tracks_with_pagination(
+    paragraph: &Paragraph,
+    marker: Option<&str>,
+    tab_stops: &[TabStop],
+    default_tab_stop_pt: Option<f32>,
+    line_spacing_hint: Option<LineSpacingHint>,
+    pagination: PaginationHint,
+    tracks: &[FragmentTrackSlot],
+    cursor: ParagraphFragmentCursor,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+) -> ParagraphTrackFragments {
+    // keep_next remains coordinator-owned because it requires the following block.
+    let start = if pagination.keep_lines && cursor.source_char == 0 {
+        let fitting = tracks.iter().enumerate().find_map(|(index, slot)| {
+            let mut scratch_capture = LayoutCapture::default();
+            let candidate = shape_paragraph_fragment(
+                paragraph,
+                marker,
+                tab_stops,
+                default_tab_stop_pt,
+                line_spacing_hint,
+                slot.track,
+                cursor.clone(),
+                cx,
+                &mut scratch_capture,
+            );
+            candidate.next.is_none().then_some(index)
+        });
+        fitting.unwrap_or_else(|| tracks.iter().position(|slot| slot.fresh).unwrap_or(0))
+    } else {
+        0
+    };
+
     let mut fragments = Vec::new();
     let mut next = Some(cursor);
-    for slot in tracks {
+    for (slot_index, slot) in tracks.iter().enumerate().skip(start) {
         let Some(cursor) = next.take() else {
             break;
         };
-        let fragment = shape_paragraph_fragment(
+        let source_before = cursor.source_char;
+        let marker_before = cursor.marker_emitted;
+        let mut fragment = shape_paragraph_fragment_with_pagination(
             paragraph,
             marker,
             tab_stops,
             default_tab_stop_pt,
             line_spacing_hint,
             slot.track,
+            pagination,
+            slot.fresh,
             cursor,
             cx,
             capture,
         );
+        if pagination.widow_control && !fragment.deferred {
+            if let Some(next_slot) = tracks.get(slot_index + 1) {
+                let mut probes = 0usize;
+                while let Some(continuation) = fragment.next.clone() {
+                    if probes >= MAX_WIDOW_TRACK_PROBES {
+                        if !slot.fresh {
+                            fragment.lines.clear();
+                            fragment.images.clear();
+                            fragment.next = Some(ParagraphFragmentCursor {
+                                source_char: source_before,
+                                marker_emitted: marker_before,
+                                ..continuation
+                            });
+                            fragment.deferred = true;
+                        }
+                        break;
+                    }
+                    probes += 1;
+                    let mut scratch_capture = LayoutCapture::default();
+                    let probe = shape_paragraph_fragment(
+                        paragraph,
+                        marker,
+                        tab_stops,
+                        default_tab_stop_pt,
+                        line_spacing_hint,
+                        next_slot.track,
+                        continuation.clone(),
+                        cx,
+                        &mut scratch_capture,
+                    );
+                    if probe.next.is_some() || probe.lines.len() != 1 {
+                        break;
+                    }
+                    if fragment.lines.len() > 2 {
+                        fragment.lines.pop();
+                        let Some(source_char) = fragment
+                            .lines
+                            .iter()
+                            .filter_map(|line| line.char_range.map(|range| range.end))
+                            .max()
+                            .filter(|source_char| *source_char > source_before)
+                        else {
+                            break;
+                        };
+                        fragment.next = Some(ParagraphFragmentCursor {
+                            source_char,
+                            ..continuation
+                        });
+                        continue;
+                    }
+                    if !slot.fresh {
+                        fragment.lines.clear();
+                        fragment.images.clear();
+                        fragment.next = Some(ParagraphFragmentCursor {
+                            source_char: source_before,
+                            marker_emitted: marker_before,
+                            ..continuation
+                        });
+                        fragment.deferred = true;
+                    }
+                    break;
+                }
+            }
+        }
         next = fragment.next.clone();
+        if fragment.deferred {
+            continue;
+        }
         fragments.push(SlottedParagraphFragment {
             slot: *slot,
             fragment,
@@ -189,6 +314,35 @@ fn shape_paragraph_fragment(
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) -> ParagraphFragment {
+    shape_paragraph_fragment_with_pagination(
+        paragraph,
+        marker,
+        tab_stops,
+        default_tab_stop_pt,
+        line_spacing_hint,
+        track,
+        PaginationHint::default(),
+        true,
+        cursor,
+        cx,
+        capture,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shape_paragraph_fragment_with_pagination(
+    paragraph: &Paragraph,
+    marker: Option<&str>,
+    tab_stops: &[TabStop],
+    default_tab_stop_pt: Option<f32>,
+    line_spacing_hint: Option<LineSpacingHint>,
+    track: FragmentTrack,
+    pagination: PaginationHint,
+    fresh_track: bool,
+    cursor: ParagraphFragmentCursor,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+) -> ParagraphFragment {
     let total_chars = paragraph_source_chars(paragraph);
     let source_start = cursor.source_char.min(total_chars);
     let initialized = cursor.page_field_indices.len() == paragraph.runs.len();
@@ -227,6 +381,7 @@ fn shape_paragraph_fragment(
             lines: Vec::new(),
             images: pending_images.to_vec(),
             next: None,
+            deferred: false,
         };
     }
 
@@ -260,6 +415,7 @@ fn shape_paragraph_fragment(
         true,
         Some(&tail_page_field_indices),
     );
+    let shaped_line_count = shaped.lines.len();
 
     let mut lines = Vec::new();
     let mut used_height = 0.0_f32;
@@ -283,7 +439,27 @@ fn shape_paragraph_fragment(
             lines,
             images: pending_images.to_vec(),
             next: None,
+            deferred: false,
         };
+    }
+    if advanced_to < total_chars {
+        let admitted = lines.len();
+        let defer_keep_lines = pagination.keep_lines && source_start == 0 && !fresh_track;
+        let defer_widow =
+            pagination.widow_control && !fresh_track && (shaped_line_count <= 3 || admitted < 2);
+        if defer_keep_lines || defer_widow {
+            return ParagraphFragment {
+                lines: Vec::new(),
+                images: Vec::new(),
+                next: Some(ParagraphFragmentCursor {
+                    source_char: source_start,
+                    marker_emitted: cursor.marker_emitted,
+                    page_field_indices,
+                    pending_images,
+                }),
+                deferred: true,
+            };
+        }
     }
     let next = (advanced_to < total_chars).then(|| ParagraphFragmentCursor {
         source_char: advanced_to,
@@ -300,6 +476,7 @@ fn shape_paragraph_fragment(
         lines,
         images,
         next,
+        deferred: false,
     }
 }
 
@@ -349,6 +526,34 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    fn constrained_track_fragments(
+        paragraph: &Paragraph,
+        tracks: &[FragmentTrackSlot],
+        pagination: PaginationHint,
+    ) -> ParagraphTrackFragments {
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        shape_paragraph_across_tracks_with_pagination(
+            paragraph,
+            None,
+            &[],
+            Some(DEFAULT_TAB_STOP_PT),
+            Some(LineSpacingHint::Exact(10.0)),
+            pagination,
+            tracks,
+            ParagraphFragmentCursor::default(),
+            &mut text_cx,
+            &mut capture,
+        )
     }
 
     fn unequal_track_fragments() -> (Paragraph, ParagraphFragment, ParagraphFragment) {
@@ -1004,6 +1209,7 @@ mod tests {
                 page_index: 0,
                 column_index: 0,
                 x: 0.0,
+                fresh: true,
                 track: FragmentTrack {
                     width: 80.0,
                     height: 1.0,
@@ -1013,6 +1219,7 @@ mod tests {
                 page_index: 1,
                 column_index: 0,
                 x: 0.0,
+                fresh: true,
                 track: FragmentTrack {
                     width: 150.0,
                     height: 1_000.0,
@@ -1076,5 +1283,273 @@ mod tests {
         let mut projected_page_fields = capture.page_fields.clone();
         record_fragment_page_fields(&result.fragments, &mut projected_page_fields);
         assert_eq!(projected_page_fields, vec![Some(2)]);
+    }
+
+    #[test]
+    fn paragraph_track_driver_moves_keep_lines_to_a_fresh_track() {
+        let paragraph = Paragraph {
+            runs: vec![Run {
+                text: "one\ntwo\nthree".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let tracks = [
+            FragmentTrackSlot {
+                page_index: 0,
+                column_index: 0,
+                x: 0.0,
+                fresh: false,
+                track: FragmentTrack {
+                    width: 180.0,
+                    height: 20.0,
+                },
+            },
+            FragmentTrackSlot {
+                page_index: 1,
+                column_index: 0,
+                x: 0.0,
+                fresh: true,
+                track: FragmentTrack {
+                    width: 180.0,
+                    height: 31.0,
+                },
+            },
+        ];
+        let result = constrained_track_fragments(
+            &paragraph,
+            &tracks,
+            PaginationHint {
+                keep_lines: true,
+                ..PaginationHint::default()
+            },
+        );
+
+        assert!(result.next.is_none());
+        assert_eq!(result.fragments.len(), 1);
+        assert_eq!(result.fragments[0].slot.page_index, 1);
+        assert!(result.fragments[0].slot.fresh);
+        assert_eq!(result.fragments[0].fragment.lines.len(), 3);
+    }
+
+    #[test]
+    fn paragraph_track_driver_avoids_a_three_plus_one_widow_split() {
+        let paragraph = Paragraph {
+            runs: vec![Run {
+                text: "one\ntwo\nthree\nfour".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let tracks = [
+            FragmentTrackSlot {
+                page_index: 0,
+                column_index: 0,
+                x: 0.0,
+                fresh: false,
+                track: FragmentTrack {
+                    width: 180.0,
+                    height: 31.0,
+                },
+            },
+            FragmentTrackSlot {
+                page_index: 1,
+                column_index: 0,
+                x: 0.0,
+                fresh: true,
+                track: FragmentTrack {
+                    width: 180.0,
+                    height: 100.0,
+                },
+            },
+        ];
+        let result = constrained_track_fragments(
+            &paragraph,
+            &tracks,
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        );
+
+        assert!(result.next.is_none());
+        assert_eq!(result.fragments.len(), 2);
+        assert_eq!(
+            result
+                .fragments
+                .iter()
+                .map(|placed| placed.fragment.lines.len())
+                .collect::<Vec<_>>(),
+            vec![2, 2]
+        );
+        let first_end = result.fragments[0]
+            .fragment
+            .lines
+            .last()
+            .and_then(|line| line.char_range)
+            .map(|range| range.end)
+            .expect("first fragment source end");
+        let second_start = result.fragments[1]
+            .fragment
+            .lines
+            .first()
+            .and_then(|line| line.char_range)
+            .map(|range| range.start)
+            .expect("second fragment source start");
+        assert_eq!(first_end, second_start);
+    }
+
+    #[test]
+    fn paragraph_track_driver_defers_a_single_orphan_line_from_a_partial_track() {
+        let paragraph = Paragraph {
+            runs: vec![Run {
+                text: "one\ntwo\nthree\nfour".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let tracks = [
+            FragmentTrackSlot {
+                page_index: 0,
+                column_index: 0,
+                x: 0.0,
+                fresh: false,
+                track: FragmentTrack {
+                    width: 180.0,
+                    height: 11.0,
+                },
+            },
+            FragmentTrackSlot {
+                page_index: 1,
+                column_index: 0,
+                x: 0.0,
+                fresh: true,
+                track: FragmentTrack {
+                    width: 180.0,
+                    height: 100.0,
+                },
+            },
+        ];
+        let result = constrained_track_fragments(
+            &paragraph,
+            &tracks,
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        );
+
+        assert!(result.next.is_none());
+        assert_eq!(result.fragments.len(), 1);
+        assert_eq!(result.fragments[0].slot.page_index, 1);
+        assert_eq!(result.fragments[0].fragment.lines.len(), 4);
+    }
+
+    #[test]
+    fn paragraph_track_driver_uses_the_next_track_width_for_widow_control() {
+        let paragraph = Paragraph {
+            runs: vec![Run {
+                text: "alpha beta gamma delta epsilon zeta eta theta".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let tracks = [
+            FragmentTrackSlot {
+                page_index: 0,
+                column_index: 0,
+                x: 0.0,
+                fresh: false,
+                track: FragmentTrack {
+                    width: 60.0,
+                    height: 31.0,
+                },
+            },
+            FragmentTrackSlot {
+                page_index: 1,
+                column_index: 0,
+                x: 0.0,
+                fresh: true,
+                track: FragmentTrack {
+                    width: 200.0,
+                    height: 100.0,
+                },
+            },
+        ];
+        let result = constrained_track_fragments(
+            &paragraph,
+            &tracks,
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        );
+
+        assert!(result.next.is_none());
+        assert_eq!(result.fragments.len(), 1);
+        assert_eq!(result.fragments[0].fragment.lines.len(), 2);
+        assert_eq!(
+            result
+                .fragments
+                .iter()
+                .map(|placed| placed.slot.page_index)
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+    }
+
+    #[test]
+    fn paragraph_track_driver_forces_progress_for_oversized_keep_lines() {
+        let paragraph = Paragraph {
+            runs: vec![Run {
+                text: "one\ntwo\nthree\nfour".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let tracks = [0, 1].map(|page_index| FragmentTrackSlot {
+            page_index,
+            column_index: 0,
+            x: 0.0,
+            fresh: true,
+            track: FragmentTrack {
+                width: 180.0,
+                height: 11.0,
+            },
+        });
+        let result = constrained_track_fragments(
+            &paragraph,
+            &tracks,
+            PaginationHint {
+                keep_lines: true,
+                ..PaginationHint::default()
+            },
+        );
+
+        assert_eq!(result.fragments.len(), 2);
+        assert_eq!(
+            result
+                .fragments
+                .iter()
+                .map(|placed| placed.fragment.lines.len())
+                .collect::<Vec<_>>(),
+            vec![1, 1]
+        );
+        let next = result.next.expect("oversized keep-lines continuation");
+        assert!(next.source_char > 0);
+        assert_eq!(
+            result.fragments[0]
+                .fragment
+                .lines
+                .last()
+                .and_then(|line| line.char_range)
+                .map(|range| range.end),
+            result.fragments[1]
+                .fragment
+                .lines
+                .first()
+                .and_then(|line| line.char_range)
+                .map(|range| range.start)
+        );
     }
 }
