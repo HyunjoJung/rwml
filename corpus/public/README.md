@@ -27,6 +27,11 @@ Every file here is safe to redistribute:
   labels, expected page/warning metadata, and explicit resource ceilings.
   `scripts/render_oracle_contract.py` validates the lock before LibreOffice or
   rwml receives any input.
+- `oracle/` — checked-in identity locks for larger generated diagnostic
+  campaigns that are intentionally outside the ordinary release corpus. The
+  first lock covers 48 unequal-column table-continuation cases; its exact DOCX
+  inputs and strict manifest are generated under ignored `target/` output by
+  `scripts/generate_unequal_table_oracle.py`.
 - `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
   Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
   self-contained input for the strict public extraction benchmark.
@@ -58,6 +63,21 @@ aHash, foreground ink IoU, and explicit unmatched/capped page counts. Strict
 JSON runs additionally bind the report to the corpus root, source revision,
 Cargo lock, harness, platform, tool versions, and recorded LibreOffice identity.
 Reference PDFs remain temporary and are not committed.
+
+The unequal-column table campaign can be reproduced without expanding the
+ordinary release set:
+
+```sh
+python3 scripts/generate_unequal_table_oracle.py
+python3 scripts/generate_unequal_table_oracle.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/unequal-table-v1/RENDER_ORACLE.json
+```
+
+Its checked-in lock covers all 48 combinations of physical column layout,
+table-width policy, row-fragment class, and column/page handoff. The lock proves
+input identity only; external-render results remain diagnostic until separately
+reviewed and accepted.
 
 Run it with the in-tree example + the python-docx checker:
 
