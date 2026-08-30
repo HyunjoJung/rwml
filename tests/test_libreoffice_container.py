@@ -179,6 +179,52 @@ class LibreOfficeContainerTests(unittest.TestCase):
             run.call_args_list[-1].args[0][:3], ["docker", "rm", "--force"]
         )
 
+    def test_bounded_container_result_is_reusable_without_archive_parsing(self):
+        name = "rwml-oracle-" + "a" * 32
+        state = json.dumps(
+            {"Running": False, "ExitCode": 0, "OOMKilled": False}
+        ).encode()
+        with mock.patch.object(
+            oracle, "run_bounded", side_effect=[b"b" * 64, b"{}", state, b"removed"]
+        ) as run:
+            result = oracle.run_container(
+                ["docker", "create", "--name", name],
+                name,
+                timeout=30,
+                stdout_limit=1024,
+            )
+        self.assertEqual(result, b"{}")
+        self.assertEqual(
+            run.call_args_list[1].kwargs, {"timeout": 30, "stdout_limit": 1024}
+        )
+        self.assertEqual(
+            run.call_args_list[-1].args[0], ["docker", "rm", "--force", name]
+        )
+
+    def test_bounded_container_rejects_oom_even_with_zero_exit(self):
+        name = "rwml-oracle-" + "a" * 32
+        state = json.dumps(
+            {"Running": False, "ExitCode": 0, "OOMKilled": True}
+        ).encode()
+        with mock.patch.object(
+            oracle, "run_bounded", side_effect=[b"b" * 64, b"{}", state, b"removed"]
+        ):
+            with self.assertRaisesRegex(ValueError, "complete"):
+                oracle.run_container(
+                    ["docker", "create", "--name", name],
+                    name,
+                    timeout=30,
+                    stdout_limit=1024,
+                )
+
+    @unittest.skipUnless(os.name == "posix", "POSIX capture process boundary")
+    def test_denied_group_cleanup_is_a_typed_failure_not_success(self):
+        with mock.patch.object(
+            oracle.os, "killpg", side_effect=PermissionError("denied")
+        ):
+            with self.assertRaisesRegex(ValueError, "cleanup failed"):
+                oracle.run_bounded([sys.executable, "-c", "pass"], timeout=5)
+
     def test_cleanup_failure_is_not_silently_discarded(self):
         with mock.patch.object(
             oracle,

@@ -85,6 +85,62 @@ glyph shaping, or general variable-font fidelity. This pack is not yet wired
 into general campaign acceptance and does not change the release gate or the
 existing eight-font PDF attestation contract below.
 
+## Bounded CJK Type 1 subset checks
+
+`scripts/font_subset_attestation.py` checks a LibreOffice-style Type 1/PFA
+program against the shared pack's exact Noto Sans CJK KR OTF. It compares every
+subset glyph, including `.notdef`, using CID names, widths, font matrix, and
+exact outline commands. It rejects missing or aliased CIDs, changed geometry,
+unsupported commands, and native CID-keyed CFF input. Hinting, PDF encodings,
+text shaping, placement, and raster equivalence are not covered by this proof.
+
+The parser runs only inside the digest-locked Linux image described below,
+using its Python 3.12.13 and the exact pure-Python FontTools 4.63.0 wheel pinned
+in `fonttools-lock.json`. Supply that wheel from its recorded immutable URL;
+the tool neither downloads it nor installs a host dependency. Docker isolation
+is retained: no network, read-only input, non-root execution, fixed cgroup
+limits, bounded temporary storage, and forced container cleanup. Additional
+worker limits are 512 MiB of data memory, 20 CPU seconds, 1,024 subset glyphs,
+131,072 outline commands total, and 8,192 commands per glyph. The attached
+worker has a 30-second timeout; Docker lifecycle operations have their own
+bounded deadlines. Input limits are 64 MiB for the source, 4 MiB for the PFA,
+and 512 KiB for the result.
+
+With the image loaded and the shared font pack independently verified:
+
+```sh
+python3 scripts/font_subset_attestation.py \
+  --font-pack target/render-oracle/shared-font-pack \
+  --fonttools-wheel <locked-FontTools-wheel> \
+  --program <subset.pfa> --output <fresh-receipt.json>
+python3 scripts/font_subset_attestation.py \
+  --font-pack target/render-oracle/shared-font-pack \
+  --fonttools-wheel <locked-FontTools-wheel> \
+  --program <subset.pfa> --verify <receipt.json>
+```
+
+Verification reruns the bounded parser on the original source and subset,
+then compares the complete receipt with the independently recomputed result.
+Receipts bind input bytes, worker code, runtime, tools, enforced limits, and
+glyph proofs; stale or modified receipts fail even when their aggregate hash
+has been repaired. Verification requires the original inputs and locked
+runtime, not just a receipt. The input is an already extracted raw PFA program;
+this command does not extract or validate an entire PDF and does not change
+the default PDF verifier or campaign acceptance.
+
+Ordinary Python tests cover pure comparison and receipt contracts without
+FontTools or Docker. Run the synthetic parser and resource-failure integration
+tests explicitly with the locked image and wheel available:
+
+```sh
+RWML_FONTTOOLS_WHEEL=<locked-FontTools-wheel> \
+  python3 -m unittest discover -s tests/font_programs -p 'test_*.py' -v
+```
+
+The explicit integration gate fails rather than skips when its runtime or
+wheel is unavailable. It is diagnostic tooling validation, not a release gate
+or evidence of Word pagination parity.
+
 ## LibreOffice regression font lock
 
 `libreoffice-font-lock.json` pins eight LibreOffice-bundled Noto Sans, Noto Sans

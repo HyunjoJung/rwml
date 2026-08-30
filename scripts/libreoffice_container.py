@@ -197,6 +197,10 @@ def run_bounded(
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+            except OSError as error:
+                process.kill()
+                process.wait()
+                raise ValueError("oracle process group cleanup failed") from error
             process.wait()
     return bytes(output["stdout"])
 
@@ -307,18 +311,22 @@ def read_capture_archive(payload: bytes) -> dict[str, bytes]:
     return result
 
 
-def capture_document(image: str, source: Path, fonts: Path) -> dict[str, bytes]:
-    name = "rwml-oracle-" + uuid.uuid4().hex
+def run_container(
+    command: list[str], name: str, *, timeout: float, stdout_limit: int
+) -> bytes:
+    """Run one named, bounded container and remove it on every exit path."""
+    if NAME_RE.fullmatch(name) is None or command[:2] != ["docker", "create"]:
+        raise ValueError("container execution request is invalid")
     created = False
     try:
-        identifier = run_bounded(create_command(image, name, source, fonts)).strip()
+        identifier = run_bounded(command).strip()
         created = True
         if re.fullmatch(rb"[0-9a-f]{64}", identifier) is None:
             raise ValueError("created container identity is invalid")
         payload = run_bounded(
             ["docker", "start", "--attach", name],
-            timeout=180,
-            stdout_limit=MAX_CAPTURE_BYTES,
+            timeout=timeout,
+            stdout_limit=stdout_limit,
         )
         state = json.loads(
             run_bounded(["docker", "inspect", "--format", "{{json .State}}", name])
@@ -331,7 +339,7 @@ def capture_document(image: str, source: Path, fonts: Path) -> dict[str, bytes]:
             or state.get("OOMKilled") is not False
         ):
             raise ValueError("container did not complete successfully")
-        return read_capture_archive(payload)
+        return payload
     finally:
         # Even a failed client can have created a daemon-side container.
         try:
@@ -345,6 +353,17 @@ def capture_document(image: str, source: Path, fonts: Path) -> dict[str, bytes]:
                 raise ValueError("oracle container cleanup failed") from None
         except ValueError:
             raise ValueError("oracle container cleanup failed") from None
+
+
+def capture_document(image: str, source: Path, fonts: Path) -> dict[str, bytes]:
+    name = "rwml-oracle-" + uuid.uuid4().hex
+    payload = run_container(
+        create_command(image, name, source, fonts),
+        name,
+        timeout=180,
+        stdout_limit=MAX_CAPTURE_BYTES,
+    )
+    return read_capture_archive(payload)
 
 
 def prepare_build(archive: Path, output: Path) -> None:
