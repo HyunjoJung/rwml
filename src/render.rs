@@ -162,6 +162,7 @@ const MIN_COLUMN_WIDTH_PT: f32 = 20.0;
 const MAX_SECTION_COLUMNS: usize = 64;
 const MAX_TARGET_COLUMN_REWRAP_PASSES: usize = 4;
 const MAX_PAGE_SCENE_OPERATIONS: usize = 262_144;
+const MAX_PAGE_SCENE_PATH_POINTS: usize = 1_048_576;
 const MAX_PAGE_SCENE_LINKS: usize = 16_384;
 const MAX_PAGE_SCENE_IMAGE_RESOURCES: usize = 4_096;
 const MAX_PAGE_SCENE_STATE_DEPTH: usize = 128;
@@ -294,6 +295,21 @@ impl SceneRect {
             width,
             height,
         })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ScenePoint {
+    x: f32,
+    y: f32,
+}
+
+impl ScenePoint {
+    fn new(x: f32, y: f32) -> Option<Self> {
+        [x, y]
+            .into_iter()
+            .all(f32::is_finite)
+            .then_some(Self { x, y })
     }
 }
 
@@ -464,6 +480,10 @@ enum PageSceneOp {
         rect: SceneRect,
         color: rgb::Color,
     },
+    FillPolygon {
+        points: Box<[ScenePoint]>,
+        color: rgb::Color,
+    },
     Link {
         rect: SceneLinkRect,
         target: Rc<str>,
@@ -487,6 +507,8 @@ enum PageSceneOp {
 struct PageScene {
     operations: Vec<PageSceneOp>,
     operation_limit: usize,
+    path_point_count: usize,
+    path_point_limit: usize,
     link_count: usize,
     link_limit: usize,
     image_resources: Vec<SceneImageResource>,
@@ -500,6 +522,8 @@ impl Default for PageScene {
         Self {
             operations: Vec::new(),
             operation_limit: MAX_PAGE_SCENE_OPERATIONS,
+            path_point_count: 0,
+            path_point_limit: MAX_PAGE_SCENE_PATH_POINTS,
             link_count: 0,
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
@@ -516,6 +540,8 @@ impl PageScene {
         Self {
             operations: Vec::new(),
             operation_limit,
+            path_point_count: 0,
+            path_point_limit: MAX_PAGE_SCENE_PATH_POINTS,
             link_count: 0,
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
@@ -530,6 +556,8 @@ impl PageScene {
         Self {
             operations: Vec::new(),
             operation_limit,
+            path_point_count: 0,
+            path_point_limit: MAX_PAGE_SCENE_PATH_POINTS,
             link_count: 0,
             link_limit,
             image_resources: Vec::new(),
@@ -544,6 +572,8 @@ impl PageScene {
         Self {
             operations: Vec::new(),
             operation_limit: MAX_PAGE_SCENE_OPERATIONS,
+            path_point_count: 0,
+            path_point_limit: MAX_PAGE_SCENE_PATH_POINTS,
             link_count: 0,
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
@@ -558,12 +588,22 @@ impl PageScene {
         Self {
             operations: Vec::new(),
             operation_limit: MAX_PAGE_SCENE_OPERATIONS,
+            path_point_count: 0,
+            path_point_limit: MAX_PAGE_SCENE_PATH_POINTS,
             link_count: 0,
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
             image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
             state_stack: Vec::new(),
             state_limit,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_path_point_limit(path_point_limit: usize) -> Self {
+        Self {
+            path_point_limit,
+            ..Self::default()
         }
     }
 
@@ -590,6 +630,40 @@ impl PageScene {
             return Ok(());
         };
         self.push_operation(PageSceneOp::FillRect { rect, color })
+    }
+
+    fn push_fill_polygon(&mut self, points: &[(f32, f32)], color: rgb::Color) -> Result<()> {
+        if points.len() < 3 {
+            return Ok(());
+        }
+        if !points
+            .iter()
+            .all(|(x, y)| ScenePoint::new(*x, *y).is_some())
+        {
+            return Ok(());
+        }
+        let Some(next_point_count) = self.path_point_count.checked_add(points.len()) else {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-path-point limit",
+                self.path_point_limit
+            )));
+        };
+        if next_point_count > self.path_point_limit {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-path-point limit",
+                self.path_point_limit
+            )));
+        }
+        let projected = points
+            .iter()
+            .map(|(x, y)| ScenePoint { x: *x, y: *y })
+            .collect::<Vec<_>>();
+        self.push_operation(PageSceneOp::FillPolygon {
+            points: projected.into_boxed_slice(),
+            color,
+        })?;
+        self.path_point_count = next_point_count;
+        Ok(())
     }
 
     fn push_link_ltrb(&mut self, bounds: [f32; 4], target: Rc<str>, clip: LinkClip) -> Result<()> {
@@ -5650,19 +5724,15 @@ fn fill_triangle_color(
     }
 }
 
-fn fill_quad_color(
-    surface: &mut Surface<'_>,
-    p1: (f32, f32),
-    p2: (f32, f32),
-    p3: (f32, f32),
-    p4: (f32, f32),
-    color: rgb::Color,
-) {
+fn fill_polygon_color(surface: &mut Surface<'_>, points: &[ScenePoint], color: rgb::Color) {
+    let Some(first) = points.first() else {
+        return;
+    };
     let mut pb = PathBuilder::new();
-    pb.move_to(p1.0, p1.1);
-    pb.line_to(p2.0, p2.1);
-    pb.line_to(p3.0, p3.1);
-    pb.line_to(p4.0, p4.1);
+    pb.move_to(first.x, first.y);
+    for point in &points[1..] {
+        pb.line_to(point.x, point.y);
+    }
     pb.close();
     if let Some(path) = pb.finish() {
         surface.set_fill(Some(Fill {
@@ -5934,6 +6004,9 @@ fn replay_page_scene_operations(
             PageSceneOp::FillRect { rect, color } => {
                 fill_rect_color(surface, rect.x, rect.y, rect.width, rect.height, *color)
             }
+            PageSceneOp::FillPolygon { points, color } => {
+                fill_polygon_color(surface, points, *color)
+            }
             PageSceneOp::PushClipRect { rect } => {
                 push_pdf_rect_clip(surface, *rect);
             }
@@ -5965,6 +6038,18 @@ fn project_and_replay_page_scene_fill_rect(
 ) -> Result<()> {
     let start = scene.operations.len();
     scene.push_fill_rect(x, y, width, height, color)?;
+    replay_page_scene_operations(surface, scene, start..scene.operations.len());
+    Ok(())
+}
+
+fn project_and_replay_page_scene_fill_polygon(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    points: &[(f32, f32)],
+    color: rgb::Color,
+) -> Result<()> {
+    let start = scene.operations.len();
+    scene.push_fill_polygon(points, color)?;
     replay_page_scene_operations(surface, scene, start..scene.operations.len());
     Ok(())
 }
@@ -7414,15 +7499,14 @@ fn percentile(sorted: &[f64], frac: f64) -> f64 {
 
 fn draw_funnel_chart(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     chart: &Chart,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    rect: ChartRect,
     tcx: &mut TextCx<'_>,
-) {
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
     let Some(series) = chart.series.first() else {
-        return;
+        return Ok(());
     };
     let values = chart
         .categories
@@ -7438,10 +7522,10 @@ fn draw_funnel_chart(
         })
         .collect::<Vec<_>>();
     let Some(max_value) = values.iter().copied().reduce(f64::max) else {
-        return;
+        return Ok(());
     };
     if max_value <= 0.0 {
-        return;
+        return Ok(());
     }
     let count = values.len().max(1);
     let stage_h = h / count as f32;
@@ -7452,14 +7536,17 @@ fn draw_funnel_chart(
         let bottom_w = (next / max_value) as f32 * w * 0.88;
         let top_y = y + index as f32 * stage_h + 1.0;
         let bottom_y = y + (index + 1) as f32 * stage_h - 1.0;
-        fill_quad_color(
+        project_and_replay_page_scene_fill_polygon(
             surface,
-            (center_x - top_w * 0.5, top_y),
-            (center_x + top_w * 0.5, top_y),
-            (center_x + bottom_w * 0.5, bottom_y),
-            (center_x - bottom_w * 0.5, bottom_y),
+            scene,
+            &[
+                (center_x - top_w * 0.5, top_y),
+                (center_x + top_w * 0.5, top_y),
+                (center_x + bottom_w * 0.5, bottom_y),
+                (center_x - bottom_w * 0.5, bottom_y),
+            ],
             chart_series_color(index),
-        );
+        )?;
         if let Some(category) = chart.categories.get(index) {
             draw_chart_text(
                 surface,
@@ -7477,6 +7564,7 @@ fn draw_funnel_chart(
             );
         }
     }
+    Ok(())
 }
 
 fn project_chart_frame(
@@ -7707,7 +7795,18 @@ fn draw_authored_chart(
     }
 
     if chart.kind == ChartKind::Funnel {
-        draw_funnel_chart(surface, chart, plot_left, plot_top, plot_w, plot_h, tcx);
+        draw_funnel_chart(
+            surface,
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            tcx,
+        )?;
         return Ok(());
     }
 
@@ -13897,6 +13996,59 @@ mod tests {
     }
 
     #[test]
+    fn page_scene_fill_polygons_are_finite_bounded_and_atomic() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let quad = [(1.0, 2.0), (7.0, 2.0), (6.0, 5.0), (2.0, 5.0)];
+        let mut scene = super::PageScene::with_path_point_limit(4);
+        scene
+            .push_fill_polygon(&quad, color)
+            .expect("bounded polygon projects");
+        assert_eq!(scene.path_point_count, 4);
+        assert_eq!(
+            scene.operations,
+            vec![super::PageSceneOp::FillPolygon {
+                points: vec![
+                    super::ScenePoint { x: 1.0, y: 2.0 },
+                    super::ScenePoint { x: 7.0, y: 2.0 },
+                    super::ScenePoint { x: 6.0, y: 5.0 },
+                    super::ScenePoint { x: 2.0, y: 5.0 },
+                ]
+                .into_boxed_slice(),
+                color,
+            }]
+        );
+
+        let unchanged = (scene.operations.len(), scene.path_point_count);
+        scene
+            .push_fill_polygon(&[(0.0, 0.0), (f32::NAN, 1.0), (2.0, 0.0)], color)
+            .expect("non-finite polygon is ignored");
+        scene
+            .push_fill_polygon(&[(0.0, 0.0), (1.0, 1.0)], color)
+            .expect("open line is ignored");
+        assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
+
+        let error = scene
+            .push_fill_polygon(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)], color)
+            .expect_err("point ceiling rejects another polygon");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 4-path-point limit"
+        );
+        assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
+
+        let mut operation_limited = super::PageScene::with_operation_limit(0);
+        let error = operation_limited
+            .push_fill_polygon(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)], color)
+            .expect_err("operation ceiling rejects polygon");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(operation_limited.operations.is_empty());
+        assert_eq!(operation_limited.path_point_count, 0);
+    }
+
+    #[test]
     fn scatter_marker_dispatch_rectangles_enter_the_scene_in_paint_order() {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
@@ -14287,6 +14439,100 @@ mod tests {
             assert_close(rect.width, width);
             assert_close(rect.height, height);
             assert_eq!(*actual_color, color);
+        }
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn funnel_quadrilaterals_enter_the_scene_in_paint_order() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Funnel,
+            categories: vec![
+                "Leads".to_string(),
+                "Qualified".to_string(),
+                "Closed".to_string(),
+            ],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![4.0, 2.0, 1.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let expected = [
+            (
+                [
+                    (104.36, 29.0),
+                    (285.64, 29.0),
+                    (240.32, 72.333_33),
+                    (149.68, 72.333_33),
+                ],
+                super::chart_series_color(0),
+            ),
+            (
+                [
+                    (149.68, 74.333_33),
+                    (240.32, 74.333_33),
+                    (217.66, 117.666_66),
+                    (172.34, 117.666_66),
+                ],
+                super::chart_series_color(1),
+            ),
+            (
+                [
+                    (172.34, 119.666_66),
+                    (217.66, 119.666_66),
+                    (211.315_2, 163.0),
+                    (178.684_8, 163.0),
+                ],
+                super::chart_series_color(2),
+            ),
+        ];
+        assert_eq!(scene.operations.len(), 5 + expected.len());
+        for (operation, (expected_points, expected_color)) in
+            scene.operations[5..].iter().zip(expected)
+        {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("funnel stage must be a polygon: {operation:?}");
+            };
+            assert_eq!(*color, expected_color);
+            assert_eq!(points.len(), expected_points.len());
+            for (point, (x, y)) in points.iter().zip(expected_points) {
+                assert_close(point.x, x);
+                assert_close(point.y, y);
+            }
         }
 
         surface.finish();
