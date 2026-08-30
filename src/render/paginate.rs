@@ -637,7 +637,7 @@ pub(super) fn paginate_with_column_gap(
 #[allow(clippy::too_many_arguments)]
 fn paginate_with_column_gap_and_metrics(
     items: Vec<FlowItem>,
-    _observed_block_metrics: Option<Vec<Option<BlockPaginationMetrics>>>,
+    supplied_block_metrics: Option<Vec<Option<BlockPaginationMetrics>>>,
     geom: Geom,
     final_section_setup: &SectionSetup,
     final_column_gap_pt: Option<f32>,
@@ -651,11 +651,7 @@ fn paginate_with_column_gap_and_metrics(
     let column_layouts_by_item = section_column_layouts_by_item(&items, final_column_layout);
     let column_rtl_by_item = section_column_rtl_by_item(&items, final_column_rtl);
     let geometries_by_item = section_geometries_by_item(&items, geom);
-    let block_metrics = block_pagination_metrics(&items);
-    #[cfg(test)]
-    if let Some(observed) = _observed_block_metrics.as_ref() {
-        assert_eq!(observed, &block_metrics);
-    }
+    let block_metrics = supplied_block_metrics.unwrap_or_else(|| block_pagination_metrics(&items));
     let mut pages: Pages = vec![Vec::new()];
     let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
     let mut section_start_page_index = 0usize;
@@ -1048,6 +1044,11 @@ pub(super) fn paginate_body_flow_with_column_gap(
     final_column_rtl: bool,
 ) -> Pagination {
     let lowered = lower_body_flow_entries_with_metrics(flow, cx, capture);
+    #[cfg(test)]
+    assert_eq!(
+        lowered.block_metrics,
+        block_pagination_metrics(&lowered.items)
+    );
     paginate_with_column_gap_and_metrics(
         lowered.items,
         Some(lowered.block_metrics),
@@ -1176,6 +1177,18 @@ mod tests {
         })
     }
 
+    fn page_line_counts(pagination: &Pagination) -> Vec<usize> {
+        pagination
+            .pages
+            .iter()
+            .map(|page| {
+                page.iter()
+                    .filter(|placed| matches!(placed.item, FlowItem::Line(_)))
+                    .count()
+            })
+            .collect()
+    }
+
     #[test]
     fn block_metric_accumulator_preserves_paragraph_extent_semantics() {
         let pagination = PaginationHint {
@@ -1257,6 +1270,50 @@ mod tests {
         assert_eq!(first.total_height, 12.0);
         assert!(first.is_paragraph);
         assert!(metrics[5].is_some());
+    }
+
+    #[test]
+    fn metric_bearing_paginator_uses_supplied_block_metrics() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let items = vec![
+            FlowItem::BlockStart {
+                index: 0,
+                pagination: PaginationHint::default(),
+            },
+            line(40.0),
+            FlowItem::BlockStart {
+                index: 1,
+                pagination: PaginationHint {
+                    keep_lines: true,
+                    ..PaginationHint::default()
+                },
+            },
+            line(10.0),
+            line(10.0),
+            line(10.0),
+        ];
+        let mut supplied = block_pagination_metrics(&items);
+        supplied[2]
+            .as_mut()
+            .expect("protected paragraph metric")
+            .last_line_extent = 0.0;
+
+        let pagination = paginate_with_column_gap_and_metrics(
+            items,
+            Some(supplied),
+            geom,
+            &SectionSetup::default(),
+            None,
+            None,
+            false,
+        );
+
+        assert_eq!(page_line_counts(&pagination), vec![3, 1]);
     }
 
     #[test]
