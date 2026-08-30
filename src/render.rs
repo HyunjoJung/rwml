@@ -5954,6 +5954,21 @@ fn replay_page_scene_operations(
     }
 }
 
+fn project_and_replay_page_scene_fill_rect(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    color: rgb::Color,
+) -> Result<()> {
+    let start = scene.operations.len();
+    scene.push_fill_rect(x, y, width, height, color)?;
+    replay_page_scene_operations(surface, scene, start..scene.operations.len());
+    Ok(())
+}
+
 fn push_page_scene_clip(
     surface: &mut Surface<'_>,
     scene: &mut PageScene,
@@ -7490,14 +7505,15 @@ fn draw_authored_chart(
             if legend_x >= plot_right - 20.0 {
                 break;
             }
-            fill_rect_color(
+            project_and_replay_page_scene_fill_rect(
                 surface,
+                scene,
                 legend_x,
                 legend_y + 3.0,
                 6.0,
                 6.0,
                 chart_series_color(index),
-            );
+            )?;
             let used = draw_chart_text(
                 surface,
                 category,
@@ -7528,14 +7544,15 @@ fn draw_authored_chart(
             if legend_x >= plot_right - 20.0 {
                 break;
             }
-            fill_rect_color(
+            project_and_replay_page_scene_fill_rect(
                 surface,
+                scene,
                 legend_x,
                 legend_y + 3.0,
                 6.0,
                 6.0,
                 chart_series_color(index),
-            );
+            )?;
             let used = draw_chart_text(
                 surface,
                 &series.name,
@@ -7629,7 +7646,9 @@ fn draw_authored_chart(
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let x_tick = plot_left + frac * plot_w;
-                fill_rect_color(surface, x_tick, plot_top, 0.35, plot_h, grid);
+                project_and_replay_page_scene_fill_rect(
+                    surface, scene, x_tick, plot_top, 0.35, plot_h, grid,
+                )?;
                 let label = if percent {
                     format!("{}%", tick * 25)
                 } else {
@@ -7650,8 +7669,18 @@ fn draw_authored_chart(
                     tcx,
                 );
             }
-            fill_rect_color(surface, plot_left, plot_top, 0.8, plot_h, axis);
-            fill_rect_color(surface, plot_left, plot_bottom, plot_w, 0.8, axis);
+            project_and_replay_page_scene_fill_rect(
+                surface, scene, plot_left, plot_top, 0.8, plot_h, axis,
+            )?;
+            project_and_replay_page_scene_fill_rect(
+                surface,
+                scene,
+                plot_left,
+                plot_bottom,
+                plot_w,
+                0.8,
+                axis,
+            )?;
 
             let band_h = plot_h / category_count as f32;
             let bar_h = (band_h * 0.68).max(3.0);
@@ -7706,14 +7735,15 @@ fn draw_authored_chart(
                             color,
                         );
                     } else {
-                        fill_rect_color(
+                        project_and_replay_page_scene_fill_rect(
                             surface,
+                            scene,
                             segment_left,
                             bar_top,
                             (segment_right - segment_left).max(1.0),
                             bar_h,
                             color,
-                        );
+                        )?;
                     }
                 }
             }
@@ -7723,7 +7753,9 @@ fn draw_authored_chart(
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let x_tick = plot_left + frac * plot_w;
-                fill_rect_color(surface, x_tick, plot_top, 0.35, plot_h, grid);
+                project_and_replay_page_scene_fill_rect(
+                    surface, scene, x_tick, plot_top, 0.35, plot_h, grid,
+                )?;
                 let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
                 let label = format_chart_tick(value);
                 draw_chart_text(
@@ -7741,8 +7773,18 @@ fn draw_authored_chart(
                     tcx,
                 );
             }
-            fill_rect_color(surface, zero_x, plot_top, 0.8, plot_h, axis);
-            fill_rect_color(surface, plot_left, plot_bottom, plot_w, 0.8, axis);
+            project_and_replay_page_scene_fill_rect(
+                surface, scene, zero_x, plot_top, 0.8, plot_h, axis,
+            )?;
+            project_and_replay_page_scene_fill_rect(
+                surface,
+                scene,
+                plot_left,
+                plot_bottom,
+                plot_w,
+                0.8,
+                axis,
+            )?;
 
             let band_h = plot_h / category_count as f32;
             let group_h = (band_h * 0.68).max(3.0);
@@ -7789,7 +7831,9 @@ fn draw_authored_chart(
                             color,
                         );
                     } else {
-                        fill_rect_color(surface, bar_left, bar_top, bar_width, bar_h, color);
+                        project_and_replay_page_scene_fill_rect(
+                            surface, scene, bar_left, bar_top, bar_width, bar_h, color,
+                        )?;
                     }
                 }
             }
@@ -7828,7 +7872,9 @@ fn draw_authored_chart(
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let y_tick = plot_bottom - frac * plot_h;
-                fill_rect_color(surface, plot_left, y_tick, plot_w, 0.35, grid);
+                project_and_replay_page_scene_fill_rect(
+                    surface, scene, plot_left, y_tick, plot_w, 0.35, grid,
+                )?;
                 let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
                 let label = format_chart_tick(value);
                 draw_chart_text(
@@ -7846,8 +7892,12 @@ fn draw_authored_chart(
                     tcx,
                 );
             }
-            fill_rect_color(surface, plot_left, zero_y, plot_w, 0.8, axis);
-            fill_rect_color(surface, plot_left, plot_top, 0.8, plot_h, axis);
+            project_and_replay_page_scene_fill_rect(
+                surface, scene, plot_left, zero_y, plot_w, 0.8, axis,
+            )?;
+            project_and_replay_page_scene_fill_rect(
+                surface, scene, plot_left, plot_top, 0.8, plot_h, axis,
+            )?;
 
             let band_w = plot_w / category_count as f32;
             for (category_index, category) in chart.categories.iter().enumerate() {
@@ -7913,14 +7963,15 @@ fn draw_authored_chart(
                                     color,
                                 );
                             } else {
-                                fill_rect_color(
+                                project_and_replay_page_scene_fill_rect(
                                     surface,
+                                    scene,
                                     column_left,
                                     segment_top,
                                     column_w,
                                     (segment_bottom - segment_top).max(1.0),
                                     color,
-                                );
+                                )?;
                             }
                         }
                     }
@@ -7954,14 +8005,15 @@ fn draw_authored_chart(
                                     color,
                                 );
                             } else {
-                                fill_rect_color(
+                                project_and_replay_page_scene_fill_rect(
                                     surface,
+                                    scene,
                                     column_left,
                                     column_top,
                                     column_w,
                                     column_h,
                                     color,
-                                );
+                                )?;
                             }
                         }
                     }
@@ -8030,14 +8082,15 @@ fn draw_authored_chart(
                                         surface, prev_x, prev_y, point_x, point_y, 1.4, color,
                                     );
                                 }
-                                fill_rect_color(
+                                project_and_replay_page_scene_fill_rect(
                                     surface,
+                                    scene,
                                     point_x - 2.0,
                                     point_y - 2.0,
                                     4.0,
                                     4.0,
                                     color,
-                                );
+                                )?;
                                 previous = Some((point_x, point_y));
                             }
                         }
@@ -8087,14 +8140,15 @@ fn draw_authored_chart(
                                 );
                             }
                             if chart.kind != ChartKind::LineNoMarkers {
-                                fill_rect_color(
+                                project_and_replay_page_scene_fill_rect(
                                     surface,
+                                    scene,
                                     point_x - 2.0,
                                     point_y - 2.0,
                                     4.0,
                                     4.0,
                                     color,
-                                );
+                                )?;
                             }
                             previous = Some((point_x, point_y));
                         }
@@ -8121,25 +8175,27 @@ fn draw_authored_chart(
                         let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
                         let y_low = value_y(low).clamp(plot_top, plot_bottom);
                         let y_high = value_y(high).clamp(plot_top, plot_bottom);
-                        fill_rect_color(
+                        project_and_replay_page_scene_fill_rect(
                             surface,
+                            scene,
                             point_x - 0.7,
                             y_high,
                             1.4,
                             (y_low - y_high).abs().max(1.0),
                             axis,
-                        );
+                        )?;
                         if chart.kind == ChartKind::Stock {
                             if let Some(open) = values.first().copied() {
                                 let y_open = value_y(open).clamp(plot_top, plot_bottom);
-                                fill_rect_color(
+                                project_and_replay_page_scene_fill_rect(
                                     surface,
+                                    scene,
                                     point_x - band_w * 0.18,
                                     y_open - 0.8,
                                     band_w * 0.18,
                                     1.6,
                                     chart_series_color(0),
-                                );
+                                )?;
                             }
                         }
                         if let Some(close) = values.last().copied() {
@@ -8149,14 +8205,15 @@ fn draw_authored_chart(
                                 2.min(chart.series.len().saturating_sub(1))
                             };
                             let y_close = value_y(close).clamp(plot_top, plot_bottom);
-                            fill_rect_color(
+                            project_and_replay_page_scene_fill_rect(
                                 surface,
+                                scene,
                                 point_x,
                                 y_close - 0.8,
                                 band_w * 0.18,
                                 1.6,
                                 chart_series_color(color_index),
-                            );
+                            )?;
                         }
                     }
                 }
@@ -8188,14 +8245,15 @@ fn draw_authored_chart(
                                 chart.kind,
                                 ChartKind::ScatterLines | ChartKind::ScatterSmoothNoMarkers
                             ) {
-                                fill_rect_color(
+                                project_and_replay_page_scene_fill_rect(
                                     surface,
+                                    scene,
                                     point_x - 2.5,
                                     point_y - 2.5,
                                     5.0,
                                     5.0,
                                     color,
-                                );
+                                )?;
                             }
                             previous = Some((point_x, point_y));
                         }
@@ -8261,41 +8319,49 @@ fn draw_authored_chart(
                             let cell_w = (band_w - 2.0).max(1.0);
                             let cell_h_inner = (cell_h - 2.0).max(1.0);
                             if chart.wireframe {
-                                fill_rect_color(surface, cell_left, cell_top, cell_w, 0.45, color);
-                                fill_rect_color(
+                                project_and_replay_page_scene_fill_rect(
+                                    surface, scene, cell_left, cell_top, cell_w, 0.45, color,
+                                )?;
+                                project_and_replay_page_scene_fill_rect(
                                     surface,
+                                    scene,
                                     cell_left,
                                     cell_top + cell_h_inner,
                                     cell_w,
                                     0.45,
                                     color,
-                                );
-                                fill_rect_color(
+                                )?;
+                                project_and_replay_page_scene_fill_rect(
                                     surface,
+                                    scene,
                                     cell_left,
                                     cell_top,
                                     0.45,
                                     cell_h_inner,
                                     color,
-                                );
-                                fill_rect_color(
+                                )?;
+                                project_and_replay_page_scene_fill_rect(
                                     surface,
+                                    scene,
                                     cell_left + cell_w,
                                     cell_top,
                                     0.45,
                                     cell_h_inner,
                                     color,
-                                );
+                                )?;
                             } else {
-                                fill_rect_color(
+                                project_and_replay_page_scene_fill_rect(
                                     surface,
+                                    scene,
                                     cell_left,
                                     cell_top,
                                     cell_w,
                                     cell_h_inner,
                                     color,
-                                );
-                                fill_rect_color(surface, cell_left, cell_top, cell_w, 0.35, grid);
+                                )?;
+                                project_and_replay_page_scene_fill_rect(
+                                    surface, scene, cell_left, cell_top, cell_w, 0.35, grid,
+                                )?;
                             }
                         }
                     }
@@ -8348,14 +8414,15 @@ fn draw_authored_chart(
         if legend_x >= plot_right - 20.0 {
             break;
         }
-        fill_rect_color(
+        project_and_replay_page_scene_fill_rect(
             surface,
+            scene,
             legend_x,
             legend_y + 3.0,
             6.0,
             6.0,
             chart_series_color(index),
-        );
+        )?;
         let used = draw_chart_text(
             surface,
             &series.name,
@@ -13713,6 +13780,84 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn scatter_marker_dispatch_rectangles_enter_the_scene_in_paint_order() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::ScatterMarkers,
+            categories: vec!["Q1".to_string(), "Q2".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![12.5, 27.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+        let axis = rgb::Color::new(0x5D, 0x66, 0x70);
+        let series = super::chart_series_color(0);
+        let expected = [
+            (92.0, 164.0, 206.0, 0.35, grid),
+            (92.0, 130.0, 206.0, 0.35, grid),
+            (92.0, 96.0, 206.0, 0.35, grid),
+            (92.0, 62.0, 206.0, 0.35, grid),
+            (92.0, 28.0, 206.0, 0.35, grid),
+            (92.0, 164.0, 206.0, 0.8, axis),
+            (92.0, 28.0, 0.8, 136.0, axis),
+            (141.0, 98.537_03, 5.0, 5.0, series),
+            (244.0, 25.5, 5.0, 5.0, series),
+            (92.0, 189.0, 6.0, 6.0, series),
+        ];
+        assert_eq!(scene.operations.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in scene.operations[5..].iter().zip(expected)
+        {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("dispatcher operation must be a rectangle: {operation:?}");
+            };
+            assert_close(rect.x, x);
+            assert_close(rect.y, y);
+            assert_close(rect.width, width);
+            assert_close(rect.height, height);
+            assert_eq!(*actual_color, color);
+        }
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
     }
 
     #[test]
