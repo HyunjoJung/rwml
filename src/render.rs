@@ -6939,15 +6939,14 @@ fn draw_radar_chart(
 
 fn draw_waterfall_chart(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     chart: &Chart,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    rect: ChartRect,
     tcx: &mut TextCx<'_>,
-) {
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
     let Some(series) = chart.series.first() else {
-        return;
+        return Ok(());
     };
     let count = chart.categories.len().max(series.values.len()).max(1);
     let mut segments = Vec::with_capacity(count);
@@ -6975,14 +6974,15 @@ fn draw_waterfall_chart(
     for tick in 0..=4 {
         let frac = tick as f32 / 4.0;
         let y_tick = y + h - frac * h;
-        fill_rect_color(
+        project_and_replay_page_scene_fill_rect(
             surface,
+            scene,
             x,
             y_tick,
             w,
             0.35,
             rgb::Color::new(0xE1, 0xE5, 0xEA),
-        );
+        )?;
         let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
         let label = format_chart_tick(value);
         draw_chart_text(
@@ -7000,15 +7000,24 @@ fn draw_waterfall_chart(
             tcx,
         );
     }
-    fill_rect_color(
+    project_and_replay_page_scene_fill_rect(
         surface,
+        scene,
         x,
         zero_y,
         w,
         0.8,
         rgb::Color::new(0x5D, 0x66, 0x70),
-    );
-    fill_rect_color(surface, x, y, 0.8, h, rgb::Color::new(0x5D, 0x66, 0x70));
+    )?;
+    project_and_replay_page_scene_fill_rect(
+        surface,
+        scene,
+        x,
+        y,
+        0.8,
+        h,
+        rgb::Color::new(0x5D, 0x66, 0x70),
+    )?;
 
     let band_w = w / count as f32;
     let bar_w = (band_w * 0.58).max(2.0);
@@ -7025,17 +7034,18 @@ fn draw_waterfall_chart(
         } else {
             rgb::Color::new(0xC7, 0x52, 0x4A)
         };
-        fill_rect_color(surface, left, top, bar_w, height, color);
+        project_and_replay_page_scene_fill_rect(surface, scene, left, top, bar_w, height, color)?;
         if index > 0 {
             let prev_x = x + index as f32 * band_w - (band_w - bar_w) * 0.5;
-            fill_rect_color(
+            project_and_replay_page_scene_fill_rect(
                 surface,
+                scene,
                 prev_x,
                 y_start,
                 (left - prev_x).max(1.0),
                 0.5,
                 rgb::Color::new(0x9A, 0xA4, 0xAE),
-            );
+            )?;
         }
         if let Some(category) = chart.categories.get(index) {
             draw_chart_text(
@@ -7054,6 +7064,7 @@ fn draw_waterfall_chart(
             );
         }
     }
+    Ok(())
 }
 
 fn draw_treemap_chart(
@@ -7573,7 +7584,18 @@ fn draw_authored_chart(
     }
 
     if chart.kind == ChartKind::Waterfall {
-        draw_waterfall_chart(surface, chart, plot_left, plot_top, plot_w, plot_h, tcx);
+        draw_waterfall_chart(
+            surface,
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            tcx,
+        )?;
         return Ok(());
     }
 
@@ -13847,6 +13869,92 @@ mod tests {
             } = operation
             else {
                 panic!("dispatcher operation must be a rectangle: {operation:?}");
+            };
+            assert_close(rect.x, x);
+            assert_close(rect.y, y);
+            assert_close(rect.width, width);
+            assert_close(rect.height, height);
+            assert_eq!(*actual_color, color);
+        }
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn waterfall_rectangles_enter_the_scene_in_paint_order() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Waterfall,
+            categories: vec![
+                "Start".to_string(),
+                "Change".to_string(),
+                "Total".to_string(),
+            ],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![10.0, -4.0, 12.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+        let axis = rgb::Color::new(0x5D, 0x66, 0x70);
+        let total = rgb::Color::new(0x3B, 0x6E, 0xA8);
+        let negative = rgb::Color::new(0xC7, 0x52, 0x4A);
+        let connector = rgb::Color::new(0x9A, 0xA4, 0xAE);
+        let expected = [
+            (92.0, 164.0, 206.0, 0.35, grid),
+            (92.0, 130.0, 206.0, 0.35, grid),
+            (92.0, 96.0, 206.0, 0.35, grid),
+            (92.0, 62.0, 206.0, 0.35, grid),
+            (92.0, 28.0, 206.0, 0.35, grid),
+            (92.0, 164.0, 206.0, 0.8, axis),
+            (92.0, 28.0, 0.8, 136.0, axis),
+            (106.42, 50.666_67, 39.826_668, 113.333_33, total),
+            (175.086_67, 50.666_67, 39.826_668, 45.333_33, negative),
+            (146.246_67, 50.666_67, 28.84, 0.5, connector),
+            (243.753_33, 28.0, 39.826_668, 136.0, total),
+            (214.913_33, 164.0, 28.84, 0.5, connector),
+        ];
+        assert_eq!(scene.operations.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in scene.operations[5..].iter().zip(expected)
+        {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("waterfall operation must be a rectangle: {operation:?}");
             };
             assert_close(rect.x, x);
             assert_close(rect.y, y);
