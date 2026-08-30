@@ -695,6 +695,57 @@ fn admit_forced_break(
     block_projection.record_pending_page(pages.len().saturating_sub(1));
 }
 
+struct BlockStartAdmission<'a> {
+    item_index: usize,
+    block_index: usize,
+    pagination: PaginationHint,
+    metric: Option<&'a BlockPaginationMetrics>,
+    block_metrics: &'a [Option<BlockPaginationMetrics>],
+    columns_by_item: &'a [Option<u16>],
+}
+
+fn admit_block_start(
+    pages: &mut Pages,
+    track: &mut ActivePlacementTrack,
+    block_projection: &mut BlockProjectionState,
+    block_cursor: &mut BlockPlacementCursor,
+    block_exclusions: &mut BlockExclusionState,
+    input: BlockStartAdmission<'_>,
+) {
+    block_exclusions.begin_block(input.pagination);
+    block_projection.record_pending_page(pages.len().saturating_sub(1));
+    if let Some(metric) = input.metric {
+        if input.pagination.keep_next {
+            if let Some(height) =
+                keep_next_chain_height(input.item_index, input.block_metrics, input.columns_by_item)
+            {
+                move_to_fresh_column_for_required_height(
+                    pages,
+                    &mut track.cursor,
+                    height,
+                    track.geom,
+                    block_exclusions.active_bands(),
+                );
+            }
+        }
+        let keep_whole_paragraph = input.pagination.keep_lines
+            || (input.pagination.widow_control
+                && metric.line_heights.len() <= 3
+                && metric.last_line_extent <= track.geom.bottom() - track.geom.top());
+        if keep_whole_paragraph {
+            move_to_fresh_column_for_required_height(
+                pages,
+                &mut track.cursor,
+                metric.last_line_extent,
+                track.geom,
+                block_exclusions.active_bands(),
+            );
+        }
+    }
+    block_projection.mark_pending(input.block_index);
+    block_cursor.begin(input.block_index, input.item_index);
+}
+
 impl PaginationPlan {
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -1026,41 +1077,21 @@ fn paginate_with_state(
                 index: block_index,
                 pagination,
             } => {
-                let cursor = &mut active_track.cursor;
-                block_exclusions.begin_block(pagination);
-                block_projection.record_pending_page(pages.len().saturating_sub(1));
-                if let Some(metric) = context.block_metric {
-                    if pagination.keep_next {
-                        if let Some(height) = keep_next_chain_height(
-                            item_index,
-                            &plan.block_metrics,
-                            &plan.columns_by_item,
-                        ) {
-                            move_to_fresh_column_for_required_height(
-                                &mut pages,
-                                cursor,
-                                height,
-                                active_geom,
-                                block_exclusions.active_bands(),
-                            );
-                        }
-                    }
-                    let keep_whole_paragraph = pagination.keep_lines
-                        || (pagination.widow_control
-                            && metric.line_heights.len() <= 3
-                            && metric.last_line_extent <= active_geom.bottom() - active_geom.top());
-                    if keep_whole_paragraph {
-                        move_to_fresh_column_for_required_height(
-                            &mut pages,
-                            cursor,
-                            metric.last_line_extent,
-                            active_geom,
-                            block_exclusions.active_bands(),
-                        );
-                    }
-                }
-                block_projection.mark_pending(block_index);
-                block_cursor.begin(block_index, item_index);
+                admit_block_start(
+                    &mut pages,
+                    &mut active_track,
+                    &mut block_projection,
+                    &mut block_cursor,
+                    &mut block_exclusions,
+                    BlockStartAdmission {
+                        item_index,
+                        block_index,
+                        pagination,
+                        metric: context.block_metric,
+                        block_metrics: &plan.block_metrics,
+                        columns_by_item: &plan.columns_by_item,
+                    },
+                );
             }
             FlowItem::PaginationBoundary => {
                 block_projection.record_pending_page(pages.len().saturating_sub(1));
@@ -2040,6 +2071,78 @@ mod tests {
         assert!(state.deferred_top_bottom_bands.is_empty());
         assert!(!state.previous_keep_next);
         assert!(!state.defer_current_top_bottom_bands);
+    }
+
+    #[test]
+    fn block_start_admission_moves_keep_chain_and_initializes_owners() {
+        let geom = Geom::from_section(&SectionSetup {
+            page: PageSetup {
+                width_pt: 200.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        });
+        let pagination = PaginationHint {
+            keep_next: true,
+            ..PaginationHint::default()
+        };
+        let metrics = vec![
+            Some(BlockPaginationMetrics {
+                pagination,
+                next_start: Some(2),
+                line_heights: vec![30.0],
+                first_line_extent: 30.0,
+                last_line_extent: 30.0,
+                total_height: 30.0,
+                is_paragraph: true,
+            }),
+            None,
+            Some(BlockPaginationMetrics {
+                pagination: PaginationHint::default(),
+                next_start: None,
+                line_heights: vec![20.0],
+                first_line_extent: 20.0,
+                last_line_extent: 20.0,
+                total_height: 20.0,
+                is_paragraph: true,
+            }),
+        ];
+        let columns = vec![Some(1); metrics.len()];
+        let mut pages: Pages = vec![Vec::new()];
+        let mut track = ActivePlacementTrack::new(geom, Some(1), None, None, false);
+        track.cursor.y = 40.0;
+        track.cursor.column_nonempty = true;
+        let mut projection = BlockProjectionState::default();
+        projection.mark_pending(5);
+        let mut cursor = BlockPlacementCursor::default();
+        let mut exclusions = BlockExclusionState::default();
+
+        admit_block_start(
+            &mut pages,
+            &mut track,
+            &mut projection,
+            &mut cursor,
+            &mut exclusions,
+            BlockStartAdmission {
+                item_index: 0,
+                block_index: 7,
+                pagination,
+                metric: metrics[0].as_ref(),
+                block_metrics: &metrics,
+                columns_by_item: &columns,
+            },
+        );
+
+        assert_eq!(pages.len(), 2);
+        assert_eq!(track.cursor.y, geom.top());
+        assert_eq!(projection.block_pages.get(&5), Some(&0));
+        assert_eq!(projection.pending_block, Some(7));
+        assert_eq!(cursor.current_block, Some(7));
+        assert_eq!(cursor.current_block_start, Some(0));
+        assert!(exclusions.previous_keep_next);
+        assert!(exclusions.defer_current_top_bottom_bands);
     }
 
     #[test]
