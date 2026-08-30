@@ -5686,31 +5686,27 @@ fn push_pdf_rect_clip(surface: &mut Surface<'_>, rect: SceneRect) -> bool {
     true
 }
 
-fn fill_circle_color(surface: &mut Surface<'_>, cx: f32, cy: f32, radius: f32, color: rgb::Color) {
+fn fill_circle_color(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    color: rgb::Color,
+) -> Result<()> {
     if radius <= 0.0 {
-        return;
+        return Ok(());
     }
-    let mut pb = PathBuilder::new();
     let steps = 28usize;
-    for step in 0..=steps {
-        let angle = std::f32::consts::TAU * step as f32 / steps as f32;
-        let x = cx + radius * angle.cos();
-        let y = cy + radius * angle.sin();
-        if step == 0 {
-            pb.move_to(x, y);
-        } else {
-            pb.line_to(x, y);
-        }
-    }
-    pb.close();
-    if let Some(path) = pb.finish() {
-        surface.set_fill(Some(Fill {
-            paint: color.into(),
-            rule: FillRule::NonZero,
-            opacity: NormalizedF32::ONE,
-        }));
-        surface.draw_path(&path);
-    }
+    project_and_replay_page_scene_fill_polygon_iter(
+        surface,
+        scene,
+        (0..=steps).map(move |step| {
+            let angle = std::f32::consts::TAU * step as f32 / steps as f32;
+            (cx + radius * angle.cos(), cy + radius * angle.sin())
+        }),
+        color,
+    )
 }
 
 fn fill_triangle_color(
@@ -5757,15 +5753,14 @@ fn fill_polygon_color(surface: &mut Surface<'_>, points: &[ScenePoint], color: r
 
 fn fill_chart_bar_shape(
     surface: &mut Surface<'_>,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    scene: &mut PageScene,
+    rect: ChartRect,
     shape: ChartShape,
     color: rgb::Color,
-) {
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
     if w <= 0.0 || h <= 0.0 {
-        return;
+        return Ok(());
     }
     match shape {
         ChartShape::Cylinder => {
@@ -5778,8 +5773,8 @@ fn fill_chart_bar_shape(
                 h,
                 color,
             );
-            fill_circle_color(surface, x + radius, y + h * 0.5, radius, color);
-            fill_circle_color(surface, x + w - radius, y + h * 0.5, radius, color);
+            fill_circle_color(surface, scene, x + radius, y + h * 0.5, radius, color)?;
+            fill_circle_color(surface, scene, x + w - radius, y + h * 0.5, radius, color)?;
         }
         ChartShape::Cone
         | ChartShape::ConeToMax
@@ -5789,19 +5784,19 @@ fn fill_chart_bar_shape(
         }
         ChartShape::Box => fill_rect_color(surface, x, y, w, h, color),
     }
+    Ok(())
 }
 
 fn fill_chart_column_shape(
     surface: &mut Surface<'_>,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    scene: &mut PageScene,
+    rect: ChartRect,
     shape: ChartShape,
     color: rgb::Color,
-) {
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
     if w <= 0.0 || h <= 0.0 {
-        return;
+        return Ok(());
     }
     match shape {
         ChartShape::Cylinder => {
@@ -5814,8 +5809,8 @@ fn fill_chart_column_shape(
                 (h - radius).max(1.0),
                 color,
             );
-            fill_circle_color(surface, x + w * 0.5, y + radius, radius, color);
-            fill_circle_color(surface, x + w * 0.5, y + h - radius, radius, color);
+            fill_circle_color(surface, scene, x + w * 0.5, y + radius, radius, color)?;
+            fill_circle_color(surface, scene, x + w * 0.5, y + h - radius, radius, color)?;
         }
         ChartShape::Cone
         | ChartShape::ConeToMax
@@ -5825,6 +5820,7 @@ fn fill_chart_column_shape(
         }
         ChartShape::Box => fill_rect_color(surface, x, y, w, h, color),
     }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -7284,9 +7280,17 @@ fn draw_treemap_chart(
     Ok(())
 }
 
-fn draw_sunburst_chart(surface: &mut Surface<'_>, chart: &Chart, x: f32, y: f32, w: f32, h: f32) {
+fn draw_sunburst_chart(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    chart: &Chart,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+) -> Result<()> {
     let Some(series) = chart.series.first() else {
-        return;
+        return Ok(());
     };
     let values = chart
         .categories
@@ -7303,18 +7307,19 @@ fn draw_sunburst_chart(surface: &mut Surface<'_>, chart: &Chart, x: f32, y: f32,
         .collect::<Vec<_>>();
     let total: f64 = values.iter().sum();
     if total <= 0.0 {
-        return;
+        return Ok(());
     }
     let radius = (w.min(h) * 0.44).max(1.0);
     let cx = x + w * 0.5;
     let cy = y + h * 0.5;
     fill_circle_color(
         surface,
+        scene,
         cx,
         cy,
         radius * 0.38,
         rgb::Color::new(0xD8, 0xDF, 0xE7),
-    );
+    )?;
     let mut angle = -std::f32::consts::FRAC_PI_2;
     for (index, value) in values.iter().enumerate() {
         if *value <= 0.0 {
@@ -7347,6 +7352,7 @@ fn draw_sunburst_chart(surface: &mut Surface<'_>, chart: &Chart, x: f32, y: f32,
         );
         angle += sweep;
     }
+    Ok(())
 }
 
 fn draw_box_whisker_chart(
@@ -7792,7 +7798,7 @@ fn draw_authored_chart(
     }
 
     if chart.kind == ChartKind::Sunburst {
-        draw_sunburst_chart(surface, chart, plot_left, plot_top, plot_w, plot_h);
+        draw_sunburst_chart(surface, scene, chart, plot_left, plot_top, plot_w, plot_h)?;
         return Ok(());
     }
 
@@ -7958,13 +7964,16 @@ fn draw_authored_chart(
                     ) {
                         fill_chart_bar_shape(
                             surface,
-                            segment_left,
-                            bar_top,
-                            (segment_right - segment_left).max(1.0),
-                            bar_h,
+                            scene,
+                            ChartRect {
+                                x: segment_left,
+                                y: bar_top,
+                                w: (segment_right - segment_left).max(1.0),
+                                h: bar_h,
+                            },
                             chart.shape,
                             color,
-                        );
+                        )?;
                     } else {
                         project_and_replay_page_scene_fill_rect(
                             surface,
@@ -8054,13 +8063,16 @@ fn draw_authored_chart(
                     if chart.kind == ChartKind::Bar3D {
                         fill_chart_bar_shape(
                             surface,
-                            bar_left,
-                            bar_top,
-                            bar_width,
-                            bar_h,
+                            scene,
+                            ChartRect {
+                                x: bar_left,
+                                y: bar_top,
+                                w: bar_width,
+                                h: bar_h,
+                            },
                             chart.shape,
                             color,
-                        );
+                        )?;
                     } else {
                         project_and_replay_page_scene_fill_rect(
                             surface, scene, bar_left, bar_top, bar_width, bar_h, color,
@@ -8186,13 +8198,16 @@ fn draw_authored_chart(
                             ) {
                                 fill_chart_column_shape(
                                     surface,
-                                    column_left,
-                                    segment_top,
-                                    column_w,
-                                    (segment_bottom - segment_top).max(1.0),
+                                    scene,
+                                    ChartRect {
+                                        x: column_left,
+                                        y: segment_top,
+                                        w: column_w,
+                                        h: (segment_bottom - segment_top).max(1.0),
+                                    },
                                     chart.shape,
                                     color,
-                                );
+                                )?;
                             } else {
                                 project_and_replay_page_scene_fill_rect(
                                     surface,
@@ -8228,13 +8243,16 @@ fn draw_authored_chart(
                             if chart.kind == ChartKind::Column3D {
                                 fill_chart_column_shape(
                                     surface,
-                                    column_left,
-                                    column_top,
-                                    column_w,
-                                    column_h,
+                                    scene,
+                                    ChartRect {
+                                        x: column_left,
+                                        y: column_top,
+                                        w: column_w,
+                                        h: column_h,
+                                    },
                                     chart.shape,
                                     color,
-                                );
+                                )?;
                             } else {
                                 project_and_replay_page_scene_fill_rect(
                                     surface,
@@ -8527,7 +8545,7 @@ fn draw_authored_chart(
                             let point_y = value_y(value).clamp(plot_top, plot_bottom);
                             let radius = ((size / max_bubble_size).sqrt() as f32 * max_radius)
                                 .clamp(2.5, max_radius);
-                            fill_circle_color(surface, point_x, point_y, radius, color);
+                            fill_circle_color(surface, scene, point_x, point_y, radius, color)?;
                         }
                     }
                 }
@@ -14275,6 +14293,129 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "render failed: page scene exceeds the 3-path-point limit"
+        );
+        assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn bubble_circles_enter_the_scene_before_the_legend() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Bubble,
+            categories: vec!["Small".to_string(), "Large".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![0.0, 10.0],
+                bubble_sizes: vec![1.0, 4.0],
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        assert_eq!(scene.operations.len(), 15);
+        let expected = [
+            [
+                (150.5, 164.0),
+                (143.5, 171.0),
+                (136.5, 164.0),
+                (143.5, 157.0),
+            ],
+            [(260.5, 28.0), (246.5, 42.0), (232.5, 28.0), (246.5, 14.0)],
+        ];
+        for (operation, cardinal_points) in scene.operations[12..14].iter().zip(expected) {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("bubble must be a sampled polygon: {operation:?}");
+            };
+            assert_eq!(points.len(), 29);
+            for (point_index, (x, y)) in [0, 7, 14, 21].into_iter().zip(cardinal_points) {
+                assert_close(points[point_index].x, x);
+                assert_close(points[point_index].y, y);
+            }
+            assert_close(points[28].x, points[0].x);
+            assert_close(points[28].y, points[0].y);
+            assert_eq!(*color, super::chart_series_color(0));
+        }
+        assert_eq!(
+            scene.operations[14],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap(),
+                color: super::chart_series_color(0),
+            }
+        );
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn circle_sampling_is_finite_and_path_point_bounded() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::with_path_point_limit(29);
+
+        super::fill_circle_color(&mut surface, &mut scene, 20.0, 20.0, 0.0, color)
+            .expect("zero-radius circle is ignored");
+        super::fill_circle_color(&mut surface, &mut scene, 20.0, 20.0, f32::NAN, color)
+            .expect("non-finite circle is ignored");
+        assert!(scene.operations.is_empty());
+        assert_eq!(scene.path_point_count, 0);
+
+        super::fill_circle_color(&mut surface, &mut scene, 20.0, 20.0, 5.0, color)
+            .expect("one sampled circle fits the exact point budget");
+        assert_eq!(scene.path_point_count, 29);
+        let super::PageSceneOp::FillPolygon {
+            points,
+            color: actual_color,
+        } = &scene.operations[0]
+        else {
+            panic!(
+                "circle must project as a polygon: {:?}",
+                scene.operations[0]
+            );
+        };
+        assert_eq!(points.len(), 29);
+        assert_eq!(*actual_color, color);
+
+        let unchanged = (scene.operations.len(), scene.path_point_count);
+        let error = super::fill_circle_color(&mut surface, &mut scene, 20.0, 20.0, 5.0, color)
+            .expect_err("point ceiling rejects another circle");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 29-path-point limit"
         );
         assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
 
