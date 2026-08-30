@@ -29,6 +29,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use krilla::action::LinkAction;
 use krilla::annotation::{Annotation, LinkAnnotation, Target};
@@ -162,6 +163,7 @@ const MAX_SECTION_COLUMNS: usize = 64;
 const MAX_TARGET_COLUMN_REWRAP_PASSES: usize = 4;
 const MAX_PAGE_SCENE_OPERATIONS: usize = 262_144;
 const MAX_PAGE_SCENE_LINKS: usize = 16_384;
+const MAX_PAGE_SCENE_IMAGE_RESOURCES: usize = 4_096;
 // Keep hostile numeric attributes away from PDF-coordinate overflow while
 // leaving every practical document value untouched.
 const MAX_ABSOLUTE_LINE_HEIGHT_PT: f32 = 1_000_000.0;
@@ -350,6 +352,96 @@ impl LinkClip {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SceneImageEncoding {
+    Png,
+    Jpeg,
+    Gif,
+    Webp,
+    Rgba8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SceneImageResource {
+    encoding: SceneImageEncoding,
+    bytes: Arc<Vec<u8>>,
+    width_px: u32,
+    height_px: u32,
+}
+
+impl SceneImageResource {
+    fn shares_source_with(&self, other: &Self) -> bool {
+        self.encoding == other.encoding
+            && self.width_px == other.width_px
+            && self.height_px == other.height_px
+            && Arc::ptr_eq(&self.bytes, &other.bytes)
+    }
+
+    fn is_valid(&self) -> bool {
+        !self.bytes.is_empty() && self.width_px > 0 && self.height_px > 0
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SceneImageId(usize);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SceneTransform {
+    sx: f32,
+    ky: f32,
+    kx: f32,
+    sy: f32,
+    tx: f32,
+    ty: f32,
+}
+
+impl SceneTransform {
+    fn from_row(sx: f32, ky: f32, kx: f32, sy: f32, tx: f32, ty: f32) -> Self {
+        Self {
+            sx,
+            ky,
+            kx,
+            sy,
+            tx,
+            ty,
+        }
+    }
+
+    fn from_translate(tx: f32, ty: f32) -> Self {
+        Self::from_row(1.0, 0.0, 0.0, 1.0, tx, ty)
+    }
+
+    fn is_finite(self) -> bool {
+        [self.sx, self.ky, self.kx, self.sy, self.tx, self.ty]
+            .into_iter()
+            .all(f32::is_finite)
+    }
+
+    fn sx(self) -> f32 {
+        self.sx
+    }
+
+    fn ky(self) -> f32 {
+        self.ky
+    }
+
+    fn kx(self) -> f32 {
+        self.kx
+    }
+
+    fn sy(self) -> f32 {
+        self.sy
+    }
+
+    fn tx(self) -> f32 {
+        self.tx
+    }
+
+    fn ty(self) -> f32 {
+        self.ty
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum PageSceneOp {
     FillRect {
@@ -360,6 +452,12 @@ enum PageSceneOp {
         rect: SceneLinkRect,
         target: Rc<str>,
     },
+    Image {
+        resource: SceneImageId,
+        width: f32,
+        height: f32,
+        transform: SceneTransform,
+    },
 }
 
 struct PageScene {
@@ -367,6 +465,8 @@ struct PageScene {
     operation_limit: usize,
     link_count: usize,
     link_limit: usize,
+    image_resources: Vec<SceneImageResource>,
+    image_limit: usize,
 }
 
 impl Default for PageScene {
@@ -376,6 +476,8 @@ impl Default for PageScene {
             operation_limit: MAX_PAGE_SCENE_OPERATIONS,
             link_count: 0,
             link_limit: MAX_PAGE_SCENE_LINKS,
+            image_resources: Vec::new(),
+            image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
         }
     }
 }
@@ -388,6 +490,8 @@ impl PageScene {
             operation_limit,
             link_count: 0,
             link_limit: MAX_PAGE_SCENE_LINKS,
+            image_resources: Vec::new(),
+            image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
         }
     }
 
@@ -398,6 +502,20 @@ impl PageScene {
             operation_limit,
             link_count: 0,
             link_limit,
+            image_resources: Vec::new(),
+            image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_image_limit(image_limit: usize) -> Self {
+        Self {
+            operations: Vec::new(),
+            operation_limit: MAX_PAGE_SCENE_OPERATIONS,
+            link_count: 0,
+            link_limit: MAX_PAGE_SCENE_LINKS,
+            image_resources: Vec::new(),
+            image_limit,
         }
     }
 
@@ -439,6 +557,56 @@ impl PageScene {
         self.push_operation(PageSceneOp::Link { rect, target })?;
         self.link_count += 1;
         Ok(())
+    }
+
+    fn push_image(
+        &mut self,
+        resource: SceneImageResource,
+        width: f32,
+        height: f32,
+        transform: SceneTransform,
+    ) -> Result<Option<usize>> {
+        if !resource.is_valid()
+            || !width.is_finite()
+            || !height.is_finite()
+            || width <= 0.0
+            || height <= 0.0
+            || !transform.is_finite()
+        {
+            return Ok(None);
+        }
+        if self.operations.len() >= self.operation_limit {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-operation limit",
+                self.operation_limit
+            )));
+        }
+        let existing = self
+            .image_resources
+            .iter()
+            .position(|candidate| candidate.shares_source_with(&resource));
+        let resource_id = match existing {
+            Some(index) => SceneImageId(index),
+            None => {
+                if self.image_resources.len() >= self.image_limit {
+                    return Err(Error::Render(format!(
+                        "page scene exceeds the {}-image-resource limit",
+                        self.image_limit
+                    )));
+                }
+                let id = SceneImageId(self.image_resources.len());
+                self.image_resources.push(resource);
+                id
+            }
+        };
+        let operation_index = self.operations.len();
+        self.operations.push(PageSceneOp::Image {
+            resource: resource_id,
+            width,
+            height,
+            transform,
+        });
+        Ok(Some(operation_index))
     }
 }
 
@@ -705,9 +873,15 @@ struct ImageLayout {
 }
 
 #[derive(Clone)]
+struct RenderImage {
+    scene: SceneImageResource,
+    pdf: PdfImage,
+}
+
+#[derive(Clone)]
 enum CellVisual {
     Picture {
-        image: PdfImage,
+        image: RenderImage,
         layout: ImageLayout,
     },
     Chart {
@@ -772,7 +946,7 @@ enum FlowItem {
         header_rows: usize,
     },
     Picture {
-        image: PdfImage,
+        image: RenderImage,
         layout: ImageLayout,
     },
     Chart {
@@ -844,30 +1018,42 @@ enum ShapeAxis {
     Vertical,
 }
 
-/// Decode embedded image bytes into a krilla raster image, by MIME when known and
-/// otherwise by magic-byte sniffing. Returns the image and its pixel dimensions,
-/// or `None` for an unrecognized/undecodable format (so the renderer skips it
-/// rather than panicking).
-fn decode_image(bytes: &[u8], mime: Option<&str>) -> Option<(PdfImage, u32, u32)> {
-    let data: Data = bytes.to_vec().into();
+/// Decode embedded image bytes into a neutral scene resource plus the current PDF
+/// backend handle, by MIME when known and otherwise by magic-byte sniffing.
+fn decode_image(bytes: &[u8], mime: Option<&str>) -> Option<(RenderImage, u32, u32)> {
     let is_webp = bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP";
-    let img = match mime {
-        Some("image/png") => PdfImage::from_png(data, false),
-        Some("image/jpeg") => PdfImage::from_jpeg(data, false),
-        Some("image/gif") => PdfImage::from_gif(data, false),
-        Some("image/webp") => PdfImage::from_webp(data, false),
-        _ if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) => PdfImage::from_png(data, false),
-        _ if bytes.starts_with(&[0xFF, 0xD8]) => PdfImage::from_jpeg(data, false),
-        _ if bytes.starts_with(b"GIF8") => PdfImage::from_gif(data, false),
-        _ if is_webp => PdfImage::from_webp(data, false),
+    let encoding = match mime {
+        Some("image/png") => SceneImageEncoding::Png,
+        Some("image/jpeg") => SceneImageEncoding::Jpeg,
+        Some("image/gif") => SceneImageEncoding::Gif,
+        Some("image/webp") => SceneImageEncoding::Webp,
+        _ if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) => SceneImageEncoding::Png,
+        _ if bytes.starts_with(&[0xFF, 0xD8]) => SceneImageEncoding::Jpeg,
+        _ if bytes.starts_with(b"GIF8") => SceneImageEncoding::Gif,
+        _ if is_webp => SceneImageEncoding::Webp,
         _ => return None,
+    };
+    let bytes = Arc::new(bytes.to_vec());
+    let data: Data = bytes.clone().into();
+    let pdf = match encoding {
+        SceneImageEncoding::Png => PdfImage::from_png(data, false),
+        SceneImageEncoding::Jpeg => PdfImage::from_jpeg(data, false),
+        SceneImageEncoding::Gif => PdfImage::from_gif(data, false),
+        SceneImageEncoding::Webp => PdfImage::from_webp(data, false),
+        SceneImageEncoding::Rgba8 => return None,
     }
     .ok()?;
-    let (w, h) = img.size();
-    Some((img, w, h))
+    let (width_px, height_px) = pdf.size();
+    let scene = SceneImageResource {
+        encoding,
+        bytes,
+        width_px,
+        height_px,
+    };
+    Some((RenderImage { scene, pdf }, width_px, height_px))
 }
 
-fn decode_model_image(img: &Image) -> Option<(PdfImage, u32, u32)> {
+fn decode_model_image(img: &Image) -> Option<(RenderImage, u32, u32)> {
     let bytes = img.bytes.as_ref()?;
     if img.mime.as_deref() == Some(crate::image::MIME_RAW_RGBA) {
         let (width, height) = (img.width_px?, img.height_px?);
@@ -877,11 +1063,14 @@ fn decode_model_image(img: &Image) -> Option<(PdfImage, u32, u32)> {
         if bytes.len() != expected {
             return None;
         }
-        return Some((
-            PdfImage::from_rgba8(bytes.clone(), width, height),
-            width,
-            height,
-        ));
+        let scene = SceneImageResource {
+            encoding: SceneImageEncoding::Rgba8,
+            bytes: Arc::new(bytes.clone()),
+            width_px: width,
+            height_px: height,
+        };
+        let pdf = PdfImage::from_rgba8(bytes.clone(), width, height);
+        return Some((RenderImage { scene, pdf }, width, height));
     }
     decode_image(bytes, img.mime.as_deref())
 }
@@ -948,16 +1137,16 @@ fn image_layout(
     })
 }
 
-fn image_paint_transform(layout: ImageLayout, bounds_x: f32, bounds_y: f32) -> Transform {
+fn image_paint_transform(layout: ImageLayout, bounds_x: f32, bounds_y: f32) -> SceneTransform {
     if layout.rotation_degrees == 0 {
-        return Transform::from_translate(bounds_x, bounds_y);
+        return SceneTransform::from_translate(bounds_x, bounds_y);
     }
     let (cos, sin) = clockwise_rotation_components(layout.rotation_degrees);
     let center_x = bounds_x + layout.bounds_w * 0.5;
     let center_y = bounds_y + layout.bounds_h * 0.5;
     let image_center_x = layout.image_w * 0.5;
     let image_center_y = layout.image_h * 0.5;
-    Transform::from_row(
+    SceneTransform::from_row(
         cos,
         sin,
         -sin,
@@ -4349,7 +4538,7 @@ enum RunningSurfaceItem {
     Gap(f32),
     Line(LineLayout),
     Picture {
-        image: PdfImage,
+        image: RenderImage,
         layout: ImageLayout,
     },
     Chart {
@@ -4620,10 +4809,8 @@ fn draw_running_surface_items(
                     break;
                 };
                 let bounds_x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
-                if let Some(size) = Size::from_wh(layout.image_w, layout.image_h) {
-                    surface.push_transform(&image_paint_transform(layout, bounds_x, y));
-                    surface.draw_image(image, size);
-                    surface.pop();
+                if project_and_replay_page_scene_image(surface, scene, image, layout, bounds_x, y)?
+                {
                     y += layout.bounds_h;
                 }
             }
@@ -5630,9 +5817,66 @@ fn replay_page_scene_operations(
             PageSceneOp::FillRect { rect, color } => {
                 fill_rect_color(surface, rect.x, rect.y, rect.width, rect.height, *color)
             }
-            PageSceneOp::Link { .. } => {}
+            PageSceneOp::Link { .. } | PageSceneOp::Image { .. } => {}
         }
     }
+}
+
+fn replay_page_scene_image(
+    surface: &mut Surface<'_>,
+    scene: &PageScene,
+    operation_index: usize,
+    image: PdfImage,
+) -> bool {
+    let Some(PageSceneOp::Image {
+        width,
+        height,
+        transform,
+        ..
+    }) = scene.operations.get(operation_index)
+    else {
+        return false;
+    };
+    let Some(size) = Size::from_wh(*width, *height) else {
+        return false;
+    };
+    surface.push_transform(&Transform::from_row(
+        transform.sx(),
+        transform.ky(),
+        transform.kx(),
+        transform.sy(),
+        transform.tx(),
+        transform.ty(),
+    ));
+    surface.draw_image(image, size);
+    surface.pop();
+    true
+}
+
+fn project_and_replay_page_scene_image(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    image: RenderImage,
+    layout: ImageLayout,
+    bounds_x: f32,
+    bounds_y: f32,
+) -> Result<bool> {
+    let RenderImage {
+        scene: resource,
+        pdf,
+    } = image;
+    let transform = image_paint_transform(layout, bounds_x, bounds_y);
+    let Some(operation_index) =
+        scene.push_image(resource, layout.image_w, layout.image_h, transform)?
+    else {
+        return Ok(false);
+    };
+    Ok(replay_page_scene_image(
+        surface,
+        scene,
+        operation_index,
+        pdf,
+    ))
 }
 
 fn replay_page_scene_annotations(page: &mut Page<'_>, scene: &PageScene) {
@@ -5758,11 +6002,7 @@ fn draw_table_cell_content(
                 let x = placement.x
                     + cell.insets.left
                     + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
-                if let Some(size) = Size::from_wh(layout.image_w, layout.image_h) {
-                    surface.push_transform(&image_paint_transform(layout, x, line_top));
-                    surface.draw_image(image, size);
-                    surface.pop();
-                }
+                project_and_replay_page_scene_image(surface, scene, image, layout, x, line_top)?;
             }
             Some(CellVisual::Chart {
                 chart,
@@ -10190,11 +10430,14 @@ fn render_pdf(
                     let bounds_x = page_geom.left
                         + column_x
                         + ((placed.width - layout.bounds_w) * 0.5).max(0.0);
-                    if let Some(sz) = Size::from_wh(layout.image_w, layout.image_h) {
-                        surface.push_transform(&image_paint_transform(layout, bounds_x, top));
-                        surface.draw_image(image, sz);
-                        surface.pop();
-                    }
+                    project_and_replay_page_scene_image(
+                        &mut surface,
+                        &mut page_scene,
+                        image,
+                        layout,
+                        bounds_x,
+                        top,
+                    )?;
                 }
                 FlowItem::Chart { chart, w, h } => {
                     let x = page_geom.left + column_x + ((placed.width - w) * 0.5).max(0.0);
@@ -10772,6 +11015,114 @@ mod tests {
         assert_close(top_right.1, 170.0);
         assert_close(bottom_left.0, 10.0);
         assert_close(bottom_left.1, 20.0);
+    }
+
+    #[test]
+    fn image_scene_projection_keeps_neutral_resources_order_and_limits() {
+        let bytes = vec![0x10, 0x20, 0x30, 0xFF, 0x40, 0x50, 0x60, 0xFF];
+        let image = Image {
+            bytes: Some(bytes.clone()),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(2),
+            height_px: Some(1),
+            ..Image::default()
+        };
+        let (image, width_px, height_px) =
+            super::decode_model_image(&image).expect("valid raw image decodes");
+        assert_eq!((width_px, height_px), (2, 1));
+        assert_eq!(image.scene.encoding, super::SceneImageEncoding::Rgba8);
+        assert_eq!(image.scene.bytes.as_slice(), bytes.as_slice());
+        assert_eq!((image.scene.width_px, image.scene.height_px), (2, 1));
+
+        let transform = super::SceneTransform::from_row(0.0, 1.0, -1.0, 0.0, 8.0, 9.0);
+        let mut scene = super::PageScene::default();
+        let first = scene
+            .push_image(image.scene.clone(), 1.5, 0.75, transform)
+            .expect("bounded image projects")
+            .expect("valid image produces an operation");
+        let second = scene
+            .push_image(
+                image.scene.clone(),
+                3.0,
+                1.5,
+                super::SceneTransform::from_translate(10.0, 20.0),
+            )
+            .expect("reused image projects")
+            .expect("valid image produces an operation");
+
+        assert_eq!((first, second), (0, 1));
+        assert_eq!(scene.image_resources, vec![image.scene.clone()]);
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::Image {
+                    resource: super::SceneImageId(0),
+                    width: 1.5,
+                    height: 0.75,
+                    transform,
+                },
+                super::PageSceneOp::Image {
+                    resource: super::SceneImageId(0),
+                    width: 3.0,
+                    height: 1.5,
+                    transform: super::SceneTransform::from_translate(10.0, 20.0),
+                },
+            ]
+        );
+
+        let unchanged = (scene.operations.len(), scene.image_resources.len());
+        scene
+            .push_image(
+                image.scene.clone(),
+                f32::NAN,
+                1.0,
+                super::SceneTransform::from_translate(0.0, 0.0),
+            )
+            .expect("invalid geometry is ignored");
+        scene
+            .push_image(
+                image.scene.clone(),
+                1.0,
+                1.0,
+                super::SceneTransform::from_translate(f32::INFINITY, 0.0),
+            )
+            .expect("invalid transforms are ignored");
+        assert_eq!(
+            (scene.operations.len(), scene.image_resources.len()),
+            unchanged
+        );
+
+        let mut operation_limited = super::PageScene::with_operation_limit(0);
+        let error = operation_limited
+            .push_image(
+                image.scene.clone(),
+                1.0,
+                1.0,
+                super::SceneTransform::from_translate(0.0, 0.0),
+            )
+            .expect_err("operation ceiling rejects image");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(operation_limited.operations.is_empty());
+        assert!(operation_limited.image_resources.is_empty());
+
+        let mut resource_limited = super::PageScene::with_image_limit(0);
+        let error = resource_limited
+            .push_image(
+                image.scene,
+                1.0,
+                1.0,
+                super::SceneTransform::from_translate(0.0, 0.0),
+            )
+            .expect_err("resource ceiling rejects image");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-image-resource limit"
+        );
+        assert!(resource_limited.operations.is_empty());
+        assert!(resource_limited.image_resources.is_empty());
     }
 
     #[test]
