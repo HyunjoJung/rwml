@@ -6798,34 +6798,41 @@ struct ChartRect {
     h: f32,
 }
 
-fn fill_pie_slice(
-    surface: &mut Surface<'_>,
+#[derive(Clone, Copy)]
+struct PieSlice {
     cx: f32,
     cy: f32,
     radius: f32,
     start_angle: f32,
     sweep: f32,
+}
+
+fn fill_pie_slice(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    slice: PieSlice,
     color: rgb::Color,
-) {
+) -> Result<()> {
+    let PieSlice {
+        cx,
+        cy,
+        radius,
+        start_angle,
+        sweep,
+    } = slice;
     if radius <= 0.0 || sweep.abs() <= 0.0001 {
-        return;
+        return Ok(());
     }
     let steps = ((sweep.abs() / (std::f32::consts::PI / 24.0)).ceil() as usize).clamp(2, 96);
-    let mut pb = PathBuilder::new();
-    pb.move_to(cx, cy);
-    for step in 0..=steps {
-        let angle = start_angle + sweep * step as f32 / steps as f32;
-        pb.line_to(cx + angle.cos() * radius, cy + angle.sin() * radius);
-    }
-    pb.close();
-    if let Some(path) = pb.finish() {
-        surface.set_fill(Some(Fill {
-            paint: color.into(),
-            rule: FillRule::NonZero,
-            opacity: NormalizedF32::ONE,
-        }));
-        surface.draw_path(&path);
-    }
+    project_and_replay_page_scene_fill_polygon_iter(
+        surface,
+        scene,
+        std::iter::once((cx, cy)).chain((0..=steps).map(move |step| {
+            let angle = start_angle + sweep * step as f32 / steps as f32;
+            (cx + angle.cos() * radius, cy + angle.sin() * radius)
+        })),
+        color,
+    )
 }
 
 /// An annular sector (ring slice): center, inner/outer radii, and the start angle
@@ -6840,7 +6847,12 @@ struct RingSlice {
     sweep: f32,
 }
 
-fn fill_ring_slice(surface: &mut Surface<'_>, ring: RingSlice, color: rgb::Color) {
+fn fill_ring_slice(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    ring: RingSlice,
+    color: rgb::Color,
+) -> Result<()> {
     let RingSlice {
         cx,
         cy,
@@ -6850,47 +6862,36 @@ fn fill_ring_slice(surface: &mut Surface<'_>, ring: RingSlice, color: rgb::Color
         sweep,
     } = ring;
     if outer_radius <= inner_radius || sweep.abs() <= 0.0001 {
-        return;
+        return Ok(());
     }
     let steps = ((sweep.abs() / (std::f32::consts::PI / 24.0)).ceil() as usize).clamp(2, 96);
-    let mut pb = PathBuilder::new();
-    for step in 0..=steps {
+    let outer = (0..=steps).map(move |step| {
         let angle = start_angle + sweep * step as f32 / steps as f32;
-        let x = cx + angle.cos() * outer_radius;
-        let y = cy + angle.sin() * outer_radius;
-        if step == 0 {
-            pb.move_to(x, y);
-        } else {
-            pb.line_to(x, y);
-        }
-    }
-    for step in (0..=steps).rev() {
+        (
+            cx + angle.cos() * outer_radius,
+            cy + angle.sin() * outer_radius,
+        )
+    });
+    let inner = (0..=steps).rev().map(move |step| {
         let angle = start_angle + sweep * step as f32 / steps as f32;
-        pb.line_to(
+        (
             cx + angle.cos() * inner_radius,
             cy + angle.sin() * inner_radius,
-        );
-    }
-    pb.close();
-    if let Some(path) = pb.finish() {
-        surface.set_fill(Some(Fill {
-            paint: color.into(),
-            rule: FillRule::NonZero,
-            opacity: NormalizedF32::ONE,
-        }));
-        surface.draw_path(&path);
-    }
+        )
+    });
+    project_and_replay_page_scene_fill_polygon_iter(surface, scene, outer.chain(inner), color)
 }
 
 fn draw_pie_chart(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     chart: &Chart,
     rect: ChartRect,
     doughnut: bool,
     exploded: bool,
-) {
+) -> Result<()> {
     let Some(series) = chart.series.first() else {
-        return;
+        return Ok(());
     };
     let values = chart
         .categories
@@ -6907,7 +6908,7 @@ fn draw_pie_chart(
         .collect::<Vec<_>>();
     let total: f64 = values.iter().sum();
     if total <= 0.0 {
-        return;
+        return Ok(());
     }
     let radius = (rect.w.min(rect.h) * 0.42).max(1.0);
     let cx = rect.x + rect.w * 0.5;
@@ -6924,26 +6925,33 @@ fn draw_pie_chart(
         let slice_cy = cy + mid_angle.sin() * explosion;
         fill_pie_slice(
             surface,
-            slice_cx,
-            slice_cy,
-            radius,
-            angle,
-            sweep,
+            scene,
+            PieSlice {
+                cx: slice_cx,
+                cy: slice_cy,
+                radius,
+                start_angle: angle,
+                sweep,
+            },
             chart_series_color(index),
-        );
+        )?;
         angle += sweep;
     }
     if doughnut {
         fill_pie_slice(
             surface,
-            cx,
-            cy,
-            radius * 0.52,
-            -std::f32::consts::FRAC_PI_2,
-            std::f32::consts::TAU,
+            scene,
+            PieSlice {
+                cx,
+                cy,
+                radius: radius * 0.52,
+                start_angle: -std::f32::consts::FRAC_PI_2,
+                sweep: std::f32::consts::TAU,
+            },
             rgb::Color::new(0xFF, 0xFF, 0xFF),
-        );
+        )?;
     }
+    Ok(())
 }
 
 fn draw_radar_chart(
@@ -7328,6 +7336,7 @@ fn draw_sunburst_chart(
         let sweep = (*value / total) as f32 * std::f32::consts::TAU;
         fill_ring_slice(
             surface,
+            scene,
             RingSlice {
                 cx,
                 cy,
@@ -7337,9 +7346,10 @@ fn draw_sunburst_chart(
                 sweep,
             },
             chart_series_color(index),
-        );
+        )?;
         fill_ring_slice(
             surface,
+            scene,
             RingSlice {
                 cx,
                 cy,
@@ -7349,7 +7359,7 @@ fn draw_sunburst_chart(
                 sweep,
             },
             rgb::Color::new(0xFF, 0xFF, 0xFF),
-        );
+        )?;
         angle += sweep;
     }
     Ok(())
@@ -7665,6 +7675,7 @@ fn draw_authored_chart(
     ) {
         draw_pie_chart(
             surface,
+            scene,
             chart,
             ChartRect {
                 x: plot_left,
@@ -7680,7 +7691,7 @@ fn draw_authored_chart(
                 chart.kind,
                 ChartKind::ExplodedPie | ChartKind::ExplodedPie3D | ChartKind::ExplodedDoughnut
             ),
-        );
+        )?;
         let mut legend_x = plot_left;
         let legend_y = y + h - 14.0;
         for (index, category) in chart.categories.iter().enumerate() {
@@ -14418,6 +14429,270 @@ mod tests {
             "render failed: page scene exceeds the 29-path-point limit"
         );
         assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn pie_fan_sectors_enter_the_scene_before_legends() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Pie,
+            categories: vec!["Left".to_string(), "Right".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![1.0, 1.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        assert_eq!(scene.operations.len(), 9);
+        for (index, operation) in scene.operations[5..7].iter().enumerate() {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("pie slice must be a fan polygon: {operation:?}");
+            };
+            assert_eq!(points.len(), 26);
+            assert_close(points[0].x, 195.0);
+            assert_close(points[0].y, 96.0);
+            assert_eq!(*color, super::chart_series_color(index));
+        }
+        let first = match &scene.operations[5] {
+            super::PageSceneOp::FillPolygon { points, .. } => points,
+            operation => panic!("first pie slice must be a polygon: {operation:?}"),
+        };
+        for (point_index, (x, y)) in
+            [1, 13, 25]
+                .into_iter()
+                .zip([(195.0, 38.88), (252.12, 96.0), (195.0, 153.12)])
+        {
+            assert_close(first[point_index].x, x);
+            assert_close(first[point_index].y, y);
+        }
+        let super::PageSceneOp::FillRect { rect, color } = &scene.operations[7] else {
+            panic!("pie legend must follow slices: {:?}", scene.operations[7]);
+        };
+        assert_eq!(*rect, super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap());
+        assert_eq!(*color, super::chart_series_color(0));
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn sunburst_ring_sectors_enter_the_scene_after_the_hub() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Sunburst,
+            categories: vec!["Left".to_string(), "Right".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![1.0, 1.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        assert_eq!(scene.operations.len(), 10);
+        let expected_colors = [
+            super::chart_series_color(0),
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+            super::chart_series_color(1),
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+        ];
+        for (operation, expected_color) in scene.operations[6..10].iter().zip(expected_colors) {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("sunburst ring must be an annular polygon: {operation:?}");
+            };
+            assert_eq!(points.len(), 50);
+            assert_eq!(*color, expected_color);
+        }
+        let first = match &scene.operations[6] {
+            super::PageSceneOp::FillPolygon { points, .. } => points,
+            operation => panic!("first sunburst ring must be a polygon: {operation:?}"),
+        };
+        for (point_index, (x, y)) in [0, 12, 24, 25, 49].into_iter().zip([
+            (195.0, 36.16),
+            (254.84, 96.0),
+            (195.0, 155.84),
+            (195.0, 122.329_6),
+            (195.0, 69.670_4),
+        ]) {
+            assert_close(first[point_index].x, x);
+            assert_close(first[point_index].y, y);
+        }
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn sampled_sectors_preserve_invalid_inputs_and_path_point_limits() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::with_path_point_limit(26);
+
+        super::fill_pie_slice(
+            &mut surface,
+            &mut scene,
+            super::PieSlice {
+                cx: 20.0,
+                cy: 20.0,
+                radius: 0.0,
+                start_angle: 0.0,
+                sweep: 1.0,
+            },
+            color,
+        )
+        .expect("zero-radius fan is ignored");
+        super::fill_pie_slice(
+            &mut surface,
+            &mut scene,
+            super::PieSlice {
+                cx: 20.0,
+                cy: 20.0,
+                radius: 5.0,
+                start_angle: 0.0,
+                sweep: f32::NAN,
+            },
+            color,
+        )
+        .expect("non-finite fan is ignored");
+        super::fill_ring_slice(
+            &mut surface,
+            &mut scene,
+            super::RingSlice {
+                cx: 20.0,
+                cy: 20.0,
+                inner_radius: 5.0,
+                outer_radius: 5.0,
+                start_angle: 0.0,
+                sweep: 1.0,
+            },
+            color,
+        )
+        .expect("zero-width ring is ignored");
+        assert!(scene.operations.is_empty());
+
+        super::fill_pie_slice(
+            &mut surface,
+            &mut scene,
+            super::PieSlice {
+                cx: 20.0,
+                cy: 20.0,
+                radius: 5.0,
+                start_angle: -std::f32::consts::FRAC_PI_2,
+                sweep: std::f32::consts::PI,
+            },
+            color,
+        )
+        .expect("half-circle fan fits 26 points");
+        assert_eq!(scene.path_point_count, 26);
+        let unchanged = (scene.operations.len(), scene.path_point_count);
+        let error = super::fill_ring_slice(
+            &mut surface,
+            &mut scene,
+            super::RingSlice {
+                cx: 20.0,
+                cy: 20.0,
+                inner_radius: 2.0,
+                outer_radius: 5.0,
+                start_angle: -std::f32::consts::FRAC_PI_2,
+                sweep: std::f32::consts::PI,
+            },
+            color,
+        )
+        .expect_err("point ceiling rejects a 50-point ring");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 26-path-point limit"
+        );
+        assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
+
+        let mut ring_scene = super::PageScene::with_path_point_limit(50);
+        super::fill_ring_slice(
+            &mut surface,
+            &mut ring_scene,
+            super::RingSlice {
+                cx: 20.0,
+                cy: 20.0,
+                inner_radius: 2.0,
+                outer_radius: 5.0,
+                start_angle: -std::f32::consts::FRAC_PI_2,
+                sweep: std::f32::consts::PI,
+            },
+            color,
+        )
+        .expect("half-circle ring fits 50 points");
+        assert_eq!(ring_scene.path_point_count, 50);
+        let super::PageSceneOp::FillPolygon { points, .. } = &ring_scene.operations[0] else {
+            panic!(
+                "ring must project as a polygon: {:?}",
+                ring_scene.operations[0]
+            );
+        };
+        assert_eq!(points.len(), 50);
 
         surface.finish();
         page.finish();
