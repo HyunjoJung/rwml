@@ -48,6 +48,8 @@ class ReleasePreflightTests(unittest.TestCase):
         self.assertIn('"unittest",', text)
         self.assertIn('"validate_edit_check.py",', text)
         self.assertIn('"render_validate.py",', text)
+        self.assertIn('"corpus/public/RENDER_ORACLE.json",', text)
+        self.assertIn('"--source-revision",', text)
         self.assertIn('"bench_vs_mature.py",', text)
         self.assertIn('"--extract-bin",', text)
 

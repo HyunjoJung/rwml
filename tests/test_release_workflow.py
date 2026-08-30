@@ -100,6 +100,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
         )
         self.assertIn("--corpus-manifest corpus/public/MANIFEST.tsv", text)
         self.assertIn("--corpus-manifest corpus/public/RENDER_MANIFEST.tsv", text)
+        self.assertIn("--manifest corpus/public/RENDER_ORACLE.json", text)
+        self.assertIn('--source-revision "$GITHUB_SHA"', text)
         self.assertIn("cargo test --all-targets --features render", text)
         self.assertIn(
             "cargo test --test bundled_fonts --all-features --locked", text
