@@ -67,7 +67,9 @@ subsets by default and reports the retained page-1 aHash plus bounded all-page
 aHash, foreground ink IoU, and explicit unmatched/capped page counts. Strict
 JSON runs additionally bind the report to the corpus root, source revision,
 Cargo lock, harness, platform, tool versions, and recorded LibreOffice identity.
-Reference PDFs remain temporary and are not committed.
+Local exports use fresh per-document LibreOffice profiles. When
+`--verify-oracle` is selected, missing or unequal repeated page rasters fail the
+evidence gate. Reference PDFs remain temporary and are not committed.
 
 Regenerate, verify, and run the bounded local smoke profile:
 

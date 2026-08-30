@@ -500,6 +500,33 @@ class RenderValidateReportTests(unittest.TestCase):
                         src, pathlib.Path(tmp), "docker"
                     )
 
+    def test_local_libreoffice_uses_a_fresh_per_document_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            src = root / "sample.docx"
+            src.write_bytes(b"placeholder")
+            out = root / "out"
+            out.mkdir()
+
+            def complete(command, **_kwargs):
+                (out / "sample.pdf").write_bytes(b"%PDF isolated")
+                return mock.Mock(returncode=0)
+
+            with mock.patch.object(
+                render_validate.subprocess, "run", side_effect=complete
+            ) as run:
+                result = render_validate.render_libreoffice(src, out, "local")
+
+            self.assertEqual(result, out / "sample.pdf")
+            command = run.call_args.args[0]
+            profile = [
+                token
+                for token in command
+                if token.startswith("-env:UserInstallation=file:")
+            ]
+            self.assertEqual(len(profile), 1)
+            self.assertIn("--headless", command)
+
     def test_soffice_auto_mode_prefers_local_libreoffice(self):
         with mock.patch.object(
             render_validate.shutil,
@@ -959,3 +986,31 @@ class OracleStabilityTests(unittest.TestCase):
         ]
         report = render_validate.validation_report(rows, 0.97, reference_stable=False)
         self.assertIs(report["summary"]["reference_stable"], False)
+
+    def test_required_reference_stability_is_a_gate(self):
+        summary = {"below_recall_min": 0, "reference_stable": False}
+        gate = render_validate.validation_gate(
+            summary, {"require_reference_stable": True}
+        )
+        check = next(
+            item for item in gate["checks"] if item["metric"] == "reference_stable"
+        )
+        self.assertEqual(check["actual"], 0)
+        self.assertFalse(check["passed"])
+        self.assertFalse(gate["passed"])
+
+        summary["reference_stable"] = True
+        gate = render_validate.validation_gate(
+            summary, {"require_reference_stable": True}
+        )
+        check = next(
+            item for item in gate["checks"] if item["metric"] == "reference_stable"
+        )
+        self.assertEqual(check["actual"], 1)
+        self.assertTrue(check["passed"])
+        self.assertTrue(gate["passed"])
+
+        with self.assertRaisesRegex(ValueError, "must be a boolean"):
+            render_validate.validation_gate(
+                summary, {"require_reference_stable": 1}
+            )

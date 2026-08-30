@@ -23,6 +23,10 @@ and report complementary metrics per document:
                     canvases are white-padded, never stretched, before comparison.
   * warnings      — rwml `RenderReport` warning count/kinds for trend tracking.
 
+Local LibreOffice runs use a fresh per-document user profile. With
+``--verify-oracle``, a missing or unequal second reference render is a gate failure;
+it is never reported as a successful fidelity comparison.
+
 This is a developer tool, not part of the crate. It needs PyMuPDF (`pip install
 pymupdf`), Pillow, and either a local `soffice` or the `lo-cli` Docker image.
 By default, `--soffice auto` prefers local `soffice` when present and falls back
@@ -295,6 +299,9 @@ def add_threshold_check(
 
 def validation_gate(summary: dict, thresholds: dict | None = None) -> dict:
     thresholds = thresholds or {}
+    require_reference_stable = thresholds.get("require_reference_stable", False)
+    if not isinstance(require_reference_stable, bool):
+        raise ValueError("require_reference_stable must be a boolean")
     checks = []
     add_threshold_check(
         checks,
@@ -303,6 +310,14 @@ def validation_gate(summary: dict, thresholds: dict | None = None) -> dict:
         "<=",
         0,
     )
+    if require_reference_stable:
+        add_threshold_check(
+            checks,
+            "reference_stable",
+            1 if summary.get("reference_stable") is True else 0,
+            ">=",
+            1,
+        )
     add_threshold_check(
         checks,
         "mean_recall",
@@ -680,8 +695,17 @@ def render_libreoffice(src: Path, outdir: Path, mode: str) -> Path | None:
             "--outdir", "/out", f"/data/{src.name}",
         ]
     else:
+        profile_token = hashlib.sha256(
+            str(src.resolve()).encode("utf-8")
+        ).hexdigest()[:16]
+        profile = outdir / f".rwml-lo-profile-{profile_token}"
+        if profile.exists() or profile.is_symlink():
+            raise RenderDependencyError(
+                "LibreOffice validation requires a fresh per-document profile"
+            )
         cmd = [
-            "soffice", "--headless", "--convert-to", "pdf",
+            "soffice", f"-env:UserInstallation={profile.resolve().as_uri()}",
+            "--headless", "--convert-to", "pdf",
             "--outdir", str(outdir), str(src),
         ]
     try:
@@ -858,6 +882,7 @@ def _libreoffice_identity(mode: str) -> dict[str, str]:
             "mode": identity_mode,
             "version": version,
             "executable_sha256": executable_sha256,
+            "profile_policy": "fresh-per-document-v1",
         }
     else:
         image_id = _command_text(
@@ -1987,6 +2012,7 @@ def main() -> int:
                     f"{(visual.foreground_ink_iou or 0.0):8.3f} {warns:5}  {mark}"
                 )
     thresholds = {
+        "require_reference_stable": args.verify_oracle,
         "min_mean_recall": args.min_mean_recall,
         "min_mean_page_ratio": args.min_mean_page_ratio,
         "max_mean_page_ratio": args.max_mean_page_ratio,
