@@ -389,6 +389,16 @@ struct SceneImageId(usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SceneStateKind {
     Clip,
+    Transform,
+}
+
+impl SceneStateKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Clip => "clip",
+            Self::Transform => "transform",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -468,6 +478,10 @@ enum PageSceneOp {
         rect: SceneRect,
     },
     PopClip,
+    PushTransform {
+        transform: SceneTransform,
+    },
+    PopTransform,
 }
 
 struct PageScene {
@@ -647,25 +661,59 @@ impl PageScene {
         let Some(rect) = SceneRect::new(x, y, width, height) else {
             return Ok(false);
         };
+        self.push_state(SceneStateKind::Clip, PageSceneOp::PushClipRect { rect })?;
+        Ok(true)
+    }
+
+    fn pop_clip(&mut self) -> Result<()> {
+        self.pop_state(SceneStateKind::Clip, PageSceneOp::PopClip)
+    }
+
+    fn push_transform(&mut self, transform: SceneTransform) -> Result<bool> {
+        if !transform.is_finite() {
+            return Ok(false);
+        }
+        self.push_state(
+            SceneStateKind::Transform,
+            PageSceneOp::PushTransform { transform },
+        )?;
+        Ok(true)
+    }
+
+    fn pop_transform(&mut self) -> Result<()> {
+        self.pop_state(SceneStateKind::Transform, PageSceneOp::PopTransform)
+    }
+
+    fn push_state(&mut self, kind: SceneStateKind, operation: PageSceneOp) -> Result<()> {
         if self.state_stack.len() >= self.state_limit {
             return Err(Error::Render(format!(
                 "page scene state depth exceeds the {}-level limit",
                 self.state_limit
             )));
         }
-        self.push_operation(PageSceneOp::PushClipRect { rect })?;
-        self.state_stack.push(SceneStateKind::Clip);
-        Ok(true)
+        self.push_operation(operation)?;
+        self.state_stack.push(kind);
+        Ok(())
     }
 
-    fn pop_clip(&mut self) -> Result<()> {
+    fn pop_state(&mut self, expected: SceneStateKind, operation: PageSceneOp) -> Result<()> {
         match self.state_stack.last() {
-            Some(SceneStateKind::Clip) => {}
+            Some(actual) if *actual == expected => {}
+            Some(actual) => {
+                return Err(Error::Render(format!(
+                    "page scene state mismatch: cannot pop {} above {}",
+                    expected.name(),
+                    actual.name()
+                )));
+            }
             None => {
-                return Err(Error::Render("page scene clip stack underflow".to_string()));
+                return Err(Error::Render(format!(
+                    "page scene {} stack underflow",
+                    expected.name()
+                )));
             }
         }
-        self.push_operation(PageSceneOp::PopClip)?;
+        self.push_operation(operation)?;
         self.state_stack.pop();
         Ok(())
     }
@@ -4898,16 +4946,14 @@ fn draw_running_surface_items(
                 if !push_page_scene_clip(surface, scene, x, y, layout.bounds_h, layout.bounds_w)? {
                     break;
                 }
-                surface.push_transform(&Transform::from_row(
-                    layout.scale,
-                    0.0,
-                    0.0,
-                    layout.scale,
-                    x,
-                    y,
-                ));
+                let transform =
+                    SceneTransform::from_row(layout.scale, 0.0, 0.0, layout.scale, x, y);
+                if !push_page_scene_transform(surface, scene, transform)? {
+                    pop_page_scene_clip(surface, scene)?;
+                    break;
+                }
                 draw_authored_chart(surface, &chart, 0.0, 0.0, w, h, cx);
-                surface.pop();
+                pop_page_scene_transform(surface, scene)?;
                 pop_page_scene_clip(surface, scene)?;
                 y += layout.bounds_h;
             }
@@ -5881,6 +5927,17 @@ fn replay_page_scene_operations(
                 push_pdf_rect_clip(surface, *rect);
             }
             PageSceneOp::PopClip => surface.pop(),
+            PageSceneOp::PushTransform { transform } => {
+                surface.push_transform(&Transform::from_row(
+                    transform.sx(),
+                    transform.ky(),
+                    transform.kx(),
+                    transform.sy(),
+                    transform.tx(),
+                    transform.ty(),
+                ));
+            }
+            PageSceneOp::PopTransform => surface.pop(),
             PageSceneOp::Link { .. } | PageSceneOp::Image { .. } => {}
         }
     }
@@ -5905,6 +5962,26 @@ fn push_page_scene_clip(
 fn pop_page_scene_clip(surface: &mut Surface<'_>, scene: &mut PageScene) -> Result<()> {
     let start = scene.operations.len();
     scene.pop_clip()?;
+    replay_page_scene_operations(surface, scene, start..scene.operations.len());
+    Ok(())
+}
+
+fn push_page_scene_transform(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    transform: SceneTransform,
+) -> Result<bool> {
+    let start = scene.operations.len();
+    if !scene.push_transform(transform)? {
+        return Ok(false);
+    }
+    replay_page_scene_operations(surface, scene, start..scene.operations.len());
+    Ok(true)
+}
+
+fn pop_page_scene_transform(surface: &mut Surface<'_>, scene: &mut PageScene) -> Result<()> {
+    let start = scene.operations.len();
+    scene.pop_transform()?;
     replay_page_scene_operations(surface, scene, start..scene.operations.len());
     Ok(())
 }
@@ -6107,16 +6184,12 @@ fn draw_table_cell_content(
                     layout.bounds_h,
                     layout.bounds_w,
                 )? {
-                    surface.push_transform(&Transform::from_row(
-                        layout.scale,
-                        0.0,
-                        0.0,
-                        layout.scale,
-                        x,
-                        line_top,
-                    ));
-                    draw_authored_chart(surface, &chart, 0.0, 0.0, width, height, cx);
-                    surface.pop();
+                    let transform =
+                        SceneTransform::from_row(layout.scale, 0.0, 0.0, layout.scale, x, line_top);
+                    if push_page_scene_transform(surface, scene, transform)? {
+                        draw_authored_chart(surface, &chart, 0.0, 0.0, width, height, cx);
+                        pop_page_scene_transform(surface, scene)?;
+                    }
                     pop_page_scene_clip(surface, scene)?;
                 }
             }
@@ -11334,6 +11407,76 @@ mod tests {
         depth_limited
             .ensure_balanced()
             .expect("closed depth-limited stack is balanced");
+    }
+
+    #[test]
+    fn page_scene_transform_stack_is_typed_finite_and_nested_with_clips() {
+        let transform = super::SceneTransform::from_row(0.5, 0.0, 0.0, 0.5, 10.0, 20.0);
+        let mut scene = super::PageScene::default();
+        assert!(scene
+            .push_clip_rect(1.0, 2.0, 30.0, 40.0)
+            .expect("clip projects"));
+        assert!(scene.push_transform(transform).expect("transform projects"));
+
+        let unchanged = scene.operations.len();
+        let error = scene
+            .pop_clip()
+            .expect_err("clip cannot close above transform");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene state mismatch: cannot pop clip above transform"
+        );
+        assert_eq!(scene.operations.len(), unchanged);
+
+        scene.pop_transform().expect("transform closes");
+        scene.pop_clip().expect("clip closes");
+        scene.ensure_balanced().expect("state stack is balanced");
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::PushClipRect {
+                    rect: super::SceneRect {
+                        x: 1.0,
+                        y: 2.0,
+                        width: 30.0,
+                        height: 40.0,
+                    },
+                },
+                super::PageSceneOp::PushTransform { transform },
+                super::PageSceneOp::PopTransform,
+                super::PageSceneOp::PopClip,
+            ]
+        );
+
+        let unchanged = scene.operations.len();
+        assert!(!scene
+            .push_transform(super::SceneTransform::from_translate(f32::NAN, 0.0))
+            .expect("invalid transform is ignored"));
+        assert_eq!(scene.operations.len(), unchanged);
+
+        let mut underflow = super::PageScene::default();
+        let error = underflow
+            .pop_transform()
+            .expect_err("empty transform stack rejects pop");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene transform stack underflow"
+        );
+        assert!(underflow.operations.is_empty());
+
+        let mut depth_limited = super::PageScene::with_state_limit(1);
+        assert!(depth_limited
+            .push_clip_rect(0.0, 0.0, 2.0, 2.0)
+            .expect("clip consumes the available depth"));
+        let error = depth_limited
+            .push_transform(transform)
+            .expect_err("combined state depth rejects transform");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene state depth exceeds the 1-level limit"
+        );
+        assert_eq!(depth_limited.operations.len(), 1);
+        depth_limited.pop_clip().expect("clip closes");
     }
 
     #[test]
