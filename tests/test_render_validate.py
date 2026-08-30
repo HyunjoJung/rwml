@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from unittest import mock
+from urllib.parse import unquote, urlparse
 
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "render_validate.py"
@@ -325,6 +326,24 @@ class RenderValidateReportTests(unittest.TestCase):
             ["Visible"],
         )
 
+    def test_reference_recall_tokens_drop_bounded_libreoffice_ole_labels(self):
+        raw = ["Visible", "Object", "1", "Object", "2"]
+        warnings = ["OleObjectsPreservedButNotModeled"]
+
+        self.assertEqual(render_validate.reference_recall_tokens(raw), raw)
+        self.assertEqual(
+            render_validate.reference_recall_tokens(raw, warnings),
+            raw,
+        )
+        self.assertEqual(
+            render_validate.reference_recall_tokens(
+                raw,
+                warnings,
+                {"unsupported": {"ole_objects": 1}},
+            ),
+            ["Visible", "Object", "2"],
+        )
+
     def test_token_recall_accepts_tracked_change_reference_compounds_only_with_context(self):
         ref_tokens = ["StableAddedRemovedMoved", "fromMoved", "to"]
         got_tokens = ["Stable", "AddedMoved", "to"]
@@ -371,6 +390,11 @@ class RenderValidateReportTests(unittest.TestCase):
             1.0,
         )
         self.assertLess(render_validate.token_recall([".item"], ["item", "."]), 1.0)
+
+    def test_token_recall_accepts_one_adjacent_rtl_extraction_transposition(self):
+        self.assertEqual(render_validate.token_recall(["أوىل"], ["أولى"]), 1.0)
+        self.assertLess(render_validate.token_recall(["أوىل"], ["أيلو"]), 1.0)
+        self.assertLess(render_validate.token_recall(["abcd"], ["abdc"]), 1.0)
 
     def test_validation_report_rejects_measured_skip_rows(self):
         row = render_validate.ValidationRow(
@@ -509,6 +533,18 @@ class RenderValidateReportTests(unittest.TestCase):
             out.mkdir()
 
             def complete(command, **_kwargs):
+                profile_argument = next(
+                    token
+                    for token in command
+                    if token.startswith("-env:UserInstallation=file:")
+                )
+                profile_uri = profile_argument.split("=", 1)[1]
+                profile_path = pathlib.Path(unquote(urlparse(profile_uri).path))
+                registry = profile_path / "user" / "registrymodifications.xcu"
+                self.assertEqual(
+                    registry.read_bytes(),
+                    render_validate.LOCAL_ORACLE_PROFILE.read_bytes(),
+                )
                 (out / "sample.pdf").write_bytes(b"%PDF isolated")
                 return mock.Mock(returncode=0)
 
@@ -536,6 +572,24 @@ class RenderValidateReportTests(unittest.TestCase):
             self.assertIn("--terminate_after_init", initialize)
             self.assertIn("--headless", command)
             self.assertIn("--convert-to", command)
+
+    def test_local_oracle_profile_locks_font_substitution_and_active_content(self):
+        text = render_validate.LOCAL_ORACLE_PROFILE.read_text(encoding="utf-8")
+        for marker in (
+            "DisableMacrosExecution",
+            "DisableActiveContent",
+            "Font/Substitution/FontPairs",
+            "<value>Calibri</value>",
+            "<value>Cambria</value>",
+            "<value>Arial Unicode MS</value>",
+            "<value>Noto Sans</value>",
+            "<value>Geeza Pro</value>",
+            "<value>Noto Sans Arabic</value>",
+            "<value>Lucida Grande</value>",
+            "<value>Noto Sans Hebrew</value>",
+            "<value>true</value>",
+        ):
+            self.assertIn(marker, text)
 
     def test_local_libreoffice_stops_when_profile_initialization_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -583,6 +637,48 @@ class RenderValidateReportTests(unittest.TestCase):
                 {"below_recall_min": 0, "mean_recall": 1.0},
                 {"min_mean_recall": float("nan")},
             )
+
+    def test_strict_campaign_thresholds_fail_closed(self):
+        args = mock.Mock(
+            min_mean_recall=None,
+            min_mean_page_ratio=None,
+            max_mean_page_ratio=None,
+            min_mean_ahash_similarity=None,
+            min_mean_page_ahash_similarity=None,
+            min_mean_foreground_ink_iou=None,
+            max_mean_render_warnings=None,
+            max_skipped=None,
+            max_unmatched_candidate_pages=None,
+            max_unmatched_reference_pages=None,
+            verify_oracle=True,
+        )
+
+        thresholds = render_validate.resolve_validation_thresholds(
+            args, strict_corpus=True
+        )
+
+        self.assertEqual(thresholds["max_skipped"], 0)
+        self.assertIsNone(thresholds["max_unmatched_candidate_pages"])
+        self.assertIsNone(thresholds["max_unmatched_reference_pages"])
+        self.assertTrue(thresholds["require_reference_stable"])
+
+    def test_strict_campaign_thresholds_cannot_be_relaxed(self):
+        args = mock.Mock(
+            min_mean_recall=None,
+            min_mean_page_ratio=None,
+            max_mean_page_ratio=None,
+            min_mean_ahash_similarity=None,
+            min_mean_page_ahash_similarity=None,
+            min_mean_foreground_ink_iou=None,
+            max_mean_render_warnings=None,
+            max_skipped=1,
+            max_unmatched_candidate_pages=None,
+            max_unmatched_reference_pages=None,
+            verify_oracle=True,
+        )
+
+        with self.assertRaisesRegex(ValueError, "strict corpus threshold"):
+            render_validate.resolve_validation_thresholds(args, strict_corpus=True)
 
     def test_validation_gate_rejects_negative_count_thresholds(self):
         with self.assertRaisesRegex(ValueError, "negative count threshold"):
@@ -731,16 +827,25 @@ class RenderValidateReportTests(unittest.TestCase):
             output = root / "sample.pdf"
             report = root / "sample.json"
             source.write_bytes(b"docx")
+            rustup_bin = root / ".cargo" / "bin"
+            rustup_bin.mkdir(parents=True)
+            cargo = rustup_bin / ("cargo.exe" if os.name == "nt" else "cargo")
+            cargo.write_bytes(b"")
 
-            def completed(command, capture_output):
+            def completed(command, capture_output, env):
                 self.assertTrue(capture_output)
+                self.assertEqual(
+                    env["PATH"].split(os.pathsep)[0],
+                    str(rustup_bin),
+                )
                 output.write_bytes(b"%PDF-1.7")
                 report.write_text('{"warnings": []}', encoding="utf-8")
                 return mock.Mock(returncode=0)
 
-            with mock.patch.object(
-                render_validate.subprocess, "run", side_effect=completed
-            ) as run:
+            with mock.patch.object(render_validate.Path, "home", return_value=root), \
+                 mock.patch.object(
+                     render_validate.subprocess, "run", side_effect=completed
+                 ) as run:
                 self.assertEqual(
                     render_validate.render_rwml(source, output, report),
                     {"warnings": []},
@@ -995,6 +1100,40 @@ class OracleStabilityTests(unittest.TestCase):
         self.assertEqual(
             render_validate.oracle_stability_verdict(["a"], ["a", "b"]), False
         )
+
+    def test_reference_pdf_font_identities_read_subset_sfnt_revision(self):
+        payload = bytearray(64)
+        payload[:4] = b"true"
+        payload[4:6] = (1).to_bytes(2, "big")
+        payload[12:16] = b"head"
+        payload[20:24] = (32).to_bytes(4, "big")
+        payload[24:28] = (16).to_bytes(4, "big")
+        payload[36:40] = (132055).to_bytes(4, "big")
+
+        page = mock.Mock()
+        page.get_fonts.return_value = [
+            (7, "ttf", "TrueType", "ABCDEF+NotoSans-Regular", "F1", "", 0)
+        ]
+        document = mock.MagicMock()
+        document.__iter__.return_value = iter([page])
+        document.extract_font.return_value = (
+            "ABCDEF+NotoSans-Regular",
+            "ttf",
+            "TrueType",
+            bytes(payload),
+        )
+        fake_fitz = mock.Mock()
+        fake_fitz.open.return_value = document
+        with mock.patch.object(render_validate, "fitz", fake_fitz):
+            identities = render_validate.reference_pdf_font_identities(
+                pathlib.Path("reference.pdf")
+            )
+
+        self.assertEqual(
+            identities,
+            [{"postscript_name": "NotoSans-Regular", "sfnt_revision": 132055}],
+        )
+        document.close.assert_called_once_with()
 
     def test_summary_records_the_reference_stability(self):
         rows = [

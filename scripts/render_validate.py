@@ -23,9 +23,10 @@ and report complementary metrics per document:
                     canvases are white-padded, never stretched, before comparison.
   * warnings      — rwml `RenderReport` warning count/kinds for trend tracking.
 
-Local LibreOffice runs initialize a fresh per-document user profile before export. With
-``--verify-oracle``, a missing or unequal second reference render is a gate failure;
-it is never reported as a successful fidelity comparison.
+Local LibreOffice runs seed and initialize a fresh per-document user profile before
+export, verify the installed Noto font bundle, and attest each embedded reference PDF
+font. With ``--verify-oracle``, a missing or unequal second reference render is a gate
+failure; it is never reported as a successful fidelity comparison.
 
 This is a developer tool, not part of the crate. It needs PyMuPDF (`pip install
 pymupdf`), Pillow, and either a local `soffice` or the `lo-cli` Docker image.
@@ -47,6 +48,7 @@ import contextlib
 import hashlib
 import json
 import math
+import os
 import platform
 import re
 import shutil
@@ -63,12 +65,28 @@ try:
         bind_evidence_report,
         load_corpus_manifest,
     )
+    from libreoffice_oracle_fonts import (
+        DEFAULT_FONT_LOCK as LOCAL_ORACLE_FONT_LOCK,
+        installation_font_identity,
+        load_font_lock,
+        normalized_postscript_name,
+        sfnt_revision,
+        validate_pdf_font_identities,
+    )
 except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
     from scripts.render_oracle_contract import (
         CorpusDocument,
         CorpusManifest,
         bind_evidence_report,
         load_corpus_manifest,
+    )
+    from scripts.libreoffice_oracle_fonts import (
+        DEFAULT_FONT_LOCK as LOCAL_ORACLE_FONT_LOCK,
+        installation_font_identity,
+        load_font_lock,
+        normalized_postscript_name,
+        sfnt_revision,
+        validate_pdf_font_identities,
     )
 
 with contextlib.redirect_stdout(sys.stderr):
@@ -92,6 +110,9 @@ DEFAULT_FOREGROUND_THRESHOLD = 245
 DEFAULT_AHASH_SIZE = 16
 DEFAULT_FONT_MODE = "fixed-noto-subsets"
 REPO = Path(__file__).resolve().parents[1]
+LOCAL_ORACLE_PROFILE = Path(__file__).with_name(
+    "render-oracle-local-profile.xcu"
+).resolve()
 MAX_RASTER_DPI = 600
 MAX_PAGE_CAP = 256
 MAX_AHASH_SIZE = 64
@@ -261,6 +282,27 @@ def validate_visual_settings(settings: dict | None = None) -> dict[str, int | st
     return values
 
 
+def resolve_validation_thresholds(
+    args: argparse.Namespace, *, strict_corpus: bool
+) -> dict[str, object]:
+    if strict_corpus:
+        if args.max_skipped not in (None, 0):
+            raise ValueError("strict corpus threshold must be zero: max_skipped")
+    return {
+        "require_reference_stable": args.verify_oracle,
+        "min_mean_recall": args.min_mean_recall,
+        "min_mean_page_ratio": args.min_mean_page_ratio,
+        "max_mean_page_ratio": args.max_mean_page_ratio,
+        "min_mean_ahash_similarity": args.min_mean_ahash_similarity,
+        "min_mean_page_ahash_similarity": args.min_mean_page_ahash_similarity,
+        "min_mean_foreground_ink_iou": args.min_mean_foreground_ink_iou,
+        "max_mean_render_warnings": args.max_mean_render_warnings,
+        "max_skipped": 0 if strict_corpus else args.max_skipped,
+        "max_unmatched_candidate_pages": args.max_unmatched_candidate_pages,
+        "max_unmatched_reference_pages": args.max_unmatched_reference_pages,
+    }
+
+
 def add_threshold_check(
     checks: list[dict],
     metric: str,
@@ -404,6 +446,52 @@ def reference_page_digests(pdf: Path, *, dpi: int, page_cap: int) -> list[str] |
         except Exception:
             return None
     return digests
+
+
+def reference_pdf_font_identities(pdf: Path) -> list[dict[str, object]]:
+    """Read path-neutral font identities from embedded PDF subset programs."""
+    if fitz is None:
+        raise ValueError("PyMuPDF is required for reference font attestation")
+    document = fitz.open(pdf)
+    identities: dict[str, int] = {}
+    extracted_xrefs: set[int] = set()
+    try:
+        for page in document:
+            for font in page.get_fonts(full=True):
+                if len(font) < 4:
+                    raise ValueError("reference PDF font resource is malformed")
+                xref = font[0]
+                base_name = font[3]
+                if (
+                    isinstance(xref, bool)
+                    or not isinstance(xref, int)
+                    or xref <= 0
+                    or not isinstance(base_name, str)
+                    or not base_name
+                ):
+                    raise ValueError("reference PDF font resource is malformed")
+                if xref in extracted_xrefs:
+                    continue
+                extracted_xrefs.add(xref)
+                extracted = document.extract_font(xref)
+                if (
+                    not isinstance(extracted, tuple)
+                    or len(extracted) < 4
+                    or not isinstance(extracted[3], bytes)
+                ):
+                    raise ValueError("reference PDF font program is unavailable")
+                name = normalized_postscript_name(base_name)
+                revision = sfnt_revision(extracted[3])
+                previous = identities.get(name)
+                if previous is not None and previous != revision:
+                    raise ValueError("reference PDF font identity is ambiguous")
+                identities[name] = revision
+    finally:
+        document.close()
+    return [
+        {"postscript_name": name, "sfnt_revision": identities[name]}
+        for name in sorted(identities)
+    ]
 
 
 def oracle_stability_verdict(
@@ -669,10 +757,7 @@ def render_rwml(
         cmd.append("--fixed-fonts")
     if report_out is not None:
         cmd.extend(["--report-json", str(report_out)])
-    r = subprocess.run(
-        cmd,
-        capture_output=True,
-    )
+    r = subprocess.run(cmd, capture_output=True, env=rust_tool_environment())
     if not (r.returncode == 0 and out.exists() and out.stat().st_size > 0):
         return None
     if report_out is not None and report_out.exists():
@@ -681,6 +766,20 @@ def render_rwml(
         except json.JSONDecodeError:
             return None
     return {}
+
+
+def rust_tool_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    rustup_bin = Path.home() / ".cargo" / "bin"
+    cargo_name = "cargo.exe" if os.name == "nt" else "cargo"
+    if (rustup_bin / cargo_name).is_file():
+        current_path = env.get("PATH", "")
+        env["PATH"] = (
+            str(rustup_bin)
+            if not current_path
+            else str(rustup_bin) + os.pathsep + current_path
+        )
+    return env
 
 
 def render_libreoffice(src: Path, outdir: Path, mode: str) -> Path | None:
@@ -704,6 +803,12 @@ def render_libreoffice(src: Path, outdir: Path, mode: str) -> Path | None:
             raise RenderDependencyError(
                 "LibreOffice validation requires a fresh per-document profile"
             )
+        profile_user = profile / "user"
+        profile_user.mkdir(parents=True)
+        shutil.copyfile(
+            LOCAL_ORACLE_PROFILE,
+            profile_user / "registrymodifications.xcu",
+        )
         profile_argument = f"-env:UserInstallation={profile.resolve().as_uri()}"
         initialize_cmd = [
             "soffice",
@@ -871,6 +976,9 @@ def _harness_sha256() -> str:
     for path in (
         Path(__file__).resolve(),
         Path(__file__).with_name("render_oracle_contract.py").resolve(),
+        Path(__file__).with_name("libreoffice_oracle_fonts.py").resolve(),
+        LOCAL_ORACLE_PROFILE,
+        LOCAL_ORACLE_FONT_LOCK,
     ):
         payload = path.read_bytes()
         name = path.name.encode("ascii")
@@ -889,12 +997,16 @@ def _libreoffice_identity(mode: str) -> dict[str, str]:
         resolved = Path(executable).resolve()
         version = _command_text([str(resolved), "--version"])
         executable_sha256 = _sha256_file(resolved)
+        font_lock = load_font_lock(LOCAL_ORACLE_FONT_LOCK)
         identity_mode = "local"
         material = {
             "mode": identity_mode,
             "version": version,
             "executable_sha256": executable_sha256,
-            "profile_policy": "fresh-warmed-per-document-v1",
+            "profile_policy": "seeded-fresh-warmed-per-document-v1",
+            "profile_sha256": _sha256_file(LOCAL_ORACLE_PROFILE),
+            "font_lock_sha256": _sha256_file(LOCAL_ORACLE_FONT_LOCK),
+            "font_bundle": installation_font_identity(resolved, font_lock),
         }
     else:
         image_id = _command_text(
@@ -1257,9 +1369,16 @@ def candidate_tokens(pdf: Path) -> list[str]:
 def reference_recall_tokens(
     raw_tokens: list[str],
     render_warning_kinds: list[str] | None = None,
+    render_report: dict | None = None,
 ) -> list[str]:
     tokens = []
     index = 0
+    ole_labels = (
+        report_unsupported_count(render_report, "ole_objects")
+        if render_warning_kinds
+        and "OleObjectsPreservedButNotModeled" in render_warning_kinds
+        else 0
+    )
     missing_reference = ["Error:", "Reference", "source", "not", "found"]
     while index < len(raw_tokens):
         if raw_tokens[index : index + len(missing_reference)] == missing_reference:
@@ -1268,6 +1387,16 @@ def reference_recall_tokens(
         path_span = volatile_reference_path_span(raw_tokens, index)
         if path_span:
             index += path_span
+            continue
+        if (
+            ole_labels > 0
+            and raw_tokens[index] == "Object"
+            and index + 1 < len(raw_tokens)
+            and raw_tokens[index + 1].isascii()
+            and raw_tokens[index + 1].isdigit()
+        ):
+            ole_labels -= 1
+            index += 2
             continue
         token = raw_tokens[index]
         if not is_volatile_reference_shape_placeholder_token(
@@ -1368,6 +1497,8 @@ def reference_token_recalled(
         return True
     if split_rtl_list_marker_recalled(token, got_set):
         return True
+    if adjacent_rtl_transposition_recalled(token, got_set):
+        return True
     return False
 
 
@@ -1447,13 +1578,38 @@ def split_rtl_list_marker_recalled(token: str, got_set: set[str]) -> bool:
     return "." in got_set and word in got_set and any(_is_rtl_char(ch) for ch in word)
 
 
+def adjacent_rtl_transposition_recalled(token: str, got_set: set[str]) -> bool:
+    if not 3 <= len(token) <= 128 or not all(_is_rtl_char(ch) for ch in token):
+        return False
+    for candidate in got_set:
+        if len(candidate) != len(token) or not all(
+            _is_rtl_char(ch) for ch in candidate
+        ):
+            continue
+        differences = [
+            index
+            for index, (reference, rendered) in enumerate(zip(token, candidate))
+            if reference != rendered
+        ]
+        if (
+            len(differences) == 2
+            and differences[1] == differences[0] + 1
+            and token[differences[0]] == candidate[differences[1]]
+            and token[differences[1]] == candidate[differences[0]]
+        ):
+            return True
+    return False
+
+
 def text_recall(
     ref: Path,
     got: Path,
     render_warning_kinds: list[str] | None = None,
     render_report: dict | None = None,
 ) -> float:
-    ref_tokens = reference_recall_tokens(tokens(ref), render_warning_kinds)
+    ref_tokens = reference_recall_tokens(
+        tokens(ref), render_warning_kinds, render_report
+    )
     return token_recall(ref_tokens, candidate_tokens(got), render_report)
 
 
@@ -1865,6 +2021,12 @@ def main() -> int:
         ap.error(str(exc))
     if not inputs:
         ap.error("the following arguments are required: inputs or --manifest")
+    try:
+        thresholds = resolve_validation_thresholds(
+            args, strict_corpus=corpus is not None
+        )
+    except ValueError as exc:
+        ap.error(str(exc))
 
     if not args.json:
         print(
@@ -1880,6 +2042,23 @@ def main() -> int:
         soffice_mode = resolve_soffice_mode(args.soffice)
     except RenderDependencyError as exc:
         sys.exit(str(exc))
+    try:
+        local_font_lock = (
+            load_font_lock(LOCAL_ORACLE_FONT_LOCK)
+            if soffice_mode == "local"
+            else None
+        )
+        bound_environment = (
+            environment_identity(
+                soffice_mode=soffice_mode,
+                font_mode=visual_settings["font_mode"],
+                source_revision=args.source_revision,
+            )
+            if corpus is not None
+            else None
+        )
+    except (OSError, RenderDependencyError, ValueError) as exc:
+        ap.error(str(exc))
     # Temp dir under cwd so Docker Desktop (which can't mount the system temp on
     # Windows) can bind-mount it for the LibreOffice reference render.
     with tempfile.TemporaryDirectory(dir=Path.cwd()) as td:
@@ -1889,7 +2068,15 @@ def main() -> int:
                 ref = render_libreoffice(src, tmp, soffice_mode)
             except RenderDependencyError as exc:
                 sys.exit(str(exc))
-            if args.verify_oracle and ref is not None:
+            reference_fonts_valid = True
+            if ref is not None and local_font_lock is not None:
+                try:
+                    validate_pdf_font_identities(
+                        reference_pdf_font_identities(ref), local_font_lock
+                    )
+                except ValueError:
+                    reference_fonts_valid = False
+            if args.verify_oracle and ref is not None and reference_fonts_valid:
                 # Render the same document a second time. A reference renderer
                 # that does not reproduce itself makes the visual metrics
                 # incomparable across runs, so every document is checked rather
@@ -1900,6 +2087,13 @@ def main() -> int:
                     again = render_libreoffice(src, probe_dir, soffice_mode)
                 except RenderDependencyError:
                     again = None
+                if again is not None and local_font_lock is not None:
+                    try:
+                        validate_pdf_font_identities(
+                            reference_pdf_font_identities(again), local_font_lock
+                        )
+                    except ValueError:
+                        reference_fonts_valid = False
                 verdict = (
                     oracle_stability_verdict(
                         reference_page_digests(
@@ -1909,7 +2103,7 @@ def main() -> int:
                             again, dpi=args.raster_dpi, page_cap=args.page_cap
                         ),
                     )
-                    if again is not None
+                    if again is not None and reference_fonts_valid
                     else None
                 )
                 if verdict is False:
@@ -1923,12 +2117,19 @@ def main() -> int:
                 tmp / (src.stem + ".rwml.report.json"),
                 fixed_fonts=not args.system_fonts,
             )
-            if ref is None or render_report is None:
+            if ref is None or render_report is None or not reference_fonts_valid:
+                reason = (
+                    "reference-font-lock-failed"
+                    if not reference_fonts_valid and corpus is not None
+                    else "render-failed"
+                    if corpus is not None
+                    else "render failed"
+                )
                 rows.append(
                     ValidationRow(
                         document=src.name,
                         status="skip",
-                        reason="render-failed" if corpus is not None else "render failed",
+                        reason=reason,
                         **row_identity(src, corpus_documents),
                     )
                 )
@@ -2023,19 +2224,6 @@ def main() -> int:
                     f"{(visual.mean_page_ahash_similarity or 0.0):8.3f} "
                     f"{(visual.foreground_ink_iou or 0.0):8.3f} {warns:5}  {mark}"
                 )
-    thresholds = {
-        "require_reference_stable": args.verify_oracle,
-        "min_mean_recall": args.min_mean_recall,
-        "min_mean_page_ratio": args.min_mean_page_ratio,
-        "max_mean_page_ratio": args.max_mean_page_ratio,
-        "min_mean_ahash_similarity": args.min_mean_ahash_similarity,
-        "min_mean_page_ahash_similarity": args.min_mean_page_ahash_similarity,
-        "min_mean_foreground_ink_iou": args.min_mean_foreground_ink_iou,
-        "max_mean_render_warnings": args.max_mean_render_warnings,
-        "max_skipped": args.max_skipped,
-        "max_unmatched_candidate_pages": args.max_unmatched_candidate_pages,
-        "max_unmatched_reference_pages": args.max_unmatched_reference_pages,
-    }
     report = validation_report(
         rows,
         args.recall_min,
@@ -2046,14 +2234,11 @@ def main() -> int:
     )
     if corpus is not None:
         try:
+            assert bound_environment is not None
             report = bind_evidence_report(
                 report,
                 corpus,
-                environment_identity(
-                    soffice_mode=soffice_mode,
-                    font_mode=visual_settings["font_mode"],
-                    source_revision=args.source_revision,
-                ),
+                bound_environment,
             )
         except (OSError, RenderDependencyError, ValueError) as exc:
             ap.error(str(exc))

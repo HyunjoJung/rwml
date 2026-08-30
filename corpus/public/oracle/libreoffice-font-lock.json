@@ -1,0 +1,123 @@
+{
+  "families": [
+    {
+      "family": "Noto Sans",
+      "files": [
+        {
+          "asset_member": "NotoSans/full/ttf/NotoSans-Bold.ttf",
+          "bytes": 838072,
+          "name": "NotoSans-Bold.ttf",
+          "postscript_name": "NotoSans-Bold",
+          "sfnt_revision": 132055,
+          "sha256": "3a08a47daa00cade516425c15c57615aef2fd418ec9811a7b9f465088f92cc05",
+          "style": "Bold"
+        },
+        {
+          "asset_member": "NotoSans/full/ttf/NotoSans-BoldItalic.ttf",
+          "bytes": 853344,
+          "name": "NotoSans-BoldItalic.ttf",
+          "postscript_name": "NotoSans-BoldItalic",
+          "sfnt_revision": 132055,
+          "sha256": "2e34b41a4b9c234b1be7dff6d06cba18811ecb694b41350873edf0ec16a0f0fa",
+          "style": "Bold Italic"
+        },
+        {
+          "asset_member": "NotoSans/full/ttf/NotoSans-Italic.ttf",
+          "bytes": 845312,
+          "name": "NotoSans-Italic.ttf",
+          "postscript_name": "NotoSans-Italic",
+          "sfnt_revision": 132055,
+          "sha256": "126522ae1bb9cd92120287fc47dfc74ef981e73931d93e52c565fb7e09b2d74a",
+          "style": "Italic"
+        },
+        {
+          "asset_member": "NotoSans/full/ttf/NotoSans-Regular.ttf",
+          "bytes": 825628,
+          "name": "NotoSans-Regular.ttf",
+          "postscript_name": "NotoSans-Regular",
+          "sfnt_revision": 132055,
+          "sha256": "f5f552c8c5edb61fe6efb824baf4d4de47b1a8689ab4925ff43f7bd6a4ebece5",
+          "style": "Regular"
+        }
+      ],
+      "source": {
+        "asset": {
+          "bytes": 117491253,
+          "name": "NotoSans-v2.015.zip",
+          "sha256": "0c34df072a3fa7efbb7cbf34950e1f971a4447cffe365d3a359e2d4089b958f5"
+        },
+        "release_tag": "NotoSans-v2.015",
+        "repository": "notofonts/latin-greek-cyrillic",
+        "target_commit": "c4a321e123e4d4ff315f57f4e0adf294fe3a95be"
+      }
+    },
+    {
+      "family": "Noto Sans Arabic",
+      "files": [
+        {
+          "asset_member": "NotoSansArabic/hinted/ttf/NotoSansArabic-Bold.ttf",
+          "bytes": 260904,
+          "name": "NotoSansArabic-Bold.ttf",
+          "postscript_name": "NotoSansArabic-Bold",
+          "sfnt_revision": 131727,
+          "sha256": "457926cb001ac787dc7415c89e6f5b1c4ce3a0f2c91d0cabc1bc19a05638e7de",
+          "style": "Bold"
+        },
+        {
+          "asset_member": "NotoSansArabic/hinted/ttf/NotoSansArabic-Regular.ttf",
+          "bytes": 250880,
+          "name": "NotoSansArabic-Regular.ttf",
+          "postscript_name": "NotoSansArabic-Regular",
+          "sfnt_revision": 131727,
+          "sha256": "d6efa4c9fac8ecefd2de19676acc3a396ba7aee99ba7a2d513950246841b6725",
+          "style": "Regular"
+        }
+      ],
+      "source": {
+        "asset": {
+          "bytes": 21788671,
+          "name": "NotoSansArabic-v2.010.zip",
+          "sha256": "a5a34ac1ea01d0d71c083f99440ebfb1f64224474a0d88bb7ef0e2f8d9a996d2"
+        },
+        "release_tag": "NotoSansArabic-v2.010",
+        "repository": "notofonts/arabic",
+        "target_commit": "4b753e326a77964d57919a080d98060b8248281d"
+      }
+    },
+    {
+      "family": "Noto Sans Hebrew",
+      "files": [
+        {
+          "asset_member": "NotoSansHebrew/full/ttf/NotoSansHebrew-Bold.ttf",
+          "bytes": 66608,
+          "name": "NotoSansHebrew-Bold.ttf",
+          "postscript_name": "NotoSansHebrew-Bold",
+          "sfnt_revision": 196674,
+          "sha256": "96f88305d31a8432f0fe6648c853cb9ef77db8e52ada8948ed0c577037d45423",
+          "style": "Bold"
+        },
+        {
+          "asset_member": "NotoSansHebrew/full/ttf/NotoSansHebrew-Regular.ttf",
+          "bytes": 66156,
+          "name": "NotoSansHebrew-Regular.ttf",
+          "postscript_name": "NotoSansHebrew-Regular",
+          "sfnt_revision": 196674,
+          "sha256": "671951828bd5c95db818e5bb12dcea2d0c0dda00311888522be061ee6835125e",
+          "style": "Regular"
+        }
+      ],
+      "source": {
+        "asset": {
+          "bytes": 3734185,
+          "name": "NotoSansHebrew-v3.001.zip",
+          "sha256": "df0a71814b4e63644cf40fcc4529111b61266b7a2dafbe95068b29a7520cc3cb"
+        },
+        "release_tag": "NotoSansHebrew-v3.001",
+        "repository": "notofonts/hebrew",
+        "target_commit": "036f3206f67caac235cf8546a7751d3440771a7e"
+      }
+    }
+  ],
+  "license": "SIL-OFL-1.1",
+  "schema": "rwml.libreoffice-oracle-font-lock.v1"
+}

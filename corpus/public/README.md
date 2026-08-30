@@ -67,7 +67,11 @@ subsets by default and reports the retained page-1 aHash plus bounded all-page
 aHash, foreground ink IoU, and explicit unmatched/capped page counts. Strict
 JSON runs additionally bind the report to the corpus root, source revision,
 Cargo lock, harness, platform, tool versions, and recorded LibreOffice identity.
-Local exports initialize fresh per-document LibreOffice profiles before conversion. When
+Local exports seed and initialize fresh per-document LibreOffice profiles before
+conversion. The seed maps observed Office and platform fallback families to the exact
+LibreOffice-bundled Noto files pinned by `oracle/libreoffice-font-lock.json`; the
+harness verifies those files and each reference PDF's embedded PostScript names and
+SFNT revisions. Strict corpus runs always require zero skipped documents. When
 `--verify-oracle` is selected, missing or unequal repeated page rasters fail the
 evidence gate. Reference PDFs remain temporary and are not committed.
 

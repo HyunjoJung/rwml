@@ -24,6 +24,21 @@ The generated `RENDER_ORACLE.json` uses the same bounded, path-neutral corpus co
 as the release render campaign. The lock is an input identity contract, not a claim of
 Word parity and not a release threshold.
 
+## LibreOffice regression font lock
+
+`libreoffice-font-lock.json` pins eight LibreOffice-bundled Noto Sans, Noto Sans
+Arabic, and Noto Sans Hebrew style files to official upstream release archives,
+commits, members, byte lengths, SHA-256 digests, PostScript names, and SFNT revisions.
+The local regression profile maps the observed Office and platform fallback families
+to those locked families. Before a strict campaign, `scripts/render_validate.py`
+locates the fonts relative to the LibreOffice installation and verifies their exact
+bytes without retaining installation paths. Every primary and repeat reference PDF is
+then required to embed only a locked PostScript name at its locked SFNT revision.
+
+This is a regression-oracle environment lock, not a claim that LibreOffice pagination
+is authoritative for Word. Page-count and geometry differences remain explicit
+diagnostic measurements unless separately accepted from Microsoft Word evidence.
+
 `scripts/table_oracle_topology.py` reduces a complete directory of `<case-id>.pdf`
 outputs to content-safe structural evidence. Its producer metadata input contains only
 the producer name, canonical mode, version, identity SHA-256, and platform identity.
