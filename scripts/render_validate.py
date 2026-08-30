@@ -1112,11 +1112,16 @@ def _command_text(command: list[str], *, cwd: Path | None = None) -> str:
 
 
 def _source_identity(explicit_revision: str | None) -> tuple[str, bool]:
-    revision = explicit_revision or _command_text(
-        ["git", "rev-parse", "HEAD"], cwd=REPO
-    )
+    if (
+        explicit_revision is not None
+        and re.fullmatch(r"[0-9a-f]{40}", explicit_revision) is None
+    ):
+        raise ValueError("source revision must be a full lowercase Git SHA")
+    revision = _command_text(["git", "rev-parse", "HEAD"], cwd=REPO)
     if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
         raise ValueError("source revision must be a full lowercase Git SHA")
+    if explicit_revision is not None and explicit_revision != revision:
+        raise ValueError("source revision does not match the current HEAD")
     completed = subprocess.run(
         ["git", "status", "--porcelain=v1", "--untracked-files=all"],
         cwd=REPO,
@@ -1224,6 +1229,21 @@ def environment_identity(
         },
         "tools": tools,
     }
+
+
+def verify_campaign_inputs(
+    corpus: CorpusManifest, environment: dict[str, object]
+) -> None:
+    """Reject observed source, tooling, or corpus drift before binding evidence."""
+    _, dirty = _source_identity(environment["source_revision"])
+    if dirty != environment["source_dirty"]:
+        raise ValueError("source tree changed during the render campaign")
+    if _harness_sha256() != environment["harness_sha256"]:
+        raise ValueError("render harness changed during the campaign")
+    if _sha256_file(REPO / "Cargo.lock") != environment["cargo_lock_sha256"]:
+        raise ValueError("Cargo.lock changed during the render campaign")
+    if load_corpus_manifest(corpus.path) != corpus:
+        raise ValueError("render corpus changed during the campaign")
 
 
 _HEX_STRING = re.compile(rb"<([0-9A-Fa-f\s]*)>")
@@ -2324,7 +2344,7 @@ def main() -> int:
         "--source-revision",
         help=(
             "Bind strict JSON evidence to this full lowercase Git SHA; "
-            "defaults to the current repository HEAD."
+            "it must match the current repository HEAD, which is the default."
         ),
     )
     ap.add_argument(
@@ -2645,6 +2665,7 @@ def main() -> int:
     if corpus is not None:
         try:
             assert bound_environment is not None
+            verify_campaign_inputs(corpus, bound_environment)
             report = bind_evidence_report(
                 report,
                 corpus,
