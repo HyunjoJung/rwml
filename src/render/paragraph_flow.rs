@@ -16,8 +16,6 @@ pub(super) struct ParagraphFlowRequest<'a> {
     pub(super) page_field_indices: Option<Rc<[Option<usize>]>>,
 }
 
-// Production-owned ahead of the first live paginator caller; flow tests exercise the core.
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct ParagraphFragmentCursor {
     pub(super) source_char: usize,
@@ -37,14 +35,12 @@ impl Default for ParagraphFragmentCursor {
     }
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct FragmentTrack {
     pub(super) width: f32,
     pub(super) height: f32,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) struct ParagraphFragment {
     pub(super) lines: Vec<LineLayout>,
     pub(super) images: Vec<Image>,
@@ -52,7 +48,6 @@ pub(super) struct ParagraphFragment {
     pub(super) deferred: bool,
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn paragraph_source_chars(paragraph: &Paragraph) -> usize {
     paragraph
         .runs
@@ -61,7 +56,6 @@ fn paragraph_source_chars(paragraph: &Paragraph) -> usize {
         .fold(0usize, usize::saturating_add)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn text_after_chars(text: &str, count: usize) -> String {
     if count == 0 {
         return text.to_owned();
@@ -71,7 +65,6 @@ fn text_after_chars(text: &str, count: usize) -> String {
         .map_or_else(String::new, |(byte, _)| text[byte..].to_owned())
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 fn paragraph_tail(paragraph: &Paragraph, source_char: usize) -> (Paragraph, Vec<usize>) {
     let mut remaining = source_char;
     let mut runs = Vec::new();
@@ -104,7 +97,6 @@ fn paragraph_tail(paragraph: &Paragraph, source_char: usize) -> (Paragraph, Vec<
 }
 
 #[allow(clippy::too_many_arguments)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn shape_paragraph_fragment(
     paragraph: &Paragraph,
     marker: Option<&str>,
@@ -132,7 +124,6 @@ pub(super) fn shape_paragraph_fragment(
 }
 
 #[allow(clippy::too_many_arguments)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(super) fn shape_paragraph_fragment_with_pagination(
     paragraph: &Paragraph,
     marker: Option<&str>,
