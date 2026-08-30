@@ -222,44 +222,47 @@ fn place_table(
     first_page
 }
 
-fn record_pending_block_page(
-    block_pages: &mut HashMap<usize, usize>,
-    pending_block: &mut Option<usize>,
-    page_index: usize,
-) {
-    if let Some(block_index) = pending_block.take() {
-        block_pages.entry(block_index).or_insert(page_index);
+#[derive(Default)]
+struct BlockProjectionState {
+    block_pages: HashMap<usize, usize>,
+    block_line_pages: HashMap<usize, Vec<BlockLinePage>>,
+    block_line_widths: HashMap<usize, Vec<f32>>,
+    pending_block: Option<usize>,
+}
+
+impl BlockProjectionState {
+    fn mark_pending(&mut self, block_index: usize) {
+        self.pending_block = Some(block_index);
     }
-}
 
-fn record_block_line_page(
-    block_line_pages: &mut HashMap<usize, Vec<BlockLinePage>>,
-    current_block: Option<usize>,
-    line: &LineLayout,
-    page_index: usize,
-) {
-    let (Some(block_index), Some(range)) = (current_block, line.char_range) else {
-        return;
-    };
-    block_line_pages
-        .entry(block_index)
-        .or_default()
-        .push(BlockLinePage { page_index, range });
-}
+    fn record_pending_page(&mut self, page_index: usize) {
+        if let Some(block_index) = self.pending_block.take() {
+            self.block_pages.entry(block_index).or_insert(page_index);
+        }
+    }
 
-fn record_block_line_width(
-    block_line_widths: &mut HashMap<usize, Vec<f32>>,
-    current_block: Option<usize>,
-    width: f32,
-) {
-    let Some(block_index) = current_block else {
-        return;
-    };
-    if width.is_finite() && width > 0.0 {
-        block_line_widths
-            .entry(block_index)
-            .or_default()
-            .push(width);
+    fn record_line(
+        &mut self,
+        current_block: Option<usize>,
+        line: &LineLayout,
+        page_index: usize,
+        width: f32,
+    ) {
+        let Some(block_index) = current_block else {
+            return;
+        };
+        if let Some(range) = line.char_range {
+            self.block_line_pages
+                .entry(block_index)
+                .or_default()
+                .push(BlockLinePage { page_index, range });
+        }
+        if width.is_finite() && width > 0.0 {
+            self.block_line_widths
+                .entry(block_index)
+                .or_default()
+                .push(width);
+        }
     }
 }
 
@@ -612,10 +615,7 @@ struct PlacementCoordinator {
     section_start_page_index: usize,
     section_index: usize,
     active_track: ActivePlacementTrack,
-    block_pages: HashMap<usize, usize>,
-    block_line_pages: HashMap<usize, Vec<BlockLinePage>>,
-    block_line_widths: HashMap<usize, Vec<f32>>,
-    pending_block: Option<usize>,
+    block_projection: BlockProjectionState,
     current_block: Option<usize>,
     current_block_start: Option<usize>,
     current_line_index: usize,
@@ -665,10 +665,7 @@ impl PlacementCoordinator {
             section_start_page_index: 0,
             section_index: 0,
             active_track,
-            block_pages: HashMap::new(),
-            block_line_pages: HashMap::new(),
-            block_line_widths: HashMap::new(),
-            pending_block: None,
+            block_projection: BlockProjectionState::default(),
             current_block: None,
             current_block_start: None,
             current_line_index: 0,
@@ -900,10 +897,7 @@ fn paginate_with_state(
         mut section_start_page_index,
         mut section_index,
         mut active_track,
-        mut block_pages,
-        mut block_line_pages,
-        mut block_line_widths,
-        mut pending_block,
+        mut block_projection,
         mut current_block,
         mut current_block_start,
         mut current_line_index,
@@ -936,11 +930,7 @@ fn paginate_with_state(
                     || pagination.keep_lines
                     || pagination.widow_control;
                 pending_top_bottom_bands.clear();
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
+                block_projection.record_pending_page(pages.len().saturating_sub(1));
                 if let Some(metric) = context.block_metric {
                     if pagination.keep_next {
                         if let Some(height) = keep_next_chain_height(
@@ -971,18 +961,14 @@ fn paginate_with_state(
                         );
                     }
                 }
-                pending_block = Some(block_index);
+                block_projection.mark_pending(block_index);
                 current_block = Some(block_index);
                 current_block_start = Some(item_index);
                 current_line_index = 0;
                 widow_break_before = None;
             }
             FlowItem::PaginationBoundary => {
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
+                block_projection.record_pending_page(pages.len().saturating_sub(1));
                 current_block = None;
                 current_block_start = None;
                 current_line_index = 0;
@@ -1078,11 +1064,11 @@ fn paginate_with_state(
                     None,
                 );
                 let page_index = pages.len().saturating_sub(1);
-                record_pending_block_page(&mut block_pages, &mut pending_block, page_index);
-                record_block_line_page(&mut block_line_pages, current_block, &l, page_index);
-                record_block_line_width(
-                    &mut block_line_widths,
+                block_projection.record_pending_page(page_index);
+                block_projection.record_line(
                     current_block,
+                    &l,
+                    page_index,
                     cursor.columns.width(cursor.column_index),
                 );
                 let line_range = l.char_range;
@@ -1107,11 +1093,7 @@ fn paginate_with_state(
                     &active_top_bottom_bands,
                     current_block,
                 );
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
+                block_projection.record_pending_page(pages.len().saturating_sub(1));
                 place_item(
                     &mut pages,
                     cursor,
@@ -1128,34 +1110,22 @@ fn paginate_with_state(
                     &active_top_bottom_bands,
                     None,
                 );
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
+                block_projection.record_pending_page(pages.len().saturating_sub(1));
                 place_item(&mut pages, cursor, FlowItem::Chart { chart, w, h }, h);
             }
             FlowItem::Table { rows, header_rows } => {
                 let fallback_page = pages.len().saturating_sub(1);
                 let first_page = place_table(&mut pages, cursor, rows, header_rows, active_geom)
                     .unwrap_or(fallback_page);
-                record_pending_block_page(&mut block_pages, &mut pending_block, first_page);
+                block_projection.record_pending_page(first_page);
             }
             FlowItem::PageBreak => {
                 cursor.force_page(&mut pages, active_geom);
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
+                block_projection.record_pending_page(pages.len().saturating_sub(1));
             }
             FlowItem::ColumnBreak => {
                 cursor.advance(&mut pages, active_geom);
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
+                block_projection.record_pending_page(pages.len().saturating_sub(1));
             }
             FlowItem::SectionColumnGap(_) => {}
             FlowItem::SectionColumnLayout(_) => {}
@@ -1174,11 +1144,7 @@ fn paginate_with_state(
                     &section,
                     section_index,
                 );
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
+                block_projection.record_pending_page(pages.len().saturating_sub(1));
                 section_start_page_index = next_section_page.saturating_sub(1);
                 section_index = section_index.saturating_add(1);
             }
@@ -1193,20 +1159,12 @@ fn paginate_with_state(
                     &active_top_bottom_bands,
                     None,
                 );
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
+                block_projection.record_pending_page(pages.len().saturating_sub(1));
                 place_item(&mut pages, cursor, FlowItem::Row(r), h);
             }
         }
     }
-    record_pending_block_page(
-        &mut block_pages,
-        &mut pending_block,
-        pages.len().saturating_sub(1),
-    );
+    block_projection.record_pending_page(pages.len().saturating_sub(1));
     page_sections.resize(pages.len(), None);
     assign_section_to_render_pages(
         &mut page_sections,
@@ -1215,6 +1173,12 @@ fn paginate_with_state(
         final_section_setup,
         section_index,
     );
+    let BlockProjectionState {
+        block_pages,
+        block_line_pages,
+        block_line_widths,
+        ..
+    } = block_projection;
     Pagination {
         pages,
         page_sections,
@@ -1786,9 +1750,9 @@ mod tests {
         assert!(state.active_track.column_rtl);
         assert_eq!(state.active_track.cursor.columns.count, 2);
         assert_eq!(state.active_track.cursor.y, state.active_track.geom.top());
-        assert!(state.block_pages.is_empty());
-        assert!(state.block_line_pages.is_empty());
-        assert!(state.block_line_widths.is_empty());
+        assert!(state.block_projection.block_pages.is_empty());
+        assert!(state.block_projection.block_line_pages.is_empty());
+        assert!(state.block_projection.block_line_widths.is_empty());
     }
 
     #[test]
@@ -1845,6 +1809,39 @@ mod tests {
         assert_eq!(track.cursor.column_index, 1);
         assert_eq!(track.cursor.y, changed_geom.top());
         assert!(!track.cursor.column_nonempty);
+    }
+
+    #[test]
+    fn block_projection_state_records_first_page_range_and_width() {
+        let mut state = BlockProjectionState::default();
+        state.mark_pending(7);
+        state.record_pending_page(3);
+        state.mark_pending(7);
+        state.record_pending_page(4);
+        let FlowItem::Line(mut line) = line(10.0) else {
+            panic!("line fixture");
+        };
+        let range = LineCharRange { start: 2, end: 5 };
+        line.char_range = Some(range);
+
+        state.record_line(Some(7), &line, 4, 72.0);
+        state.record_line(Some(7), &line, 5, f32::NAN);
+
+        assert_eq!(state.block_pages.get(&7), Some(&3));
+        assert_eq!(
+            state.block_line_pages.get(&7),
+            Some(&vec![
+                BlockLinePage {
+                    page_index: 4,
+                    range,
+                },
+                BlockLinePage {
+                    page_index: 5,
+                    range,
+                },
+            ]),
+        );
+        assert_eq!(state.block_line_widths.get(&7), Some(&vec![72.0]));
     }
 
     #[test]
