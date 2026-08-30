@@ -16424,6 +16424,105 @@ mod tests {
     }
 
     #[test]
+    fn equal_line_count_unequal_paragraph_uses_live_boundaries() {
+        let page = PageSetup {
+            width_pt: 182.0,
+            height_pt: 120.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let text = "alpha beta gamma delta epsilon zeta eta";
+        let mut target = Paragraph {
+            runs: vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        target.props.spacing.before_pt = Some(32.0);
+        let model = DocModel {
+            blocks: vec![para("seed", None), Block::Paragraph(target)],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 62.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let hints = super::SourceRenderHints {
+            final_section_column_layout: Some(&source),
+            ..super::SourceRenderHints::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&page);
+        let setup = SectionSetup::from(&model.setup);
+        let mut conservative_capture = LayoutCapture::default();
+        let conservative_items = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut conservative_capture,
+            hints,
+            &[],
+            None,
+        );
+        let conservative =
+            paginate_with_column_gap(conservative_items, geom, &setup, None, Some(&source), false);
+        let mut adaptive_capture = LayoutCapture::default();
+        let adaptive = super::collect_and_paginate_pdf_flow(
+            &model,
+            geom,
+            &mut tcx,
+            &mut adaptive_capture,
+            hints,
+            &[],
+            None,
+        );
+        let ranges = |pagination: &super::Pagination| {
+            pagination.block_line_pages[&1]
+                .iter()
+                .map(|line| (line.range.start, line.range.end))
+                .collect::<Vec<_>>()
+        };
+        let conservative_ranges = ranges(&conservative);
+        let adaptive_ranges = ranges(&adaptive);
+
+        assert_eq!(
+            conservative_ranges,
+            [(0, 11), (11, 17), (17, 23), (23, 31), (31, 39)]
+        );
+        assert_eq!(adaptive_ranges.len(), conservative_ranges.len());
+        assert_eq!(
+            adaptive_ranges,
+            [(0, 11), (11, 17), (17, 23), (23, 36), (36, 39)]
+        );
+        assert_eq!(
+            adaptive.block_line_widths[&1],
+            [60.0, 62.0, 62.0, 62.0, 62.0]
+        );
+    }
+
+    #[test]
     fn rtl_wider_unequal_start_column_rewraps_single_column_paragraph() {
         let page = PageSetup {
             width_pt: 220.0,
