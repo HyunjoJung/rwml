@@ -150,6 +150,52 @@ pub(super) fn first_row_fragment_height(row: &RowLayout) -> f32 {
         .min(row.height)
 }
 
+enum TableRowFragmentStep {
+    MoveToFreshTrack,
+    Place {
+        row: RowLayout,
+        has_continuation: bool,
+    },
+}
+
+struct TableRowFragmentCursor {
+    remaining: Option<RowLayout>,
+}
+
+impl TableRowFragmentCursor {
+    fn new(row: RowLayout) -> Self {
+        Self {
+            remaining: Some(row),
+        }
+    }
+
+    fn next_fragment(
+        &mut self,
+        available_height: f32,
+        on_fresh_track: bool,
+    ) -> Option<TableRowFragmentStep> {
+        let row = self.remaining.as_ref()?;
+        if row.height <= available_height {
+            return Some(TableRowFragmentStep::Place {
+                row: self.remaining.take()?,
+                has_continuation: false,
+            });
+        }
+        let remaining_can_hold_fragment = available_height >= first_row_fragment_height(row);
+        if !on_fresh_track && (row.cant_split || !remaining_can_hold_fragment) {
+            return Some(TableRowFragmentStep::MoveToFreshTrack);
+        }
+        let row = self.remaining.take()?;
+        let (fragment, continuation) = split_row(row, available_height);
+        let has_continuation = continuation.is_some();
+        self.remaining = continuation;
+        Some(TableRowFragmentStep::Place {
+            row: fragment,
+            has_continuation,
+        })
+    }
+}
+
 /// Place one row, breaking pages as needed. A splittable row uses the remaining
 /// column when it can hold a complete line. An authored `cantSplit` row that fits
 /// a fresh column moves there whole; an over-tall row still splits at line
@@ -157,48 +203,46 @@ pub(super) fn first_row_fragment_height(row: &RowLayout) -> f32 {
 fn place_row(
     pages: &mut Pages,
     cursor: &mut FlowCursor,
-    mut row: RowLayout,
+    row: RowLayout,
     headers: &[RowLayout],
     is_header: bool,
     geom: Geom,
 ) -> usize {
     let mut on_fresh = !cursor.column_nonempty;
     let mut first_page = None;
+    let mut fragment_cursor = TableRowFragmentCursor::new(row);
     loop {
         let avail = geom.bottom() - cursor.y;
-        if row.height <= avail {
-            let h = row.height;
-            place_item(pages, cursor, FlowItem::Row(row), h);
-            let page = pages.len().saturating_sub(1);
-            return *first_page.get_or_insert(page);
-        }
-        let remaining_can_hold_fragment = avail >= first_row_fragment_height(&row);
-        if !on_fresh && (row.cant_split || !remaining_can_hold_fragment) {
-            // Keep authored `cantSplit` rows together when they fit a fresh
-            // column; also avoid forcing a partial line into a tiny remainder.
-            cursor.advance(pages, geom);
-            if !is_header {
-                repeat_headers(pages, cursor, headers);
-            }
-            on_fresh = true;
-            continue;
-        }
-        // On a fresh column (after any headers) and still too tall: split.
-        let (frag, rest) = split_row(row, geom.bottom() - cursor.y);
-        let fh = frag.height;
-        place_item(pages, cursor, FlowItem::Row(frag), fh);
-        let page = pages.len().saturating_sub(1);
-        let table_first_page = *first_page.get_or_insert(page);
-        match rest {
-            Some(r) => {
+        let Some(step) = fragment_cursor.next_fragment(avail, on_fresh) else {
+            return first_page.unwrap_or_else(|| pages.len().saturating_sub(1));
+        };
+        match step {
+            TableRowFragmentStep::MoveToFreshTrack => {
+                // Keep authored `cantSplit` rows together when they fit a fresh
+                // column; also avoid forcing a partial line into a tiny remainder.
                 cursor.advance(pages, geom);
                 if !is_header {
                     repeat_headers(pages, cursor, headers);
                 }
-                row = r;
                 on_fresh = true;
             }
-            None => return table_first_page,
+            TableRowFragmentStep::Place {
+                row,
+                has_continuation,
+            } => {
+                let height = row.height;
+                place_item(pages, cursor, FlowItem::Row(row), height);
+                let page = pages.len().saturating_sub(1);
+                let table_first_page = *first_page.get_or_insert(page);
+                if !has_continuation {
+                    return table_first_page;
+                }
+                cursor.advance(pages, geom);
+                if !is_header {
+                    repeat_headers(pages, cursor, headers);
+                }
+                on_fresh = true;
+            }
         }
     }
 }
@@ -2092,6 +2136,73 @@ mod tests {
                     .count()
             })
             .collect()
+    }
+
+    #[test]
+    fn table_row_fragment_cursor_preserves_move_split_and_terminal_state() {
+        let line_layout = |height| match line(height) {
+            FlowItem::Line(line) => line,
+            _ => unreachable!(),
+        };
+        let row = RowLayout {
+            height: 35.0,
+            cells: vec![CellBox {
+                x: 0.0,
+                right: 50.0,
+                width: 50.0,
+                lines: vec![line_layout(10.0), line_layout(10.0), line_layout(10.0)],
+                insets: CellInsets {
+                    top: 2.0,
+                    right: 0.0,
+                    bottom: 3.0,
+                    left: 0.0,
+                },
+                shading: None,
+                valign: VCell::Top,
+                border_edges: CellBorderEdges::outer(),
+            }],
+            cant_split: true,
+            border: TableBorderPaints::default(),
+            table_id: Some(7),
+        };
+        let mut cursor = TableRowFragmentCursor::new(row);
+
+        assert!(matches!(
+            cursor.next_fragment(15.0, false),
+            Some(TableRowFragmentStep::MoveToFreshTrack)
+        ));
+        let Some(TableRowFragmentStep::Place {
+            row: first,
+            has_continuation: true,
+        }) = cursor.next_fragment(15.0, true)
+        else {
+            panic!("fresh track must receive the first row fragment");
+        };
+        assert_eq!(first.height, 15.0);
+        assert_eq!(first.table_id, Some(7));
+        assert_eq!(first.cells[0].lines.len(), 1);
+        assert_eq!(first.cells[0].insets.top, 2.0);
+        assert_eq!(first.cells[0].insets.bottom, 0.0);
+        assert_eq!(first.cells[0].border_edges.bottom, None);
+
+        let Some(TableRowFragmentStep::Place {
+            row: terminal,
+            has_continuation: false,
+        }) = cursor.next_fragment(23.0, true)
+        else {
+            panic!("second track must receive the terminal row fragment");
+        };
+        assert_eq!(terminal.height, 23.0);
+        assert_eq!(terminal.table_id, Some(7));
+        assert_eq!(terminal.cells[0].lines.len(), 2);
+        assert_eq!(terminal.cells[0].insets.top, 0.0);
+        assert_eq!(terminal.cells[0].insets.bottom, 3.0);
+        assert_eq!(terminal.cells[0].border_edges.top, None);
+        assert_eq!(
+            terminal.cells[0].border_edges.bottom,
+            Some(TableBorderSide::Bottom)
+        );
+        assert!(cursor.next_fragment(100.0, true).is_none());
     }
 
     #[test]
