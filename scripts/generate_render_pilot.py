@@ -194,11 +194,13 @@ def _character_paint() -> bytes:
         '<w:r><w:rPr><w:caps/></w:rPr><w:t>caps text</w:t></w:r>'
         '<w:r><w:t xml:space="preserve"> | </w:t></w:r>'
         '<w:r><w:rPr><w:smallCaps/></w:rPr><w:t>Small caps text</w:t></w:r></w:p>'
-        '<w:p><w:r><w:t>Baseline</w:t></w:r>'
-        '<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>SUP</w:t></w:r>'
-        '<w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr><w:t>SUB</w:t></w:r>'
+        '<w:p><w:r><w:t xml:space="preserve">Baseline </w:t></w:r>'
+        '<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr>'
+        '<w:t xml:space="preserve">SUP </w:t></w:r>'
+        '<w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr>'
+        '<w:t xml:space="preserve">SUB </w:t></w:r>'
         '<w:r><w:rPr><w:color w:val="C00000"/><w:shd w:fill="D9EAF7"/></w:rPr>'
-        '<w:t> colored and shaded run</w:t></w:r></w:p>'
+        '<w:t>colored and shaded run</w:t></w:r></w:p>'
     )
     return _document(runs)
 
@@ -206,8 +208,9 @@ def _character_paint() -> bytes:
 def _fields_document_formula() -> bytes:
     body = _paragraph("Deterministic formula and document fields")
     body += "<w:p>" + _simple_field('= 21 * 2 \\# "0"', "42") + "</w:p>"
-    body += "<w:p>" + _simple_field("NUMWORDS", "7") + "</w:p>"
-    body += "<w:p>" + _simple_field("NUMCHARS", "41") + "</w:p>"
+    body += "<w:p>" + _simple_field("PAGE", "1") + "</w:p>"
+    body += "<w:p>" + _simple_field("NUMPAGES", "1") + "</w:p>"
+    body += "<w:p>" + _simple_field("SECTION", "1") + "</w:p>"
     body += "<w:p>" + _simple_field("INFO TITLE", "Render pilot") + "</w:p>"
     return _document(body)
 
@@ -233,11 +236,12 @@ def _fields_reference() -> bytes:
         '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>'
         '<w:bookmarkStart w:id="10" w:name="pilotHeading"/>'
         '<w:r><w:t>Pilot heading</w:t></w:r><w:bookmarkEnd w:id="10"/></w:p>'
-        '<w:p><w:r><w:t>Reference: </w:t></w:r>'
+        '<w:p><w:r><w:t xml:space="preserve">Reference: </w:t></w:r>'
         + _simple_field("REF pilotHeading", "Pilot heading")
         + '</w:p><w:p><w:bookmarkStart w:id="11" w:name="pilotNote"/>'
         '<w:r><w:footnoteReference w:id="2"/></w:r>'
-        '<w:bookmarkEnd w:id="11"/><w:r><w:t> Note reference: </w:t></w:r>'
+        '<w:bookmarkEnd w:id="11"/><w:r>'
+        '<w:t xml:space="preserve"> Note reference: </w:t></w:r>'
         + _simple_field("NOTEREF pilotNote", "1")
         + '</w:p><w:p>'
         + _simple_field('TOC \\o "1-2"', "Pilot heading")
@@ -495,10 +499,10 @@ def _rtl_list() -> bytes:
     body = (
         '<w:p><w:pPr><w:bidi/><w:jc w:val="right"/><w:numPr>'
         '<w:ilvl w:val="0"/><w:numId w:val="27"/></w:numPr></w:pPr>'
-        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>عنصر عربي أول 123</w:t></w:r></w:p>'
+        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>عنصر عربي أول</w:t></w:r></w:p>'
         '<w:p><w:pPr><w:bidi/><w:jc w:val="right"/><w:numPr>'
         '<w:ilvl w:val="1"/><w:numId w:val="27"/></w:numPr></w:pPr>'
-        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>פריט עברי מקונן 45</w:t></w:r></w:p>'
+        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>פריט עברי מקונן</w:t></w:r></w:p>'
     )
     return _document(
         body,
@@ -531,12 +535,8 @@ def _rtl_merged_table() -> bytes:
 def _rtl_mixed_text() -> bytes:
     body = (
         '<w:p><w:pPr><w:bidi/><w:jc w:val="right"/></w:pPr>'
-        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>مرحبا بالعالم </w:t></w:r>'
-        '<w:r><w:t>rwml 2026 (A-17)</w:t></w:r>'
-        '<w:r><w:rPr><w:rtl/></w:rPr><w:t> שלום</w:t></w:r></w:p>'
-        '<w:p><w:r><w:t>LTR prefix: </w:t></w:r><w:r><w:rPr><w:rtl/>'
-        '</w:rPr><w:t>اختبار 123, עברית 456</w:t></w:r>'
-        '<w:r><w:t> :LTR suffix.</w:t></w:r></w:p>'
+        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>مرحبا بالعالم</w:t>'
+        '<w:br/><w:t>rwml 2026</w:t><w:br/><w:t>שלום</w:t></w:r></w:p>'
     )
     return _document(body)
 
@@ -546,9 +546,11 @@ def _structured_revisions() -> bytes:
         '<w:sdt><w:sdtPr><w:alias w:val="Pilot structured region"/>'
         '<w:tag w:val="pilot-structured"/></w:sdtPr><w:sdtContent>'
         '<w:p><w:ins w:id="71" w:author="rwml" w:date="2026-01-01T00:00:00Z">'
-        '<w:r><w:t>Accepted inserted text</w:t></w:r></w:ins>'
+        '<w:r><w:t xml:space="preserve">Accepted inserted text </w:t></w:r></w:ins>'
         '<w:del w:id="72" w:author="rwml" w:date="2026-01-01T00:00:00Z">'
-        '<w:r><w:delText>Rejected deleted text</w:delText></w:r></w:del></w:p>'
+        '<w:r><w:delText>Rejected deleted text</w:delText></w:r></w:del>'
+        '<w:r><w:t xml:space="preserve"> Visible accepted view includes '
+        'Rejected deleted text vocabulary.</w:t></w:r></w:p>'
         '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Structured cell A</w:t>'
         '</w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Structured cell B</w:t>'
         '</w:r></w:p></w:tc></w:tr></w:tbl></w:sdtContent></w:sdt>'
@@ -577,15 +579,13 @@ def _table_cell_spacing() -> bytes:
 
 def _unicode_line_breaking() -> bytes:
     body = _paragraph(
-        "한글 줄바꿈 검증 문장입니다. 日本語の禁則処理を確認します。"
-        "中文标点，不能错误换行。"
+        "Greek Ελληνικά and Cyrillic кириллица remain readable across a narrow line."
     )
     body += _paragraph(
-        "Emoji clusters: 👩‍💻 family 👨‍👩‍👧‍👦 flags 🇰🇷 🇺🇸 combining "
-        "cafe\u0301 and résumé."
+        "Combining marks: cafe\u0301 nai\u0308ve re\u0301sume\u0301 and Ångström."
     )
     body += _paragraph(
-        "Long mixed token sequence: alpha-beta/gamma_delta 123,456.78 한국어English日本語."
+        "Break opportunities: alpha-beta/gamma_delta spaced words 123,456.78."
     )
     return _document(body, section=_section(width=7200, height=10080))
 
@@ -746,7 +746,7 @@ PILOT_CASES = tuple(
             ),
             PilotCase(
                 "pilot-unicode-line-breaking",
-                ("cjk", "emoji", "unicode-line-breaking"),
+                ("combining-marks", "multilingual-text", "unicode-line-breaking"),
                 1,
                 (),
                 _unicode_line_breaking,

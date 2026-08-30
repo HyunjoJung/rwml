@@ -1269,6 +1269,14 @@ class RightToLeftReadingOrderTests(unittest.TestCase):
 
 
 class TextObjectBoundaryTests(unittest.TestCase):
+    def test_extracted_text_tokens_treat_nul_as_a_separator(self):
+        self.assertEqual(
+            render_validate.extracted_text_tokens(
+                "Hanging\x00middle\x00right edge"
+            ),
+            ["Hanging", "middle", "right", "edge"],
+        )
+
     def test_content_stream_text_separates_text_objects(self):
         cmaps = {"f0": {"width": 2, "map": {1: "a", 2: "b"}}}
         content = b"BT /f0 11 Tf (\x00\x01) Tj ET BT /f0 11 Tf (\x00\x02) Tj ET"

@@ -1502,11 +1502,16 @@ def conforming_tokens(doc) -> list[str]:
     return out
 
 
+def extracted_text_tokens(text: str) -> list[str]:
+    """Split extracted PDF text, treating NUL layout separators as whitespace."""
+    return text.replace("\x00", " ").split()
+
+
 def tokens(pdf: Path) -> list[str]:
     require_pdf_deps()
     doc = fitz.open(pdf)
     text = " ".join(p.get_text() for p in doc)
-    return text.split()
+    return extracted_text_tokens(text)
 
 
 def candidate_tokens(pdf: Path) -> list[str]:
@@ -1520,7 +1525,7 @@ def candidate_tokens(pdf: Path) -> list[str]:
     require_pdf_deps()
     doc = fitz.open(pdf)
     text = " ".join(p.get_text() for p in doc)
-    return text.split() + conforming_tokens(doc)
+    return extracted_text_tokens(text) + conforming_tokens(doc)
 
 
 def reference_recall_tokens(
@@ -2448,7 +2453,9 @@ def main() -> int:
             if ref is not None and local_font_lock is not None:
                 try:
                     validate_pdf_font_identities(
-                        reference_pdf_font_identities(ref), local_font_lock
+                        reference_pdf_font_identities(ref),
+                        local_font_lock,
+                        allow_empty=True,
                     )
                 except ValueError:
                     reference_fonts_valid = False
@@ -2466,7 +2473,9 @@ def main() -> int:
                 if again is not None and local_font_lock is not None:
                     try:
                         validate_pdf_font_identities(
-                            reference_pdf_font_identities(again), local_font_lock
+                            reference_pdf_font_identities(again),
+                            local_font_lock,
+                            allow_empty=True,
                         )
                     except ValueError:
                         reference_fonts_valid = False

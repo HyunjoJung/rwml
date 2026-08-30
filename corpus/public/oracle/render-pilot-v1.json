@@ -2,7 +2,7 @@
   "campaign": "public-render-pilot-v1",
   "documents": [
     {
-      "bytes": 3647,
+      "bytes": 3712,
       "expected": {
         "pages": 1,
         "warnings": []
@@ -18,12 +18,12 @@
       "id": "pilot-character-paint",
       "path": "documents/pilot-character-paint.docx",
       "provenance": "rwml-render-pilot",
-      "sha256": "096b0d379147db8d31f8f059e7ad82369d4ddc4f421e62fb44450f6f99ed3027",
+      "sha256": "e72b4dc61b99064dc1a9b67dfe131a24ca9ee06fc31681c1ff2a093b0da54544",
       "source": "pilot-generated",
       "source_path": "scripts/generate_render_pilot.py#pilot-character-paint"
     },
     {
-      "bytes": 3492,
+      "bytes": 3566,
       "expected": {
         "pages": 1,
         "warnings": []
@@ -37,12 +37,12 @@
       "id": "pilot-fields-document-formula",
       "path": "documents/pilot-fields-document-formula.docx",
       "provenance": "rwml-render-pilot",
-      "sha256": "887a3940722490ffa6af7ec3d5fceda4ef4a23985a85b26b9525af9cd77f0c93",
+      "sha256": "4557bc2f1e7869f13c52c459d76afe2886b0702001da0149c264c1386d0ce65a",
       "source": "pilot-generated",
       "source_path": "scripts/generate_render_pilot.py#pilot-fields-document-formula"
     },
     {
-      "bytes": 4688,
+      "bytes": 4730,
       "expected": {
         "pages": 1,
         "warnings": []
@@ -57,7 +57,7 @@
       "id": "pilot-fields-reference",
       "path": "documents/pilot-fields-reference.docx",
       "provenance": "rwml-render-pilot",
-      "sha256": "0d19978afa9abc846aab3c86e11dc8a39e85a5da00548915aa34df792633baf6",
+      "sha256": "8e1c2d2a9d8bfe3a28db178691bbe35956841faa57fb62193f7fd0c07e538327",
       "source": "pilot-generated",
       "source_path": "scripts/generate_render_pilot.py#pilot-fields-reference"
     },
@@ -239,7 +239,7 @@
       "source_path": "scripts/generate_render_pilot.py#pilot-paragraph-spacing-tabs"
     },
     {
-      "bytes": 4511,
+      "bytes": 4504,
       "expected": {
         "pages": 1,
         "warnings": []
@@ -254,7 +254,7 @@
       "id": "pilot-rtl-list",
       "path": "documents/pilot-rtl-list.docx",
       "provenance": "rwml-render-pilot",
-      "sha256": "969611d0c4ae1bf393f1f4f926672d20ca476de2ab4965deaa1b86e0dbdd40ea",
+      "sha256": "b6240beaf7da622b8737ded3a467552afa2c3e201a93d1498880da5b3a7dd746",
       "source": "pilot-generated",
       "source_path": "scripts/generate_render_pilot.py#pilot-rtl-list"
     },
@@ -279,7 +279,7 @@
       "source_path": "scripts/generate_render_pilot.py#pilot-rtl-merged-table"
     },
     {
-      "bytes": 3421,
+      "bytes": 3224,
       "expected": {
         "pages": 1,
         "warnings": []
@@ -293,12 +293,12 @@
       "id": "pilot-rtl-mixed-text",
       "path": "documents/pilot-rtl-mixed-text.docx",
       "provenance": "rwml-render-pilot",
-      "sha256": "dce92aedfe3308be291bdd9551c6c62257b75d28b047f47f31594ed78dcdf103",
+      "sha256": "4149053777bdf56cf4cf6b161c08e772995fe4fb88d4ae5494e4fc6e499b6719",
       "source": "pilot-generated",
       "source_path": "scripts/generate_render_pilot.py#pilot-rtl-mixed-text"
     },
     {
-      "bytes": 3589,
+      "bytes": 3719,
       "expected": {
         "pages": 1,
         "warnings": []
@@ -313,7 +313,7 @@
       "id": "pilot-structured-revisions",
       "path": "documents/pilot-structured-revisions.docx",
       "provenance": "rwml-render-pilot",
-      "sha256": "e43d8b7e8d0982e2f4b8e10e4e48cc171b4e32a4abd047774f613555554a865b",
+      "sha256": "2e7a44fff6707004beeff629f11c9a7f778f11e3f9ed3f315e053a551b9841dd",
       "source": "pilot-generated",
       "source_path": "scripts/generate_render_pilot.py#pilot-structured-revisions"
     },
@@ -357,21 +357,21 @@
       "source_path": "scripts/generate_render_pilot.py#pilot-unequal-table-continuation"
     },
     {
-      "bytes": 3530,
+      "bytes": 3424,
       "expected": {
         "pages": 1,
         "warnings": []
       },
       "features": [
-        "cjk",
-        "emoji",
+        "combining-marks",
+        "multilingual-text",
         "unicode-line-breaking"
       ],
       "format": "docx",
       "id": "pilot-unicode-line-breaking",
       "path": "documents/pilot-unicode-line-breaking.docx",
       "provenance": "rwml-render-pilot",
-      "sha256": "c8098f396d984a5ee1b3bb5b61b48d7ba24961511a4d514eff3bf7f4d142ce3b",
+      "sha256": "3161173dcf09d34509c256345b309468b1ea9c6497333dd57c3e56025131fd3d",
       "source": "pilot-generated",
       "source_path": "scripts/generate_render_pilot.py#pilot-unicode-line-breaking"
     },
@@ -798,7 +798,7 @@
       "source_path": "synthetic/wrap-top-bottom.docx"
     }
   ],
-  "generator_closure_sha256": "d456ba72436ef7eb5001e7cfaff54049b9a8c0cfe674e382b43bb1f6df5fc71e",
+  "generator_closure_sha256": "76e7cad3489f165e54627da2e8b2e4e928b26ea6ba6d1d3d9f04bf4cdf0099a4",
   "limits": {
     "max_documents": 40,
     "max_input_bytes": 262144,

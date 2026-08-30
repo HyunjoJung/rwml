@@ -104,6 +104,11 @@ class LibreOfficeOracleFontTests(unittest.TestCase):
         valid = [{"postscript_name": "NotoSans-Regular", "sfnt_revision": 132055}]
 
         libreoffice_oracle_fonts.validate_pdf_font_identities(valid, lock)
+        with self.assertRaisesRegex(ValueError, "no embedded fonts"):
+            libreoffice_oracle_fonts.validate_pdf_font_identities([], lock)
+        libreoffice_oracle_fonts.validate_pdf_font_identities(
+            [], lock, allow_empty=True
+        )
         with self.assertRaisesRegex(ValueError, "not locked"):
             libreoffice_oracle_fonts.validate_pdf_font_identities(
                 [{"postscript_name": "GeezaPro", "sfnt_revision": 65536}],

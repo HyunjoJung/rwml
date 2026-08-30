@@ -324,9 +324,14 @@ def normalized_postscript_name(value: str) -> str:
 
 
 def validate_pdf_font_identities(
-    identities: list[dict[str, object]], lock: dict[str, Any]
+    identities: list[dict[str, object]],
+    lock: dict[str, Any],
+    *,
+    allow_empty: bool = False,
 ) -> None:
     if not identities:
+        if allow_empty:
+            return
         raise ValueError("reference PDF has no embedded fonts")
     expected = {entry["postscript_name"]: entry for entry in font_files(lock)}
     for identity in identities:

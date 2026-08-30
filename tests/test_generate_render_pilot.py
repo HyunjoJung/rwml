@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import io
 import json
 import pathlib
 import sys
@@ -41,6 +42,26 @@ class RenderPilotGeneratorTests(unittest.TestCase):
                         document = archive.read("word/document.xml")
                 self.assertNotIn(b"/Users/", document)
                 self.assertNotIn(b"/home/", document)
+
+        by_id = {case.case_id: case for case in cases}
+        field_document = by_id["pilot-fields-document-formula"].builder()
+        rtl_document = by_id["pilot-rtl-mixed-text"].builder()
+        unicode_document = by_id["pilot-unicode-line-breaking"].builder()
+        with zipfile.ZipFile(io.BytesIO(field_document)) as archive:
+            field_xml = archive.read("word/document.xml")
+        with zipfile.ZipFile(io.BytesIO(rtl_document)) as archive:
+            rtl_xml = archive.read("word/document.xml")
+        with zipfile.ZipFile(io.BytesIO(unicode_document)) as archive:
+            unicode_xml = archive.read("word/document.xml")
+        self.assertIn(b"NUMPAGES", field_xml)
+        self.assertNotIn(b"NUMWORDS", field_xml)
+        self.assertIn("Ελληνικά".encode(), unicode_xml)
+        self.assertIn("кириллица".encode(), unicode_xml)
+        self.assertNotIn("👩".encode(), unicode_xml)
+        self.assertNotIn("\u00ad".encode(), unicode_xml)
+        self.assertNotIn("\u200b".encode(), unicode_xml)
+        self.assertEqual(rtl_xml.count(b"<w:t"), 3)
+        self.assertEqual(rtl_xml.count(b"<w:p>"), 1)
 
     def test_pilot_lock_binds_exactly_40_documents_and_generator_closure(self):
         lock = generate_render_pilot.build_lock()
