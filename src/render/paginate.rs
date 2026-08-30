@@ -1,7 +1,12 @@
 //! Bounded flow placement across section pages and columns.
 
-use super::paragraph_flow::{layout_paragraph, BodyFlowEntry};
+use super::paragraph_flow::{
+    layout_paragraph, shape_paragraph_fragment, BodyFlowEntry, FragmentTrack,
+    ParagraphFragmentCursor,
+};
 use super::*;
+
+const MAX_LIVE_PARAGRAPH_FRAGMENTS: usize = 64;
 
 /// Place an item at the current `y` on the last page, then advance `y`.
 fn place_item(pages: &mut Pages, cursor: &mut FlowCursor, item: FlowItem, h: f32) {
@@ -338,6 +343,14 @@ impl BlockExclusionState {
 
     fn active_bands(&self) -> &[ActiveTopBottomBand] {
         &self.active_top_bottom_bands
+    }
+
+    fn permits_paragraph_fragment_substitution(&self) -> bool {
+        self.pending_top_bottom_bands.is_empty()
+            && self.active_top_bottom_bands.is_empty()
+            && self.deferred_top_bottom_bands.is_empty()
+            && !self.previous_keep_next
+            && !self.defer_current_top_bottom_bands
     }
 
     fn push_pending(
@@ -1135,6 +1148,247 @@ fn classify_paragraph_fragment(
     })
 }
 
+struct PreparedParagraphTrack {
+    advance_before: bool,
+    width: f32,
+    lines: Vec<LineLayout>,
+}
+
+struct PreparedParagraphFlow {
+    tracks: Vec<PreparedParagraphTrack>,
+}
+
+#[derive(Clone, Copy)]
+struct SimulatedParagraphTrack {
+    columns: ColumnLayout,
+    column_index: usize,
+    rtl: bool,
+    y: f32,
+    column_nonempty: bool,
+}
+
+impl SimulatedParagraphTrack {
+    fn from_cursor(cursor: &FlowCursor) -> Self {
+        Self {
+            columns: cursor.columns,
+            column_index: cursor.column_index,
+            rtl: cursor.rtl,
+            y: cursor.y,
+            column_nonempty: cursor.column_nonempty,
+        }
+    }
+
+    fn width(self) -> f32 {
+        self.columns.width(self.column_index)
+    }
+
+    fn advance(&mut self, geom: Geom) {
+        if self.rtl && self.column_index > 0 {
+            self.column_index -= 1;
+        } else if !self.rtl && self.column_index + 1 < self.columns.count {
+            self.column_index += 1;
+        } else {
+            self.column_index = FlowCursor::initial_column_index(self.columns, self.rtl);
+        }
+        self.y = geom.top();
+        self.column_nonempty = false;
+    }
+}
+
+fn prepare_live_paragraph_flow(
+    paragraph: &PlannedParagraphFlow<'_>,
+    candidate: ParagraphFragmentCandidate,
+    block_metric: &BlockPaginationMetrics,
+    active_track: &ActivePlacementTrack,
+    block_cursor: &BlockPlacementCursor,
+    block_exclusions: &BlockExclusionState,
+    cx: &mut TextCx<'_>,
+) -> Option<PreparedParagraphFlow> {
+    let request = &paragraph.request;
+    let eager_line_count = paragraph.item_range.len();
+    if candidate.pagination != PaginationHint::default()
+        || block_cursor.current_block_start != Some(candidate.block_start_index)
+        || !block_metric.is_paragraph
+        || block_metric.pagination != PaginationHint::default()
+        || block_metric.line_heights.len() != eager_line_count
+        || eager_line_count < 2
+        || !block_exclusions.permits_paragraph_fragment_substitution()
+        || request
+            .paragraph
+            .runs
+            .iter()
+            .any(|run| run.props.hidden || run.image.is_some())
+    {
+        return None;
+    }
+
+    let shaping_width = request.geom.content_w();
+    let physical_widths = &active_track.cursor.columns.widths[..active_track.cursor.columns.count];
+    if !shaping_width.is_finite()
+        || shaping_width <= 0.0
+        || physical_widths
+            .iter()
+            .any(|width| !width.is_finite() || *width + 0.01 < shaping_width)
+        || !physical_widths
+            .iter()
+            .any(|width| *width > shaping_width + 0.01)
+    {
+        return None;
+    }
+
+    let total_chars = request
+        .paragraph
+        .runs
+        .iter()
+        .map(|run| run.text.chars().count())
+        .fold(0usize, usize::saturating_add);
+    if total_chars == 0 {
+        return None;
+    }
+    let page_field_indices = request
+        .page_field_indices
+        .clone()
+        .unwrap_or_else(|| Rc::from(vec![None; request.paragraph.runs.len()]));
+    let mut fragment_cursor = ParagraphFragmentCursor {
+        source_char: 0,
+        marker_emitted: false,
+        page_field_indices,
+        pending_images: Rc::from(Vec::<Image>::new()),
+    };
+    let mut simulated = SimulatedParagraphTrack::from_cursor(&active_track.cursor);
+    let mut scratch_capture = LayoutCapture::default();
+    let mut tracks = Vec::new();
+    let mut line_count = 0usize;
+    let mut advance_before = false;
+
+    for _ in 0..MAX_LIVE_PARAGRAPH_FRAGMENTS {
+        let source_before = fragment_cursor.source_char;
+        let width = simulated.width();
+        let fragment = shape_paragraph_fragment(
+            request.paragraph,
+            request.marker.as_deref(),
+            request.tab_stops,
+            request.default_tab_stop_pt,
+            request.line_spacing_hint,
+            FragmentTrack {
+                width,
+                height: (active_track.geom.bottom() - simulated.y).max(0.0),
+            },
+            fragment_cursor.clone(),
+            cx,
+            &mut scratch_capture,
+        );
+        if fragment.deferred || !fragment.images.is_empty() || fragment.lines.is_empty() {
+            return None;
+        }
+
+        let source_after = fragment
+            .next
+            .as_ref()
+            .map_or(total_chars, |next| next.source_char);
+        if source_after <= source_before || source_after > total_chars {
+            return None;
+        }
+        let mut expected_char = source_before;
+        for line in &fragment.lines {
+            let range = line.char_range?;
+            if range.start != expected_char || range.end <= range.start {
+                return None;
+            }
+            expected_char = range.end;
+        }
+        if expected_char != source_after {
+            return None;
+        }
+
+        let first_height = fragment.lines[0].height;
+        if !first_height.is_finite() || first_height <= 0.0 {
+            return None;
+        }
+        if simulated.column_nonempty && simulated.y + first_height > active_track.geom.bottom() {
+            simulated.advance(active_track.geom);
+            advance_before = true;
+            continue;
+        }
+
+        for line in &fragment.lines {
+            let height = line.height;
+            if !height.is_finite()
+                || height <= 0.0
+                || (simulated.column_nonempty && simulated.y + height > active_track.geom.bottom())
+            {
+                return None;
+            }
+            simulated.y += height;
+            simulated.column_nonempty = true;
+        }
+        line_count = line_count.saturating_add(fragment.lines.len());
+        if line_count > eager_line_count {
+            return None;
+        }
+        tracks.push(PreparedParagraphTrack {
+            advance_before,
+            width,
+            lines: fragment.lines,
+        });
+        match fragment.next {
+            Some(next) => {
+                fragment_cursor = next;
+                simulated.advance(active_track.geom);
+                advance_before = true;
+            }
+            None => {
+                let first_width = tracks.first()?.width;
+                let uses_distinct_widths = tracks
+                    .iter()
+                    .skip(1)
+                    .any(|track| (track.width - first_width).abs() > 0.01);
+                return (line_count < eager_line_count && uses_distinct_widths)
+                    .then_some(PreparedParagraphFlow { tracks });
+            }
+        }
+    }
+    None
+}
+
+fn admit_prepared_paragraph_flow(
+    prepared: PreparedParagraphFlow,
+    pages: &mut Pages,
+    active_track: &mut ActivePlacementTrack,
+    block_projection: &mut BlockProjectionState,
+    block_cursor: &mut BlockPlacementCursor,
+    block_exclusions: &mut BlockExclusionState,
+    block_metric: &BlockPaginationMetrics,
+) {
+    for prepared_track in prepared.tracks {
+        if prepared_track.advance_before {
+            active_track.cursor.advance(pages, active_track.geom);
+        }
+        debug_assert!(
+            (active_track
+                .cursor
+                .columns
+                .width(active_track.cursor.column_index)
+                - prepared_track.width)
+                .abs()
+                <= 0.01
+        );
+        for line in prepared_track.lines {
+            admit_line(
+                pages,
+                active_track,
+                block_projection,
+                block_cursor,
+                block_exclusions,
+                LineAdmission {
+                    line,
+                    block_metric: Some(block_metric),
+                },
+            );
+        }
+    }
+}
+
 struct PlacementCoordinator {
     pages: Pages,
     page_sections: Vec<Option<RenderPageSection>>,
@@ -1373,12 +1627,31 @@ fn paginate_with_column_gap_and_metrics(
     )
 }
 
+#[cfg(test)]
 fn paginate_plan(
     plan: PaginationPlan<'_>,
     geom: Geom,
     final_section_setup: &SectionSetup,
     final_column_gap_pt: Option<f32>,
     final_column_rtl: bool,
+) -> Pagination {
+    paginate_plan_with_fragment_text(
+        plan,
+        geom,
+        final_section_setup,
+        final_column_gap_pt,
+        final_column_rtl,
+        None,
+    )
+}
+
+fn paginate_plan_with_fragment_text(
+    plan: PaginationPlan<'_>,
+    geom: Geom,
+    final_section_setup: &SectionSetup,
+    final_column_gap_pt: Option<f32>,
+    final_column_rtl: bool,
+    fragment_text: Option<&mut TextCx<'_>>,
 ) -> Pagination {
     let state = PlacementCoordinator::new(
         &plan,
@@ -1387,12 +1660,17 @@ fn paginate_plan(
         final_column_gap_pt,
         final_column_rtl,
     );
-    state.paginate(plan, final_section_setup)
+    state.paginate(plan, final_section_setup, fragment_text)
 }
 
 impl PlacementCoordinator {
-    fn paginate(self, plan: PaginationPlan<'_>, final_section_setup: &SectionSetup) -> Pagination {
-        paginate_with_state(self, plan, final_section_setup)
+    fn paginate(
+        self,
+        plan: PaginationPlan<'_>,
+        final_section_setup: &SectionSetup,
+        fragment_text: Option<&mut TextCx<'_>>,
+    ) -> Pagination {
+        paginate_with_state(self, plan, final_section_setup, fragment_text)
     }
 }
 
@@ -1400,6 +1678,7 @@ fn paginate_with_state(
     state: PlacementCoordinator,
     mut plan: PaginationPlan<'_>,
     final_section_setup: &SectionSetup,
+    mut fragment_text: Option<&mut TextCx<'_>>,
 ) -> Pagination {
     // Paginate flow items top-to-bottom through section columns and then across
     // pages. Tables repeat headers after each break and split oversized rows.
@@ -1435,6 +1714,42 @@ fn paginate_with_state(
             .expect("pagination plan keeps item contexts aligned");
         active_track.synchronize(context);
         let active_geom = active_track.geom;
+        if let (Some(paragraph_index), Some(cx)) = (paragraph_index, fragment_text.as_deref_mut()) {
+            let paragraph = &plan.paragraphs[paragraph_index];
+            if let ParagraphFragmentClassification::Candidate(candidate) = paragraph.classification
+            {
+                let block_metric = plan
+                    .block_metrics
+                    .get(candidate.block_start_index)
+                    .and_then(Option::as_ref);
+                if let Some((prepared, block_metric)) = block_metric
+                    .and_then(|block_metric| {
+                        prepare_live_paragraph_flow(
+                            paragraph,
+                            candidate,
+                            block_metric,
+                            &active_track,
+                            &block_cursor,
+                            &block_exclusions,
+                            cx,
+                        )
+                        .map(|prepared| (prepared, block_metric))
+                    })
+                    .filter(|_| item_cursor.skip_paragraph_fallback(paragraph_index))
+                {
+                    admit_prepared_paragraph_flow(
+                        prepared,
+                        &mut pages,
+                        &mut active_track,
+                        &mut block_projection,
+                        &mut block_cursor,
+                        &mut block_exclusions,
+                        block_metric,
+                    );
+                    continue;
+                }
+            }
+        }
         match item {
             FlowItem::BlockStart {
                 index: block_index,
@@ -1635,12 +1950,13 @@ pub(super) fn paginate_body_flow_with_column_gap(
         final_column_layout,
         final_column_rtl,
     );
-    paginate_plan(
+    paginate_plan_with_fragment_text(
         plan,
         geom,
         final_section_setup,
         final_column_gap_pt,
         final_column_rtl,
+        Some(cx),
     )
 }
 

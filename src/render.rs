@@ -16280,7 +16280,7 @@ mod tests {
     }
 
     #[test]
-    fn cross_track_unequal_paragraph_falls_back_to_narrow_wrapping() {
+    fn cross_track_unequal_paragraph_reshapes_each_track() {
         let page = PageSetup {
             width_pt: 220.0,
             height_pt: 160.0,
@@ -16294,11 +16294,20 @@ mod tests {
         )
         .collect::<Vec<_>>()
         .join(" ");
+        let mut long_paragraph = list_paragraph(&long_text, 0, true, "7.");
+        long_paragraph.runs.push(Run {
+            text: " 1".to_string(),
+            field: FieldRole::Simple {
+                instruction: "PAGE".to_string(),
+            },
+            ..Run::default()
+        });
+        let long_source_chars = long_paragraph.text().chars().count();
         let model = DocModel {
             blocks: vec![
                 para("seed", None),
                 para(short_text, None),
-                para(&long_text, None),
+                Block::Paragraph(long_paragraph),
             ],
             setup: crate::model::DocSetup {
                 page,
@@ -16348,7 +16357,7 @@ mod tests {
         );
         let conservative =
             paginate_with_column_gap(conservative_items, geom, &setup, None, Some(&source), false);
-        let mut adaptive_capture = LayoutCapture::default();
+        let mut adaptive_capture = LayoutCapture::page_fields();
         let adaptive = super::collect_and_paginate_pdf_flow(
             &model,
             geom,
@@ -16367,13 +16376,51 @@ mod tests {
         assert!(adaptive_short
             .iter()
             .all(|width| (*width - 100.0).abs() < 0.01));
-        assert_eq!(adaptive_long.len(), conservative_long.len());
+        assert!(adaptive_long.len() < conservative_long.len());
         assert!(adaptive_long
             .iter()
             .any(|width| (*width - 60.0).abs() < 0.01));
         assert!(adaptive_long
             .iter()
             .any(|width| (*width - 100.0).abs() < 0.01));
+        let adaptive_ranges = &adaptive.block_line_pages[&2];
+        assert_eq!(
+            adaptive_ranges.first().map(|line| line.range.start),
+            Some(0)
+        );
+        assert_eq!(
+            adaptive_ranges.last().map(|line| line.range.end),
+            Some(long_source_chars)
+        );
+        assert!(adaptive_ranges
+            .windows(2)
+            .all(|lines| lines[0].range.end == lines[1].range.start));
+        let marker_count = adaptive
+            .pages
+            .iter()
+            .flatten()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Line(line) => Some(line),
+                _ => None,
+            })
+            .filter(|line| drawn_line_text(line).contains("7. "))
+            .count();
+        assert_eq!(marker_count, 1);
+        assert_eq!(adaptive_capture.page_fields.len(), 1);
+        let page_field_indices = adaptive
+            .pages
+            .iter()
+            .flatten()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Line(line) => Some(line),
+                _ => None,
+            })
+            .flat_map(|line| &line.runs)
+            .filter_map(|run| run.dynamic.as_ref())
+            .map(|dynamic| dynamic.page_field_index)
+            .collect::<Vec<_>>();
+        assert!(!page_field_indices.is_empty());
+        assert!(page_field_indices.iter().all(|index| *index == Some(0)));
     }
 
     #[test]
