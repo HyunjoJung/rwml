@@ -633,16 +633,30 @@ impl PageScene {
     }
 
     fn push_fill_polygon(&mut self, points: &[(f32, f32)], color: rgb::Color) -> Result<()> {
-        if points.len() < 3 {
+        self.push_fill_polygon_iter(points.iter().copied(), color)
+    }
+
+    fn push_fill_polygon_iter<I>(&mut self, points: I, color: rgb::Color) -> Result<()>
+    where
+        I: Clone + Iterator<Item = (f32, f32)>,
+    {
+        let mut point_count = 0usize;
+        for (x, y) in points.clone() {
+            let Some(next_point_count) = point_count.checked_add(1) else {
+                return Err(Error::Render(format!(
+                    "page scene exceeds the {}-path-point limit",
+                    self.path_point_limit
+                )));
+            };
+            point_count = next_point_count;
+            if ScenePoint::new(x, y).is_none() {
+                return Ok(());
+            }
+        }
+        if point_count < 3 {
             return Ok(());
         }
-        if !points
-            .iter()
-            .all(|(x, y)| ScenePoint::new(*x, *y).is_some())
-        {
-            return Ok(());
-        }
-        let Some(next_point_count) = self.path_point_count.checked_add(points.len()) else {
+        let Some(next_point_count) = self.path_point_count.checked_add(point_count) else {
             return Err(Error::Render(format!(
                 "page scene exceeds the {}-path-point limit",
                 self.path_point_limit
@@ -654,10 +668,7 @@ impl PageScene {
                 self.path_point_limit
             )));
         }
-        let projected = points
-            .iter()
-            .map(|(x, y)| ScenePoint { x: *x, y: *y })
-            .collect::<Vec<_>>();
+        let projected = points.map(|(x, y)| ScenePoint { x, y }).collect::<Vec<_>>();
         self.push_operation(PageSceneOp::FillPolygon {
             points: projected.into_boxed_slice(),
             color,
@@ -6054,6 +6065,21 @@ fn project_and_replay_page_scene_fill_polygon(
     Ok(())
 }
 
+fn project_and_replay_page_scene_fill_polygon_iter<I>(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    points: I,
+    color: rgb::Color,
+) -> Result<()>
+where
+    I: Clone + Iterator<Item = (f32, f32)>,
+{
+    let start = scene.operations.len();
+    scene.push_fill_polygon_iter(points, color)?;
+    replay_page_scene_operations(surface, scene, start..scene.operations.len());
+    Ok(())
+}
+
 fn push_page_scene_clip(
     surface: &mut Surface<'_>,
     scene: &mut PageScene,
@@ -6747,31 +6773,25 @@ fn fill_line_segment(
 
 fn fill_area_shape(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     points: &[(f32, f32)],
     baseline_y: f32,
     color: rgb::Color,
-) {
+) -> Result<()> {
     let Some((first_x, _)) = points.first().copied() else {
-        return;
+        return Ok(());
     };
     let Some((last_x, _)) = points.last().copied() else {
-        return;
+        return Ok(());
     };
-    let mut pb = PathBuilder::new();
-    pb.move_to(first_x, baseline_y);
-    for (x, y) in points {
-        pb.line_to(*x, *y);
-    }
-    pb.line_to(last_x, baseline_y);
-    pb.close();
-    if let Some(path) = pb.finish() {
-        surface.set_fill(Some(Fill {
-            paint: color.into(),
-            rule: FillRule::NonZero,
-            opacity: NormalizedF32::ONE,
-        }));
-        surface.draw_path(&path);
-    }
+    project_and_replay_page_scene_fill_polygon_iter(
+        surface,
+        scene,
+        std::iter::once((first_x, baseline_y))
+            .chain(points.iter().copied())
+            .chain(std::iter::once((last_x, baseline_y))),
+        color,
+    )
 }
 
 #[derive(Clone, Copy)]
@@ -8267,7 +8287,7 @@ fn draw_authored_chart(
                                     value_y(value).clamp(plot_top, plot_bottom),
                                 ));
                             }
-                            fill_area_shape(surface, &points, zero_y, color);
+                            fill_area_shape(surface, scene, &points, zero_y, color)?;
                         }
                     } else {
                         for (series_index, series) in chart.series.iter().enumerate() {
@@ -8285,7 +8305,7 @@ fn draw_authored_chart(
                                     value_y(value).clamp(plot_top, plot_bottom),
                                 ));
                             }
-                            fill_area_shape(surface, &points, zero_y, color);
+                            fill_area_shape(surface, scene, &points, zero_y, color)?;
                             let mut previous: Option<(f32, f32)> = None;
                             for (point_x, point_y) in points {
                                 if let Some((prev_x, prev_y)) = previous {
@@ -14130,6 +14150,133 @@ mod tests {
         };
         assert_eq!(*rect, super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap());
         assert_eq!(*legend_color, super::chart_series_color(0));
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn area_fill_polygon_enters_the_scene_before_outline_and_markers() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Area,
+            categories: vec!["Low".to_string(), "High".to_string(), "Mid".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![0.0, 10.0, 5.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        assert_eq!(scene.operations.len(), 19);
+        let super::PageSceneOp::FillPolygon { points, color } = &scene.operations[12] else {
+            panic!(
+                "area fill must precede its outline: {:?}",
+                scene.operations[12]
+            );
+        };
+        let expected = [
+            (126.333_33, 164.0),
+            (126.333_33, 164.0),
+            (195.0, 28.0),
+            (263.666_66, 96.0),
+            (263.666_66, 164.0),
+        ];
+        assert_eq!(points.len(), expected.len());
+        for (point, (x, y)) in points.iter().zip(expected) {
+            assert_close(point.x, x);
+            assert_close(point.y, y);
+        }
+        assert_eq!(*color, super::chart_series_color(0));
+        assert_eq!(
+            scene.operations[13],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(124.333_33, 162.0, 4.0, 4.0).unwrap(),
+                color: super::chart_series_color(0),
+            }
+        );
+        assert_eq!(
+            scene.operations[18],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap(),
+                color: super::chart_series_color(0),
+            }
+        );
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn area_shape_preserves_short_series_and_path_point_limits() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::with_path_point_limit(3);
+
+        super::fill_area_shape(&mut surface, &mut scene, &[], 20.0, color)
+            .expect("empty area is ignored");
+        super::fill_area_shape(&mut surface, &mut scene, &[(10.0, 5.0)], f32::NAN, color)
+            .expect("non-finite area is ignored");
+        assert!(scene.operations.is_empty());
+        assert_eq!(scene.path_point_count, 0);
+
+        super::fill_area_shape(&mut surface, &mut scene, &[(10.0, 5.0)], 20.0, color)
+            .expect("one-point area keeps its closed path");
+        assert_eq!(scene.path_point_count, 3);
+        assert_eq!(
+            scene.operations,
+            vec![super::PageSceneOp::FillPolygon {
+                points: vec![
+                    super::ScenePoint { x: 10.0, y: 20.0 },
+                    super::ScenePoint { x: 10.0, y: 5.0 },
+                    super::ScenePoint { x: 10.0, y: 20.0 },
+                ]
+                .into_boxed_slice(),
+                color,
+            }]
+        );
+
+        let unchanged = (scene.operations.len(), scene.path_point_count);
+        let error = super::fill_area_shape(&mut surface, &mut scene, &[(10.0, 5.0)], 20.0, color)
+            .expect_err("point ceiling rejects another area");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 3-path-point limit"
+        );
+        assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
 
         surface.finish();
         page.finish();
