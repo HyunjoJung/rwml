@@ -27,6 +27,11 @@ Every file here is safe to redistribute:
   labels, expected page/warning metadata, and explicit resource ceilings.
   `scripts/render_oracle_contract.py` validates the lock before LibreOffice or
   rwml receives any input.
+- `RENDER_SMOKE_ORACLE.json` — a generated 12-document local harness profile of
+  the same locked inputs. It covers 35 of the parent's 37 feature labels, all
+  five expected warning kinds, and 15 expected pages in 69,027 input bytes.
+  `alternate-content` and `top-bottom-wrap` are explicitly outside this profile;
+  it is diagnostic evidence, not a complete-coverage or release manifest.
 - `oracle/` — checked-in identity locks for larger generated diagnostic
   campaigns that are intentionally outside the ordinary release corpus. The
   first lock covers 48 unequal-column table-continuation cases; its exact DOCX
@@ -63,6 +68,20 @@ aHash, foreground ink IoU, and explicit unmatched/capped page counts. Strict
 JSON runs additionally bind the report to the corpus root, source revision,
 Cargo lock, harness, platform, tool versions, and recorded LibreOffice identity.
 Reference PDFs remain temporary and are not committed.
+
+Regenerate, verify, and run the bounded local smoke profile:
+
+```sh
+python3 scripts/generate_render_smoke_manifest.py --refresh
+python3 scripts/generate_render_smoke_manifest.py --check
+python3 scripts/render_validate.py --json --verify-oracle \
+  --manifest corpus/public/RENDER_SMOKE_ORACLE.json
+```
+
+The generator cross-checks every selected record against `RENDER_ORACLE.json`
+and fails if the selected input identities, feature coverage, warnings, page
+count, or byte budget drift. Smoke results do not define or relax a fidelity
+threshold.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:
