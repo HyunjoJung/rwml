@@ -6708,43 +6708,41 @@ fn format_chart_tick(value: f64) -> String {
 
 fn fill_line_segment(
     surface: &mut Surface<'_>,
-    x1: f32,
-    y1: f32,
-    x2: f32,
-    y2: f32,
+    scene: &mut PageScene,
+    start: (f32, f32),
+    end: (f32, f32),
     width: f32,
     color: rgb::Color,
-) {
+) -> Result<()> {
+    let (x1, y1) = start;
+    let (x2, y2) = end;
     let dx = x2 - x1;
     let dy = y2 - y1;
     let len = (dx * dx + dy * dy).sqrt();
     if len <= 0.01 {
-        fill_rect_color(
+        return project_and_replay_page_scene_fill_rect(
             surface,
+            scene,
             x1 - width * 0.5,
             y1 - width * 0.5,
             width,
             width,
             color,
         );
-        return;
     }
     let px = -dy / len * width * 0.5;
     let py = dx / len * width * 0.5;
-    let mut pb = PathBuilder::new();
-    pb.move_to(x1 + px, y1 + py);
-    pb.line_to(x2 + px, y2 + py);
-    pb.line_to(x2 - px, y2 - py);
-    pb.line_to(x1 - px, y1 - py);
-    pb.close();
-    if let Some(path) = pb.finish() {
-        surface.set_fill(Some(Fill {
-            paint: color.into(),
-            rule: FillRule::NonZero,
-            opacity: NormalizedF32::ONE,
-        }));
-        surface.draw_path(&path);
-    }
+    project_and_replay_page_scene_fill_polygon(
+        surface,
+        scene,
+        &[
+            (x1 + px, y1 + py),
+            (x2 + px, y2 + py),
+            (x2 - px, y2 - py),
+            (x1 - px, y1 - py),
+        ],
+        color,
+    )
 }
 
 fn fill_area_shape(
@@ -6974,12 +6972,12 @@ fn draw_radar_chart(
         for index in 0..ring_points.len() {
             let (x1, y1) = ring_points[index];
             let (x2, y2) = ring_points[(index + 1) % ring_points.len()];
-            fill_line_segment(surface, x1, y1, x2, y2, 0.45, grid);
+            fill_line_segment(surface, scene, (x1, y1), (x2, y2), 0.45, grid)?;
         }
     }
     for (index, category) in chart.categories.iter().enumerate() {
         let (spoke_x, spoke_y) = point_at(index, max_value);
-        fill_line_segment(surface, cx, cy, spoke_x, spoke_y, 0.45, axis);
+        fill_line_segment(surface, scene, (cx, cy), (spoke_x, spoke_y), 0.45, axis)?;
         let angle =
             -std::f32::consts::FRAC_PI_2 + index as f32 / count as f32 * std::f32::consts::TAU;
         let label_x = cx + angle.cos() * label_radius;
@@ -7015,7 +7013,7 @@ fn draw_radar_chart(
         for index in 0..points.len() {
             let (x1, y1) = points[index];
             let (x2, y2) = points[(index + 1) % points.len()];
-            fill_line_segment(surface, x1, y1, x2, y2, 1.5, color);
+            fill_line_segment(surface, scene, (x1, y1), (x2, y2), 1.5, color)?;
             project_and_replay_page_scene_fill_rect(
                 surface,
                 scene,
@@ -8292,8 +8290,13 @@ fn draw_authored_chart(
                             for (point_x, point_y) in points {
                                 if let Some((prev_x, prev_y)) = previous {
                                     fill_line_segment(
-                                        surface, prev_x, prev_y, point_x, point_y, 1.4, color,
-                                    );
+                                        surface,
+                                        scene,
+                                        (prev_x, prev_y),
+                                        (point_x, point_y),
+                                        1.4,
+                                        color,
+                                    )?;
                                 }
                                 project_and_replay_page_scene_fill_rect(
                                     surface,
@@ -8349,8 +8352,13 @@ fn draw_authored_chart(
                             let point_y = value_y(value).clamp(plot_top, plot_bottom);
                             if let Some((prev_x, prev_y)) = previous {
                                 fill_line_segment(
-                                    surface, prev_x, prev_y, point_x, point_y, 1.6, color,
-                                );
+                                    surface,
+                                    scene,
+                                    (prev_x, prev_y),
+                                    (point_x, point_y),
+                                    1.6,
+                                    color,
+                                )?;
                             }
                             if chart.kind != ChartKind::LineNoMarkers {
                                 project_and_replay_page_scene_fill_rect(
@@ -8450,8 +8458,13 @@ fn draw_authored_chart(
                             if chart.kind != ChartKind::ScatterMarkers {
                                 if let Some((prev_x, prev_y)) = previous {
                                     fill_line_segment(
-                                        surface, prev_x, prev_y, point_x, point_y, 1.3, color,
-                                    );
+                                        surface,
+                                        scene,
+                                        (prev_x, prev_y),
+                                        (point_x, point_y),
+                                        1.3,
+                                        color,
+                                    )?;
                                 }
                             }
                             if !matches!(
@@ -14049,6 +14062,128 @@ mod tests {
     }
 
     #[test]
+    fn markerless_line_segment_enters_the_scene_before_the_legend() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::LineNoMarkers,
+            categories: vec!["Low".to_string(), "High".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![0.0, 10.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        assert_eq!(scene.operations.len(), 14);
+        let super::PageSceneOp::FillPolygon { points, color } = &scene.operations[12] else {
+            panic!(
+                "line segment must precede the legend: {:?}",
+                scene.operations[12]
+            );
+        };
+        let expected = [
+            (144.137_74, 164.483),
+            (247.137_74, 28.482_996),
+            (245.862_26, 27.517_004),
+            (142.862_26, 163.517),
+        ];
+        assert_eq!(points.len(), expected.len());
+        for (point, (x, y)) in points.iter().zip(expected) {
+            assert_close(point.x, x);
+            assert_close(point.y, y);
+        }
+        assert_eq!(*color, super::chart_series_color(0));
+        let super::PageSceneOp::FillRect {
+            rect,
+            color: legend_color,
+        } = &scene.operations[13]
+        else {
+            panic!("line legend must remain last: {:?}", scene.operations[13]);
+        };
+        assert_eq!(*rect, super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap());
+        assert_eq!(*legend_color, super::chart_series_color(0));
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn degenerate_line_segment_projects_a_bounded_square() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::fill_line_segment(
+            &mut surface,
+            &mut scene,
+            (12.0, 14.0),
+            (12.0, 14.0),
+            2.0,
+            color,
+        )
+        .expect("degenerate line paints a square");
+        assert_eq!(
+            scene.operations,
+            vec![super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(11.0, 13.0, 2.0, 2.0).unwrap(),
+                color,
+            }]
+        );
+
+        let mut limited = super::PageScene::with_operation_limit(0);
+        let error = super::fill_line_segment(
+            &mut surface,
+            &mut limited,
+            (12.0, 14.0),
+            (12.0, 14.0),
+            2.0,
+            color,
+        )
+        .expect_err("scene operation ceiling rejects degenerate line");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(limited.operations.is_empty());
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
     fn scatter_marker_dispatch_rectangles_enter_the_scene_in_paint_order() {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
@@ -14372,7 +14507,7 @@ mod tests {
     }
 
     #[test]
-    fn radar_markers_enter_the_scene_before_the_legend() {
+    fn radar_lines_and_markers_enter_the_scene_before_the_legend() {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
         let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
@@ -14417,29 +14552,60 @@ mod tests {
         )
         .expect("chart paints");
 
-        let color = super::chart_series_color(0);
-        let expected = [
+        let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+        let axis = rgb::Color::new(0x5D, 0x66, 0x70);
+        let series = super::chart_series_color(0);
+        assert_eq!(scene.operations.len(), 34);
+        for operation in &scene.operations[5..21] {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("radar grid edge must be a polygon: {operation:?}");
+            };
+            assert_eq!(points.len(), 4);
+            assert_eq!(*color, grid);
+        }
+        for operation in &scene.operations[21..25] {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("radar spoke must be a polygon: {operation:?}");
+            };
+            assert_eq!(points.len(), 4);
+            assert_eq!(*color, axis);
+        }
+
+        let markers = [
             (193.0, 45.04, 4.0, 4.0),
             (241.96, 94.0, 4.0, 4.0),
             (193.0, 142.96, 4.0, 4.0),
             (144.04, 94.0, 4.0, 4.0),
-            (92.0, 189.0, 6.0, 6.0),
         ];
-        assert_eq!(scene.operations.len(), 5 + expected.len());
-        for (operation, (x, y, width, height)) in scene.operations[5..].iter().zip(expected) {
+        for (index, (x, y, width, height)) in markers.into_iter().enumerate() {
+            let line = &scene.operations[25 + index * 2];
+            let super::PageSceneOp::FillPolygon { points, color } = line else {
+                panic!("radar series edge must precede its marker: {line:?}");
+            };
+            assert_eq!(points.len(), 4);
+            assert_eq!(*color, series);
+
+            let operation = &scene.operations[26 + index * 2];
             let super::PageSceneOp::FillRect {
                 rect,
                 color: actual_color,
             } = operation
             else {
-                panic!("radar marker or legend must be a rectangle: {operation:?}");
+                panic!("radar marker must follow its edge: {operation:?}");
             };
             assert_close(rect.x, x);
             assert_close(rect.y, y);
             assert_close(rect.width, width);
             assert_close(rect.height, height);
-            assert_eq!(*actual_color, color);
+            assert_eq!(*actual_color, series);
         }
+        assert_eq!(
+            scene.operations[33],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap(),
+                color: series,
+            }
+        );
 
         surface.finish();
         page.finish();
