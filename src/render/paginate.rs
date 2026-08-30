@@ -491,6 +491,7 @@ struct PaginationPlan {
     block_metrics: Vec<Option<BlockPaginationMetrics>>,
 }
 
+#[derive(Clone, Copy)]
 struct PlannedItemContext<'a> {
     geom: Geom,
     columns: Option<u16>,
@@ -498,6 +499,69 @@ struct PlannedItemContext<'a> {
     column_layout: &'a Option<Rc<SectionColumnLayoutHints>>,
     column_rtl: bool,
     block_metric: Option<&'a BlockPaginationMetrics>,
+}
+
+struct ActivePlacementTrack {
+    geom: Geom,
+    columns: Option<u16>,
+    column_gap_pt: Option<f32>,
+    column_layout: Option<Rc<SectionColumnLayoutHints>>,
+    cursor: FlowCursor,
+    column_rtl: bool,
+}
+
+impl ActivePlacementTrack {
+    fn new(
+        geom: Geom,
+        columns: Option<u16>,
+        column_gap_pt: Option<f32>,
+        column_layout: Option<Rc<SectionColumnLayoutHints>>,
+        column_rtl: bool,
+    ) -> Self {
+        let cursor = FlowCursor::new(
+            geom,
+            columns,
+            column_gap_pt,
+            column_layout.as_deref(),
+            column_rtl,
+        );
+        Self {
+            geom,
+            columns,
+            column_gap_pt,
+            column_layout,
+            cursor,
+            column_rtl,
+        }
+    }
+
+    fn synchronize(&mut self, context: PlannedItemContext<'_>) {
+        if context.geom != self.geom {
+            self.geom = context.geom;
+            self.reset_columns(context);
+        }
+        if context.columns != self.columns
+            || context.column_gap_pt != self.column_gap_pt
+            || !same_section_column_layout(context.column_layout, &self.column_layout)
+            || context.column_rtl != self.column_rtl
+        {
+            self.reset_columns(context);
+        }
+    }
+
+    fn reset_columns(&mut self, context: PlannedItemContext<'_>) {
+        self.cursor.set_columns(
+            self.geom,
+            context.columns,
+            context.column_gap_pt,
+            context.column_layout.as_deref(),
+            context.column_rtl,
+        );
+        self.columns = context.columns;
+        self.column_gap_pt = context.column_gap_pt;
+        self.column_layout = context.column_layout.as_ref().map(Rc::clone);
+        self.column_rtl = context.column_rtl;
+    }
 }
 
 impl PaginationPlan {
@@ -547,12 +611,7 @@ struct PlacementCoordinator {
     page_sections: Vec<Option<RenderPageSection>>,
     section_start_page_index: usize,
     section_index: usize,
-    active_geom: Geom,
-    active_columns: Option<u16>,
-    active_column_gap_pt: Option<f32>,
-    active_column_layout: Option<Rc<SectionColumnLayoutHints>>,
-    cursor: FlowCursor,
-    active_column_rtl: bool,
+    active_track: ActivePlacementTrack,
     block_pages: HashMap<usize, usize>,
     block_line_pages: HashMap<usize, Vec<BlockLinePage>>,
     block_line_widths: HashMap<usize, Vec<f32>>,
@@ -593,11 +652,11 @@ impl PlacementCoordinator {
             .first()
             .copied()
             .unwrap_or(final_column_rtl);
-        let cursor = FlowCursor::new(
+        let active_track = ActivePlacementTrack::new(
             active_geom,
             active_columns,
             active_column_gap_pt,
-            active_column_layout.as_deref(),
+            active_column_layout,
             active_column_rtl,
         );
         Self {
@@ -605,12 +664,7 @@ impl PlacementCoordinator {
             page_sections: vec![None],
             section_start_page_index: 0,
             section_index: 0,
-            active_geom,
-            active_columns,
-            active_column_gap_pt,
-            active_column_layout,
-            cursor,
-            active_column_rtl,
+            active_track,
             block_pages: HashMap::new(),
             block_line_pages: HashMap::new(),
             block_line_widths: HashMap::new(),
@@ -845,12 +899,7 @@ fn paginate_with_state(
         mut page_sections,
         mut section_start_page_index,
         mut section_index,
-        mut active_geom,
-        mut active_columns,
-        mut active_column_gap_pt,
-        mut active_column_layout,
-        mut cursor,
-        mut active_column_rtl,
+        mut active_track,
         mut block_pages,
         mut block_line_pages,
         mut block_line_widths,
@@ -869,41 +918,9 @@ fn paginate_with_state(
         let context = plan
             .item_context(item_index)
             .expect("pagination plan keeps item contexts aligned");
-        let item_geom = context.geom;
-        if item_geom != active_geom {
-            active_geom = item_geom;
-            cursor.set_columns(
-                active_geom,
-                context.columns,
-                context.column_gap_pt,
-                context.column_layout.as_deref(),
-                context.column_rtl,
-            );
-            active_columns = context.columns;
-            active_column_gap_pt = context.column_gap_pt;
-            active_column_layout = context.column_layout.as_ref().map(Rc::clone);
-            active_column_rtl = context.column_rtl;
-        }
-        let item_columns = context.columns;
-        let item_column_gap_pt = context.column_gap_pt;
-        let item_column_layout = context.column_layout;
-        if item_columns != active_columns
-            || item_column_gap_pt != active_column_gap_pt
-            || !same_section_column_layout(item_column_layout, &active_column_layout)
-            || context.column_rtl != active_column_rtl
-        {
-            cursor.set_columns(
-                active_geom,
-                item_columns,
-                item_column_gap_pt,
-                item_column_layout.as_deref(),
-                context.column_rtl,
-            );
-            active_columns = item_columns;
-            active_column_gap_pt = item_column_gap_pt;
-            active_column_layout = item_column_layout.as_ref().map(Rc::clone);
-            active_column_rtl = context.column_rtl;
-        }
+        active_track.synchronize(context);
+        let active_geom = active_track.geom;
+        let cursor = &mut active_track.cursor;
         match item {
             FlowItem::BlockStart {
                 index: block_index,
@@ -933,7 +950,7 @@ fn paginate_with_state(
                         ) {
                             move_to_fresh_column_for_required_height(
                                 &mut pages,
-                                &mut cursor,
+                                cursor,
                                 height,
                                 active_geom,
                                 &active_top_bottom_bands,
@@ -947,7 +964,7 @@ fn paginate_with_state(
                     if keep_whole_paragraph {
                         move_to_fresh_column_for_required_height(
                             &mut pages,
-                            &mut cursor,
+                            cursor,
                             metric.last_line_extent,
                             active_geom,
                             &active_top_bottom_bands,
@@ -995,7 +1012,7 @@ fn paginate_with_state(
                 let h = l.height;
                 ensure_outside_top_bottom_bands(
                     &mut pages,
-                    &mut cursor,
+                    cursor,
                     h,
                     active_geom,
                     &active_top_bottom_bands,
@@ -1054,7 +1071,7 @@ fn paginate_with_state(
                 }
                 ensure_outside_top_bottom_bands(
                     &mut pages,
-                    &mut cursor,
+                    cursor,
                     h,
                     active_geom,
                     &active_top_bottom_bands,
@@ -1069,7 +1086,7 @@ fn paginate_with_state(
                     cursor.columns.width(cursor.column_index),
                 );
                 let line_range = l.char_range;
-                place_item(&mut pages, &mut cursor, FlowItem::Line(l), h);
+                place_item(&mut pages, cursor, FlowItem::Line(l), h);
                 activate_reached_top_bottom_bands(
                     &mut pending_top_bottom_bands,
                     &mut active_top_bottom_bands,
@@ -1084,7 +1101,7 @@ fn paginate_with_state(
             FlowItem::Picture { image, layout } => {
                 ensure_outside_top_bottom_bands(
                     &mut pages,
-                    &mut cursor,
+                    cursor,
                     layout.bounds_h,
                     active_geom,
                     &active_top_bottom_bands,
@@ -1097,7 +1114,7 @@ fn paginate_with_state(
                 );
                 place_item(
                     &mut pages,
-                    &mut cursor,
+                    cursor,
                     FlowItem::Picture { image, layout },
                     layout.bounds_h,
                 );
@@ -1105,7 +1122,7 @@ fn paginate_with_state(
             FlowItem::Chart { chart, w, h } => {
                 ensure_outside_top_bottom_bands(
                     &mut pages,
-                    &mut cursor,
+                    cursor,
                     h,
                     active_geom,
                     &active_top_bottom_bands,
@@ -1116,13 +1133,12 @@ fn paginate_with_state(
                     &mut pending_block,
                     pages.len().saturating_sub(1),
                 );
-                place_item(&mut pages, &mut cursor, FlowItem::Chart { chart, w, h }, h);
+                place_item(&mut pages, cursor, FlowItem::Chart { chart, w, h }, h);
             }
             FlowItem::Table { rows, header_rows } => {
                 let fallback_page = pages.len().saturating_sub(1);
-                let first_page =
-                    place_table(&mut pages, &mut cursor, rows, header_rows, active_geom)
-                        .unwrap_or(fallback_page);
+                let first_page = place_table(&mut pages, cursor, rows, header_rows, active_geom)
+                    .unwrap_or(fallback_page);
                 record_pending_block_page(&mut block_pages, &mut pending_block, first_page);
             }
             FlowItem::PageBreak => {
@@ -1171,7 +1187,7 @@ fn paginate_with_state(
                 let h = r.height;
                 ensure_outside_top_bottom_bands(
                     &mut pages,
-                    &mut cursor,
+                    cursor,
                     h,
                     active_geom,
                     &active_top_bottom_bands,
@@ -1182,7 +1198,7 @@ fn paginate_with_state(
                     &mut pending_block,
                     pages.len().saturating_sub(1),
                 );
-                place_item(&mut pages, &mut cursor, FlowItem::Row(r), h);
+                place_item(&mut pages, cursor, FlowItem::Row(r), h);
             }
         }
     }
@@ -1764,15 +1780,71 @@ mod tests {
         assert_eq!(state.pages.len(), 1);
         assert_eq!(state.page_sections.len(), 1);
         assert!(state.page_sections[0].is_none());
-        assert!(state.active_geom == Geom::from_section(&ending));
-        assert_eq!(state.active_columns, Some(2));
-        assert_eq!(state.active_column_gap_pt, Some(8.0));
-        assert!(state.active_column_rtl);
-        assert_eq!(state.cursor.columns.count, 2);
-        assert_eq!(state.cursor.y, state.active_geom.top());
+        assert!(state.active_track.geom == Geom::from_section(&ending));
+        assert_eq!(state.active_track.columns, Some(2));
+        assert_eq!(state.active_track.column_gap_pt, Some(8.0));
+        assert!(state.active_track.column_rtl);
+        assert_eq!(state.active_track.cursor.columns.count, 2);
+        assert_eq!(state.active_track.cursor.y, state.active_track.geom.top());
         assert!(state.block_pages.is_empty());
         assert!(state.block_line_pages.is_empty());
         assert!(state.block_line_widths.is_empty());
+    }
+
+    #[test]
+    fn active_placement_track_synchronizes_geometry_and_column_changes() {
+        let initial_geom = Geom::from_section(&SectionSetup::default());
+        let initial_layout = Some(Rc::new(SectionColumnLayoutHints::default()));
+        let mut track =
+            ActivePlacementTrack::new(initial_geom, Some(2), Some(8.0), initial_layout, true);
+        let changed_geom = Geom::from_section(&SectionSetup {
+            page: PageSetup {
+                width_pt: 240.0,
+                height_pt: 320.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        });
+        let geometry_layout = Some(Rc::new(SectionColumnLayoutHints::default()));
+        track.cursor.y += 24.0;
+        track.cursor.column_nonempty = true;
+
+        track.synchronize(PlannedItemContext {
+            geom: changed_geom,
+            columns: Some(1),
+            column_gap_pt: Some(5.0),
+            column_layout: &geometry_layout,
+            column_rtl: false,
+            block_metric: None,
+        });
+
+        assert!(track.geom == changed_geom);
+        assert_eq!(track.columns, Some(1));
+        assert_eq!(track.column_gap_pt, Some(5.0));
+        assert!(!track.column_rtl);
+        assert_eq!(track.cursor.column_index, 0);
+        assert_eq!(track.cursor.y, changed_geom.top());
+        assert!(!track.cursor.column_nonempty);
+
+        let rtl_layout = Some(Rc::new(SectionColumnLayoutHints::default()));
+        track.cursor.y += 18.0;
+        track.cursor.column_nonempty = true;
+        track.synchronize(PlannedItemContext {
+            geom: changed_geom,
+            columns: Some(2),
+            column_gap_pt: Some(7.0),
+            column_layout: &rtl_layout,
+            column_rtl: true,
+            block_metric: None,
+        });
+
+        assert_eq!(track.columns, Some(2));
+        assert_eq!(track.column_gap_pt, Some(7.0));
+        assert!(track.column_rtl);
+        assert_eq!(track.cursor.column_index, 1);
+        assert_eq!(track.cursor.y, changed_geom.top());
+        assert!(!track.cursor.column_nonempty);
     }
 
     #[test]
