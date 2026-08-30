@@ -34,9 +34,10 @@ Every file here is safe to redistribute:
   it is diagnostic evidence, not a complete-coverage or release manifest.
 - `oracle/` — checked-in identity locks for larger generated diagnostic
   campaigns that are intentionally outside the ordinary release corpus. The
-  first lock covers 48 unequal-column table-continuation cases; its exact DOCX
-  inputs and strict manifest are generated under ignored `target/` output by
-  `scripts/generate_unequal_table_oracle.py`.
+  unequal-table lock covers 48 table-continuation cases. The render-pilot lock
+  combines all 21 ordinary public inputs with 19 focused generated inputs, 51
+  expected pages, and 69 feature labels. Exact DOCX inputs and strict manifests
+  are generated under ignored `target/` output.
 - `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
   Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
   self-contained input for the strict public extraction benchmark.
@@ -102,6 +103,24 @@ The generator cross-checks every selected record against `RENDER_ORACLE.json`
 and fails if the selected input identities, feature coverage, warnings, page
 count, or byte budget drift. Smoke results do not define or relax a fidelity
 threshold.
+
+Build and run the broader 40-document diagnostic pilot:
+
+```sh
+python3 scripts/generate_render_pilot.py
+python3 scripts/generate_render_pilot.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-pilot-v1/RENDER_ORACLE.json
+python3 scripts/render_validate.py --json --verify-oracle \
+  --manifest target/render-oracle/render-pilot-v1/RENDER_ORACLE.json
+```
+
+The checked-in lock binds the parent manifest, both generator sources, copied
+provenance records, and all 40 input payloads. The 19 additions exercise run
+paint, paragraph geometry, mixed sections, RTL text/lists/tables, fields and
+notes, table merging/spacing/continuation, floating and inline objects, revision
+structure, and Unicode line breaking. Pilot results remain diagnostic and do not
+change release policy or fidelity thresholds.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:

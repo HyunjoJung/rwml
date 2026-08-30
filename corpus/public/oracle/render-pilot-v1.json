@@ -1,0 +1,836 @@
+{
+  "campaign": "public-render-pilot-v1",
+  "documents": [
+    {
+      "bytes": 3647,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "highlight",
+        "small-caps",
+        "vertical-align"
+      ],
+      "format": "docx",
+      "id": "pilot-character-paint",
+      "path": "documents/pilot-character-paint.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "096b0d379147db8d31f8f059e7ad82369d4ddc4f421e62fb44450f6f99ed3027",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-character-paint"
+    },
+    {
+      "bytes": 3492,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "document-fields",
+        "fields",
+        "formula-fields"
+      ],
+      "format": "docx",
+      "id": "pilot-fields-document-formula",
+      "path": "documents/pilot-fields-document-formula.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "887a3940722490ffa6af7ec3d5fceda4ef4a23985a85b26b9525af9cd77f0c93",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-fields-document-formula"
+    },
+    {
+      "bytes": 4688,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "fields",
+        "note-reference-fields",
+        "reference-fields",
+        "toc-fields"
+      ],
+      "format": "docx",
+      "id": "pilot-fields-reference",
+      "path": "documents/pilot-fields-reference.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "0d19978afa9abc846aab3c86e11dc8a39e85a5da00548915aa34df792633baf6",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-fields-reference"
+    },
+    {
+      "bytes": 3945,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "floating-shapes",
+        "relative-placement",
+        "text-boxes",
+        "top-bottom-wrap"
+      ],
+      "format": "docx",
+      "id": "pilot-floating-relative-placement",
+      "path": "documents/pilot-floating-relative-placement.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "a08e112edd217cf692c01d915a3f5346a6551e01aaf40266d80866349e86025f",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-floating-relative-placement"
+    },
+    {
+      "bytes": 6091,
+      "expected": {
+        "pages": 2,
+        "warnings": []
+      },
+      "features": [
+        "headers-footers",
+        "mixed-sections",
+        "sections"
+      ],
+      "format": "docx",
+      "id": "pilot-header-footer-variants",
+      "path": "documents/pilot-header-footer-variants.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "df8cb4880f98db992b3efd1d031d0ef316ddc04def99be20d48f1572308718ce",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-header-footer-variants"
+    },
+    {
+      "bytes": 4391,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "inline-images",
+        "paragraph-geometry"
+      ],
+      "format": "docx",
+      "id": "pilot-inline-image-layout",
+      "path": "documents/pilot-inline-image-layout.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "fb9ce703333b446cae2f961131a14c19b9d3ba0e06e8773d623a44c7fc32b523",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-inline-image-layout"
+    },
+    {
+      "bytes": 3452,
+      "expected": {
+        "pages": 2,
+        "warnings": []
+      },
+      "features": [
+        "mixed-sections",
+        "page-layout",
+        "sections"
+      ],
+      "format": "docx",
+      "id": "pilot-mixed-custom-widths",
+      "path": "documents/pilot-mixed-custom-widths.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "1a0260f79221fc3be2f4a6530c714a79175578e72e7efec3f7b59216eaf0be6b",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-mixed-custom-widths"
+    },
+    {
+      "bytes": 3529,
+      "expected": {
+        "pages": 2,
+        "warnings": []
+      },
+      "features": [
+        "columns",
+        "mixed-sections",
+        "orientation",
+        "sections"
+      ],
+      "format": "docx",
+      "id": "pilot-mixed-sections",
+      "path": "documents/pilot-mixed-sections.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "1942c45f2e3668a42ec27609b9486ea433a612d351f320ab5e248638d20136d9",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-mixed-sections"
+    },
+    {
+      "bytes": 5856,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "endnotes",
+        "footnotes",
+        "note-numbering"
+      ],
+      "format": "docx",
+      "id": "pilot-notes-numbering",
+      "path": "documents/pilot-notes-numbering.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "e3c2192b845dd27396fbd9e9709915578736e2d12433710a9a4e3be66dca8092",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-notes-numbering"
+    },
+    {
+      "bytes": 3627,
+      "expected": {
+        "pages": 2,
+        "warnings": []
+      },
+      "features": [
+        "column-breaks",
+        "keep-lines",
+        "keep-next",
+        "page-breaks",
+        "widow-control"
+      ],
+      "format": "docx",
+      "id": "pilot-pagination-controls",
+      "path": "documents/pilot-pagination-controls.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "5065e66161b13fbb52d9325850ddc683f1522645629a2e0bbd30bb07b2e1fe63",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-pagination-controls"
+    },
+    {
+      "bytes": 3651,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "paragraph-borders",
+        "paragraph-shading"
+      ],
+      "format": "docx",
+      "id": "pilot-paragraph-borders-shading",
+      "path": "documents/pilot-paragraph-borders-shading.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "420cabef85ec8611c233dd7db11f0c9119346abf05cf1d84a2768adebeaf99c5",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-paragraph-borders-shading"
+    },
+    {
+      "bytes": 3634,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "first-line-indent",
+        "hanging-indent",
+        "line-spacing",
+        "paragraph-geometry",
+        "tabs"
+      ],
+      "format": "docx",
+      "id": "pilot-paragraph-spacing-tabs",
+      "path": "documents/pilot-paragraph-spacing-tabs.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "b0c8f88f4246332d1035a2c68b760e635549958d9f9afdf4ade9a94b26e27ad3",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-paragraph-spacing-tabs"
+    },
+    {
+      "bytes": 4511,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bidi",
+        "lists",
+        "rtl",
+        "rtl-list"
+      ],
+      "format": "docx",
+      "id": "pilot-rtl-list",
+      "path": "documents/pilot-rtl-list.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "969611d0c4ae1bf393f1f4f926672d20ca476de2ab4965deaa1b86e0dbdd40ea",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-rtl-list"
+    },
+    {
+      "bytes": 3862,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bidi",
+        "rtl",
+        "table-merges",
+        "tables"
+      ],
+      "format": "docx",
+      "id": "pilot-rtl-merged-table",
+      "path": "documents/pilot-rtl-merged-table.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "337c64c47db67604facfa2561b98c81698073f8ec0b27d56864859d5e46542ee",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-rtl-merged-table"
+    },
+    {
+      "bytes": 3421,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bidi",
+        "mixed-direction-text",
+        "rtl"
+      ],
+      "format": "docx",
+      "id": "pilot-rtl-mixed-text",
+      "path": "documents/pilot-rtl-mixed-text.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "dce92aedfe3308be291bdd9551c6c62257b75d28b047f47f31594ed78dcdf103",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-rtl-mixed-text"
+    },
+    {
+      "bytes": 3589,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "content-controls",
+        "revisions",
+        "tables",
+        "tracked-changes"
+      ],
+      "format": "docx",
+      "id": "pilot-structured-revisions",
+      "path": "documents/pilot-structured-revisions.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "e43d8b7e8d0982e2f4b8e10e4e48cc171b4e32a4abd047774f613555554a865b",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-structured-revisions"
+    },
+    {
+      "bytes": 3794,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "table-cell-spacing",
+        "table-merges",
+        "tables"
+      ],
+      "format": "docx",
+      "id": "pilot-table-cell-spacing",
+      "path": "documents/pilot-table-cell-spacing.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "647197cae96e6180102da7c0d5dd26b31ef532fbdb14664e864debb62bc93a58",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-table-cell-spacing"
+    },
+    {
+      "bytes": 18300,
+      "expected": {
+        "pages": 3,
+        "warnings": []
+      },
+      "features": [
+        "columns",
+        "table-continuation",
+        "tables",
+        "unequal-table-continuation"
+      ],
+      "format": "docx",
+      "id": "pilot-unequal-table-continuation",
+      "path": "documents/pilot-unequal-table-continuation.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "748340d0344926fe0c937233d2b9c12a97c5d905761eac2f8d1b98a17c0ea0cb",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-unequal-table-continuation"
+    },
+    {
+      "bytes": 3530,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cjk",
+        "emoji",
+        "unicode-line-breaking"
+      ],
+      "format": "docx",
+      "id": "pilot-unicode-line-breaking",
+      "path": "documents/pilot-unicode-line-breaking.docx",
+      "provenance": "rwml-render-pilot",
+      "sha256": "c8098f396d984a5ee1b3bb5b61b48d7ba24961511a4d514eff3bf7f4d142ce3b",
+      "source": "pilot-generated",
+      "source_path": "scripts/generate_render_pilot.py#pilot-unicode-line-breaking"
+    },
+    {
+      "bytes": 11949,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "paragraphs",
+        "tables",
+        "vendored"
+      ],
+      "format": "docx",
+      "id": "python-docx-blk-inner-content",
+      "path": "documents/python-docx-blk-inner-content.docx",
+      "provenance": "python-docx-mit",
+      "sha256": "16243dd05f686d6d5fab331843691492ad78ae3eb4f13cc8686077b44718c0ba",
+      "source": "parent-public",
+      "source_path": "vendored/python-docx/blk-inner-content.docx"
+    },
+    {
+      "bytes": 132875,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "inline-images",
+        "paragraphs",
+        "vendored"
+      ],
+      "format": "docx",
+      "id": "python-docx-having-images",
+      "path": "documents/python-docx-having-images.docx",
+      "provenance": "python-docx-mit",
+      "sha256": "72f40baa1b89e4849e817121dbbf148ed78e51be9bf04d8e6f4bc1494aa517b7",
+      "source": "parent-public",
+      "source_path": "vendored/python-docx/having-images.docx"
+    },
+    {
+      "bytes": 12051,
+      "expected": {
+        "pages": 3,
+        "warnings": []
+      },
+      "features": [
+        "sections",
+        "tables",
+        "vendored"
+      ],
+      "format": "docx",
+      "id": "python-docx-sct-inner-content",
+      "path": "documents/python-docx-sct-inner-content.docx",
+      "provenance": "python-docx-mit",
+      "sha256": "d92e9ca7b09fab7b475c57dfba08f6acba2742aff2691cc7284649c640059c73",
+      "source": "parent-public",
+      "source_path": "vendored/python-docx/sct-inner-content.docx"
+    },
+    {
+      "bytes": 31773,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "paragraphs",
+        "styles",
+        "tables",
+        "vendored"
+      ],
+      "format": "docx",
+      "id": "python-docx-test",
+      "path": "documents/python-docx-test.docx",
+      "provenance": "python-docx-mit",
+      "sha256": "fba1c76b66ff30982e5281941ca1111eaeaeb092abb6dfbe1730bed3774f40b6",
+      "source": "parent-public",
+      "source_path": "vendored/python-docx/test.docx"
+    },
+    {
+      "bytes": 2615,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "comments",
+        "paragraphs"
+      ],
+      "format": "docx",
+      "id": "synthetic-comments",
+      "path": "documents/synthetic-comments.docx",
+      "provenance": "rwml-generated",
+      "sha256": "604862b8d887e5402800650771529b6c1670a7c7d781eaabde79dbf4afa64dda",
+      "source": "parent-public",
+      "source_path": "synthetic/comments.docx"
+    },
+    {
+      "bytes": 1957,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "UnsupportedFieldEvaluation"
+        ]
+      },
+      "features": [
+        "fields",
+        "hyperlinks"
+      ],
+      "format": "docx",
+      "id": "synthetic-fields",
+      "path": "documents/synthetic-fields.docx",
+      "provenance": "rwml-generated",
+      "sha256": "1e1a87ebab2b5633c8812c5f69190943937e1dfb80d8111146ce6bf56d64d182",
+      "source": "parent-public",
+      "source_path": "synthetic/fields.docx"
+    },
+    {
+      "bytes": 2285,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "alternate-content",
+        "floating-shapes",
+        "text-boxes"
+      ],
+      "format": "docx",
+      "id": "synthetic-floating-altcontent-anchor",
+      "path": "documents/synthetic-floating-altcontent-anchor.docx",
+      "provenance": "rwml-generated",
+      "sha256": "78a09fd5e5a217c188d6b905aa4199d32c779fc4d30b40d3eba1a9e30af47859",
+      "source": "parent-public",
+      "source_path": "synthetic/floating_altcontent_anchor.docx"
+    },
+    {
+      "bytes": 1840,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "floating-shapes",
+        "text-boxes"
+      ],
+      "format": "docx",
+      "id": "synthetic-floating-text-bearing",
+      "path": "documents/synthetic-floating-text-bearing.docx",
+      "provenance": "rwml-generated",
+      "sha256": "6f91bc55068f9d2d794058083eebf221d8bd781ac28ae6ae384ae8a88cf38c2a",
+      "source": "parent-public",
+      "source_path": "synthetic/floating_text_bearing.docx"
+    },
+    {
+      "bytes": 2148,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "floating-shapes",
+        "tight-wrap"
+      ],
+      "format": "docx",
+      "id": "synthetic-floating-wrap-policy",
+      "path": "documents/synthetic-floating-wrap-policy.docx",
+      "provenance": "rwml-generated",
+      "sha256": "dcaab9d6c4e258223d4dadc8c2a598ca7115be1b70b3e2f32170511c086948dd",
+      "source": "parent-public",
+      "source_path": "synthetic/floating_wrap_policy.docx"
+    },
+    {
+      "bytes": 2145,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "floating-shapes",
+        "z-order"
+      ],
+      "format": "docx",
+      "id": "synthetic-floating-z-order-pair",
+      "path": "documents/synthetic-floating-z-order-pair.docx",
+      "provenance": "rwml-generated",
+      "sha256": "87ee171254182abbfc348f9fe9e23e4d8e4473a9d06d0c0c3d5799fd1ea20265",
+      "source": "parent-public",
+      "source_path": "synthetic/floating_z_order_pair.docx"
+    },
+    {
+      "bytes": 1876,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "hyperlinks"
+      ],
+      "format": "docx",
+      "id": "synthetic-hyperlinks",
+      "path": "documents/synthetic-hyperlinks.docx",
+      "provenance": "rwml-generated",
+      "sha256": "def67e7ed8f4ea271b24edbcd81417042d37d2993200f55b4151f44c575ec75b",
+      "source": "parent-public",
+      "source_path": "synthetic/hyperlinks.docx"
+    },
+    {
+      "bytes": 7140,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "comments",
+        "content-controls",
+        "floating-shapes",
+        "footnotes",
+        "headers-footers",
+        "inline-images",
+        "revisions",
+        "tables",
+        "text-boxes"
+      ],
+      "format": "docx",
+      "id": "synthetic-kitchen-sink",
+      "path": "documents/synthetic-kitchen-sink.docx",
+      "provenance": "rwml-generated",
+      "sha256": "57d7dd90c53799eacdd486509ac351c3ab9af2120774e2633b5b31563624dcf8",
+      "source": "parent-public",
+      "source_path": "synthetic/kitchen_sink.docx"
+    },
+    {
+      "bytes": 1419,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "nested-tables",
+        "tables"
+      ],
+      "format": "docx",
+      "id": "synthetic-nested-tables",
+      "path": "documents/synthetic-nested-tables.docx",
+      "provenance": "rwml-generated",
+      "sha256": "77bb54f41e5f6148bffb29238985898a62cb14dbc5004f1a2bbe408307f719c0",
+      "source": "parent-public",
+      "source_path": "synthetic/nested_tables.docx"
+    },
+    {
+      "bytes": 4507,
+      "expected": {
+        "pages": 3,
+        "warnings": []
+      },
+      "features": [
+        "keep-lines",
+        "keep-next",
+        "pagination",
+        "widow-control"
+      ],
+      "format": "docx",
+      "id": "synthetic-pagination-keep",
+      "path": "documents/synthetic-pagination-keep.docx",
+      "provenance": "rwml-generated",
+      "sha256": "ac3002711280f78ce473e5d1edc1660735485a70e1b6ecec943e720d5b3593fe",
+      "source": "parent-public",
+      "source_path": "synthetic/pagination-keep.docx"
+    },
+    {
+      "bytes": 1843,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "revisions",
+        "tracked-changes"
+      ],
+      "format": "docx",
+      "id": "synthetic-revisions",
+      "path": "documents/synthetic-revisions.docx",
+      "provenance": "rwml-generated",
+      "sha256": "43deb35d81418c826f8d636fdce019cffd96a4c29949b7535a59a058ec9bddf0",
+      "source": "parent-public",
+      "source_path": "synthetic/revisions.docx"
+    },
+    {
+      "bytes": 2014,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bidi",
+        "rtl",
+        "tables"
+      ],
+      "format": "docx",
+      "id": "synthetic-rtl-table",
+      "path": "documents/synthetic-rtl-table.docx",
+      "provenance": "rwml-generated",
+      "sha256": "d9d3b7e64e517b0a947a040a28a20d77df1f5cd2a9cfa56b4e72c22bca37855c",
+      "source": "parent-public",
+      "source_path": "synthetic/rtl-table.docx"
+    },
+    {
+      "bytes": 3278,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "hidden-text",
+        "paragraph-geometry",
+        "run-paint",
+        "tables",
+        "tabs"
+      ],
+      "format": "docx",
+      "id": "synthetic-style-hidden-tabs-table",
+      "path": "documents/synthetic-style-hidden-tabs-table.docx",
+      "provenance": "rwml-generated",
+      "sha256": "39b5b93f7ce0047538a9b425b8bfea535c42fb67f75325e9ba8e07228a3087fc",
+      "source": "parent-public",
+      "source_path": "synthetic/style-hidden-tabs-table.docx"
+    },
+    {
+      "bytes": 3606,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "lists",
+        "nested-tables",
+        "rtl",
+        "tables"
+      ],
+      "format": "docx",
+      "id": "synthetic-table-cell-lists",
+      "path": "documents/synthetic-table-cell-lists.docx",
+      "provenance": "rwml-generated",
+      "sha256": "d06425f0caf53a039530ea3b28a9c543d7e37903ed35cb5421b55a17bbff9fd1",
+      "source": "parent-public",
+      "source_path": "synthetic/table-cell-lists.docx"
+    },
+    {
+      "bytes": 4293,
+      "expected": {
+        "pages": 2,
+        "warnings": []
+      },
+      "features": [
+        "columns",
+        "pagination",
+        "sections"
+      ],
+      "format": "docx",
+      "id": "synthetic-two-columns",
+      "path": "documents/synthetic-two-columns.docx",
+      "provenance": "rwml-generated",
+      "sha256": "66d7bca9ea3ba9286d9b359b993d23a19b802a0d8e7c077c2bee1fbf0291000b",
+      "source": "parent-public",
+      "source_path": "synthetic/two-columns.docx"
+    },
+    {
+      "bytes": 4323,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "ChartsPreservedButNotModeled",
+          "FloatingShapePlaceholderOnly",
+          "OleObjectsPreservedButNotModeled",
+          "UnsupportedMetafileImages"
+        ]
+      },
+      "features": [
+        "charts",
+        "floating-shapes",
+        "metafiles",
+        "ole-objects",
+        "placeholders"
+      ],
+      "format": "docx",
+      "id": "synthetic-unsupported-objects",
+      "path": "documents/synthetic-unsupported-objects.docx",
+      "provenance": "rwml-generated",
+      "sha256": "a07a41d7a114dc1a67f0e9b33423f41f9a3ea39d9e78d23dfbab3edd659f4bf0",
+      "source": "parent-public",
+      "source_path": "synthetic/unsupported_objects.docx"
+    },
+    {
+      "bytes": 2243,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "floating-shapes",
+        "text-boxes",
+        "top-bottom-wrap"
+      ],
+      "format": "docx",
+      "id": "synthetic-wrap-top-bottom",
+      "path": "documents/synthetic-wrap-top-bottom.docx",
+      "provenance": "rwml-generated",
+      "sha256": "fb6fae625b6b337ec5e64a9e731abf36a5d0c33d8a325a582958ee49a23f7cf3",
+      "source": "parent-public",
+      "source_path": "synthetic/wrap-top-bottom.docx"
+    }
+  ],
+  "generator_closure_sha256": "d456ba72436ef7eb5001e7cfaff54049b9a8c0cfe674e382b43bb1f6df5fc71e",
+  "limits": {
+    "max_documents": 40,
+    "max_input_bytes": 262144,
+    "max_pages_per_document": 16,
+    "max_total_input_bytes": 4194304
+  },
+  "parent_manifest_sha256": "66eb57e13dd3fec6accb6cfe2fa47f7d8bcd496235de0295eeb16c4057cc99cc",
+  "provenance": [
+    {
+      "bytes": 3604,
+      "id": "python-docx-mit",
+      "kind": "vendored",
+      "license": "MIT",
+      "reference": "provenance/python-docx-mit.md",
+      "sha256": "aee8ec5463ccddc3df016ab837ff08d379adcc4c7cfa2135064d3fb5d1e318e3"
+    },
+    {
+      "bytes": 2115,
+      "id": "rwml-generated",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "provenance/rwml-generated.md",
+      "sha256": "1fe7e1ebeea1985b4a53ebe7104ad35250f166460c1e0fbb1f88aa26babd9c33"
+    },
+    {
+      "bytes": 563,
+      "id": "rwml-render-pilot",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "provenance/rwml-render-pilot.md",
+      "sha256": "585b91ffeae9ee4627e0abbe4b50af4667ee12c151c1a1ff908d9375d2fa8f36"
+    }
+  ],
+  "schema": "rwml.render-pilot-lock.v1"
+}
