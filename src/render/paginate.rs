@@ -1343,8 +1343,7 @@ fn prepare_live_paragraph_flow(
                     .iter()
                     .skip(1)
                     .any(|track| (track.width - first_width).abs() > 0.01);
-                return (line_count < eager_line_count && uses_distinct_widths)
-                    .then_some(PreparedParagraphFlow { tracks });
+                return uses_distinct_widths.then_some(PreparedParagraphFlow { tracks });
             }
         }
     }
