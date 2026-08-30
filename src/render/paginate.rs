@@ -2,7 +2,7 @@
 
 use super::paragraph_flow::{
     layout_paragraph, shape_paragraph_fragment, BodyFlowEntry, FragmentTrack,
-    ParagraphFragmentCursor,
+    ParagraphFragmentCursor, TableFlowRequest,
 };
 use super::*;
 
@@ -686,6 +686,190 @@ struct RetainedParagraphFlow<'a> {
     item_range: std::ops::Range<usize>,
 }
 
+struct RetainedTableFlow<'a> {
+    request: TableFlowRequest<'a>,
+    item_index: usize,
+}
+
+fn same_f32(left: f32, right: f32) -> bool {
+    left.to_bits() == right.to_bits()
+}
+
+fn table_flow_items_equivalent(left: &FlowItem, right: &FlowItem) -> bool {
+    let (
+        FlowItem::Table {
+            rows: left_rows,
+            header_rows: left_headers,
+        },
+        FlowItem::Table {
+            rows: right_rows,
+            header_rows: right_headers,
+        },
+    ) = (left, right)
+    else {
+        return false;
+    };
+    left_headers == right_headers
+        && left_rows.len() == right_rows.len()
+        && left_rows
+            .iter()
+            .zip(right_rows)
+            .all(|(left, right)| row_layouts_equivalent(left, right))
+}
+
+fn row_layouts_equivalent(left: &RowLayout, right: &RowLayout) -> bool {
+    same_f32(left.height, right.height)
+        && left.cant_split == right.cant_split
+        && left.border == right.border
+        && left.table_id == right.table_id
+        && left.cells.len() == right.cells.len()
+        && left
+            .cells
+            .iter()
+            .zip(&right.cells)
+            .all(|(left, right)| cell_boxes_equivalent(left, right))
+}
+
+fn cell_boxes_equivalent(left: &CellBox, right: &CellBox) -> bool {
+    same_f32(left.x, right.x)
+        && same_f32(left.right, right.right)
+        && same_f32(left.width, right.width)
+        && left.insets == right.insets
+        && left.shading == right.shading
+        && left.valign == right.valign
+        && left.border_edges == right.border_edges
+        && left.lines.len() == right.lines.len()
+        && left
+            .lines
+            .iter()
+            .zip(&right.lines)
+            .all(|(left, right)| line_layouts_equivalent(left, right))
+}
+
+fn line_layouts_equivalent(left: &LineLayout, right: &LineLayout) -> bool {
+    same_f32(left.height, right.height)
+        && same_f32(left.baseline, right.baseline)
+        && left.clip_to_height == right.clip_to_height
+        && same_f32(left.x_indent, right.x_indent)
+        && left.char_range == right.char_range
+        && left.background == right.background
+        && left.cell_spacing == right.cell_spacing
+        && left.cell_paragraph == right.cell_paragraph
+        && left.cell_cant_split_group == right.cell_cant_split_group
+        && cell_visuals_equivalent(left.cell_visual.as_ref(), right.cell_visual.as_ref())
+        && left.leaders.len() == right.leaders.len()
+        && left
+            .leaders
+            .iter()
+            .zip(&right.leaders)
+            .all(|(left, right)| {
+                same_f32(left.start, right.start)
+                    && same_f32(left.end, right.end)
+                    && left.style == right.style
+                    && left.color == right.color
+            })
+        && left.runs.len() == right.runs.len()
+        && left
+            .runs
+            .iter()
+            .zip(&right.runs)
+            .all(|(left, right)| run_draws_equivalent(left, right))
+}
+
+fn cell_visuals_equivalent(left: Option<&CellVisual>, right: Option<&CellVisual>) -> bool {
+    match (left, right) {
+        (None, None) => true,
+        (
+            Some(CellVisual::Picture {
+                image: left_image,
+                layout: left_layout,
+            }),
+            Some(CellVisual::Picture {
+                image: right_image,
+                layout: right_layout,
+            }),
+        ) => left_image.scene == right_image.scene && left_layout == right_layout,
+        (
+            Some(CellVisual::Chart {
+                chart: left_chart,
+                width: left_width,
+                height: left_height,
+                layout: left_layout,
+            }),
+            Some(CellVisual::Chart {
+                chart: right_chart,
+                width: right_width,
+                height: right_height,
+                layout: right_layout,
+            }),
+        ) => {
+            left_chart == right_chart
+                && same_f32(*left_width, *right_width)
+                && same_f32(*left_height, *right_height)
+                && left_layout == right_layout
+        }
+        (Some(CellVisual::NestedRow { row: left }), Some(CellVisual::NestedRow { row: right })) => {
+            row_layouts_equivalent(left, right)
+        }
+        _ => false,
+    }
+}
+
+fn run_draws_equivalent(left: &RunDraw, right: &RunDraw) -> bool {
+    same_f32(left.x, right.x)
+        && left.scene_font.shares_source_with(&right.scene_font)
+        && same_f32(left.size, right.size)
+        && left.color == right.color
+        && left.highlight == right.highlight
+        && same_f32(left.ascent, right.ascent)
+        && same_f32(left.descent, right.descent)
+        && same_f32(left.baseline_shift, right.baseline_shift)
+        && left.underline == right.underline
+        && left.strikethrough == right.strikethrough
+        && left.link == right.link
+        && left.dynamic == right.dynamic
+        && left.text == right.text
+        && left.is_rtl == right.is_rtl
+        && left.glyphs.len() == right.glyphs.len()
+        && left.glyphs.iter().zip(&right.glyphs).all(|(left, right)| {
+            left.glyph_id.to_u32() == right.glyph_id.to_u32()
+                && left.text_range == right.text_range
+                && same_f32(left.x_advance, right.x_advance)
+                && same_f32(left.x_offset, right.x_offset)
+                && same_f32(left.y_offset, right.y_offset)
+                && same_f32(left.y_advance, right.y_advance)
+                && left.location.is_none()
+                && right.location.is_none()
+        })
+}
+
+fn retained_table_replays_eager(
+    retained: &RetainedTableFlow<'_>,
+    items: &[FlowItem],
+    cx: &mut TextCx<'_>,
+) -> bool {
+    let Some(eager) = items.get(retained.item_index) else {
+        return false;
+    };
+    let request = &retained.request;
+    let mut capture = LayoutCapture::from_checkpoint(request.capture_start);
+    let mut lists = request.lists_before.clone();
+    let mut replay = Vec::with_capacity(1);
+    layout_table_with_row_pagination_and_lists(
+        request.table,
+        &mut replay,
+        request.geom,
+        cx,
+        &mut capture,
+        request.pagination,
+        &mut lists,
+    );
+    replay.len() == 1
+        && table_flow_items_equivalent(eager, &replay[0])
+        && lists == request.lists_after
+        && capture.checkpoint() == request.capture_end
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ParagraphFragmentCandidate {
     block_start_index: usize,
@@ -722,6 +906,7 @@ struct LoweredBodyFlow<'a> {
     items: Vec<FlowItem>,
     block_metrics: Vec<Option<BlockPaginationMetrics>>,
     paragraphs: Vec<RetainedParagraphFlow<'a>>,
+    tables: Vec<RetainedTableFlow<'a>>,
 }
 
 struct PaginationPlan<'a> {
@@ -733,6 +918,7 @@ struct PaginationPlan<'a> {
     geometries_by_item: Vec<Geom>,
     block_metrics: Vec<Option<BlockPaginationMetrics>>,
     paragraphs: Vec<PlannedParagraphFlow<'a>>,
+    tables: Vec<RetainedTableFlow<'a>>,
 }
 
 struct PlannedPaginationItem {
@@ -1063,6 +1249,7 @@ impl PaginationPlan<'static> {
             items,
             supplied_block_metrics,
             Vec::new(),
+            Vec::new(),
             geom,
             final_section_setup,
             final_column_gap_pt,
@@ -1078,6 +1265,7 @@ impl<'a> PaginationPlan<'a> {
         items: Vec<FlowItem>,
         supplied_block_metrics: Option<Vec<Option<BlockPaginationMetrics>>>,
         paragraphs: Vec<RetainedParagraphFlow<'a>>,
+        tables: Vec<RetainedTableFlow<'a>>,
         geom: Geom,
         final_section_setup: &SectionSetup,
         final_column_gap_pt: Option<f32>,
@@ -1105,6 +1293,7 @@ impl<'a> PaginationPlan<'a> {
             geometries_by_item,
             block_metrics,
             paragraphs,
+            tables,
         }
     }
 
@@ -1129,6 +1318,25 @@ impl<'a> PaginationPlan<'a> {
             .windows(2)
             .all(|pair| pair[0].item_range.end <= pair[1].item_range.start);
         records_are_valid && spans_are_ordered
+    }
+
+    fn retained_tables_are_valid(&self) -> bool {
+        let records_are_valid = self.tables.iter().all(|table| {
+            self.items
+                .get(table.item_index)
+                .is_some_and(|item| matches!(item, FlowItem::Table { .. }))
+                && table.request.capture_start.collect_page_fields
+                    == table.request.capture_end.collect_page_fields
+                && table.request.capture_start.page_field_count
+                    <= table.request.capture_end.page_field_count
+                && table.request.capture_start.next_table_id.saturating_add(1)
+                    <= table.request.capture_end.next_table_id
+        });
+        let indices_are_ordered = self
+            .tables
+            .windows(2)
+            .all(|pair| pair[0].item_index < pair[1].item_index);
+        records_are_valid && indices_are_ordered
     }
 
     fn item_context(&self, index: usize) -> Option<PlannedItemContext<'_>> {
@@ -1763,6 +1971,10 @@ fn paginate_with_state(
         plan.retained_paragraphs_are_valid(),
         "retained paragraph fallback spans and source sidecars stay valid"
     );
+    debug_assert!(
+        plan.retained_tables_are_valid(),
+        "retained table sources and eager item indices stay valid"
+    );
     let items = std::mem::take(&mut plan.items);
     let mut item_cursor = PaginationItemCursor::new(items, &plan.paragraphs);
     let PlacementCoordinator {
@@ -2014,6 +2226,7 @@ pub(super) fn paginate_body_flow_with_column_gap(
         items,
         block_metrics,
         paragraphs,
+        tables,
     } = lower_body_flow_entries_with_metrics(flow, cx, capture);
     #[cfg(test)]
     assert_eq!(block_metrics, block_pagination_metrics(&items));
@@ -2021,6 +2234,7 @@ pub(super) fn paginate_body_flow_with_column_gap(
         items,
         Some(block_metrics),
         paragraphs,
+        tables,
         geom,
         final_section_setup,
         final_column_gap_pt,
@@ -2045,6 +2259,7 @@ fn lower_body_flow_entries_with_metrics<'a>(
     let mut items = Vec::with_capacity(flow.ready_item_count());
     let mut block_metrics = StreamingBlockPaginationMetrics::default();
     let mut paragraphs = Vec::new();
+    let mut tables = Vec::new();
     for entry in flow.into_entries() {
         match entry {
             BodyFlowEntry::Ready(item) => {
@@ -2062,12 +2277,24 @@ fn lower_body_flow_entries_with_metrics<'a>(
                     item_range: start..items.len(),
                 });
             }
+            BodyFlowEntry::TableSource(request) => {
+                let retained = RetainedTableFlow {
+                    request,
+                    item_index: items.len().saturating_sub(1),
+                };
+                debug_assert!(
+                    retained_table_replays_eager(&retained, &items, cx),
+                    "retained table source replays its eager layout and side effects"
+                );
+                tables.push(retained);
+            }
         }
     }
     LoweredBodyFlow {
         items,
         block_metrics: block_metrics.finish(),
         paragraphs,
+        tables,
     }
 }
 
@@ -2079,6 +2306,7 @@ mod tests {
     use parley::{FontContext, LayoutContext};
 
     use super::*;
+    use crate::Row;
 
     type MetricSnapshot = (PaginationHint, Option<usize>, Vec<u32>, u32, u32, u32, bool);
 
@@ -3116,6 +3344,187 @@ mod tests {
     }
 
     #[test]
+    fn lowered_body_flow_binds_table_source_to_exact_eager_item() {
+        let table = Table::default();
+        let final_section = SectionSetup::default();
+        let geom = Geom::from_section(&final_section);
+        let capture_start = LayoutCaptureCheckpoint {
+            collect_page_fields: true,
+            page_field_count: 4,
+            next_table_id: 2,
+        };
+        let capture_end = LayoutCaptureCheckpoint {
+            next_table_id: 3,
+            ..capture_start
+        };
+        let mut flow = BodyFlowQueue::default();
+        flow.push_ready(FlowItem::PageBreak);
+        flow.push_ready(FlowItem::Table {
+            rows: Vec::new(),
+            header_rows: 0,
+        });
+        flow.retain_table(TableFlowRequest {
+            table: &table,
+            pagination: TablePaginationView::default(),
+            geom,
+            lists_before: ListState::default(),
+            lists_after: ListState::default(),
+            capture_start,
+            capture_end,
+        });
+        flow.push_ready(FlowItem::Gap(3.0));
+
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let lowered = lower_body_flow_entries_with_metrics(flow, &mut text_cx, &mut capture);
+
+        assert_eq!(lowered.tables.len(), 1);
+        assert_eq!(lowered.tables[0].item_index, 1);
+        assert!(std::ptr::eq(lowered.tables[0].request.table, &table));
+        assert!(matches!(lowered.items[0], FlowItem::PageBreak));
+        assert!(matches!(lowered.items[1], FlowItem::Table { .. }));
+        assert!(matches!(lowered.items[2], FlowItem::Gap(gap) if gap == 3.0));
+
+        let plan = PaginationPlan::with_paragraphs(
+            lowered.items,
+            Some(lowered.block_metrics),
+            lowered.paragraphs,
+            lowered.tables,
+            geom,
+            &final_section,
+            None,
+            None,
+            false,
+        );
+        assert!(plan.retained_tables_are_valid());
+        assert_eq!(plan.tables[0].item_index, 1);
+        assert!(std::ptr::eq(plan.tables[0].request.table, &table));
+    }
+
+    #[test]
+    fn retained_table_replay_isolatedly_matches_layout_and_side_effects() {
+        let paragraph = Paragraph {
+            props: ParaProps {
+                list: Some(ListInfo {
+                    level: 0,
+                    ordered: true,
+                    label: String::new(),
+                }),
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: "1".to_string(),
+                field: FieldRole::Simple {
+                    instruction: "PAGE".to_string(),
+                },
+                ..Run::default()
+            }],
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(paragraph)],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let rows = vec![TableRowPaginationHint { cant_split: false }];
+        let cells = vec![vec![vec![Some(PaginationHint {
+            keep_lines: true,
+            ..PaginationHint::default()
+        })]]];
+        let cell_line_spacing = vec![vec![vec![Some(LineSpacingHint::AtLeast(13.0))]]];
+        let nested = vec![vec![vec![None]]];
+        let cell_tabs = vec![vec![vec![vec![TabStop {
+            position_pt: 24.0,
+            alignment: TabAlignment::Left,
+            leader: TabLeader::Dot,
+        }]]]];
+        let pagination = TablePaginationView {
+            rows: Some(&rows),
+            cells: Some(&cells),
+            cell_line_spacing: Some(&cell_line_spacing),
+            nested: Some(&nested),
+            cell_tabs: Some(&cell_tabs),
+            default_tab_stop_pt: Some(36.0),
+            depth: 0,
+        };
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::page_fields();
+        capture.register_page_field();
+        capture.register_page_field();
+        let capture_start = capture.checkpoint();
+        let mut lists = ListState::default();
+        lists.counters[0] = 3;
+        let lists_before = lists.clone();
+        let mut eager = Vec::new();
+
+        layout_table_with_row_pagination_and_lists(
+            &table,
+            &mut eager,
+            geom,
+            &mut text_cx,
+            &mut capture,
+            pagination,
+            &mut lists,
+        );
+        let capture_end = capture.checkpoint();
+        let lists_after = lists.clone();
+        let retained = RetainedTableFlow {
+            request: TableFlowRequest {
+                table: &table,
+                pagination,
+                geom,
+                lists_before,
+                lists_after,
+                capture_start,
+                capture_end,
+            },
+            item_index: 0,
+        };
+        let caller_capture = capture.checkpoint();
+
+        assert!(retained_table_replays_eager(
+            &retained,
+            &eager,
+            &mut text_cx
+        ));
+        assert_eq!(capture.checkpoint(), caller_capture);
+        assert_eq!(capture_start.page_field_count, 2);
+        assert_eq!(capture_end.page_field_count, 3);
+        assert_eq!(capture_start.next_table_id, 0);
+        assert_eq!(capture_end.next_table_id, 1);
+        assert_eq!(retained.request.lists_before.counters[0], 3);
+        assert_eq!(retained.request.lists_after.counters[0], 4);
+        let FlowItem::Table { rows, .. } = &eager[0] else {
+            unreachable!("eager table")
+        };
+        let dynamic_indices = rows[0].cells[0].lines[0]
+            .runs
+            .iter()
+            .filter_map(|run| run.dynamic.as_ref())
+            .map(|dynamic| dynamic.page_field_index)
+            .collect::<Vec<_>>();
+        assert_eq!(dynamic_indices, vec![Some(2)]);
+    }
+
+    #[test]
     fn pagination_plan_transports_retained_paragraph_fallbacks() {
         let paragraph = Paragraph {
             runs: vec![Run {
@@ -3157,6 +3566,7 @@ mod tests {
             lowered.items,
             Some(lowered.block_metrics),
             lowered.paragraphs,
+            lowered.tables,
             geom,
             &final_section,
             None,
@@ -3251,6 +3661,7 @@ mod tests {
             lowered.items,
             Some(lowered.block_metrics),
             lowered.paragraphs,
+            lowered.tables,
             geom,
             &final_section,
             None,
@@ -3335,6 +3746,7 @@ mod tests {
             lowered.items,
             Some(lowered.block_metrics),
             lowered.paragraphs,
+            lowered.tables,
             geom,
             &final_section,
             None,

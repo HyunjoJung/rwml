@@ -16,6 +16,16 @@ pub(super) struct ParagraphFlowRequest<'a> {
     pub(super) page_field_indices: Option<Rc<[Option<usize>]>>,
 }
 
+pub(super) struct TableFlowRequest<'a> {
+    pub(super) table: &'a Table,
+    pub(super) pagination: TablePaginationView<'a>,
+    pub(super) geom: Geom,
+    pub(super) lists_before: ListState,
+    pub(super) lists_after: ListState,
+    pub(super) capture_start: LayoutCaptureCheckpoint,
+    pub(super) capture_end: LayoutCaptureCheckpoint,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct ParagraphFragmentCursor {
     pub(super) source_char: usize,
@@ -298,11 +308,13 @@ pub(super) fn reserve_paragraph_page_fields(
 enum BodyFlowNode<'a> {
     Ready(usize),
     Paragraph(ParagraphFlowRequest<'a>),
+    TableSource(TableFlowRequest<'a>),
 }
 
 pub(super) enum BodyFlowEntry<'a> {
     Ready(FlowItem),
     Paragraph(ParagraphFlowRequest<'a>),
+    TableSource(TableFlowRequest<'a>),
 }
 
 pub(super) struct BodyFlowEntries<'a> {
@@ -326,6 +338,9 @@ impl<'a> Iterator for BodyFlowEntries<'a> {
                 Some(BodyFlowNode::Ready(count)) => self.ready_remaining = count,
                 Some(BodyFlowNode::Paragraph(request)) => {
                     return Some(BodyFlowEntry::Paragraph(request));
+                }
+                Some(BodyFlowNode::TableSource(request)) => {
+                    return Some(BodyFlowEntry::TableSource(request));
                 }
                 None => {
                     debug_assert!(
@@ -361,6 +376,11 @@ impl<'a> BodyFlowQueue<'a> {
         self.nodes.push(BodyFlowNode::Paragraph(request));
     }
 
+    pub(super) fn retain_table(&mut self, request: TableFlowRequest<'a>) {
+        self.flush_ready();
+        self.nodes.push(BodyFlowNode::TableSource(request));
+    }
+
     pub(super) fn ready_item_count(&self) -> usize {
         self.ready.len()
     }
@@ -386,10 +406,25 @@ impl<'a> BodyFlowQueue<'a> {
             ready: std::mem::take(&mut self.ready).into_iter(),
             ready_remaining: 0,
         };
-        let items = lower_body_flow_entries(entries, cx, capture);
-        self.ready = items;
+        let mut nodes = Vec::new();
+        let mut ready = Vec::new();
+        let mut segment_start = 0usize;
+        for entry in entries {
+            match entry {
+                BodyFlowEntry::Ready(item) => ready.push(item),
+                BodyFlowEntry::Paragraph(request) => {
+                    layout_paragraph(&request, &mut ready, cx, capture);
+                }
+                BodyFlowEntry::TableSource(request) => {
+                    flush_ready_node(&mut nodes, ready.len(), &mut segment_start);
+                    nodes.push(BodyFlowNode::TableSource(request));
+                }
+            }
+        }
+        flush_ready_node(&mut nodes, ready.len(), &mut segment_start);
+        self.nodes = nodes;
+        self.ready = ready;
         self.segment_start = self.ready.len();
-        self.nodes.push(BodyFlowNode::Ready(self.ready.len()));
     }
 
     fn ready_items(&mut self) -> &mut Vec<FlowItem> {
@@ -409,6 +444,23 @@ impl<'a> BodyFlowQueue<'a> {
     }
 }
 
+fn flush_ready_node<'a>(
+    nodes: &mut Vec<BodyFlowNode<'a>>,
+    ready_len: usize,
+    segment_start: &mut usize,
+) {
+    let count = ready_len.saturating_sub(*segment_start);
+    if count == 0 {
+        return;
+    }
+    match nodes.last_mut() {
+        Some(BodyFlowNode::Ready(previous)) => *previous = previous.saturating_add(count),
+        _ => nodes.push(BodyFlowNode::Ready(count)),
+    }
+    *segment_start = ready_len;
+}
+
+#[cfg(test)]
 fn lower_body_flow_entries(
     entries: BodyFlowEntries<'_>,
     cx: &mut TextCx<'_>,
@@ -421,6 +473,7 @@ fn lower_body_flow_entries(
             BodyFlowEntry::Paragraph(request) => {
                 layout_paragraph(&request, &mut items, cx, capture)
             }
+            BodyFlowEntry::TableSource(_) => {}
         }
     }
     items
@@ -435,6 +488,8 @@ pub(super) trait BlockFlowSink<'a> {
         cx: &mut TextCx<'_>,
         capture: &mut LayoutCapture,
     );
+
+    fn retain_table(&mut self, request: TableFlowRequest<'a>);
 
     fn has_non_anchor(&mut self, cx: &mut TextCx<'_>, capture: &mut LayoutCapture) -> bool;
 }
@@ -452,6 +507,8 @@ impl<'a> BlockFlowSink<'a> for Vec<FlowItem> {
     ) {
         layout_paragraph(&request, self, cx, capture);
     }
+
+    fn retain_table(&mut self, _request: TableFlowRequest<'a>) {}
 
     fn has_non_anchor(&mut self, _cx: &mut TextCx<'_>, _capture: &mut LayoutCapture) -> bool {
         self.iter()
@@ -471,6 +528,10 @@ impl<'a> BlockFlowSink<'a> for BodyFlowQueue<'a> {
         _capture: &mut LayoutCapture,
     ) {
         BodyFlowQueue::push_paragraph(self, request);
+    }
+
+    fn retain_table(&mut self, request: TableFlowRequest<'a>) {
+        BodyFlowQueue::retain_table(self, request);
     }
 
     fn has_non_anchor(&mut self, cx: &mut TextCx<'_>, capture: &mut LayoutCapture) -> bool {
@@ -846,6 +907,104 @@ mod tests {
     }
 
     #[test]
+    fn body_flow_entry_cursor_retains_table_request_after_eager_item() {
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell::default()],
+            }],
+            ..Table::default()
+        };
+        let row_hints = vec![TableRowPaginationHint { cant_split: false }];
+        let cell_hints = TableCellPaginationHints::new();
+        let line_spacing_hints = TableCellLineSpacingHints::new();
+        let nested_hints = TableCellNestedPaginationHints::new();
+        let tab_stop_hints = TableCellTabStopHints::new();
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut lists_before = ListState::default();
+        lists_before.counters[0] = 3;
+        let mut lists_after = lists_before.clone();
+        lists_after.counters[0] = 4;
+        let capture_start = LayoutCaptureCheckpoint {
+            collect_page_fields: true,
+            page_field_count: 2,
+            next_table_id: 7,
+        };
+        let capture_end = LayoutCaptureCheckpoint {
+            page_field_count: 3,
+            next_table_id: 8,
+            ..capture_start
+        };
+
+        let mut queue = BodyFlowQueue::default();
+        queue.push_ready(FlowItem::Table {
+            rows: Vec::new(),
+            header_rows: 0,
+        });
+        queue.retain_table(TableFlowRequest {
+            table: &table,
+            pagination: TablePaginationView {
+                rows: Some(&row_hints),
+                cells: Some(&cell_hints),
+                cell_line_spacing: Some(&line_spacing_hints),
+                nested: Some(&nested_hints),
+                cell_tabs: Some(&tab_stop_hints),
+                default_tab_stop_pt: Some(36.0),
+                depth: 0,
+            },
+            geom,
+            lists_before,
+            lists_after,
+            capture_start,
+            capture_end,
+        });
+        queue.push_ready(FlowItem::Gap(5.0));
+
+        let mut entries = queue.into_entries();
+        assert!(matches!(
+            entries.next(),
+            Some(BodyFlowEntry::Ready(FlowItem::Table { .. }))
+        ));
+        let Some(BodyFlowEntry::TableSource(request)) = entries.next() else {
+            panic!("retained table request");
+        };
+        assert!(std::ptr::eq(request.table, &table));
+        assert!(std::ptr::eq(
+            request.pagination.rows.expect("row hints"),
+            row_hints.as_slice()
+        ));
+        assert!(std::ptr::eq(
+            request.pagination.cells.expect("cell hints"),
+            &cell_hints
+        ));
+        assert!(std::ptr::eq(
+            request
+                .pagination
+                .cell_line_spacing
+                .expect("line-spacing hints"),
+            &line_spacing_hints
+        ));
+        assert!(std::ptr::eq(
+            request.pagination.nested.expect("nested hints"),
+            &nested_hints
+        ));
+        assert!(std::ptr::eq(
+            request.pagination.cell_tabs.expect("tab-stop hints"),
+            &tab_stop_hints
+        ));
+        assert_eq!(request.pagination.default_tab_stop_pt, Some(36.0));
+        assert!(request.geom == geom);
+        assert_eq!(request.lists_before.counters[0], 3);
+        assert_eq!(request.lists_after.counters[0], 4);
+        assert_eq!(request.capture_start, capture_start);
+        assert_eq!(request.capture_end, capture_end);
+        assert!(matches!(
+            entries.next(),
+            Some(BodyFlowEntry::Ready(FlowItem::Gap(gap))) if gap == 5.0
+        ));
+        assert!(entries.next().is_none());
+    }
+
+    #[test]
     fn deferred_body_collector_matches_eager_flow_order() {
         let blocks = vec![
             Block::Paragraph(Paragraph {
@@ -985,5 +1144,93 @@ mod tests {
 
         assert_eq!(capture.page_fields, vec![None, None, None]);
         assert_eq!(indices, vec![Some(0), Some(1), Some(2)]);
+    }
+
+    #[test]
+    fn body_collector_retains_table_state_across_materialization() {
+        let ordered_page_paragraph = |text: &str, page_break_before: bool| Paragraph {
+            props: ParaProps {
+                list: Some(ListInfo {
+                    level: 0,
+                    ordered: true,
+                    label: String::new(),
+                }),
+                page_break_before,
+                ..ParaProps::default()
+            },
+            runs: page_field_paragraph(text, false).runs,
+        };
+        let blocks = vec![
+            Block::Paragraph(ordered_page_paragraph("1", false)),
+            Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(ordered_page_paragraph("2", false))],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            }),
+            Block::Paragraph(Paragraph {
+                props: ParaProps {
+                    page_break_before: true,
+                    ..ParaProps::default()
+                },
+                runs: page_field_paragraph("3", false).runs,
+            }),
+        ];
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::page_fields();
+        let mut queue = BodyFlowQueue::default();
+
+        collect_blocks_inner(
+            &blocks,
+            &mut queue,
+            geom,
+            &mut text_cx,
+            &mut capture,
+            BlockCollectionOptions::default(),
+        );
+
+        let mut retained = None;
+        for entry in queue.into_entries() {
+            if let BodyFlowEntry::TableSource(request) = entry {
+                assert!(retained.is_none());
+                retained = Some(request);
+            }
+        }
+        let request = retained.expect("retained table source");
+        let Block::Table(source_table) = &blocks[1] else {
+            unreachable!("table block")
+        };
+        assert!(std::ptr::eq(request.table, source_table));
+        assert_eq!(request.lists_before.counters[0], 1);
+        assert_eq!(request.lists_after.counters[0], 2);
+        assert_eq!(
+            request.capture_start,
+            LayoutCaptureCheckpoint {
+                collect_page_fields: true,
+                page_field_count: 1,
+                next_table_id: 0,
+            }
+        );
+        assert_eq!(
+            request.capture_end,
+            LayoutCaptureCheckpoint {
+                collect_page_fields: true,
+                page_field_count: 2,
+                next_table_id: 1,
+            }
+        );
+        assert_eq!(capture.page_fields, vec![None, None, None]);
+        assert_eq!(capture.next_table_id, 1);
     }
 }

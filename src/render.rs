@@ -39,6 +39,7 @@ use paginate::*;
 use paragraph_flow::layout_paragraph;
 use paragraph_flow::{
     reserve_paragraph_page_fields, BlockFlowSink, BodyFlowQueue, ParagraphFlowRequest,
+    TableFlowRequest,
 };
 use shape::*;
 use table::*;
@@ -754,12 +755,27 @@ struct LayoutCapture {
     next_table_id: usize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LayoutCaptureCheckpoint {
+    collect_page_fields: bool,
+    page_field_count: usize,
+    next_table_id: usize,
+}
+
 impl LayoutCapture {
     fn page_fields() -> Self {
         Self {
             collect_page_fields: true,
             page_fields: Vec::new(),
             next_table_id: 0,
+        }
+    }
+
+    fn from_checkpoint(checkpoint: LayoutCaptureCheckpoint) -> Self {
+        Self {
+            collect_page_fields: checkpoint.collect_page_fields,
+            page_fields: vec![None; checkpoint.page_field_count],
+            next_table_id: checkpoint.next_table_id,
         }
     }
 
@@ -776,6 +792,14 @@ impl LayoutCapture {
         let id = self.next_table_id;
         self.next_table_id = self.next_table_id.saturating_add(1);
         id
+    }
+
+    fn checkpoint(&self) -> LayoutCaptureCheckpoint {
+        LayoutCaptureCheckpoint {
+            collect_page_fields: self.collect_page_fields,
+            page_field_count: self.page_fields.len(),
+            next_table_id: self.next_table_id,
+        }
     }
 }
 
@@ -2124,7 +2148,7 @@ struct ParagraphIndentLayout {
 /// Per-document ordered-list counters (levels 0..=8). Bullets and reader-captured
 /// labels need no counter; an authored ordered item without a label is numbered
 /// here.
-#[derive(Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct ListState {
     counters: [u32; 9],
 }
@@ -3035,11 +3059,11 @@ struct BlockCollectionOptions<'source, 'options> {
     tab_stops: Option<&'source [Vec<TabStop>]>,
     column_break_offsets: Option<&'source [Vec<usize>]>,
     default_tab_stop_pt: Option<f32>,
-    table_row_pagination: Option<&'options [Vec<TableRowPaginationHint>]>,
-    table_cell_pagination: Option<&'options [TableCellPaginationHints]>,
-    table_cell_line_spacing: Option<&'options [TableCellLineSpacingHints]>,
-    table_nested_pagination: Option<&'options [TableCellNestedPaginationHints]>,
-    table_cell_tab_stops: Option<&'options [TableCellTabStopHints]>,
+    table_row_pagination: Option<&'source [Vec<TableRowPaginationHint>]>,
+    table_cell_pagination: Option<&'source [TableCellPaginationHints]>,
+    table_cell_line_spacing: Option<&'source [TableCellLineSpacingHints]>,
+    table_nested_pagination: Option<&'source [TableCellNestedPaginationHints]>,
+    table_cell_tab_stops: Option<&'source [TableCellTabStopHints]>,
     top_bottom_bands: Option<&'options [Vec<TopBottomBand>]>,
 }
 
@@ -3056,11 +3080,11 @@ struct BodyCollectionSidecars<'source, 'options> {
     tab_stops: &'source [Vec<TabStop>],
     column_break_offsets: &'source [Vec<usize>],
     default_tab_stop_pt: Option<f32>,
-    table_row_pagination: &'options [Vec<TableRowPaginationHint>],
-    table_cell_pagination: &'options [TableCellPaginationHints],
-    table_cell_line_spacing: &'options [TableCellLineSpacingHints],
-    table_nested_pagination: &'options [TableCellNestedPaginationHints],
-    table_cell_tab_stops: &'options [TableCellTabStopHints],
+    table_row_pagination: &'source [Vec<TableRowPaginationHint>],
+    table_cell_pagination: &'source [TableCellPaginationHints],
+    table_cell_line_spacing: &'source [TableCellLineSpacingHints],
+    table_nested_pagination: &'source [TableCellNestedPaginationHints],
+    table_cell_tab_stops: &'source [TableCellTabStopHints],
     top_bottom_bands: &'options [Vec<TopBottomBand>],
 }
 
@@ -3236,23 +3260,35 @@ fn collect_blocks_inner<'source, 'options, S: BlockFlowSink<'source>>(
                 let cell_tab_stops = options
                     .table_cell_tab_stops
                     .and_then(|tables| tables.get(block_index));
+                let pagination = TablePaginationView {
+                    rows: row_pagination,
+                    cells: cell_pagination,
+                    cell_line_spacing,
+                    nested: nested_pagination,
+                    cell_tabs: cell_tab_stops,
+                    default_tab_stop_pt: options.default_tab_stop_pt,
+                    depth: 0,
+                };
+                let lists_before = lists.clone();
+                let capture_start = capture.checkpoint();
                 layout_table_with_row_pagination_and_lists(
                     t,
                     out.ready_items(),
                     block_geom,
                     cx,
                     capture,
-                    TablePaginationView {
-                        rows: row_pagination,
-                        cells: cell_pagination,
-                        cell_line_spacing,
-                        nested: nested_pagination,
-                        cell_tabs: cell_tab_stops,
-                        default_tab_stop_pt: options.default_tab_stop_pt,
-                        depth: 0,
-                    },
+                    pagination,
                     &mut lists,
                 );
+                out.retain_table(TableFlowRequest {
+                    table: t,
+                    pagination,
+                    geom: block_geom,
+                    lists_before,
+                    lists_after: lists.clone(),
+                    capture_start,
+                    capture_end: capture.checkpoint(),
+                });
                 out.ready_items().push(FlowItem::Gap(PARA_GAP));
             }
             Block::Image(img) => {
