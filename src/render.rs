@@ -6849,15 +6849,14 @@ fn draw_pie_chart(
 
 fn draw_radar_chart(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     chart: &Chart,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    rect: ChartRect,
     tcx: &mut TextCx<'_>,
-) {
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
     if chart.categories.is_empty() || chart.series.is_empty() {
-        return;
+        return Ok(());
     }
     let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
     let axis = rgb::Color::new(0x5D, 0x66, 0x70);
@@ -6932,9 +6931,18 @@ fn draw_radar_chart(
             let (x1, y1) = points[index];
             let (x2, y2) = points[(index + 1) % points.len()];
             fill_line_segment(surface, x1, y1, x2, y2, 1.5, color);
-            fill_rect_color(surface, x1 - 2.0, y1 - 2.0, 4.0, 4.0, color);
+            project_and_replay_page_scene_fill_rect(
+                surface,
+                scene,
+                x1 - 2.0,
+                y1 - 2.0,
+                4.0,
+                4.0,
+                color,
+            )?;
         }
     }
+    Ok(())
 }
 
 fn draw_waterfall_chart(
@@ -7599,7 +7607,18 @@ fn draw_authored_chart(
         chart.kind,
         ChartKind::Radar | ChartKind::RadarWithMarkers | ChartKind::FilledRadar
     ) {
-        draw_radar_chart(surface, chart, plot_left, plot_top, plot_w, plot_h, tcx);
+        draw_radar_chart(
+            surface,
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            tcx,
+        )?;
         let mut legend_x = plot_left;
         let legend_y = y + h - 14.0;
         for (index, series) in chart.series.iter().enumerate() {
@@ -14187,6 +14206,81 @@ mod tests {
             } = operation
             else {
                 panic!("box-whisker operation must be a rectangle: {operation:?}");
+            };
+            assert_close(rect.x, x);
+            assert_close(rect.y, y);
+            assert_close(rect.width, width);
+            assert_close(rect.height, height);
+            assert_eq!(*actual_color, color);
+        }
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn radar_markers_enter_the_scene_before_the_legend() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::RadarWithMarkers,
+            categories: vec![
+                "North".to_string(),
+                "East".to_string(),
+                "South".to_string(),
+                "West".to_string(),
+            ],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![4.0, 4.0, 4.0, 4.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(400.0, 260.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut surface,
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let color = super::chart_series_color(0);
+        let expected = [
+            (193.0, 45.04, 4.0, 4.0),
+            (241.96, 94.0, 4.0, 4.0),
+            (193.0, 142.96, 4.0, 4.0),
+            (144.04, 94.0, 4.0, 4.0),
+            (92.0, 189.0, 6.0, 6.0),
+        ];
+        assert_eq!(scene.operations.len(), 5 + expected.len());
+        for (operation, (x, y, width, height)) in scene.operations[5..].iter().zip(expected) {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("radar marker or legend must be a rectangle: {operation:?}");
             };
             assert_close(rect.x, x);
             assert_close(rect.y, y);
