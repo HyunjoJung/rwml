@@ -266,6 +266,44 @@ impl BlockProjectionState {
     }
 }
 
+#[derive(Default)]
+struct BlockPlacementCursor {
+    current_block: Option<usize>,
+    current_block_start: Option<usize>,
+    current_line_index: usize,
+    widow_break_before: Option<usize>,
+}
+
+impl BlockPlacementCursor {
+    fn begin(&mut self, block_index: usize, item_index: usize) {
+        self.current_block = Some(block_index);
+        self.current_block_start = Some(item_index);
+        self.current_line_index = 0;
+        self.widow_break_before = None;
+    }
+
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn advance_line(&mut self) {
+        self.current_line_index = self.current_line_index.saturating_add(1);
+    }
+
+    fn schedule_widow_break(&mut self, lines_after_current: usize) {
+        self.widow_break_before = Some(self.current_line_index + lines_after_current);
+    }
+
+    fn take_due_widow_break(&mut self) -> bool {
+        if self.widow_break_before == Some(self.current_line_index) {
+            self.widow_break_before = None;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 fn section_columns_by_item(items: &[FlowItem], final_columns: Option<u16>) -> Vec<Option<u16>> {
     let mut columns = vec![final_columns; items.len()];
     let mut section_start = 0usize;
@@ -616,10 +654,7 @@ struct PlacementCoordinator {
     section_index: usize,
     active_track: ActivePlacementTrack,
     block_projection: BlockProjectionState,
-    current_block: Option<usize>,
-    current_block_start: Option<usize>,
-    current_line_index: usize,
-    widow_break_before: Option<usize>,
+    block_cursor: BlockPlacementCursor,
     pending_top_bottom_bands: Vec<PendingTopBottomBand>,
     active_top_bottom_bands: Vec<ActiveTopBottomBand>,
     deferred_top_bottom_bands: Vec<ActiveTopBottomBand>,
@@ -666,10 +701,7 @@ impl PlacementCoordinator {
             section_index: 0,
             active_track,
             block_projection: BlockProjectionState::default(),
-            current_block: None,
-            current_block_start: None,
-            current_line_index: 0,
-            widow_break_before: None,
+            block_cursor: BlockPlacementCursor::default(),
             pending_top_bottom_bands: Vec::new(),
             active_top_bottom_bands: Vec::new(),
             deferred_top_bottom_bands: Vec::new(),
@@ -898,10 +930,7 @@ fn paginate_with_state(
         mut section_index,
         mut active_track,
         mut block_projection,
-        mut current_block,
-        mut current_block_start,
-        mut current_line_index,
-        mut widow_break_before,
+        mut block_cursor,
         mut pending_top_bottom_bands,
         mut active_top_bottom_bands,
         mut deferred_top_bottom_bands,
@@ -962,17 +991,11 @@ fn paginate_with_state(
                     }
                 }
                 block_projection.mark_pending(block_index);
-                current_block = Some(block_index);
-                current_block_start = Some(item_index);
-                current_line_index = 0;
-                widow_break_before = None;
+                block_cursor.begin(block_index, item_index);
             }
             FlowItem::PaginationBoundary => {
                 block_projection.record_pending_page(pages.len().saturating_sub(1));
-                current_block = None;
-                current_block_start = None;
-                current_line_index = 0;
-                widow_break_before = None;
+                block_cursor.reset();
                 pending_top_bottom_bands.clear();
                 active_top_bottom_bands.clear();
                 deferred_top_bottom_bands.clear();
@@ -986,7 +1009,7 @@ fn paginate_with_state(
             } => {
                 if top < bottom && pending_top_bottom_bands.len() < MAX_FLOATING_SHAPE_OVERLAYS {
                     pending_top_bottom_bands.push(PendingTopBottomBand {
-                        owner_block: current_block,
+                        owner_block: block_cursor.current_block,
                         anchor_offset,
                         top: top.max(active_geom.top()),
                         bottom: bottom.min(active_geom.bottom()),
@@ -1004,23 +1027,24 @@ fn paginate_with_state(
                     &active_top_bottom_bands,
                     None,
                 );
-                if let Some(metric) = current_block_start
+                if let Some(metric) = block_cursor
+                    .current_block_start
                     .and_then(|start| plan.block_metrics.get(start))
                     .and_then(Option::as_ref)
                     .filter(|metric| metric.pagination.widow_control)
                 {
                     loop {
-                        if widow_break_before == Some(current_line_index) {
+                        if block_cursor.take_due_widow_break() {
                             cursor.advance(&mut pages, active_geom);
-                            widow_break_before = None;
                             continue;
                         }
-                        if widow_break_before.is_none()
-                            && current_line_index < metric.line_heights.len()
+                        if block_cursor.widow_break_before.is_none()
+                            && block_cursor.current_line_index < metric.line_heights.len()
                         {
-                            let remaining = metric.line_heights.len() - current_line_index;
+                            let remaining =
+                                metric.line_heights.len() - block_cursor.current_line_index;
                             let fits = fitting_line_count_with_bands(
-                                &metric.line_heights[current_line_index..],
+                                &metric.line_heights[block_cursor.current_line_index..],
                                 cursor.y,
                                 pages.len().saturating_sub(1),
                                 active_geom,
@@ -1034,11 +1058,10 @@ fn paginate_with_state(
                                 if remaining - fits == 1 {
                                     let bottom_lines = fits.saturating_sub(1);
                                     if bottom_lines >= 2 {
-                                        widow_break_before =
-                                            Some(current_line_index + bottom_lines);
+                                        block_cursor.schedule_widow_break(bottom_lines);
                                     } else {
                                         let remaining_height = metric.line_heights
-                                            [current_line_index..]
+                                            [block_cursor.current_line_index..]
                                             .iter()
                                             .sum::<f32>();
                                         if cursor.column_nonempty
@@ -1066,7 +1089,7 @@ fn paginate_with_state(
                 let page_index = pages.len().saturating_sub(1);
                 block_projection.record_pending_page(page_index);
                 block_projection.record_line(
-                    current_block,
+                    block_cursor.current_block,
                     &l,
                     page_index,
                     cursor.columns.width(cursor.column_index),
@@ -1078,11 +1101,11 @@ fn paginate_with_state(
                     &mut active_top_bottom_bands,
                     &mut deferred_top_bottom_bands,
                     defer_current_top_bottom_bands,
-                    current_block,
+                    block_cursor.current_block,
                     line_range,
                     page_index,
                 );
-                current_line_index = current_line_index.saturating_add(1);
+                block_cursor.advance_line();
             }
             FlowItem::Picture { image, layout } => {
                 ensure_outside_top_bottom_bands(
@@ -1091,7 +1114,7 @@ fn paginate_with_state(
                     layout.bounds_h,
                     active_geom,
                     &active_top_bottom_bands,
-                    current_block,
+                    block_cursor.current_block,
                 );
                 block_projection.record_pending_page(pages.len().saturating_sub(1));
                 place_item(
@@ -1842,6 +1865,29 @@ mod tests {
             ]),
         );
         assert_eq!(state.block_line_widths.get(&7), Some(&vec![72.0]));
+    }
+
+    #[test]
+    fn block_placement_cursor_tracks_lines_and_consumes_widow_break() {
+        let mut cursor = BlockPlacementCursor::default();
+        cursor.begin(7, 11);
+        cursor.schedule_widow_break(2);
+
+        assert_eq!(cursor.current_block, Some(7));
+        assert_eq!(cursor.current_block_start, Some(11));
+        assert_eq!(cursor.current_line_index, 0);
+        assert!(!cursor.take_due_widow_break());
+        cursor.advance_line();
+        assert!(!cursor.take_due_widow_break());
+        cursor.advance_line();
+        assert!(cursor.take_due_widow_break());
+        assert!(!cursor.take_due_widow_break());
+
+        cursor.reset();
+        assert!(cursor.current_block.is_none());
+        assert!(cursor.current_block_start.is_none());
+        assert_eq!(cursor.current_line_index, 0);
+        assert!(cursor.widow_break_before.is_none());
     }
 
     #[test]
