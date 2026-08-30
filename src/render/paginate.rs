@@ -421,6 +421,64 @@ impl BlockPaginationMetricAccumulator {
     }
 }
 
+#[cfg(test)]
+struct PendingBlockPaginationMetrics {
+    start: usize,
+    pagination: PaginationHint,
+    metric: BlockPaginationMetricAccumulator,
+}
+
+#[cfg(test)]
+#[derive(Default)]
+struct StreamingBlockPaginationMetrics {
+    active: Option<PendingBlockPaginationMetrics>,
+    completed: Vec<(usize, BlockPaginationMetrics)>,
+    item_count: usize,
+}
+
+#[cfg(test)]
+impl StreamingBlockPaginationMetrics {
+    fn observe(&mut self, item: &FlowItem) {
+        let index = self.item_count;
+        self.item_count = self.item_count.saturating_add(1);
+        match item {
+            FlowItem::BlockStart { pagination, .. } => {
+                self.finish_active(Some(index));
+                self.active = Some(PendingBlockPaginationMetrics {
+                    start: index,
+                    pagination: *pagination,
+                    metric: BlockPaginationMetricAccumulator::default(),
+                });
+            }
+            FlowItem::PaginationBoundary => self.finish_active(None),
+            _ => {
+                if let Some(active) = self.active.as_mut() {
+                    active.metric.observe(item);
+                }
+            }
+        }
+    }
+
+    fn finish(mut self) -> Vec<Option<BlockPaginationMetrics>> {
+        self.finish_active(None);
+        let mut metrics = vec![None; self.item_count];
+        for (start, metric) in self.completed {
+            metrics[start] = Some(metric);
+        }
+        metrics
+    }
+
+    fn finish_active(&mut self, next_start: Option<usize>) {
+        let Some(active) = self.active.take() else {
+            return;
+        };
+        self.completed.push((
+            active.start,
+            active.metric.finish(active.pagination, next_start),
+        ));
+    }
+}
+
 fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMetrics>> {
     let starts = items
         .iter()
@@ -961,15 +1019,7 @@ pub(super) fn paginate_body_flow_with_column_gap(
     final_column_layout: Option<&SectionColumnLayoutHints>,
     final_column_rtl: bool,
 ) -> Pagination {
-    let mut items = Vec::with_capacity(flow.ready_item_count());
-    for entry in flow.into_entries() {
-        match entry {
-            BodyFlowEntry::Ready(item) => items.push(item),
-            BodyFlowEntry::Paragraph(request) => {
-                layout_paragraph(request, &mut items, cx, capture);
-            }
-        }
-    }
+    let items = lower_body_flow_entries_with_observer(flow, cx, capture, |_| {});
     paginate_with_column_gap(
         items,
         geom,
@@ -980,9 +1030,102 @@ pub(super) fn paginate_body_flow_with_column_gap(
     )
 }
 
+fn lower_body_flow_entries_with_observer(
+    flow: BodyFlowQueue<'_>,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    mut observe: impl FnMut(&FlowItem),
+) -> Vec<FlowItem> {
+    let mut items = Vec::with_capacity(flow.ready_item_count());
+    for entry in flow.into_entries() {
+        match entry {
+            BodyFlowEntry::Ready(item) => {
+                observe(&item);
+                items.push(item);
+            }
+            BodyFlowEntry::Paragraph(request) => {
+                let start = items.len();
+                layout_paragraph(request, &mut items, cx, capture);
+                for item in &items[start..] {
+                    observe(item);
+                }
+            }
+        }
+    }
+    items
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
+    use parley::{FontContext, LayoutContext};
+
     use super::*;
+
+    type MetricSnapshot = (PaginationHint, Option<usize>, Vec<u32>, u32, u32, u32, bool);
+
+    fn strict_font_context(font: Vec<u8>) -> FontContext {
+        let mut collection = Collection::new(CollectionOptions {
+            shared: false,
+            system_fonts: false,
+        });
+        collection.register_fonts(Blob::from(font), None);
+        FontContext {
+            collection,
+            source_cache: SourceCache::default(),
+        }
+    }
+
+    fn page_field_paragraph(text: &str) -> Paragraph {
+        Paragraph {
+            runs: vec![Run {
+                text: text.to_string(),
+                field: FieldRole::Simple {
+                    instruction: "PAGE".to_string(),
+                },
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        }
+    }
+
+    fn metric_snapshots(metrics: &[Option<BlockPaginationMetrics>]) -> Vec<Option<MetricSnapshot>> {
+        metrics
+            .iter()
+            .map(|metric| {
+                metric.as_ref().map(|metric| {
+                    (
+                        metric.pagination,
+                        metric.next_start,
+                        metric
+                            .line_heights
+                            .iter()
+                            .map(|height| height.to_bits())
+                            .collect(),
+                        metric.first_line_extent.to_bits(),
+                        metric.last_line_extent.to_bits(),
+                        metric.total_height.to_bits(),
+                        metric.is_paragraph,
+                    )
+                })
+            })
+            .collect()
+    }
+
+    fn dynamic_page_field_indices(items: &[FlowItem]) -> Vec<Option<usize>> {
+        items
+            .iter()
+            .filter_map(|item| match item {
+                FlowItem::Line(line) => Some(line),
+                _ => None,
+            })
+            .flat_map(|line| &line.runs)
+            .filter_map(|run| run.dynamic.as_ref())
+            .map(|dynamic| dynamic.page_field_index)
+            .collect()
+    }
 
     fn line(height: f32) -> FlowItem {
         FlowItem::Line(LineLayout {
@@ -1082,5 +1225,84 @@ mod tests {
         assert_eq!(first.total_height, 12.0);
         assert!(first.is_paragraph);
         assert!(metrics[5].is_some());
+    }
+
+    #[test]
+    fn streamed_body_metrics_match_the_legacy_scan_for_mixed_entries() {
+        let first = page_field_paragraph("1");
+        let broken = page_field_paragraph("2");
+        let trailing = page_field_paragraph("3");
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut capture = LayoutCapture::page_fields();
+        let first_indices = reserve_paragraph_page_fields(&first, &mut capture);
+        let broken_indices = reserve_paragraph_page_fields(&broken, &mut capture);
+        let trailing_indices = reserve_paragraph_page_fields(&trailing, &mut capture);
+        let request = |paragraph, page_field_indices| ParagraphFlowRequest {
+            paragraph,
+            marker: None,
+            tab_stops: &[],
+            column_break_offsets: &[],
+            default_tab_stop_pt: None,
+            line_spacing_hint: None,
+            geom,
+            page_field_indices,
+        };
+        let mut flow = BodyFlowQueue::default();
+        flow.push_ready(FlowItem::PaginationBoundary);
+        flow.push_ready(FlowItem::BlockStart {
+            index: 0,
+            pagination: PaginationHint {
+                keep_next: true,
+                ..PaginationHint::default()
+            },
+        });
+        flow.push_ready(FlowItem::Gap(2.0));
+        flow.push_paragraph(request(&first, first_indices));
+        flow.push_ready(FlowItem::Gap(3.0));
+        flow.push_ready(FlowItem::BlockStart {
+            index: 1,
+            pagination: PaginationHint::default(),
+        });
+        flow.push_ready(FlowItem::Table {
+            rows: Vec::new(),
+            header_rows: 0,
+        });
+        flow.push_ready(FlowItem::BlockStart {
+            index: 2,
+            pagination: PaginationHint::default(),
+        });
+        flow.push_ready(FlowItem::PageBreak);
+        flow.push_paragraph(request(&broken, broken_indices));
+        flow.push_ready(FlowItem::PaginationBoundary);
+        flow.push_ready(FlowItem::Gap(99.0));
+        flow.push_ready(FlowItem::BlockStart {
+            index: 3,
+            pagination: PaginationHint::default(),
+        });
+        flow.push_paragraph(request(&trailing, trailing_indices));
+        flow.push_ready(FlowItem::Gap(4.0));
+
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut streamed = StreamingBlockPaginationMetrics::default();
+        let items =
+            lower_body_flow_entries_with_observer(flow, &mut text_cx, &mut capture, |item| {
+                streamed.observe(item)
+            });
+        let streamed = streamed.finish();
+        let scanned = block_pagination_metrics(&items);
+
+        assert_eq!(metric_snapshots(&streamed), metric_snapshots(&scanned));
+        assert_eq!(
+            dynamic_page_field_indices(&items),
+            vec![Some(0), Some(1), Some(2)]
+        );
+        assert_eq!(capture.page_fields, vec![None, None, None]);
     }
 }
