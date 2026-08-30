@@ -165,6 +165,8 @@ const MAX_PAGE_SCENE_OPERATIONS: usize = 262_144;
 const MAX_PAGE_SCENE_PATH_POINTS: usize = 1_048_576;
 const MAX_PAGE_SCENE_LINKS: usize = 16_384;
 const MAX_PAGE_SCENE_IMAGE_RESOURCES: usize = 4_096;
+const MAX_PAGE_SCENE_FONT_RESOURCES: usize = 4_096;
+const MAX_PAGE_SCENE_GLYPHS: usize = 1_048_576;
 const MAX_PAGE_SCENE_STATE_DEPTH: usize = 128;
 // Keep hostile numeric attributes away from PDF-coordinate overflow while
 // leaving every practical document value untouched.
@@ -233,6 +235,23 @@ impl PageDisplayNumber {
     }
 }
 
+#[derive(Clone)]
+struct SceneFontResource {
+    bytes: Arc<dyn AsRef<[u8]> + Send + Sync>,
+    source_id: u64,
+    index: u32,
+}
+
+impl SceneFontResource {
+    fn shares_source_with(&self, other: &Self) -> bool {
+        self.source_id == other.source_id && self.index == other.index
+    }
+
+    fn is_valid(&self) -> bool {
+        !self.bytes.as_ref().as_ref().is_empty()
+    }
+}
+
 /// One drawable run on a line: its x offset within the content box, the krilla
 /// glyphs, the resolved font, the size, the fill color, and the source text (for
 /// the ToUnicode map that keeps the PDF text selectable).
@@ -241,6 +260,7 @@ struct RunDraw {
     x: f32,
     glyphs: Vec<KrillaGlyph>,
     font: Font,
+    scene_font: SceneFontResource,
     size: f32,
     color: rgb::Color,
     highlight: Option<rgb::Color>,
@@ -254,6 +274,7 @@ struct RunDraw {
     /// Dynamic text to re-shape when the final page context is known.
     dynamic: Option<DynamicTextRun>,
     text: Rc<str>,
+    is_rtl: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -311,6 +332,63 @@ impl ScenePoint {
             .all(f32::is_finite)
             .then_some(Self { x, y })
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SceneGlyph {
+    glyph_id: u32,
+    text_range: std::ops::Range<usize>,
+    x_advance: f32,
+    x_offset: f32,
+    y_offset: f32,
+    y_advance: f32,
+}
+
+impl SceneGlyph {
+    fn from_krilla(glyph: &KrillaGlyph, text: &str) -> Option<Self> {
+        let range = glyph.text_range.clone();
+        if glyph.location.is_some()
+            || range.start >= range.end
+            || range.end > text.len()
+            || !text.is_char_boundary(range.start)
+            || !text.is_char_boundary(range.end)
+            || ![
+                glyph.x_advance,
+                glyph.x_offset,
+                glyph.y_offset,
+                glyph.y_advance,
+            ]
+            .into_iter()
+            .all(f32::is_finite)
+        {
+            return None;
+        }
+        Some(Self {
+            glyph_id: glyph.glyph_id.to_u32(),
+            text_range: range,
+            x_advance: glyph.x_advance,
+            x_offset: glyph.x_offset,
+            y_offset: glyph.y_offset,
+            y_advance: glyph.y_advance,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct SceneGlyphRun {
+    font: SceneFontId,
+    origin: ScenePoint,
+    glyphs: Box<[SceneGlyph]>,
+    text: Rc<str>,
+    size: f32,
+    color: rgb::Color,
+    highlight: Option<rgb::Color>,
+    ascent: f32,
+    descent: f32,
+    underline: Option<TextDecoration>,
+    strikethrough: Option<TextDecoration>,
+    link: Option<Rc<str>>,
+    is_rtl: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -401,6 +479,9 @@ impl SceneImageResource {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct SceneImageId(usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SceneFontId(usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SceneStateKind {
@@ -494,6 +575,7 @@ enum PageSceneOp {
         height: f32,
         transform: SceneTransform,
     },
+    GlyphRun(SceneGlyphRun),
     PushClipRect {
         rect: SceneRect,
     },
@@ -513,6 +595,10 @@ struct PageScene {
     link_limit: usize,
     image_resources: Vec<SceneImageResource>,
     image_limit: usize,
+    font_resources: Vec<SceneFontResource>,
+    font_limit: usize,
+    glyph_count: usize,
+    glyph_limit: usize,
     state_stack: Vec<SceneStateKind>,
     state_limit: usize,
 }
@@ -528,6 +614,10 @@ impl Default for PageScene {
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
             image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
+            font_resources: Vec::new(),
+            font_limit: MAX_PAGE_SCENE_FONT_RESOURCES,
+            glyph_count: 0,
+            glyph_limit: MAX_PAGE_SCENE_GLYPHS,
             state_stack: Vec::new(),
             state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
         }
@@ -546,6 +636,10 @@ impl PageScene {
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
             image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
+            font_resources: Vec::new(),
+            font_limit: MAX_PAGE_SCENE_FONT_RESOURCES,
+            glyph_count: 0,
+            glyph_limit: MAX_PAGE_SCENE_GLYPHS,
             state_stack: Vec::new(),
             state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
         }
@@ -562,6 +656,10 @@ impl PageScene {
             link_limit,
             image_resources: Vec::new(),
             image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
+            font_resources: Vec::new(),
+            font_limit: MAX_PAGE_SCENE_FONT_RESOURCES,
+            glyph_count: 0,
+            glyph_limit: MAX_PAGE_SCENE_GLYPHS,
             state_stack: Vec::new(),
             state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
         }
@@ -578,6 +676,10 @@ impl PageScene {
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
             image_limit,
+            font_resources: Vec::new(),
+            font_limit: MAX_PAGE_SCENE_FONT_RESOURCES,
+            glyph_count: 0,
+            glyph_limit: MAX_PAGE_SCENE_GLYPHS,
             state_stack: Vec::new(),
             state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
         }
@@ -594,6 +696,10 @@ impl PageScene {
             link_limit: MAX_PAGE_SCENE_LINKS,
             image_resources: Vec::new(),
             image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
+            font_resources: Vec::new(),
+            font_limit: MAX_PAGE_SCENE_FONT_RESOURCES,
+            glyph_count: 0,
+            glyph_limit: MAX_PAGE_SCENE_GLYPHS,
             state_stack: Vec::new(),
             state_limit,
         }
@@ -603,6 +709,15 @@ impl PageScene {
     fn with_path_point_limit(path_point_limit: usize) -> Self {
         Self {
             path_point_limit,
+            ..Self::default()
+        }
+    }
+
+    #[cfg(test)]
+    fn with_text_limits(font_limit: usize, glyph_limit: usize) -> Self {
+        Self {
+            font_limit,
+            glyph_limit,
             ..Self::default()
         }
     }
@@ -740,6 +855,95 @@ impl PageScene {
             transform,
         });
         Ok(Some(operation_index))
+    }
+
+    fn push_glyph_run(&mut self, run: &RunDraw, x_abs: f32, baseline_y: f32) -> Result<usize> {
+        let Some(origin) = ScenePoint::new(x_abs + run.x, baseline_y + run.baseline_shift) else {
+            return Err(Error::Render(
+                "page scene contains an invalid glyph run".into(),
+            ));
+        };
+        let decoration_is_valid = |decoration: Option<TextDecoration>| {
+            decoration.is_none_or(|decoration| {
+                decoration.offset.is_finite()
+                    && decoration.thickness.is_finite()
+                    && decoration.thickness > 0.0
+            })
+        };
+        if run.glyphs.is_empty()
+            || run.text.is_empty()
+            || !run.scene_font.is_valid()
+            || ![run.size, run.ascent, run.descent]
+                .into_iter()
+                .all(f32::is_finite)
+            || run.size <= 0.0
+            || !decoration_is_valid(run.underline)
+            || !decoration_is_valid(run.strikethrough)
+        {
+            return Err(Error::Render(
+                "page scene contains an invalid glyph run".into(),
+            ));
+        }
+        if self.operations.len() >= self.operation_limit {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-operation limit",
+                self.operation_limit
+            )));
+        }
+        let Some(next_glyph_count) = self.glyph_count.checked_add(run.glyphs.len()) else {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-glyph limit",
+                self.glyph_limit
+            )));
+        };
+        if next_glyph_count > self.glyph_limit {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-glyph limit",
+                self.glyph_limit
+            )));
+        }
+        let glyphs = run
+            .glyphs
+            .iter()
+            .map(|glyph| SceneGlyph::from_krilla(glyph, &run.text))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| Error::Render("page scene contains an invalid glyph run".into()))?;
+        let existing = self
+            .font_resources
+            .iter()
+            .position(|candidate| candidate.shares_source_with(&run.scene_font));
+        let font = match existing {
+            Some(index) => SceneFontId(index),
+            None => {
+                if self.font_resources.len() >= self.font_limit {
+                    return Err(Error::Render(format!(
+                        "page scene exceeds the {}-font-resource limit",
+                        self.font_limit
+                    )));
+                }
+                let id = SceneFontId(self.font_resources.len());
+                self.font_resources.push(run.scene_font.clone());
+                id
+            }
+        };
+        let operation_index = self.operations.len();
+        self.operations.push(PageSceneOp::GlyphRun(SceneGlyphRun {
+            font,
+            origin,
+            glyphs: glyphs.into_boxed_slice(),
+            text: run.text.clone(),
+            size: run.size,
+            color: run.color,
+            highlight: run.highlight,
+            ascent: run.ascent,
+            descent: run.descent,
+            underline: run.underline,
+            strikethrough: run.strikethrough,
+            link: run.link.clone(),
+            is_rtl: run.is_rtl,
+        }));
+        self.glyph_count = next_glyph_count;
+        Ok(operation_index)
     }
 
     fn push_clip_rect(&mut self, x: f32, y: f32, width: f32, height: f32) -> Result<bool> {
@@ -2821,13 +3025,19 @@ fn shape_extract_lines(
         for run in line.runs() {
             let run_x = x_cursor;
             let font = run.font().clone();
+            let font_index = font.index;
             let (font_data, id) = font.data.into_raw_parts();
+            let scene_font = SceneFontResource {
+                bytes: font_data.clone(),
+                source_id: id,
+                index: font_index,
+            };
             // A face parley can shape but krilla cannot ingest (bitmap/COLR/odd
             // index) makes `Font::new` return `None` — skip the run rather than
             // panic, honoring the crate's panic-free contract.
             let krilla_font = match cx.font_cache.get(&id) {
                 Some(f) => f.clone(),
-                None => match Font::new(font_data.into(), font.index) {
+                None => match Font::new(font_data.into(), font_index) {
                     Some(f) => {
                         cx.font_cache.insert(id, f.clone());
                         f
@@ -2835,6 +3045,7 @@ fn shape_extract_lines(
                     None => continue,
                 },
             };
+            let is_rtl = run.is_rtl();
             let font_size = run.font_size();
             let metrics = *run.metrics();
             let mut glyphs: Vec<KrillaGlyph> = Vec::new();
@@ -2864,6 +3075,7 @@ fn shape_extract_lines(
                         x: seg_x,
                         glyphs: std::mem::take(&mut glyphs),
                         font: krilla_font.clone(),
+                        scene_font: scene_font.clone(),
                         size: font_size,
                         color: previous.color,
                         highlight: previous.highlight,
@@ -2881,6 +3093,7 @@ fn shape_extract_lines(
                         link: seg_link.clone(),
                         dynamic: seg_dynamic.clone(),
                         text: text_rc.clone(),
+                        is_rtl,
                     });
                     seg_x = x_cursor;
                 }
@@ -2909,6 +3122,7 @@ fn shape_extract_lines(
                     x: seg_x,
                     glyphs,
                     font: krilla_font,
+                    scene_font,
                     size: font_size,
                     color: paint.color,
                     highlight: paint.highlight,
@@ -2926,6 +3140,7 @@ fn shape_extract_lines(
                     link: seg_link,
                     dynamic: seg_dynamic,
                     text: text_rc.clone(),
+                    is_rtl,
                 });
             }
         }
@@ -6023,7 +6238,7 @@ fn replay_page_scene_operations(
                 ));
             }
             PageSceneOp::PopTransform => surface.pop(),
-            PageSceneOp::Link { .. } | PageSceneOp::Image { .. } => {}
+            PageSceneOp::Link { .. } | PageSceneOp::Image { .. } | PageSceneOp::GlyphRun(_) => {}
         }
     }
 }
@@ -6067,6 +6282,18 @@ where
     let start = scene.operations.len();
     scene.push_fill_polygon_iter(points, color)?;
     replay_page_scene_operations(surface, scene, start..scene.operations.len());
+    Ok(())
+}
+
+fn project_and_replay_page_scene_glyph_run(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    run: RunDraw,
+    x_abs: f32,
+    baseline_y: f32,
+) -> Result<()> {
+    scene.push_glyph_run(&run, x_abs, baseline_y)?;
+    draw_run(surface, run, x_abs, baseline_y);
     Ok(())
 }
 
@@ -6569,10 +6796,13 @@ fn draw_floating_shape_overlay(
     replay_page_scene_operations(surface, scene, operations);
     draw_chart_text(
         surface,
+        scene,
         &overlay.label,
-        overlay.x + 4.0,
-        overlay.y + 4.0,
-        (overlay.w - 8.0).max(1.0),
+        ChartTextBox {
+            x: overlay.x + 4.0,
+            y: overlay.y + 4.0,
+            width: (overlay.w - 8.0).max(1.0),
+        },
         ChartTextStyle {
             size_pt: 7.5,
             bold: false,
@@ -6580,7 +6810,7 @@ fn draw_floating_shape_overlay(
             color: Color::rgb(0x32, 0x3A, 0x43),
         },
         cx,
-    );
+    )?;
     Ok(())
 }
 
@@ -6594,17 +6824,24 @@ struct ChartTextStyle {
     color: Color,
 }
 
-fn draw_chart_text(
-    surface: &mut Surface<'_>,
-    text: &str,
+#[derive(Clone, Copy)]
+struct ChartTextBox {
     x: f32,
     y: f32,
     width: f32,
+}
+
+fn draw_chart_text(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    text: &str,
+    text_box: ChartTextBox,
     style: ChartTextStyle,
     cx: &mut TextCx<'_>,
-) -> f32 {
+) -> Result<f32> {
+    let ChartTextBox { x, y, width } = text_box;
     if text.trim().is_empty() || width <= 0.0 {
-        return 0.0;
+        return Ok(0.0);
     }
     let size_half_pt = (style.size_pt * 2.0).round().max(1.0) as u16;
     let props = CharProps {
@@ -6628,11 +6865,17 @@ fn draw_chart_text(
         let baseline = y + consumed + line.baseline;
         draw_line_background(surface, &line, x + line.x_indent, y + consumed);
         for run in line.runs {
-            draw_run(surface, run, x + line.x_indent, baseline);
+            project_and_replay_page_scene_glyph_run(
+                surface,
+                scene,
+                run,
+                x + line.x_indent,
+                baseline,
+            )?;
         }
         consumed += line.height;
     }
-    consumed
+    Ok(consumed)
 }
 
 fn chart_series_color(index: usize) -> rgb::Color {
@@ -7002,10 +7245,13 @@ fn draw_radar_chart(
         let label_y = cy + angle.sin() * label_radius;
         draw_chart_text(
             surface,
+            scene,
             category,
-            label_x - 28.0,
-            label_y - 5.0,
-            56.0,
+            ChartTextBox {
+                x: label_x - 28.0,
+                y: label_y - 5.0,
+                width: 56.0,
+            },
             ChartTextStyle {
                 size_pt: 7.5,
                 bold: false,
@@ -7013,7 +7259,7 @@ fn draw_radar_chart(
                 color: Color::rgb(0x25, 0x2D, 0x36),
             },
             tcx,
-        );
+        )?;
     }
     for (series_index, series) in chart.series.iter().enumerate() {
         let color = chart_series_color(series_index);
@@ -7096,10 +7342,13 @@ fn draw_waterfall_chart(
         let label = format_chart_tick(value);
         draw_chart_text(
             surface,
+            scene,
             &label,
-            x - 48.0,
-            y_tick - 5.0,
-            42.0,
+            ChartTextBox {
+                x: x - 48.0,
+                y: y_tick - 5.0,
+                width: 42.0,
+            },
             ChartTextStyle {
                 size_pt: 7.5,
                 bold: false,
@@ -7107,7 +7356,7 @@ fn draw_waterfall_chart(
                 color: Color::rgb(0x4C, 0x55, 0x5F),
             },
             tcx,
-        );
+        )?;
     }
     project_and_replay_page_scene_fill_rect(
         surface,
@@ -7159,10 +7408,13 @@ fn draw_waterfall_chart(
         if let Some(category) = chart.categories.get(index) {
             draw_chart_text(
                 surface,
+                scene,
                 category,
-                x + index as f32 * band_w,
-                y + h + 3.0,
-                band_w,
+                ChartTextBox {
+                    x: x + index as f32 * band_w,
+                    y: y + h + 3.0,
+                    width: band_w,
+                },
                 ChartTextStyle {
                     size_pt: 8.0,
                     bold: false,
@@ -7170,7 +7422,7 @@ fn draw_waterfall_chart(
                     color: Color::rgb(0x25, 0x2D, 0x36),
                 },
                 tcx,
-            );
+            )?;
         }
     }
     Ok(())
@@ -7265,10 +7517,13 @@ fn draw_treemap_chart(
         if let Some(category) = chart.categories.get(index) {
             draw_chart_text(
                 surface,
+                scene,
                 category,
-                cell_x + 3.0,
-                cell_y + 3.0,
-                (cell_w - 6.0).max(1.0),
+                ChartTextBox {
+                    x: cell_x + 3.0,
+                    y: cell_y + 3.0,
+                    width: (cell_w - 6.0).max(1.0),
+                },
                 ChartTextStyle {
                     size_pt: 8.0,
                     bold: false,
@@ -7276,7 +7531,7 @@ fn draw_treemap_chart(
                     color: Color::rgb(0xFF, 0xFF, 0xFF),
                 },
                 tcx,
-            );
+            )?;
         }
     }
     Ok(())
@@ -7403,10 +7658,13 @@ fn draw_box_whisker_chart(
         let label = format_chart_tick(value);
         draw_chart_text(
             surface,
+            scene,
             &label,
-            x - 48.0,
-            y_tick - 5.0,
-            42.0,
+            ChartTextBox {
+                x: x - 48.0,
+                y: y_tick - 5.0,
+                width: 42.0,
+            },
             ChartTextStyle {
                 size_pt: 7.5,
                 bold: false,
@@ -7414,7 +7672,7 @@ fn draw_box_whisker_chart(
                 color: Color::rgb(0x4C, 0x55, 0x5F),
             },
             tcx,
-        );
+        )?;
     }
     let center_x = x + w * 0.5;
     let box_w = (w * 0.28).clamp(32.0, 90.0);
@@ -7578,10 +7836,13 @@ fn draw_funnel_chart(
         if let Some(category) = chart.categories.get(index) {
             draw_chart_text(
                 surface,
+                scene,
                 category,
-                center_x - top_w.max(bottom_w) * 0.45,
-                top_y + stage_h * 0.28,
-                top_w.max(bottom_w) * 0.9,
+                ChartTextBox {
+                    x: center_x - top_w.max(bottom_w) * 0.45,
+                    y: top_y + stage_h * 0.28,
+                    width: top_w.max(bottom_w) * 0.9,
+                },
                 ChartTextStyle {
                     size_pt: 8.0,
                     bold: false,
@@ -7589,7 +7850,7 @@ fn draw_funnel_chart(
                     color: Color::rgb(0xFF, 0xFF, 0xFF),
                 },
                 tcx,
-            );
+            )?;
         }
     }
     Ok(())
@@ -7629,10 +7890,13 @@ fn draw_authored_chart(
     if let Some(title) = chart.title.as_deref() {
         let used = draw_chart_text(
             surface,
+            scene,
             title,
-            x + 8.0,
-            content_top,
-            (w - 16.0).max(1.0),
+            ChartTextBox {
+                x: x + 8.0,
+                y: content_top,
+                width: (w - 16.0).max(1.0),
+            },
             ChartTextStyle {
                 size_pt: 11.0,
                 bold: true,
@@ -7640,7 +7904,7 @@ fn draw_authored_chart(
                 color: Color::rgb(0x1E, 0x2A, 0x36),
             },
             tcx,
-        );
+        )?;
         content_top += used + 4.0;
     }
 
@@ -7703,10 +7967,13 @@ fn draw_authored_chart(
             )?;
             let used = draw_chart_text(
                 surface,
+                scene,
                 category,
-                legend_x + 9.0,
-                legend_y,
-                (plot_right - legend_x - 9.0).max(1.0),
+                ChartTextBox {
+                    x: legend_x + 9.0,
+                    y: legend_y,
+                    width: (plot_right - legend_x - 9.0).max(1.0),
+                },
                 ChartTextStyle {
                     size_pt: 8.0,
                     bold: false,
@@ -7714,7 +7981,7 @@ fn draw_authored_chart(
                     color: Color::rgb(0x25, 0x2D, 0x36),
                 },
                 tcx,
-            );
+            )?;
             legend_x += 9.0 + (category.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
         }
         return Ok(());
@@ -7753,10 +8020,13 @@ fn draw_authored_chart(
             )?;
             let used = draw_chart_text(
                 surface,
+                scene,
                 &series.name,
-                legend_x + 9.0,
-                legend_y,
-                (plot_right - legend_x - 9.0).max(1.0),
+                ChartTextBox {
+                    x: legend_x + 9.0,
+                    y: legend_y,
+                    width: (plot_right - legend_x - 9.0).max(1.0),
+                },
                 ChartTextStyle {
                     size_pt: 8.0,
                     bold: false,
@@ -7764,7 +8034,7 @@ fn draw_authored_chart(
                     color: Color::rgb(0x25, 0x2D, 0x36),
                 },
                 tcx,
-            );
+            )?;
             legend_x += 9.0 + (series.name.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
         }
         return Ok(());
@@ -7898,10 +8168,13 @@ fn draw_authored_chart(
                 };
                 draw_chart_text(
                     surface,
+                    scene,
                     &label,
-                    x_tick - 18.0,
-                    plot_bottom + 3.0,
-                    36.0,
+                    ChartTextBox {
+                        x: x_tick - 18.0,
+                        y: plot_bottom + 3.0,
+                        width: 36.0,
+                    },
                     ChartTextStyle {
                         size_pt: 7.5,
                         bold: false,
@@ -7909,7 +8182,7 @@ fn draw_authored_chart(
                         color: Color::rgb(0x4C, 0x55, 0x5F),
                     },
                     tcx,
-                );
+                )?;
             }
             project_and_replay_page_scene_fill_rect(
                 surface, scene, plot_left, plot_top, 0.8, plot_h, axis,
@@ -7931,10 +8204,13 @@ fn draw_authored_chart(
                 let label_y = band_top + (band_h - 9.0).max(0.0) * 0.5;
                 draw_chart_text(
                     surface,
+                    scene,
                     category,
-                    x + 5.0,
-                    label_y,
-                    label_w,
+                    ChartTextBox {
+                        x: x + 5.0,
+                        y: label_y,
+                        width: label_w,
+                    },
                     ChartTextStyle {
                         size_pt: 8.0,
                         bold: false,
@@ -7942,7 +8218,7 @@ fn draw_authored_chart(
                         color: Color::rgb(0x25, 0x2D, 0x36),
                     },
                     tcx,
-                );
+                )?;
 
                 let bar_top = band_top + (band_h - bar_h) * 0.5;
                 let mut offset = 0.0;
@@ -8005,10 +8281,13 @@ fn draw_authored_chart(
                 let label = format_chart_tick(value);
                 draw_chart_text(
                     surface,
+                    scene,
                     &label,
-                    x_tick - 18.0,
-                    plot_bottom + 3.0,
-                    36.0,
+                    ChartTextBox {
+                        x: x_tick - 18.0,
+                        y: plot_bottom + 3.0,
+                        width: 36.0,
+                    },
                     ChartTextStyle {
                         size_pt: 7.5,
                         bold: false,
@@ -8016,7 +8295,7 @@ fn draw_authored_chart(
                         color: Color::rgb(0x4C, 0x55, 0x5F),
                     },
                     tcx,
-                );
+                )?;
             }
             project_and_replay_page_scene_fill_rect(
                 surface, scene, zero_x, plot_top, 0.8, plot_h, axis,
@@ -8039,10 +8318,13 @@ fn draw_authored_chart(
                 let label_y = band_top + (band_h - 9.0).max(0.0) * 0.5;
                 draw_chart_text(
                     surface,
+                    scene,
                     category,
-                    x + 5.0,
-                    label_y,
-                    label_w,
+                    ChartTextBox {
+                        x: x + 5.0,
+                        y: label_y,
+                        width: label_w,
+                    },
                     ChartTextStyle {
                         size_pt: 8.0,
                         bold: false,
@@ -8050,7 +8332,7 @@ fn draw_authored_chart(
                         color: Color::rgb(0x25, 0x2D, 0x36),
                     },
                     tcx,
-                );
+                )?;
 
                 let group_top = band_top + (band_h - group_h) * 0.5;
                 for (series_index, series) in chart.series.iter().enumerate() {
@@ -8127,10 +8409,13 @@ fn draw_authored_chart(
                 let label = format_chart_tick(value);
                 draw_chart_text(
                     surface,
+                    scene,
                     &label,
-                    x + 5.0,
-                    y_tick - 5.0,
-                    label_w,
+                    ChartTextBox {
+                        x: x + 5.0,
+                        y: y_tick - 5.0,
+                        width: label_w,
+                    },
                     ChartTextStyle {
                         size_pt: 7.5,
                         bold: false,
@@ -8138,7 +8423,7 @@ fn draw_authored_chart(
                         color: Color::rgb(0x4C, 0x55, 0x5F),
                     },
                     tcx,
-                );
+                )?;
             }
             project_and_replay_page_scene_fill_rect(
                 surface, scene, plot_left, zero_y, plot_w, 0.8, axis,
@@ -8152,10 +8437,13 @@ fn draw_authored_chart(
                 let center_x = plot_left + category_index as f32 * band_w + band_w * 0.5;
                 draw_chart_text(
                     surface,
+                    scene,
                     category,
-                    center_x - band_w * 0.48,
-                    plot_bottom + 3.0,
-                    band_w * 0.96,
+                    ChartTextBox {
+                        x: center_x - band_w * 0.48,
+                        y: plot_bottom + 3.0,
+                        width: band_w * 0.96,
+                    },
                     ChartTextStyle {
                         size_pt: 8.0,
                         bold: false,
@@ -8163,7 +8451,7 @@ fn draw_authored_chart(
                         color: Color::rgb(0x25, 0x2D, 0x36),
                     },
                     tcx,
-                );
+                )?;
             }
 
             match chart.kind {
@@ -8561,10 +8849,13 @@ fn draw_authored_chart(
                         let row_top = plot_top + series_index as f32 * cell_h;
                         draw_chart_text(
                             surface,
+                            scene,
                             &series.name,
-                            x + 5.0,
-                            row_top + (cell_h - 8.0).max(0.0) * 0.5,
-                            label_w,
+                            ChartTextBox {
+                                x: x + 5.0,
+                                y: row_top + (cell_h - 8.0).max(0.0) * 0.5,
+                                width: label_w,
+                            },
                             ChartTextStyle {
                                 size_pt: 7.5,
                                 bold: false,
@@ -8572,7 +8863,7 @@ fn draw_authored_chart(
                                 color: Color::rgb(0x25, 0x2D, 0x36),
                             },
                             tcx,
-                        );
+                        )?;
                         for category_index in 0..category_count {
                             let value = series
                                 .values
@@ -8694,10 +8985,13 @@ fn draw_authored_chart(
         )?;
         let used = draw_chart_text(
             surface,
+            scene,
             &series.name,
-            legend_x + 9.0,
-            legend_y,
-            (plot_right - legend_x - 9.0).max(1.0),
+            ChartTextBox {
+                x: legend_x + 9.0,
+                y: legend_y,
+                width: (plot_right - legend_x - 9.0).max(1.0),
+            },
             ChartTextStyle {
                 size_pt: 8.0,
                 bold: false,
@@ -8705,7 +8999,7 @@ fn draw_authored_chart(
                 color: Color::rgb(0x25, 0x2D, 0x36),
             },
             tcx,
-        );
+        )?;
         legend_x += 9.0 + (series.name.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
     }
     Ok(())
@@ -11129,6 +11423,26 @@ mod tests {
             (actual - expected).abs() < 0.001,
             "expected {expected}, got {actual}"
         );
+    }
+
+    fn scene_without_glyph_runs(scene: &super::PageScene) -> Vec<super::PageSceneOp> {
+        scene
+            .operations
+            .iter()
+            .filter(|operation| !matches!(operation, super::PageSceneOp::GlyphRun(_)))
+            .cloned()
+            .collect()
+    }
+
+    fn scene_glyph_texts(scene: &super::PageScene) -> Vec<&str> {
+        scene
+            .operations
+            .iter()
+            .filter_map(|operation| match operation {
+                super::PageSceneOp::GlyphRun(run) => Some(run.text.as_ref()),
+                _ => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -14105,6 +14419,112 @@ mod tests {
     }
 
     #[test]
+    fn page_scene_glyph_runs_preserve_clusters_deduplicate_fonts_and_bound_resources() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut line = super::shape(
+            "abc",
+            StyledText::plain(&[(0, 3, CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            100.0,
+            &mut tcx,
+        )
+        .into_iter()
+        .next()
+        .expect("ASCII text shapes");
+        let run = line.runs.remove(0);
+        assert_eq!(run.glyphs.len(), 3);
+
+        let mut scene = super::PageScene::with_text_limits(1, 6);
+        assert_eq!(
+            scene
+                .push_glyph_run(&run, 10.0, 20.0)
+                .expect("first glyph run fits"),
+            0
+        );
+        let mut rtl_run = run.clone();
+        rtl_run.is_rtl = true;
+        assert_eq!(
+            scene
+                .push_glyph_run(&rtl_run, 30.0, 40.0)
+                .expect("second glyph run reuses its font"),
+            1
+        );
+        assert_eq!(scene.font_resources.len(), 1);
+        assert_eq!(scene.glyph_count, 6);
+        let super::PageSceneOp::GlyphRun(first) = &scene.operations[0] else {
+            panic!(
+                "text must project as a glyph run: {:?}",
+                scene.operations[0]
+            );
+        };
+        assert_eq!(first.font, super::SceneFontId(0));
+        assert_eq!(first.origin, super::ScenePoint { x: 10.0, y: 20.0 });
+        assert_eq!(first.text.as_ref(), "abc");
+        assert_eq!(
+            first
+                .glyphs
+                .iter()
+                .map(|glyph| glyph.text_range.clone())
+                .collect::<Vec<_>>(),
+            vec![0..1, 1..2, 2..3]
+        );
+        assert!(!first.is_rtl);
+        let super::PageSceneOp::GlyphRun(second) = &scene.operations[1] else {
+            panic!(
+                "second text must project as a glyph run: {:?}",
+                scene.operations[1]
+            );
+        };
+        assert!(second.is_rtl);
+        assert!(scene.font_resources[0].is_valid());
+
+        let mut glyph_limited = super::PageScene::with_text_limits(1, 2);
+        let error = glyph_limited
+            .push_glyph_run(&run, 10.0, 20.0)
+            .expect_err("glyph ceiling rejects the run atomically");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 2-glyph limit"
+        );
+        assert!(glyph_limited.operations.is_empty());
+        assert!(glyph_limited.font_resources.is_empty());
+        assert_eq!(glyph_limited.glyph_count, 0);
+
+        let mut font_limited = super::PageScene::with_text_limits(0, 3);
+        let error = font_limited
+            .push_glyph_run(&run, 10.0, 20.0)
+            .expect_err("font ceiling rejects the run atomically");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-font-resource limit"
+        );
+        assert!(font_limited.operations.is_empty());
+        assert!(font_limited.font_resources.is_empty());
+        assert_eq!(font_limited.glyph_count, 0);
+
+        let mut invalid = super::PageScene::default();
+        let error = invalid
+            .push_glyph_run(&run, f32::NAN, 20.0)
+            .expect_err("non-finite origin is rejected atomically");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene contains an invalid glyph run"
+        );
+        assert!(invalid.operations.is_empty());
+        assert!(invalid.font_resources.is_empty());
+        assert_eq!(invalid.glyph_count, 0);
+    }
+
+    #[test]
     fn markerless_line_segment_enters_the_scene_before_the_legend() {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
@@ -14145,12 +14565,10 @@ mod tests {
         )
         .expect("chart paints");
 
-        assert_eq!(scene.operations.len(), 14);
-        let super::PageSceneOp::FillPolygon { points, color } = &scene.operations[12] else {
-            panic!(
-                "line segment must precede the legend: {:?}",
-                scene.operations[12]
-            );
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 14);
+        let super::PageSceneOp::FillPolygon { points, color } = &paint[12] else {
+            panic!("line segment must precede the legend: {:?}", paint[12]);
         };
         let expected = [
             (144.137_74, 164.483),
@@ -14167,12 +14585,16 @@ mod tests {
         let super::PageSceneOp::FillRect {
             rect,
             color: legend_color,
-        } = &scene.operations[13]
+        } = &paint[13]
         else {
-            panic!("line legend must remain last: {:?}", scene.operations[13]);
+            panic!("line legend must remain last: {:?}", paint[13]);
         };
         assert_eq!(*rect, super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap());
         assert_eq!(*legend_color, super::chart_series_color(0));
+        assert_eq!(
+            scene_glyph_texts(&scene),
+            vec!["0", "2.5", "5", "7.5", "10", "Low", "High", "Series"]
+        );
 
         surface.finish();
         page.finish();
@@ -14220,12 +14642,10 @@ mod tests {
         )
         .expect("chart paints");
 
-        assert_eq!(scene.operations.len(), 19);
-        let super::PageSceneOp::FillPolygon { points, color } = &scene.operations[12] else {
-            panic!(
-                "area fill must precede its outline: {:?}",
-                scene.operations[12]
-            );
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 19);
+        let super::PageSceneOp::FillPolygon { points, color } = &paint[12] else {
+            panic!("area fill must precede its outline: {:?}", paint[12]);
         };
         let expected = [
             (126.333_33, 164.0),
@@ -14241,18 +14661,22 @@ mod tests {
         }
         assert_eq!(*color, super::chart_series_color(0));
         assert_eq!(
-            scene.operations[13],
+            paint[13],
             super::PageSceneOp::FillRect {
                 rect: super::SceneRect::new(124.333_33, 162.0, 4.0, 4.0).unwrap(),
                 color: super::chart_series_color(0),
             }
         );
         assert_eq!(
-            scene.operations[18],
+            paint[18],
             super::PageSceneOp::FillRect {
                 rect: super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap(),
                 color: super::chart_series_color(0),
             }
+        );
+        assert_eq!(
+            scene_glyph_texts(&scene),
+            vec!["0", "2.5", "5", "7.5", "10", "Low", "High", "Mid", "Series"]
         );
 
         surface.finish();
@@ -14347,7 +14771,8 @@ mod tests {
         )
         .expect("chart paints");
 
-        assert_eq!(scene.operations.len(), 15);
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 15);
         let expected = [
             [
                 (150.5, 164.0),
@@ -14357,7 +14782,7 @@ mod tests {
             ],
             [(260.5, 28.0), (246.5, 42.0), (232.5, 28.0), (246.5, 14.0)],
         ];
-        for (operation, cardinal_points) in scene.operations[12..14].iter().zip(expected) {
+        for (operation, cardinal_points) in paint[12..14].iter().zip(expected) {
             let super::PageSceneOp::FillPolygon { points, color } = operation else {
                 panic!("bubble must be a sampled polygon: {operation:?}");
             };
@@ -14371,12 +14796,15 @@ mod tests {
             assert_eq!(*color, super::chart_series_color(0));
         }
         assert_eq!(
-            scene.operations[14],
+            paint[14],
             super::PageSceneOp::FillRect {
                 rect: super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap(),
                 color: super::chart_series_color(0),
             }
         );
+        let labels = scene_glyph_texts(&scene);
+        assert_eq!(labels.len(), 8);
+        assert_eq!(&labels[5..], ["Small", "Large", "Series"]);
 
         surface.finish();
         page.finish();
@@ -14470,7 +14898,7 @@ mod tests {
         )
         .expect("chart paints");
 
-        assert_eq!(scene.operations.len(), 9);
+        assert_eq!(scene.operations.len(), 11);
         for (index, operation) in scene.operations[5..7].iter().enumerate() {
             let super::PageSceneOp::FillPolygon { points, color } = operation else {
                 panic!("pie slice must be a fan polygon: {operation:?}");
@@ -14497,6 +14925,36 @@ mod tests {
         };
         assert_eq!(*rect, super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap());
         assert_eq!(*color, super::chart_series_color(0));
+        for (operation_index, label) in [(8, "Left"), (10, "Right")] {
+            let super::PageSceneOp::GlyphRun(run) = &scene.operations[operation_index] else {
+                panic!(
+                    "pie legend label must follow its swatch: {:?}",
+                    scene.operations[operation_index]
+                );
+            };
+            assert_eq!(run.font, super::SceneFontId(0));
+            assert_eq!(run.text.as_ref(), label);
+            assert_eq!(run.glyphs.len(), label.len());
+            assert_eq!(run.color, rgb::Color::new(0x25, 0x2D, 0x36));
+            assert!(run.highlight.is_none());
+            assert!(run.underline.is_none());
+            assert!(run.strikethrough.is_none());
+            assert!(run.link.is_none());
+            assert!(!run.is_rtl);
+        }
+        let super::PageSceneOp::FillRect { rect, color } = &scene.operations[9] else {
+            panic!(
+                "second pie legend swatch must follow the first label: {:?}",
+                scene.operations[9]
+            );
+        };
+        assert_eq!(
+            *rect,
+            super::SceneRect::new(145.4, 189.0, 6.0, 6.0).unwrap()
+        );
+        assert_eq!(*color, super::chart_series_color(1));
+        assert_eq!(scene.font_resources.len(), 1);
+        assert_eq!(scene.glyph_count, 9);
 
         surface.finish();
         page.finish();
@@ -15028,9 +15486,9 @@ mod tests {
             (244.0, 25.5, 5.0, 5.0, series),
             (92.0, 189.0, 6.0, 6.0, series),
         ];
-        assert_eq!(scene.operations.len(), 5 + expected.len());
-        for (operation, (x, y, width, height, color)) in scene.operations[5..].iter().zip(expected)
-        {
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in paint[5..].iter().zip(expected) {
             let super::PageSceneOp::FillRect {
                 rect,
                 color: actual_color,
@@ -15044,6 +15502,9 @@ mod tests {
             assert_close(rect.height, height);
             assert_eq!(*actual_color, color);
         }
+        let labels = scene_glyph_texts(&scene);
+        assert_eq!(labels.len(), 8);
+        assert_eq!(&labels[5..], ["Q1", "Q2", "Series"]);
 
         surface.finish();
         page.finish();
@@ -15114,9 +15575,9 @@ mod tests {
             (243.753_33, 28.0, 39.826_668, 136.0, total),
             (214.913_33, 164.0, 28.84, 0.5, connector),
         ];
-        assert_eq!(scene.operations.len(), 5 + expected.len());
-        for (operation, (x, y, width, height, color)) in scene.operations[5..].iter().zip(expected)
-        {
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in paint[5..].iter().zip(expected) {
             let super::PageSceneOp::FillRect {
                 rect,
                 color: actual_color,
@@ -15130,6 +15591,10 @@ mod tests {
             assert_close(rect.height, height);
             assert_eq!(*actual_color, color);
         }
+        assert_eq!(
+            scene_glyph_texts(&scene),
+            vec!["0", "3", "6", "9", "12", "Start", "Change", "Total"]
+        );
 
         surface.finish();
         page.finish();
@@ -15192,9 +15657,9 @@ mod tests {
             (246.5, 28.0, 0.75, 136.0, white),
             (297.25, 28.0, 0.75, 136.0, white),
         ];
-        assert_eq!(scene.operations.len(), 5 + expected.len());
-        for (operation, (x, y, width, height, color)) in scene.operations[5..].iter().zip(expected)
-        {
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in paint[5..].iter().zip(expected) {
             let super::PageSceneOp::FillRect {
                 rect,
                 color: actual_color,
@@ -15208,6 +15673,7 @@ mod tests {
             assert_close(rect.height, height);
             assert_eq!(*actual_color, color);
         }
+        assert_eq!(scene_glyph_texts(&scene), vec!["Primary", "Secondary"]);
 
         surface.finish();
         page.finish();
@@ -15273,9 +15739,9 @@ mod tests {
             (223.84, 62.0, 1.0, 68.0, line),
             (166.16, 96.0, 57.68, 1.3, line),
         ];
-        assert_eq!(scene.operations.len(), 5 + expected.len());
-        for (operation, (x, y, width, height, color)) in scene.operations[5..].iter().zip(expected)
-        {
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in paint[5..].iter().zip(expected) {
             let super::PageSceneOp::FillRect {
                 rect,
                 color: actual_color,
@@ -15289,6 +15755,7 @@ mod tests {
             assert_close(rect.height, height);
             assert_eq!(*actual_color, color);
         }
+        assert_eq!(scene_glyph_texts(&scene), vec!["0", "10", "20", "30", "40"]);
 
         surface.finish();
         page.finish();
@@ -15344,15 +15811,16 @@ mod tests {
         let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
         let axis = rgb::Color::new(0x5D, 0x66, 0x70);
         let series = super::chart_series_color(0);
-        assert_eq!(scene.operations.len(), 34);
-        for operation in &scene.operations[5..21] {
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 34);
+        for operation in &paint[5..21] {
             let super::PageSceneOp::FillPolygon { points, color } = operation else {
                 panic!("radar grid edge must be a polygon: {operation:?}");
             };
             assert_eq!(points.len(), 4);
             assert_eq!(*color, grid);
         }
-        for operation in &scene.operations[21..25] {
+        for operation in &paint[21..25] {
             let super::PageSceneOp::FillPolygon { points, color } = operation else {
                 panic!("radar spoke must be a polygon: {operation:?}");
             };
@@ -15367,14 +15835,14 @@ mod tests {
             (144.04, 94.0, 4.0, 4.0),
         ];
         for (index, (x, y, width, height)) in markers.into_iter().enumerate() {
-            let line = &scene.operations[25 + index * 2];
+            let line = &paint[25 + index * 2];
             let super::PageSceneOp::FillPolygon { points, color } = line else {
                 panic!("radar series edge must precede its marker: {line:?}");
             };
             assert_eq!(points.len(), 4);
             assert_eq!(*color, series);
 
-            let operation = &scene.operations[26 + index * 2];
+            let operation = &paint[26 + index * 2];
             let super::PageSceneOp::FillRect {
                 rect,
                 color: actual_color,
@@ -15389,11 +15857,15 @@ mod tests {
             assert_eq!(*actual_color, series);
         }
         assert_eq!(
-            scene.operations[33],
+            paint[33],
             super::PageSceneOp::FillRect {
                 rect: super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap(),
                 color: series,
             }
+        );
+        assert_eq!(
+            scene_glyph_texts(&scene),
+            vec!["North", "East", "South", "West", "Series"]
         );
 
         surface.finish();
@@ -15475,10 +15947,9 @@ mod tests {
                 super::chart_series_color(2),
             ),
         ];
-        assert_eq!(scene.operations.len(), 5 + expected.len());
-        for (operation, (expected_points, expected_color)) in
-            scene.operations[5..].iter().zip(expected)
-        {
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 5 + expected.len());
+        for (operation, (expected_points, expected_color)) in paint[5..].iter().zip(expected) {
             let super::PageSceneOp::FillPolygon { points, color } = operation else {
                 panic!("funnel stage must be a polygon: {operation:?}");
             };
@@ -15489,6 +15960,10 @@ mod tests {
                 assert_close(point.y, y);
             }
         }
+        assert_eq!(
+            scene_glyph_texts(&scene),
+            vec!["Leads", "Qualified", "Closed"]
+        );
 
         surface.finish();
         page.finish();
@@ -18318,6 +18793,95 @@ mod tests {
         });
         expected.extend(expected_frame(50.0, 60.0));
         assert_eq!(scene.operations, expected);
+    }
+
+    #[test]
+    fn floating_overlay_label_enters_the_scene_after_the_frame() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let overlay = super::FloatingShapeOverlay {
+            page_index: 0,
+            behind_doc: false,
+            label: "shape".to_string(),
+            x: 10.0,
+            y: 20.0,
+            w: 80.0,
+            h: 40.0,
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(120.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_floating_shape_overlay(&mut surface, &mut scene, &overlay, &mut tcx)
+            .expect("overlay paints");
+
+        assert_eq!(scene.operations.len(), 6);
+        let super::PageSceneOp::GlyphRun(run) = &scene.operations[5] else {
+            panic!(
+                "floating label must follow its frame: {:?}",
+                scene.operations[5]
+            );
+        };
+        assert_eq!(run.font, super::SceneFontId(0));
+        assert_eq!(run.text.as_ref(), "shape");
+        assert_eq!(run.glyphs.len(), 5);
+        assert_eq!(run.color, rgb::Color::new(0x32, 0x3A, 0x43));
+        assert!(!run.is_rtl);
+        assert_eq!(scene.font_resources.len(), 1);
+        assert_eq!(scene.glyph_count, 5);
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn floating_overlay_label_propagates_the_scene_operation_limit() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let overlay = super::FloatingShapeOverlay {
+            page_index: 0,
+            behind_doc: false,
+            label: "shape".to_string(),
+            x: 10.0,
+            y: 20.0,
+            w: 80.0,
+            h: 40.0,
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(120.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::with_operation_limit(5);
+
+        let error =
+            super::draw_floating_shape_overlay(&mut surface, &mut scene, &overlay, &mut tcx)
+                .expect_err("label must honor the operation ceiling after its frame");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 5-operation limit"
+        );
+        assert_eq!(scene.operations.len(), 5);
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
     }
 
     #[test]
