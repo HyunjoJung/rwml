@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import os
 import pathlib
 import struct
 import sys
@@ -17,6 +18,29 @@ SPEC.loader.exec_module(libreoffice_oracle_fonts)
 
 
 class LibreOfficeOracleFontTests(unittest.TestCase):
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO boundary is POSIX-specific")
+    def test_metadata_reader_rejects_fifo_without_blocking(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = pathlib.Path(temporary) / "pipe"
+            os.mkfifo(path)
+            with self.assertRaisesRegex(ValueError, "regular file"):
+                libreoffice_oracle_fonts._read_regular_file(path, 1024, allow_empty=True)
+
+    def test_empty_regular_file_requires_explicit_metadata_opt_in(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = pathlib.Path(temporary) / "empty.log"
+            path.write_bytes(b"")
+            with self.assertRaises(ValueError):
+                libreoffice_oracle_fonts._read_regular_file(path, 1024)
+            self.assertEqual(
+                libreoffice_oracle_fonts._read_regular_file(path, 1024, allow_empty=True),
+                b"",
+            )
+            alias = pathlib.Path(temporary) / "alias.log"
+            alias.symlink_to(path)
+            with self.assertRaises(ValueError):
+                libreoffice_oracle_fonts._read_regular_file(alias, 1024, allow_empty=True)
+
     def test_public_lock_pins_expected_upstream_files(self):
         lock = libreoffice_oracle_fonts.load_font_lock()
         files = libreoffice_oracle_fonts.font_files(lock)

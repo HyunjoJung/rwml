@@ -95,6 +95,79 @@ Use `--require-normalized-exact` only when comparing two independent captures fr
 same producer. Cross-producer comparisons are diagnostic until authoritative Word
 evidence is reviewed.
 
+## Digest-locked Linux regression capture
+
+`scripts/libreoffice_table_capture.py` captures the 48 unequal-table inputs
+through an isolated Linux amd64 Writer image. It uses the same exact
+`NotoSans-Regular.ttf` payload as the Word diagnostic below. The image contains
+no installed fonts; only that separately verified, read-only font is visible.
+This path requires a POSIX Docker client, a Linux Docker daemon capable of
+executing amd64 images, PyMuPDF 1.28.2, and Pillow 12.3.0. It is separate from
+the existing local release-preflight oracle.
+
+`libreoffice-container-lock.json` pins the upstream archive, base image,
+BuildKit/Buildx versions, build recipe, profile, font configuration, image
+manifest, config, and uncompressed layer digests. With Buildx 0.35.0 installed,
+prepare a fresh build context from the official archive:
+
+```sh
+mkdir -p target/libreoffice-oracle
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  --output target/libreoffice-oracle/libreoffice.tar.gz \
+  https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.3.2/deb/x86_64/LibreOffice_26.2.3.2_Linux_x86-64_deb.tar.gz
+python3 scripts/libreoffice_container.py prepare \
+  --archive target/libreoffice-oracle/libreoffice.tar.gz \
+  --output target/libreoffice-oracle/context
+docker buildx create --name rwml-lo-build --driver docker-container \
+  --driver-opt image=docker.io/moby/buildkit:v0.31.2@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec \
+  --buildkitd-flags '--oci-worker-snapshotter=native' --bootstrap
+docker buildx build --builder rwml-lo-build --platform linux/amd64 \
+  --file target/libreoffice-oracle/context/Containerfile \
+  --build-arg SOURCE_DATE_EPOCH=1783900800 \
+  --no-cache --provenance=false --sbom=false \
+  --output type=docker,dest=target/libreoffice-oracle/image.tar,rewrite-timestamp=true,oci-mediatypes=false \
+  target/libreoffice-oracle/context
+docker load --input target/libreoffice-oracle/image.tar
+python3 scripts/libreoffice_container.py inspect
+```
+
+Use a fresh builder name when the example name is already occupied. Keep enough
+free builder storage for installation and layer export; a failed export is not
+a reproducibility result. The capture tool never pulls a floating image tag.
+It accepts the locked image only after checking its platform, execution
+configuration, and complete layer identity. The source archive is validated
+before the build context is created. The Python tools do not download or install
+the capture font.
+
+From a clean source revision, run two complete captures with the exact font
+identified by `word-font-lock.json`:
+
+```sh
+python3 scripts/libreoffice_table_capture.py capture \
+  --font <path-to-NotoSans-Regular.ttf> \
+  --output target/libreoffice-oracle/capture
+python3 scripts/libreoffice_table_capture.py validate \
+  --output target/libreoffice-oracle/capture
+```
+
+Each document gets a fresh profile and a read-only, non-root container with no
+network, no capabilities, fixed CPU/memory/PID/file limits, bounded temporary
+storage, and a 180-second deadline. Source and font bytes are checked before
+and after conversion. Output must have exactly the expected regular-file
+members; the verifier checks the producer, font name and SFNT revision, raw PDF
+identity, every page's raster hash, and independently extracted table topology.
+It rejects incomplete campaigns, stale source/harness/tool identities, altered
+artifacts, and non-repeatable captures. Both normalized topology and 110-DPI
+page pixels must repeat for all 48 documents. PDF byte identities are retained
+but may differ because of producer metadata.
+
+`CAPTURE.json` is written only after independent validation succeeds. Validation
+does not need Docker or the original installed font: the retained verified font
+and generated corpus are included in the capture directory. It does require
+the recorded source revision and analysis-tool versions. A passing diagnostic
+is not an authoritative Word comparison, release gate, or layout-parity claim.
+General CJK/emoji font packs are not accepted by this single-font table path.
+
 ## Microsoft Word diagnostic capture
 
 `word-font-lock.json` identifies the exact Noto Sans Regular font used by this

@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Optional digest-locked Linux LibreOffice captures for the generated
+  unequal-table campaign, with bounded containers, exact font checks,
+  independent artifact verification, and repeated raster/topology evidence.
+  This diagnostic path does not change release gates or claim Word parity.
 - Opt-in `try_render_pdf_with_fixed_fonts_and_report` and
   `Document::try_to_pdf_with_fixed_fonts_and_report` render with only supplied
   fonts, rejecting unavailable glyphs, missing glyph artwork, and unembeddable

@@ -1,0 +1,34 @@
+{
+  "archive": {
+    "bytes": 216816909,
+    "sha256": "18838cb9d028b664a9d0e966cd4c8ca47ca3ea363c393b41d1b5124740b121a5",
+    "url": "https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.3.2/deb/x86_64/LibreOffice_26.2.3.2_Linux_x86-64_deb.tar.gz"
+  },
+  "build": {
+    "base_image": "docker.io/library/debian:bookworm-slim@sha256:63a496b5d3b99214b39f5ed70eb71a61e590a77979c79cbee4faf991f8c0783e",
+    "buildkit_image": "docker.io/moby/buildkit:v0.31.2@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec",
+    "buildx_version": "0.35.0",
+    "platform": "linux/amd64",
+    "source_date_epoch": 1783900800
+  },
+  "files": {
+    "Containerfile": "608b17764e9548fb3c9cff104a74ef766880cf436b2483bc112a889b1ca02466",
+    "capture.sh": "0fb2a02123757ff9b4457486c362d63dfd585a67d47e97b2f077b1e6e5af33aa",
+    "fonts.conf": "b1d1b24fb4a3953fa83da265431e2954ea2bf4362f5c2d1a63009f56131fea23",
+    "profile.xcu": "07919de3fde8d8b46fb711903968dfad5eeb062ad02aeb69a382f2ec9acf2e9e"
+  },
+  "image": {
+    "config_sha256": "e26ef9652bdd2a95f2869fcaa970d04e0d8f78d8ae972566349d5d40f859d609",
+    "manifest_sha256": "8a9366534b5548a9c5b13c4e7245871432dd8173c22e43cb58631e50a839b68e",
+    "rootfs_sha256": [
+      "81f823b9617547261c907396f63f770deaa554748ff739bedfa650e3bb74595a",
+      "7ddd5678a1e719b75285b769e171379be20245f1f587c46ec745988fe7e90315",
+      "5f9fdc14293cf92095b4b93974bd8e35d2a6e87b71ead6e5362a8aa7ea6c8d31",
+      "ca1ae4c0cdafd8c56f99068036115857e3fae05fd8d3073a8695bbafc273420a",
+      "d6a58b570a8ef55393e37dcc8dee62533fabf7d0f37e7d2395fc3b87103cc642",
+      "5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+    ]
+  },
+  "schema": "rwml.libreoffice-container.v1",
+  "version": "LibreOffice 26.2.3.2 70e089b17412e4cb7773e41413306b17a2328c34"
+}

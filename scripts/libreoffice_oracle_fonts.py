@@ -92,7 +92,7 @@ def _reject_duplicate_pairs(pairs: list[tuple[str, object]]) -> dict[str, object
     return result
 
 
-def _read_regular_file(path: Path, maximum: int) -> bytes:
+def _read_regular_file(path: Path, maximum: int, *, allow_empty: bool = False) -> bytes:
     if path.is_symlink():
         raise ValueError(f"{path.name} must not be a symlink")
     descriptor: int | None = None
@@ -107,7 +107,7 @@ def _read_regular_file(path: Path, maximum: int) -> bytes:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode):
             raise ValueError(f"{path.name} is not a regular file")
-        if before.st_size <= 0 or before.st_size > maximum:
+        if before.st_size < (0 if allow_empty else 1) or before.st_size > maximum:
             raise ValueError(f"{path.name} size is outside the contract")
         payload = bytearray()
         while len(payload) < before.st_size:
