@@ -685,6 +685,31 @@ fn paginate_with_column_gap_and_metrics(
     final_column_layout: Option<&SectionColumnLayoutHints>,
     final_column_rtl: bool,
 ) -> Pagination {
+    let plan = PaginationPlan::new(
+        items,
+        supplied_block_metrics,
+        geom,
+        final_section_setup,
+        final_column_gap_pt,
+        final_column_layout,
+        final_column_rtl,
+    );
+    paginate_plan(
+        plan,
+        geom,
+        final_section_setup,
+        final_column_gap_pt,
+        final_column_rtl,
+    )
+}
+
+fn paginate_plan(
+    plan: PaginationPlan,
+    geom: Geom,
+    final_section_setup: &SectionSetup,
+    final_column_gap_pt: Option<f32>,
+    final_column_rtl: bool,
+) -> Pagination {
     // Paginate flow items top-to-bottom through section columns and then across
     // pages. Tables repeat headers after each break and split oversized rows.
     let PaginationPlan {
@@ -695,15 +720,7 @@ fn paginate_with_column_gap_and_metrics(
         column_rtl_by_item,
         geometries_by_item,
         block_metrics,
-    } = PaginationPlan::new(
-        items,
-        supplied_block_metrics,
-        geom,
-        final_section_setup,
-        final_column_gap_pt,
-        final_column_layout,
-        final_column_rtl,
-    );
+    } = plan;
     let mut pages: Pages = vec![Vec::new()];
     let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
     let mut section_start_page_index = 0usize;
@@ -1456,6 +1473,75 @@ mod tests {
         );
         assert_eq!(fallback.block_metrics.len(), fallback.items.len());
         assert!(fallback.block_metrics[0].is_some());
+    }
+
+    #[test]
+    fn pagination_plan_consumer_matches_the_vector_entry() {
+        let ending = SectionSetup {
+            section_break: Some(SectionBreakKind::NextPage),
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let final_section = SectionSetup {
+            columns: Some(1),
+            ..SectionSetup::default()
+        };
+        let geom = Geom::from_section(&final_section);
+        let items = || {
+            vec![
+                FlowItem::BlockStart {
+                    index: 0,
+                    pagination: PaginationHint::default(),
+                },
+                line(10.0),
+                FlowItem::SectionColumnGap(8.0),
+                FlowItem::SectionColumnRtl,
+                FlowItem::SectionBreak(ending.clone()),
+                FlowItem::BlockStart {
+                    index: 1,
+                    pagination: PaginationHint::default(),
+                },
+                line(12.0),
+            ]
+        };
+        let plan_items = items();
+        let plan_metrics = block_pagination_metrics(&plan_items);
+        let plan = PaginationPlan::new(
+            plan_items,
+            Some(plan_metrics),
+            geom,
+            &final_section,
+            Some(5.0),
+            None,
+            false,
+        );
+
+        let planned = paginate_plan(plan, geom, &final_section, Some(5.0), false);
+        let vector =
+            paginate_with_column_gap(items(), geom, &final_section, Some(5.0), None, false);
+        let section_snapshot = |pagination: &Pagination| {
+            pagination
+                .page_sections
+                .iter()
+                .map(|section| {
+                    section.as_ref().map(|section| {
+                        (
+                            section.first_page_index,
+                            section.section_index,
+                            section.setup.clone(),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(page_line_counts(&planned), page_line_counts(&vector));
+        assert_eq!(planned.block_pages, vector.block_pages);
+        assert_eq!(
+            planned.final_section_start_page_index,
+            vector.final_section_start_page_index
+        );
+        assert_eq!(section_snapshot(&planned), section_snapshot(&vector));
     }
 
     #[test]
