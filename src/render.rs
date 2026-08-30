@@ -35,7 +35,7 @@ mod shape;
 mod table;
 
 use paginate::*;
-use paragraph_flow::{layout_paragraph, ParagraphFlowRequest};
+use paragraph_flow::{layout_paragraph, reserve_paragraph_page_fields, ParagraphFlowRequest};
 use shape::*;
 use table::*;
 
@@ -3192,6 +3192,7 @@ fn collect_blocks_inner(
                     .and_then(|hints| hints.get(block_index))
                     .copied()
                     .flatten();
+                let page_field_indices = reserve_paragraph_page_fields(p, capture);
                 layout_paragraph(
                     ParagraphFlowRequest {
                         paragraph: p,
@@ -3201,6 +3202,7 @@ fn collect_blocks_inner(
                         default_tab_stop_pt: options.default_tab_stop_pt,
                         line_spacing_hint,
                         geom: paragraph_geom,
+                        page_field_indices,
                     },
                     out,
                     cx,
@@ -8352,6 +8354,7 @@ mod tests {
                 default_tab_stop_pt: None,
                 line_spacing_hint: None,
                 geom,
+                page_field_indices: None,
             },
             &mut flow,
             &mut tcx,
