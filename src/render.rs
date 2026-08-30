@@ -5219,7 +5219,15 @@ fn draw_running_surface_items(
                             LinkClip::from_ltrb([0.0, y, geom.page_w, limit_y]),
                         )?;
                     }
-                    draw_run_with_page_context(surface, run, x0, baseline, page_number, cx);
+                    project_and_replay_page_scene_run_with_page_context(
+                        surface,
+                        scene,
+                        run,
+                        x0,
+                        baseline,
+                        page_number,
+                        cx,
+                    )?;
                 }
                 if clip_content {
                     pop_page_scene_clip(surface, scene)?;
@@ -6585,7 +6593,15 @@ fn draw_table_cell_content(
                             placement.link_clip,
                         )?;
                     }
-                    draw_run_with_page_context(surface, run, line_x, baseline, page_number, cx);
+                    project_and_replay_page_scene_run_with_page_context(
+                        surface,
+                        scene,
+                        run,
+                        line_x,
+                        baseline,
+                        page_number,
+                        cx,
+                    )?;
                 }
             }
         }
@@ -9055,25 +9071,24 @@ fn draw_run(surface: &mut Surface<'_>, run: RunDraw, x_abs: f32, baseline_y: f32
     }
 }
 
-fn draw_run_with_page_context(
+fn project_and_replay_page_scene_run_with_page_context(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     run: RunDraw,
     x_abs: f32,
     baseline_y: f32,
     page_number: PageDisplayNumber,
     tcx: &mut TextCx<'_>,
-) {
+) -> Result<()> {
     let Some(dynamic) = run.dynamic.clone() else {
-        draw_run(surface, run, x_abs, baseline_y);
-        return;
+        return project_and_replay_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
     };
 
     let text = match dynamic.kind {
         DynamicTextKind::PageNumber => dynamic_page_number_text(&dynamic, page_number),
     };
     let Some(text) = text else {
-        draw_run(surface, run, x_abs, baseline_y);
-        return;
+        return project_and_replay_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
     };
     let Some(line) = shape(
         &text,
@@ -9085,13 +9100,19 @@ fn draw_run_with_page_context(
     )
     .into_iter()
     .next() else {
-        draw_run(surface, run, x_abs, baseline_y);
-        return;
+        return project_and_replay_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
     };
 
     for replacement in line.runs {
-        draw_run(surface, replacement, x_abs + run.x, baseline_y);
+        project_and_replay_page_scene_glyph_run(
+            surface,
+            scene,
+            replacement,
+            x_abs + run.x,
+            baseline_y,
+        )?;
     }
+    Ok(())
 }
 
 struct PlacedItem {
@@ -11241,7 +11262,13 @@ fn render_pdf(
                     draw_line_background(&mut surface, &line, x0, fy);
                     draw_line_leaders(&mut surface, &line, x0, fy, baseline);
                     for run in line.runs {
-                        draw_run(&mut surface, run, x0, baseline);
+                        project_and_replay_page_scene_glyph_run(
+                            &mut surface,
+                            &mut page_scene,
+                            run,
+                            x0,
+                            baseline,
+                        )?;
                     }
                 }
             }
@@ -11324,14 +11351,15 @@ fn render_pdf(
                                 LinkClip::Unbounded,
                             )?;
                         }
-                        draw_run_with_page_context(
+                        project_and_replay_page_scene_run_with_page_context(
                             &mut surface,
+                            &mut page_scene,
                             run,
                             x0,
                             baseline,
                             display_page_number,
                             &mut tcx,
-                        );
+                        )?;
                     }
                     if clip_content {
                         pop_page_scene_clip(&mut surface, &mut page_scene)?;
@@ -14522,6 +14550,132 @@ mod tests {
         assert!(invalid.operations.is_empty());
         assert!(invalid.font_resources.is_empty());
         assert_eq!(invalid.glyph_count, 0);
+    }
+
+    #[test]
+    fn running_surface_static_and_dynamic_glyphs_enter_the_page_scene() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let text = "Header 1";
+        let ranges = [(0, text.len(), CharProps::default())];
+        let dynamic_ranges = [(
+            "Header ".len(),
+            text.len(),
+            super::DynamicTextRun {
+                kind: super::DynamicTextKind::PageNumber,
+                page_field_index: None,
+                number_format: None,
+                text_format: None,
+                props: CharProps::default(),
+            },
+        )];
+        let line = shape(
+            text,
+            StyledText {
+                ranges: &ranges,
+                links: &[],
+                dynamic_ranges: &dynamic_ranges,
+            },
+            None,
+            parley::layout::Alignment::Start,
+            300.0,
+            &mut tcx,
+        )
+        .into_iter()
+        .next()
+        .expect("running text shapes");
+        assert_eq!(line.runs.len(), 2);
+
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+        let consumed = super::draw_running_surface_items(
+            &mut surface,
+            &mut scene,
+            vec![super::RunningSurfaceItem::Line(line)],
+            super::RunningSurfacePaintPlacement {
+                vertical_bounds: (24.0, 100.0),
+                geom,
+                page_number: PageDisplayNumber {
+                    value: 7,
+                    format: Some(crate::model::PageNumberFormat::UpperRoman.into()),
+                },
+            },
+            &mut tcx,
+        )
+        .expect("running text paints");
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+
+        assert!(consumed > 24.0);
+        assert_eq!(scene_glyph_texts(&scene), ["Header 1", "VII"]);
+        assert_eq!(scene.font_resources.len(), 1);
+        assert_eq!(scene.operations.len(), 2);
+    }
+
+    #[test]
+    fn running_surface_glyphs_propagate_page_scene_limits() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let text = "Bounded";
+        let line = shape(
+            text,
+            StyledText::plain(&[(0, text.len(), CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            300.0,
+            &mut tcx,
+        )
+        .into_iter()
+        .next()
+        .expect("running text shapes");
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::with_operation_limit(0);
+        let result = super::draw_running_surface_items(
+            &mut surface,
+            &mut scene,
+            vec![super::RunningSurfaceItem::Line(line)],
+            super::RunningSurfacePaintPlacement {
+                vertical_bounds: (24.0, 100.0),
+                geom,
+                page_number: PageDisplayNumber::decimal(1),
+            },
+            &mut tcx,
+        );
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+
+        let error = result.expect_err("glyph operation ceiling must propagate");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(scene.operations.is_empty());
+        assert!(scene.font_resources.is_empty());
+        assert_eq!(scene.glyph_count, 0);
     }
 
     #[test]
