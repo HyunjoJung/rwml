@@ -919,3 +919,24 @@ pub(super) fn paginate_with_column_gap(
         final_section_start_page_index: section_start_page_index,
     }
 }
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn paginate_body_flow_with_column_gap(
+    flow: BodyFlowQueue<'_>,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    geom: Geom,
+    final_section_setup: &SectionSetup,
+    final_column_gap_pt: Option<f32>,
+    final_column_layout: Option<&SectionColumnLayoutHints>,
+    final_column_rtl: bool,
+) -> Pagination {
+    paginate_with_column_gap(
+        flow.lower(cx, capture),
+        geom,
+        final_section_setup,
+        final_column_gap_pt,
+        final_column_layout,
+        final_column_rtl,
+    )
+}
