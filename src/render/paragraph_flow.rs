@@ -1,32 +1,37 @@
 //! Paragraph-to-flow lowering for the production renderer.
 
+use std::borrow::Cow;
+
 use super::*;
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct ParagraphFlowRequest<'a> {
+    pub(super) paragraph: &'a Paragraph,
+    pub(super) marker: Option<Cow<'a, str>>,
+    pub(super) tab_stops: &'a [TabStop],
+    pub(super) column_break_offsets: &'a [usize],
+    pub(super) default_tab_stop_pt: Option<f32>,
+    pub(super) line_spacing_hint: Option<LineSpacingHint>,
+    pub(super) geom: Geom,
+}
+
 pub(super) fn layout_paragraph(
-    p: &Paragraph,
+    request: ParagraphFlowRequest<'_>,
     out: &mut Vec<FlowItem>,
-    marker: Option<&str>,
-    tab_stops: &[TabStop],
-    column_break_offsets: &[usize],
-    default_tab_stop_pt: Option<f32>,
-    line_spacing_hint: Option<LineSpacingHint>,
-    geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) {
     let shaped = shape_paragraph_content(
-        p,
-        marker,
-        tab_stops,
-        default_tab_stop_pt,
-        line_spacing_hint,
-        geom.content_w(),
+        request.paragraph,
+        request.marker.as_deref(),
+        request.tab_stops,
+        request.default_tab_stop_pt,
+        request.line_spacing_hint,
+        request.geom.content_w(),
         cx,
         capture,
         true,
     );
-    let mut column_breaks = column_break_offsets.iter().copied().peekable();
+    let mut column_breaks = request.column_break_offsets.iter().copied().peekable();
     for line in shaped.lines {
         if let Some(start) = line.char_range.map(|range| range.start) {
             while column_breaks
@@ -41,7 +46,7 @@ pub(super) fn layout_paragraph(
     }
     out.extend(column_breaks.map(|_| FlowItem::ColumnBreak));
     for img in shaped.images {
-        if let Some(item) = image_flow_item(img, geom) {
+        if let Some(item) = image_flow_item(img, request.geom) {
             out.push(FlowItem::Gap(PARA_GAP));
             out.push(item);
         }
