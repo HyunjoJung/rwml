@@ -595,6 +595,38 @@ struct RetainedParagraphFlow<'a> {
     item_range: std::ops::Range<usize>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ParagraphFragmentCandidate {
+    block_start_index: usize,
+    pagination: PaginationHint,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ParagraphFragmentFallbackReason {
+    InvalidFallbackRange,
+    InvalidPageFieldSidecar,
+    ColumnBreak,
+    InlineMedia,
+    NoVisibleText,
+    NoTextLines,
+    NonLineFallback,
+    MissingSourceRange,
+    MissingBlockStart,
+}
+
+// Advisory until the placement loop can substitute a fragment for its eager span.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ParagraphFragmentClassification {
+    Candidate(ParagraphFragmentCandidate),
+    EagerFallback(ParagraphFragmentFallbackReason),
+}
+
+struct PlannedParagraphFlow<'a> {
+    request: ParagraphFlowRequest<'a>,
+    item_range: std::ops::Range<usize>,
+    classification: ParagraphFragmentClassification,
+}
+
 struct LoweredBodyFlow<'a> {
     items: Vec<FlowItem>,
     block_metrics: Vec<Option<BlockPaginationMetrics>>,
@@ -609,7 +641,7 @@ struct PaginationPlan<'a> {
     column_rtl_by_item: Vec<bool>,
     geometries_by_item: Vec<Geom>,
     block_metrics: Vec<Option<BlockPaginationMetrics>>,
-    paragraphs: Vec<RetainedParagraphFlow<'a>>,
+    paragraphs: Vec<PlannedParagraphFlow<'a>>,
 }
 
 #[derive(Clone, Copy)]
@@ -791,6 +823,10 @@ impl<'a> PaginationPlan<'a> {
         final_column_layout: Option<&SectionColumnLayoutHints>,
         final_column_rtl: bool,
     ) -> Self {
+        let paragraphs = paragraphs
+            .into_iter()
+            .map(|paragraph| plan_paragraph_fragment(&items, paragraph))
+            .collect();
         let columns_by_item = section_columns_by_item(&items, final_section_setup.columns);
         let column_gaps_by_item = section_column_gaps_by_item(&items, final_column_gap_pt);
         let column_layouts_by_item = section_column_layouts_by_item(&items, final_column_layout);
@@ -820,6 +856,12 @@ impl<'a> PaginationPlan<'a> {
                     .page_field_indices
                     .as_ref()
                     .is_none_or(|indices| indices.len() == paragraph.request.paragraph.runs.len())
+                && paragraph.classification
+                    == classify_paragraph_fragment(
+                        &self.items,
+                        &paragraph.request,
+                        &paragraph.item_range,
+                    )
         });
         let spans_are_ordered = self
             .paragraphs
@@ -838,6 +880,89 @@ impl<'a> PaginationPlan<'a> {
             block_metric: self.block_metrics.get(index)?.as_ref(),
         })
     }
+}
+
+fn plan_paragraph_fragment<'a>(
+    items: &[FlowItem],
+    paragraph: RetainedParagraphFlow<'a>,
+) -> PlannedParagraphFlow<'a> {
+    let classification =
+        classify_paragraph_fragment(items, &paragraph.request, &paragraph.item_range);
+    PlannedParagraphFlow {
+        request: paragraph.request,
+        item_range: paragraph.item_range,
+        classification,
+    }
+}
+
+fn classify_paragraph_fragment(
+    items: &[FlowItem],
+    request: &ParagraphFlowRequest<'_>,
+    item_range: &std::ops::Range<usize>,
+) -> ParagraphFragmentClassification {
+    let fallback = ParagraphFragmentClassification::EagerFallback;
+    let Some(fallback_items) = items.get(item_range.clone()) else {
+        return fallback(ParagraphFragmentFallbackReason::InvalidFallbackRange);
+    };
+    if request
+        .page_field_indices
+        .as_ref()
+        .is_some_and(|indices| indices.len() != request.paragraph.runs.len())
+    {
+        return fallback(ParagraphFragmentFallbackReason::InvalidPageFieldSidecar);
+    }
+    if !request.column_break_offsets.is_empty() {
+        return fallback(ParagraphFragmentFallbackReason::ColumnBreak);
+    }
+    if request
+        .paragraph
+        .runs
+        .iter()
+        .any(|run| !run.props.hidden && run.image.is_some())
+    {
+        return fallback(ParagraphFragmentFallbackReason::InlineMedia);
+    }
+    if !request
+        .paragraph
+        .runs
+        .iter()
+        .any(|run| !run.props.hidden && !run.text.is_empty())
+    {
+        return fallback(ParagraphFragmentFallbackReason::NoVisibleText);
+    }
+    if fallback_items.is_empty() {
+        return fallback(ParagraphFragmentFallbackReason::NoTextLines);
+    }
+    for item in fallback_items {
+        match item {
+            FlowItem::Line(line) if line.char_range.is_none() => {
+                return fallback(ParagraphFragmentFallbackReason::MissingSourceRange);
+            }
+            FlowItem::Line(_) => {}
+            FlowItem::ColumnBreak => {
+                return fallback(ParagraphFragmentFallbackReason::ColumnBreak);
+            }
+            FlowItem::Picture { .. } => {
+                return fallback(ParagraphFragmentFallbackReason::InlineMedia);
+            }
+            _ => return fallback(ParagraphFragmentFallbackReason::NonLineFallback),
+        }
+    }
+    let Some((block_start_index, pagination)) = items[..item_range.start]
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, item)| match item {
+            FlowItem::BlockStart { pagination, .. } => Some((index, *pagination)),
+            _ => None,
+        })
+    else {
+        return fallback(ParagraphFragmentFallbackReason::MissingBlockStart);
+    };
+    ParagraphFragmentClassification::Candidate(ParagraphFragmentCandidate {
+        block_start_index,
+        pagination,
+    })
 }
 
 struct PlacementCoordinator {
@@ -2431,5 +2556,181 @@ mod tests {
 
         let pagination = paginate_plan(plan, geom, &final_section, None, false);
         assert_eq!(page_line_counts(&pagination), vec![1]);
+    }
+
+    #[test]
+    fn paragraph_fragment_classification_accepts_supported_request_state() {
+        let paragraph = Paragraph {
+            runs: vec![
+                Run {
+                    text: "hidden".to_string(),
+                    props: CharProps {
+                        hidden: true,
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "A\t".to_string(),
+                    ..Run::default()
+                },
+                Run {
+                    text: "1".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: "PAGE".to_string(),
+                    },
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        };
+        let tab_stops = [TabStop {
+            position_pt: 45.0,
+            alignment: TabAlignment::Left,
+            leader: TabLeader::Dot,
+        }];
+        let pagination = PaginationHint {
+            keep_next: true,
+            keep_lines: true,
+            widow_control: true,
+        };
+        let final_section = SectionSetup::default();
+        let geom = Geom::from_section(&final_section);
+        let request_geom = geom.with_content_width(geom.content_w() - 100.0);
+        let mut capture = LayoutCapture::page_fields();
+        let page_field_indices = reserve_paragraph_page_fields(&paragraph, &mut capture);
+        let mut flow = BodyFlowQueue::default();
+        flow.push_ready(FlowItem::BlockStart {
+            index: 0,
+            pagination,
+        });
+        flow.push_paragraph(ParagraphFlowRequest {
+            paragraph: &paragraph,
+            marker: Some(std::borrow::Cow::Owned("7.".to_string())),
+            tab_stops: &tab_stops,
+            column_break_offsets: &[],
+            default_tab_stop_pt: Some(DEFAULT_TAB_STOP_PT),
+            line_spacing_hint: Some(LineSpacingHint::AtLeast(14.0)),
+            geom: request_geom,
+            page_field_indices,
+        });
+
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let lowered = lower_body_flow_entries_with_metrics(flow, &mut text_cx, &mut capture);
+        let plan = PaginationPlan::with_paragraphs(
+            lowered.items,
+            Some(lowered.block_metrics),
+            lowered.paragraphs,
+            geom,
+            &final_section,
+            None,
+            None,
+            false,
+        );
+
+        assert_eq!(plan.paragraphs.len(), 1);
+        assert_eq!(plan.paragraphs[0].request.marker.as_deref(), Some("7."));
+        assert_eq!(plan.paragraphs[0].request.tab_stops, &tab_stops);
+        assert_eq!(
+            plan.paragraphs[0].request.line_spacing_hint,
+            Some(LineSpacingHint::AtLeast(14.0))
+        );
+        assert!(plan.geometries_by_item[plan.paragraphs[0].item_range.start] != request_geom);
+        assert_eq!(dynamic_page_field_indices(&plan.items), vec![Some(0)]);
+        assert_eq!(
+            plan.paragraphs[0].classification,
+            ParagraphFragmentClassification::Candidate(ParagraphFragmentCandidate {
+                block_start_index: 0,
+                pagination,
+            })
+        );
+    }
+
+    #[test]
+    fn paragraph_fragment_classification_keeps_breaks_and_media_on_fallback() {
+        let broken = Paragraph {
+            runs: vec![Run {
+                text: "column".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let media = Paragraph {
+            runs: vec![Run {
+                text: "media".to_string(),
+                image: Some(Image {
+                    alt: Some("missing bytes".to_string()),
+                    ..Image::default()
+                }),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let broken_offsets = [broken.text().chars().count()];
+        let final_section = SectionSetup::default();
+        let geom = Geom::from_section(&final_section);
+        let request = |paragraph, column_break_offsets| ParagraphFlowRequest {
+            paragraph,
+            marker: None,
+            tab_stops: &[],
+            column_break_offsets,
+            default_tab_stop_pt: None,
+            line_spacing_hint: None,
+            geom,
+            page_field_indices: None,
+        };
+        let mut flow = BodyFlowQueue::default();
+        flow.push_ready(FlowItem::BlockStart {
+            index: 0,
+            pagination: PaginationHint::default(),
+        });
+        flow.push_paragraph(request(&broken, &broken_offsets));
+        flow.push_ready(FlowItem::BlockStart {
+            index: 1,
+            pagination: PaginationHint::default(),
+        });
+        flow.push_paragraph(request(&media, &[]));
+
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let lowered = lower_body_flow_entries_with_metrics(flow, &mut text_cx, &mut capture);
+        let plan = PaginationPlan::with_paragraphs(
+            lowered.items,
+            Some(lowered.block_metrics),
+            lowered.paragraphs,
+            geom,
+            &final_section,
+            None,
+            None,
+            false,
+        );
+
+        assert_eq!(plan.paragraphs.len(), 2);
+        assert_eq!(
+            plan.paragraphs[0].classification,
+            ParagraphFragmentClassification::EagerFallback(
+                ParagraphFragmentFallbackReason::ColumnBreak,
+            )
+        );
+        assert_eq!(
+            plan.paragraphs[1].classification,
+            ParagraphFragmentClassification::EagerFallback(
+                ParagraphFragmentFallbackReason::InlineMedia,
+            )
+        );
     }
 }
