@@ -26,6 +26,15 @@
 //! CJK font into the crate; install one — e.g. Noto Sans CJK — or supply it).
 
 mod pdf;
+mod scene;
+
+#[cfg(test)]
+use scene::SceneLinkRect;
+use scene::{
+    LinkClip, PageScene, PageSceneOp, SceneFontId, SceneFontResource, SceneGlyph, SceneGlyphRun,
+    SceneImageEncoding, SceneImageId, SceneImageResource, ScenePoint, SceneRect, SceneTransform,
+    TextDecoration,
+};
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -158,13 +167,6 @@ const COLUMN_SEPARATOR_WIDTH_PT: f32 = 0.5;
 const MIN_COLUMN_WIDTH_PT: f32 = 20.0;
 const MAX_SECTION_COLUMNS: usize = 64;
 const MAX_TARGET_COLUMN_REWRAP_PASSES: usize = 4;
-const MAX_PAGE_SCENE_OPERATIONS: usize = 262_144;
-const MAX_PAGE_SCENE_PATH_POINTS: usize = 1_048_576;
-const MAX_PAGE_SCENE_LINKS: usize = 16_384;
-const MAX_PAGE_SCENE_IMAGE_RESOURCES: usize = 4_096;
-const MAX_PAGE_SCENE_FONT_RESOURCES: usize = 4_096;
-const MAX_PAGE_SCENE_GLYPHS: usize = 1_048_576;
-const MAX_PAGE_SCENE_STATE_DEPTH: usize = 128;
 // Keep hostile numeric attributes away from PDF-coordinate overflow while
 // leaving every practical document value untouched.
 const MAX_ABSOLUTE_LINE_HEIGHT_PT: f32 = 1_000_000.0;
@@ -232,23 +234,6 @@ impl PageDisplayNumber {
     }
 }
 
-#[derive(Clone)]
-struct SceneFontResource {
-    bytes: Arc<dyn AsRef<[u8]> + Send + Sync>,
-    source_id: u64,
-    index: u32,
-}
-
-impl SceneFontResource {
-    fn shares_source_with(&self, other: &Self) -> bool {
-        self.source_id == other.source_id && self.index == other.index
-    }
-
-    fn is_valid(&self) -> bool {
-        !self.bytes.as_ref().as_ref().is_empty()
-    }
-}
-
 /// One drawable run on a line: its x offset within the content box, neutral
 /// glyph and font data, the size, the fill color, and the source text (for the
 /// ToUnicode map that keeps the PDF text selectable).
@@ -274,12 +259,6 @@ struct RunDraw {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct TextDecoration {
-    offset: f32,
-    thickness: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
 struct RunPaint {
     color: rgb::Color,
     highlight: Option<rgb::Color>,
@@ -289,55 +268,24 @@ struct RunPaint {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct SceneRect {
-    x: f32,
-    y: f32,
+struct LineBackground {
+    color: rgb::Color,
     width: f32,
-    height: f32,
 }
 
-impl SceneRect {
-    fn new(x: f32, y: f32, width: f32, height: f32) -> Option<Self> {
-        if ![x, y, width, height, x + width, y + height]
-            .into_iter()
-            .all(f32::is_finite)
-            || width <= 0.0
-            || height <= 0.0
-        {
-            return None;
-        }
-        Some(Self {
-            x,
-            y,
-            width,
-            height,
-        })
+#[derive(Clone, Copy)]
+struct TabLeaderSpan {
+    start: f32,
+    end: f32,
+    style: TabLeader,
+    color: rgb::Color,
+}
+
+impl RunDraw {
+    /// Advance width of the run in points (sum of glyph advances × size).
+    fn width(&self) -> f32 {
+        self.glyphs.iter().map(|g| g.x_advance).sum::<f32>() * self.size
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct ScenePoint {
-    x: f32,
-    y: f32,
-}
-
-impl ScenePoint {
-    fn new(x: f32, y: f32) -> Option<Self> {
-        [x, y]
-            .into_iter()
-            .all(f32::is_finite)
-            .then_some(Self { x, y })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct SceneGlyph {
-    glyph_id: u32,
-    text_range: std::ops::Range<usize>,
-    x_advance: f32,
-    x_offset: f32,
-    y_offset: f32,
-    y_advance: f32,
 }
 
 impl SceneGlyph {
@@ -370,489 +318,7 @@ impl SceneGlyph {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct SceneGlyphRun {
-    font: SceneFontId,
-    origin: ScenePoint,
-    glyphs: Box<[SceneGlyph]>,
-    text: Rc<str>,
-    size: f32,
-    color: rgb::Color,
-    highlight: Option<rgb::Color>,
-    ascent: f32,
-    descent: f32,
-    underline: Option<TextDecoration>,
-    strikethrough: Option<TextDecoration>,
-    link: Option<Rc<str>>,
-    is_rtl: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct SceneLinkRect {
-    // Preserve authored annotation bounds without a width subtraction/re-addition round trip.
-    left: f32,
-    top: f32,
-    right: f32,
-    bottom: f32,
-}
-
-impl SceneLinkRect {
-    fn from_ltrb([left, top, right, bottom]: [f32; 4]) -> Option<Self> {
-        if ![left, top, right, bottom].into_iter().all(f32::is_finite)
-            || left >= right
-            || top >= bottom
-        {
-            return None;
-        }
-        Some(Self {
-            left,
-            top,
-            right,
-            bottom,
-        })
-    }
-
-    fn intersection(self, clip: Self) -> Option<Self> {
-        Self::from_ltrb([
-            self.left.max(clip.left),
-            self.top.max(clip.top),
-            self.right.min(clip.right),
-            self.bottom.min(clip.bottom),
-        ])
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum LinkClip {
-    Unbounded,
-    Bounded(SceneLinkRect),
-    Hidden,
-}
-
-impl LinkClip {
-    fn from_ltrb(bounds: [f32; 4]) -> Self {
-        SceneLinkRect::from_ltrb(bounds).map_or(Self::Hidden, Self::Bounded)
-    }
-
-    fn apply(self, rect: SceneLinkRect) -> Option<SceneLinkRect> {
-        match self {
-            Self::Unbounded => Some(rect),
-            Self::Bounded(clip) => rect.intersection(clip),
-            Self::Hidden => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SceneImageEncoding {
-    Png,
-    Jpeg,
-    Gif,
-    Webp,
-    Rgba8,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SceneImageResource {
-    encoding: SceneImageEncoding,
-    bytes: Arc<Vec<u8>>,
-    width_px: u32,
-    height_px: u32,
-}
-
-impl SceneImageResource {
-    fn shares_source_with(&self, other: &Self) -> bool {
-        self.encoding == other.encoding
-            && self.width_px == other.width_px
-            && self.height_px == other.height_px
-            && Arc::ptr_eq(&self.bytes, &other.bytes)
-    }
-
-    fn is_valid(&self) -> bool {
-        !self.bytes.is_empty() && self.width_px > 0 && self.height_px > 0
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SceneImageId(usize);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct SceneFontId(usize);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SceneStateKind {
-    Clip,
-    Transform,
-}
-
-impl SceneStateKind {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Clip => "clip",
-            Self::Transform => "transform",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct SceneTransform {
-    sx: f32,
-    ky: f32,
-    kx: f32,
-    sy: f32,
-    tx: f32,
-    ty: f32,
-}
-
-impl SceneTransform {
-    fn from_row(sx: f32, ky: f32, kx: f32, sy: f32, tx: f32, ty: f32) -> Self {
-        Self {
-            sx,
-            ky,
-            kx,
-            sy,
-            tx,
-            ty,
-        }
-    }
-
-    fn from_translate(tx: f32, ty: f32) -> Self {
-        Self::from_row(1.0, 0.0, 0.0, 1.0, tx, ty)
-    }
-
-    fn is_finite(self) -> bool {
-        [self.sx, self.ky, self.kx, self.sy, self.tx, self.ty]
-            .into_iter()
-            .all(f32::is_finite)
-    }
-
-    fn sx(self) -> f32 {
-        self.sx
-    }
-
-    fn ky(self) -> f32 {
-        self.ky
-    }
-
-    fn kx(self) -> f32 {
-        self.kx
-    }
-
-    fn sy(self) -> f32 {
-        self.sy
-    }
-
-    fn tx(self) -> f32 {
-        self.tx
-    }
-
-    fn ty(self) -> f32 {
-        self.ty
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum PageSceneOp {
-    FillRect {
-        rect: SceneRect,
-        color: rgb::Color,
-    },
-    FillPolygon {
-        points: Box<[ScenePoint]>,
-        color: rgb::Color,
-    },
-    Link {
-        rect: SceneLinkRect,
-        target: Rc<str>,
-    },
-    Image {
-        resource: SceneImageId,
-        width: f32,
-        height: f32,
-        transform: SceneTransform,
-    },
-    GlyphRun(SceneGlyphRun),
-    PushClipRect {
-        rect: SceneRect,
-    },
-    PopClip,
-    PushTransform {
-        transform: SceneTransform,
-    },
-    PopTransform,
-}
-
-struct PageScene {
-    operations: Vec<PageSceneOp>,
-    operation_limit: usize,
-    path_point_count: usize,
-    path_point_limit: usize,
-    link_count: usize,
-    link_limit: usize,
-    image_resources: Vec<SceneImageResource>,
-    image_limit: usize,
-    font_resources: Vec<SceneFontResource>,
-    font_limit: usize,
-    glyph_count: usize,
-    glyph_limit: usize,
-    state_stack: Vec<SceneStateKind>,
-    state_limit: usize,
-}
-
-impl Default for PageScene {
-    fn default() -> Self {
-        Self {
-            operations: Vec::new(),
-            operation_limit: MAX_PAGE_SCENE_OPERATIONS,
-            path_point_count: 0,
-            path_point_limit: MAX_PAGE_SCENE_PATH_POINTS,
-            link_count: 0,
-            link_limit: MAX_PAGE_SCENE_LINKS,
-            image_resources: Vec::new(),
-            image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
-            font_resources: Vec::new(),
-            font_limit: MAX_PAGE_SCENE_FONT_RESOURCES,
-            glyph_count: 0,
-            glyph_limit: MAX_PAGE_SCENE_GLYPHS,
-            state_stack: Vec::new(),
-            state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
-        }
-    }
-}
-
 impl PageScene {
-    #[cfg(test)]
-    fn with_operation_limit(operation_limit: usize) -> Self {
-        Self {
-            operations: Vec::new(),
-            operation_limit,
-            path_point_count: 0,
-            path_point_limit: MAX_PAGE_SCENE_PATH_POINTS,
-            link_count: 0,
-            link_limit: MAX_PAGE_SCENE_LINKS,
-            image_resources: Vec::new(),
-            image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
-            font_resources: Vec::new(),
-            font_limit: MAX_PAGE_SCENE_FONT_RESOURCES,
-            glyph_count: 0,
-            glyph_limit: MAX_PAGE_SCENE_GLYPHS,
-            state_stack: Vec::new(),
-            state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
-        }
-    }
-
-    #[cfg(test)]
-    fn with_limits(operation_limit: usize, link_limit: usize) -> Self {
-        Self {
-            operations: Vec::new(),
-            operation_limit,
-            path_point_count: 0,
-            path_point_limit: MAX_PAGE_SCENE_PATH_POINTS,
-            link_count: 0,
-            link_limit,
-            image_resources: Vec::new(),
-            image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
-            font_resources: Vec::new(),
-            font_limit: MAX_PAGE_SCENE_FONT_RESOURCES,
-            glyph_count: 0,
-            glyph_limit: MAX_PAGE_SCENE_GLYPHS,
-            state_stack: Vec::new(),
-            state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
-        }
-    }
-
-    #[cfg(test)]
-    fn with_image_limit(image_limit: usize) -> Self {
-        Self {
-            operations: Vec::new(),
-            operation_limit: MAX_PAGE_SCENE_OPERATIONS,
-            path_point_count: 0,
-            path_point_limit: MAX_PAGE_SCENE_PATH_POINTS,
-            link_count: 0,
-            link_limit: MAX_PAGE_SCENE_LINKS,
-            image_resources: Vec::new(),
-            image_limit,
-            font_resources: Vec::new(),
-            font_limit: MAX_PAGE_SCENE_FONT_RESOURCES,
-            glyph_count: 0,
-            glyph_limit: MAX_PAGE_SCENE_GLYPHS,
-            state_stack: Vec::new(),
-            state_limit: MAX_PAGE_SCENE_STATE_DEPTH,
-        }
-    }
-
-    #[cfg(test)]
-    fn with_state_limit(state_limit: usize) -> Self {
-        Self {
-            operations: Vec::new(),
-            operation_limit: MAX_PAGE_SCENE_OPERATIONS,
-            path_point_count: 0,
-            path_point_limit: MAX_PAGE_SCENE_PATH_POINTS,
-            link_count: 0,
-            link_limit: MAX_PAGE_SCENE_LINKS,
-            image_resources: Vec::new(),
-            image_limit: MAX_PAGE_SCENE_IMAGE_RESOURCES,
-            font_resources: Vec::new(),
-            font_limit: MAX_PAGE_SCENE_FONT_RESOURCES,
-            glyph_count: 0,
-            glyph_limit: MAX_PAGE_SCENE_GLYPHS,
-            state_stack: Vec::new(),
-            state_limit,
-        }
-    }
-
-    #[cfg(test)]
-    fn with_path_point_limit(path_point_limit: usize) -> Self {
-        Self {
-            path_point_limit,
-            ..Self::default()
-        }
-    }
-
-    #[cfg(test)]
-    fn with_text_limits(font_limit: usize, glyph_limit: usize) -> Self {
-        Self {
-            font_limit,
-            glyph_limit,
-            ..Self::default()
-        }
-    }
-
-    fn push_operation(&mut self, operation: PageSceneOp) -> Result<()> {
-        if self.operations.len() >= self.operation_limit {
-            return Err(Error::Render(format!(
-                "page scene exceeds the {}-operation limit",
-                self.operation_limit
-            )));
-        }
-        self.operations.push(operation);
-        Ok(())
-    }
-
-    fn push_fill_rect(
-        &mut self,
-        x: f32,
-        y: f32,
-        width: f32,
-        height: f32,
-        color: rgb::Color,
-    ) -> Result<()> {
-        let Some(rect) = SceneRect::new(x, y, width, height) else {
-            return Ok(());
-        };
-        self.push_operation(PageSceneOp::FillRect { rect, color })
-    }
-
-    fn push_fill_polygon(&mut self, points: &[(f32, f32)], color: rgb::Color) -> Result<()> {
-        self.push_fill_polygon_iter(points.iter().copied(), color)
-    }
-
-    fn push_fill_polygon_iter<I>(&mut self, points: I, color: rgb::Color) -> Result<()>
-    where
-        I: Clone + Iterator<Item = (f32, f32)>,
-    {
-        let mut point_count = 0usize;
-        for (x, y) in points.clone() {
-            let Some(next_point_count) = point_count.checked_add(1) else {
-                return Err(Error::Render(format!(
-                    "page scene exceeds the {}-path-point limit",
-                    self.path_point_limit
-                )));
-            };
-            point_count = next_point_count;
-            if ScenePoint::new(x, y).is_none() {
-                return Ok(());
-            }
-        }
-        if point_count < 3 {
-            return Ok(());
-        }
-        let Some(next_point_count) = self.path_point_count.checked_add(point_count) else {
-            return Err(Error::Render(format!(
-                "page scene exceeds the {}-path-point limit",
-                self.path_point_limit
-            )));
-        };
-        if next_point_count > self.path_point_limit {
-            return Err(Error::Render(format!(
-                "page scene exceeds the {}-path-point limit",
-                self.path_point_limit
-            )));
-        }
-        let projected = points.map(|(x, y)| ScenePoint { x, y }).collect::<Vec<_>>();
-        self.push_operation(PageSceneOp::FillPolygon {
-            points: projected.into_boxed_slice(),
-            color,
-        })?;
-        self.path_point_count = next_point_count;
-        Ok(())
-    }
-
-    fn push_link_ltrb(&mut self, bounds: [f32; 4], target: Rc<str>, clip: LinkClip) -> Result<()> {
-        let Some(rect) = SceneLinkRect::from_ltrb(bounds).and_then(|rect| clip.apply(rect)) else {
-            return Ok(());
-        };
-        if self.link_count >= self.link_limit {
-            return Err(Error::Render(format!(
-                "page scene exceeds the {}-link limit",
-                self.link_limit
-            )));
-        }
-        self.push_operation(PageSceneOp::Link { rect, target })?;
-        self.link_count += 1;
-        Ok(())
-    }
-
-    fn push_image(
-        &mut self,
-        resource: SceneImageResource,
-        width: f32,
-        height: f32,
-        transform: SceneTransform,
-    ) -> Result<Option<usize>> {
-        if !resource.is_valid()
-            || !width.is_finite()
-            || !height.is_finite()
-            || width <= 0.0
-            || height <= 0.0
-            || !transform.is_finite()
-        {
-            return Ok(None);
-        }
-        if self.operations.len() >= self.operation_limit {
-            return Err(Error::Render(format!(
-                "page scene exceeds the {}-operation limit",
-                self.operation_limit
-            )));
-        }
-        let existing = self
-            .image_resources
-            .iter()
-            .position(|candidate| candidate.shares_source_with(&resource));
-        let resource_id = match existing {
-            Some(index) => SceneImageId(index),
-            None => {
-                if self.image_resources.len() >= self.image_limit {
-                    return Err(Error::Render(format!(
-                        "page scene exceeds the {}-image-resource limit",
-                        self.image_limit
-                    )));
-                }
-                let id = SceneImageId(self.image_resources.len());
-                self.image_resources.push(resource);
-                id
-            }
-        };
-        let operation_index = self.operations.len();
-        self.operations.push(PageSceneOp::Image {
-            resource: resource_id,
-            width,
-            height,
-            transform,
-        });
-        Ok(Some(operation_index))
-    }
-
     fn push_glyph_run(&mut self, run: &RunDraw, x_abs: f32, baseline_y: f32) -> Result<usize> {
         let Some(origin) = ScenePoint::new(x_abs + run.x, baseline_y + run.baseline_shift) else {
             return Err(Error::Render(
@@ -940,99 +406,6 @@ impl PageScene {
         }));
         self.glyph_count = next_glyph_count;
         Ok(operation_index)
-    }
-
-    fn push_clip_rect(&mut self, x: f32, y: f32, width: f32, height: f32) -> Result<bool> {
-        let Some(rect) = SceneRect::new(x, y, width, height) else {
-            return Ok(false);
-        };
-        self.push_state(SceneStateKind::Clip, PageSceneOp::PushClipRect { rect })?;
-        Ok(true)
-    }
-
-    fn pop_clip(&mut self) -> Result<()> {
-        self.pop_state(SceneStateKind::Clip, PageSceneOp::PopClip)
-    }
-
-    fn push_transform(&mut self, transform: SceneTransform) -> Result<bool> {
-        if !transform.is_finite() {
-            return Ok(false);
-        }
-        self.push_state(
-            SceneStateKind::Transform,
-            PageSceneOp::PushTransform { transform },
-        )?;
-        Ok(true)
-    }
-
-    fn pop_transform(&mut self) -> Result<()> {
-        self.pop_state(SceneStateKind::Transform, PageSceneOp::PopTransform)
-    }
-
-    fn push_state(&mut self, kind: SceneStateKind, operation: PageSceneOp) -> Result<()> {
-        if self.state_stack.len() >= self.state_limit {
-            return Err(Error::Render(format!(
-                "page scene state depth exceeds the {}-level limit",
-                self.state_limit
-            )));
-        }
-        self.push_operation(operation)?;
-        self.state_stack.push(kind);
-        Ok(())
-    }
-
-    fn pop_state(&mut self, expected: SceneStateKind, operation: PageSceneOp) -> Result<()> {
-        match self.state_stack.last() {
-            Some(actual) if *actual == expected => {}
-            Some(actual) => {
-                return Err(Error::Render(format!(
-                    "page scene state mismatch: cannot pop {} above {}",
-                    expected.name(),
-                    actual.name()
-                )));
-            }
-            None => {
-                return Err(Error::Render(format!(
-                    "page scene {} stack underflow",
-                    expected.name()
-                )));
-            }
-        }
-        self.push_operation(operation)?;
-        self.state_stack.pop();
-        Ok(())
-    }
-
-    fn ensure_balanced(&self) -> Result<()> {
-        if self.state_stack.is_empty() {
-            return Ok(());
-        }
-        Err(Error::Render(format!(
-            "page scene has {} unclosed state operation{}",
-            self.state_stack.len(),
-            if self.state_stack.len() == 1 { "" } else { "s" }
-        )))
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct LineBackground {
-    color: rgb::Color,
-    width: f32,
-}
-
-#[derive(Clone, Copy)]
-struct TabLeaderSpan {
-    start: f32,
-    end: f32,
-    style: TabLeader,
-    color: rgb::Color,
-}
-
-impl RunDraw {
-    /// Advance width of the run in points (sum of glyph advances × size).
-    fn width(&self) -> f32 {
-        self.glyphs.iter().map(|g| g.x_advance).sum::<f32>() * self.size
     }
 }
 
