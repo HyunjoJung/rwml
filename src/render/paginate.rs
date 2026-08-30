@@ -605,6 +605,24 @@ impl ActivePlacementTrack {
     }
 }
 
+enum ForcedBreak {
+    Page,
+    Column,
+}
+
+fn admit_forced_break(
+    pages: &mut Pages,
+    track: &mut ActivePlacementTrack,
+    block_projection: &mut BlockProjectionState,
+    kind: ForcedBreak,
+) {
+    match kind {
+        ForcedBreak::Page => track.cursor.force_page(pages, track.geom),
+        ForcedBreak::Column => track.cursor.advance(pages, track.geom),
+    }
+    block_projection.record_pending_page(pages.len().saturating_sub(1));
+}
+
 impl PaginationPlan {
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -943,12 +961,12 @@ fn paginate_with_state(
             .expect("pagination plan keeps item contexts aligned");
         active_track.synchronize(context);
         let active_geom = active_track.geom;
-        let cursor = &mut active_track.cursor;
         match item {
             FlowItem::BlockStart {
                 index: block_index,
                 pagination,
             } => {
+                let cursor = &mut active_track.cursor;
                 let protected_by_previous_keep = previous_keep_next;
                 if !protected_by_previous_keep {
                     active_top_bottom_bands.append(&mut deferred_top_bottom_bands);
@@ -1016,8 +1034,9 @@ fn paginate_with_state(
                     });
                 }
             }
-            FlowItem::Gap(g) => cursor.y += g,
+            FlowItem::Gap(g) => active_track.cursor.y += g,
             FlowItem::Line(l) => {
+                let cursor = &mut active_track.cursor;
                 let h = l.height;
                 ensure_outside_top_bottom_bands(
                     &mut pages,
@@ -1108,6 +1127,7 @@ fn paginate_with_state(
                 block_cursor.advance_line();
             }
             FlowItem::Picture { image, layout } => {
+                let cursor = &mut active_track.cursor;
                 ensure_outside_top_bottom_bands(
                     &mut pages,
                     cursor,
@@ -1125,6 +1145,7 @@ fn paginate_with_state(
                 );
             }
             FlowItem::Chart { chart, w, h } => {
+                let cursor = &mut active_track.cursor;
                 ensure_outside_top_bottom_bands(
                     &mut pages,
                     cursor,
@@ -1137,23 +1158,33 @@ fn paginate_with_state(
                 place_item(&mut pages, cursor, FlowItem::Chart { chart, w, h }, h);
             }
             FlowItem::Table { rows, header_rows } => {
+                let cursor = &mut active_track.cursor;
                 let fallback_page = pages.len().saturating_sub(1);
                 let first_page = place_table(&mut pages, cursor, rows, header_rows, active_geom)
                     .unwrap_or(fallback_page);
                 block_projection.record_pending_page(first_page);
             }
             FlowItem::PageBreak => {
-                cursor.force_page(&mut pages, active_geom);
-                block_projection.record_pending_page(pages.len().saturating_sub(1));
+                admit_forced_break(
+                    &mut pages,
+                    &mut active_track,
+                    &mut block_projection,
+                    ForcedBreak::Page,
+                );
             }
             FlowItem::ColumnBreak => {
-                cursor.advance(&mut pages, active_geom);
-                block_projection.record_pending_page(pages.len().saturating_sub(1));
+                admit_forced_break(
+                    &mut pages,
+                    &mut active_track,
+                    &mut block_projection,
+                    ForcedBreak::Column,
+                );
             }
             FlowItem::SectionColumnGap(_) => {}
             FlowItem::SectionColumnLayout(_) => {}
             FlowItem::SectionColumnRtl => {}
             FlowItem::SectionBreak(section) => {
+                let cursor = &mut active_track.cursor;
                 let next_section_page =
                     page_after_section_break(pages.len(), section.section_break);
                 while pages.len() < next_section_page {
@@ -1173,6 +1204,7 @@ fn paginate_with_state(
             }
             // Rows reach pagination only inside a Table; place defensively.
             FlowItem::Row(r) => {
+                let cursor = &mut active_track.cursor;
                 let h = r.height;
                 ensure_outside_top_bottom_bands(
                     &mut pages,
@@ -1888,6 +1920,33 @@ mod tests {
         assert!(cursor.current_block_start.is_none());
         assert_eq!(cursor.current_line_index, 0);
         assert!(cursor.widow_break_before.is_none());
+    }
+
+    #[test]
+    fn forced_break_admission_moves_track_and_records_pending_page() {
+        let geom = Geom::from_section(&SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        });
+        let mut pages: Pages = vec![Vec::new()];
+        let mut track = ActivePlacementTrack::new(geom, Some(2), None, None, true);
+        let mut projection = BlockProjectionState::default();
+        projection.mark_pending(7);
+
+        admit_forced_break(&mut pages, &mut track, &mut projection, ForcedBreak::Column);
+
+        assert_eq!(pages.len(), 1);
+        assert_eq!(track.cursor.column_index, 0);
+        assert_eq!(projection.block_pages.get(&7), Some(&0));
+
+        projection.mark_pending(8);
+        admit_forced_break(&mut pages, &mut track, &mut projection, ForcedBreak::Page);
+
+        assert_eq!(pages.len(), 2);
+        assert_eq!(track.cursor.column_index, 1);
+        assert_eq!(track.cursor.y, geom.top());
+        assert!(!track.cursor.column_nonempty);
+        assert_eq!(projection.block_pages.get(&8), Some(&1));
     }
 
     #[test]
