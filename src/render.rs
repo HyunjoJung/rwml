@@ -6422,18 +6422,20 @@ fn replay_page_scene_annotations(page: &mut Page<'_>, scene: &PageScene) {
 
 fn draw_terminal_vertical_junction(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     top: f32,
     line: VerticalBorderLine,
     horizontal_width: f32,
-) {
-    fill_rect_color(
+) -> Result<()> {
+    project_and_replay_page_scene_fill_rect(
         surface,
+        scene,
         line.x - line.paint.width * 0.5,
         top - horizontal_width * 0.5,
         line.paint.width,
         horizontal_width,
         line.paint.color,
-    );
+    )
 }
 
 fn draw_table_cell_background_and_borders(
@@ -6685,7 +6687,7 @@ fn draw_row_layout(
             )?;
         }
         for (line, horizontal_width) in junctions {
-            draw_terminal_vertical_junction(surface, placement.top, line, horizontal_width);
+            draw_terminal_vertical_junction(surface, scene, placement.top, line, horizontal_width)?;
         }
         for cell in cells {
             let cell_x = placement.x_offset + cell.x;
@@ -9266,12 +9268,13 @@ struct SectionColumnPaintHints<'a> {
 
 fn draw_section_column_separators(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     geom: Geom,
     setup: &SectionSetup,
     hints: SectionColumnPaintHints<'_>,
-) {
+) -> Result<()> {
     if !hints.separator {
-        return;
+        return Ok(());
     }
     let layout = ColumnLayout::new_with_layout(geom, setup.columns, hints.gap_pt, hints.layout);
     let top = geom.top();
@@ -9280,15 +9283,17 @@ fn draw_section_column_separators(
         let Some(separator_x) = layout.separator_x(index) else {
             continue;
         };
-        fill_rect_color(
+        project_and_replay_page_scene_fill_rect(
             surface,
+            scene,
             geom.left + separator_x - COLUMN_SEPARATOR_WIDTH_PT * 0.5,
             top,
             COLUMN_SEPARATOR_WIDTH_PT,
             height,
             rgb::Color::new(0, 0, 0),
-        );
+        )?;
     }
+    Ok(())
 }
 
 struct FlowCursor {
@@ -11286,10 +11291,11 @@ fn render_pdf(
             .unwrap_or_default();
         draw_section_column_separators(
             &mut surface,
+            &mut page_scene,
             page_geom,
             &page_section.setup,
             column_paint_hints,
-        );
+        )?;
         let mut previous_row_borders: Option<RenderedRowBorders> = None;
         for placed in page_items {
             let top = placed.top;
@@ -14562,6 +14568,130 @@ mod tests {
         assert!(invalid.operations.is_empty());
         assert!(invalid.font_resources.is_empty());
         assert_eq!(invalid.glyph_count, 0);
+    }
+
+    #[test]
+    fn remaining_rectangles_enter_the_page_scene_in_backend_order() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let junction_color = rgb::Color::new(0x16, 0x5D, 0xA8);
+        let junction = super::VerticalBorderLine {
+            x: 50.0,
+            paint: super::TableBorderPaint {
+                color: junction_color,
+                width: 3.0,
+            },
+        };
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::draw_terminal_vertical_junction(&mut surface, &mut scene, 40.0, junction, 2.0)
+            .expect("junction paints");
+        super::draw_section_column_separators(
+            &mut surface,
+            &mut scene,
+            geom,
+            &setup,
+            super::SectionColumnPaintHints {
+                gap_pt: Some(40.0),
+                layout: None,
+                separator: true,
+            },
+        )
+        .expect("column separator paints");
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect::new(48.5, 39.0, 3.0, 2.0).unwrap(),
+                    color: junction_color,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect::new(109.75, 20.0, 0.5, 60.0).unwrap(),
+                    color: rgb::Color::black(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn remaining_rectangles_propagate_page_scene_capacity() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let settings = super::PageSettings::from_wh(geom.page_w, geom.page_h).expect("finite page");
+        let mut document = super::PdfDoc::new();
+
+        let mut page = document.start_page_with(settings.clone());
+        let mut surface = page.surface();
+        let mut junction_scene = super::PageScene::with_operation_limit(0);
+        let junction_result = super::draw_terminal_vertical_junction(
+            &mut surface,
+            &mut junction_scene,
+            40.0,
+            super::VerticalBorderLine {
+                x: 50.0,
+                paint: super::TableBorderPaint {
+                    color: rgb::Color::new(0x16, 0x5D, 0xA8),
+                    width: 3.0,
+                },
+            },
+            2.0,
+        );
+        surface.finish();
+        page.finish();
+
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut separator_scene = super::PageScene::with_operation_limit(0);
+        let separator_result = super::draw_section_column_separators(
+            &mut surface,
+            &mut separator_scene,
+            geom,
+            &SectionSetup {
+                columns: Some(2),
+                ..SectionSetup::default()
+            },
+            super::SectionColumnPaintHints {
+                gap_pt: Some(40.0),
+                layout: None,
+                separator: true,
+            },
+        );
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+
+        for (result, scene) in [
+            (junction_result, junction_scene),
+            (separator_result, separator_scene),
+        ] {
+            assert_eq!(
+                result
+                    .expect_err("rectangle operation ceiling must propagate")
+                    .to_string(),
+                "render failed: page scene exceeds the 0-operation limit"
+            );
+            assert!(scene.operations.is_empty());
+        }
     }
 
     #[test]
