@@ -4952,7 +4952,18 @@ fn draw_running_surface_items(
                     pop_page_scene_clip(surface, scene)?;
                     break;
                 }
-                draw_authored_chart(surface, &chart, 0.0, 0.0, w, h, cx);
+                draw_authored_chart(
+                    surface,
+                    scene,
+                    &chart,
+                    ChartRect {
+                        x: 0.0,
+                        y: 0.0,
+                        w,
+                        h,
+                    },
+                    cx,
+                )?;
                 pop_page_scene_transform(surface, scene)?;
                 pop_page_scene_clip(surface, scene)?;
                 y += layout.bounds_h;
@@ -6187,7 +6198,18 @@ fn draw_table_cell_content(
                     let transform =
                         SceneTransform::from_row(layout.scale, 0.0, 0.0, layout.scale, x, line_top);
                     if push_page_scene_transform(surface, scene, transform)? {
-                        draw_authored_chart(surface, &chart, 0.0, 0.0, width, height, cx);
+                        draw_authored_chart(
+                            surface,
+                            scene,
+                            &chart,
+                            ChartRect {
+                                x: 0.0,
+                                y: 0.0,
+                                w: width,
+                                h: height,
+                            },
+                            cx,
+                        )?;
                         pop_page_scene_transform(surface, scene)?;
                     }
                     pop_page_scene_clip(surface, scene)?;
@@ -7372,23 +7394,35 @@ fn draw_funnel_chart(
     }
 }
 
-fn draw_authored_chart(
-    surface: &mut Surface<'_>,
-    chart: &Chart,
+fn project_chart_frame(
+    scene: &mut PageScene,
     x: f32,
     y: f32,
     w: f32,
     h: f32,
-    tcx: &mut TextCx<'_>,
-) {
+) -> Result<std::ops::Range<usize>> {
+    let start = scene.operations.len();
     let border = rgb::Color::new(0xA7, 0xB0, 0xBA);
+    scene.push_fill_rect(x, y, w, h, rgb::Color::new(0xFF, 0xFF, 0xFF))?;
+    scene.push_fill_rect(x, y, w, BORDER, border)?;
+    scene.push_fill_rect(x, y + h - BORDER, w, BORDER, border)?;
+    scene.push_fill_rect(x, y, BORDER, h, border)?;
+    scene.push_fill_rect(x + w - BORDER, y, BORDER, h, border)?;
+    Ok(start..scene.operations.len())
+}
+
+fn draw_authored_chart(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    chart: &Chart,
+    rect: ChartRect,
+    tcx: &mut TextCx<'_>,
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
     let axis = rgb::Color::new(0x5D, 0x66, 0x70);
     let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
-    fill_rect_color(surface, x, y, w, h, rgb::Color::new(0xFF, 0xFF, 0xFF));
-    fill_rect_color(surface, x, y, w, BORDER, border);
-    fill_rect_color(surface, x, y + h - BORDER, w, BORDER, border);
-    fill_rect_color(surface, x, y, BORDER, h, border);
-    fill_rect_color(surface, x + w - BORDER, y, BORDER, h, border);
+    let frame = project_chart_frame(scene, x, y, w, h)?;
+    replay_page_scene_operations(surface, scene, frame);
 
     let mut content_top = y + 8.0;
     if let Some(title) = chart.title.as_deref() {
@@ -7418,7 +7452,7 @@ fn draw_authored_chart(
     let plot_w = (plot_right - plot_left).max(1.0);
     let plot_h = (plot_bottom - plot_top).max(1.0);
     if plot_w <= 8.0 || plot_h <= 8.0 {
-        return;
+        return Ok(());
     }
 
     if matches!(
@@ -7480,7 +7514,7 @@ fn draw_authored_chart(
             );
             legend_x += 9.0 + (category.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
         }
-        return;
+        return Ok(());
     }
 
     if matches!(
@@ -7518,32 +7552,32 @@ fn draw_authored_chart(
             );
             legend_x += 9.0 + (series.name.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
         }
-        return;
+        return Ok(());
     }
 
     if chart.kind == ChartKind::Waterfall {
         draw_waterfall_chart(surface, chart, plot_left, plot_top, plot_w, plot_h, tcx);
-        return;
+        return Ok(());
     }
 
     if chart.kind == ChartKind::Treemap {
         draw_treemap_chart(surface, chart, plot_left, plot_top, plot_w, plot_h, tcx);
-        return;
+        return Ok(());
     }
 
     if chart.kind == ChartKind::Sunburst {
         draw_sunburst_chart(surface, chart, plot_left, plot_top, plot_w, plot_h);
-        return;
+        return Ok(());
     }
 
     if chart.kind == ChartKind::BoxWhisker {
         draw_box_whisker_chart(surface, chart, plot_left, plot_top, plot_w, plot_h, tcx);
-        return;
+        return Ok(());
     }
 
     if chart.kind == ChartKind::Funnel {
         draw_funnel_chart(surface, chart, plot_left, plot_top, plot_w, plot_h, tcx);
-        return;
+        return Ok(());
     }
 
     let max_series_points = chart
@@ -8338,6 +8372,7 @@ fn draw_authored_chart(
         );
         legend_x += 9.0 + (series.name.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
     }
+    Ok(())
 }
 
 /// Draw a run's glyphs at an absolute baseline position, in the run's color.
@@ -10624,7 +10659,13 @@ fn render_pdf(
                 }
                 FlowItem::Chart { chart, w, h } => {
                     let x = page_geom.left + column_x + ((placed.width - w) * 0.5).max(0.0);
-                    draw_authored_chart(&mut surface, &chart, x, top, w, h, &mut tcx);
+                    draw_authored_chart(
+                        &mut surface,
+                        &mut page_scene,
+                        &chart,
+                        ChartRect { x, y: top, w, h },
+                        &mut tcx,
+                    )?;
                 }
                 FlowItem::Line(line) => {
                     let baseline = top + line.baseline;
@@ -13611,6 +13652,67 @@ mod tests {
         assert_eq!(left[3], right[2], "shared edge must overpaint once");
         assert!(super::table_border_rects(0.0, 0.0, 0.0, 4.0, 1.0).is_none());
         assert!(super::table_border_rects(0.0, 0.0, 4.0, 4.0, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn chart_frame_projects_exact_ordered_scene_rectangles() {
+        let mut scene = super::PageScene::default();
+        let appended = super::project_chart_frame(&mut scene, 10.0, 20.0, 300.0, 180.0)
+            .expect("bounded chart frame projects");
+        let white = rgb::Color::new(0xFF, 0xFF, 0xFF);
+        let border = rgb::Color::new(0xA7, 0xB0, 0xBA);
+
+        assert_eq!(appended, 0..5);
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: 300.0,
+                        height: 180.0,
+                    },
+                    color: white,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: 300.0,
+                        height: super::BORDER,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 10.0,
+                        y: 200.0 - super::BORDER,
+                        width: 300.0,
+                        height: super::BORDER,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: super::BORDER,
+                        height: 180.0,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 310.0 - super::BORDER,
+                        y: 20.0,
+                        width: super::BORDER,
+                        height: 180.0,
+                    },
+                    color: border,
+                },
+            ]
+        );
     }
 
     #[test]
