@@ -5709,28 +5709,6 @@ fn fill_circle_color(
     )
 }
 
-fn fill_triangle_color(
-    surface: &mut Surface<'_>,
-    p1: (f32, f32),
-    p2: (f32, f32),
-    p3: (f32, f32),
-    color: rgb::Color,
-) {
-    let mut pb = PathBuilder::new();
-    pb.move_to(p1.0, p1.1);
-    pb.line_to(p2.0, p2.1);
-    pb.line_to(p3.0, p3.1);
-    pb.close();
-    if let Some(path) = pb.finish() {
-        surface.set_fill(Some(Fill {
-            paint: color.into(),
-            rule: FillRule::NonZero,
-            opacity: NormalizedF32::ONE,
-        }));
-        surface.draw_path(&path);
-    }
-}
-
 fn fill_polygon_color(surface: &mut Surface<'_>, points: &[ScenePoint], color: rgb::Color) {
     let Some(first) = points.first() else {
         return;
@@ -5765,14 +5743,15 @@ fn fill_chart_bar_shape(
     match shape {
         ChartShape::Cylinder => {
             let radius = (h * 0.5).min(w * 0.5);
-            fill_rect_color(
+            project_and_replay_page_scene_fill_rect(
                 surface,
+                scene,
                 x + radius * 0.5,
                 y,
                 (w - radius).max(1.0),
                 h,
                 color,
-            );
+            )?;
             fill_circle_color(surface, scene, x + radius, y + h * 0.5, radius, color)?;
             fill_circle_color(surface, scene, x + w - radius, y + h * 0.5, radius, color)?;
         }
@@ -5780,9 +5759,16 @@ fn fill_chart_bar_shape(
         | ChartShape::ConeToMax
         | ChartShape::Pyramid
         | ChartShape::PyramidToMax => {
-            fill_triangle_color(surface, (x, y), (x, y + h), (x + w, y + h * 0.5), color);
+            project_and_replay_page_scene_fill_polygon(
+                surface,
+                scene,
+                &[(x, y), (x, y + h), (x + w, y + h * 0.5)],
+                color,
+            )?;
         }
-        ChartShape::Box => fill_rect_color(surface, x, y, w, h, color),
+        ChartShape::Box => {
+            project_and_replay_page_scene_fill_rect(surface, scene, x, y, w, h, color)?;
+        }
     }
     Ok(())
 }
@@ -5801,14 +5787,15 @@ fn fill_chart_column_shape(
     match shape {
         ChartShape::Cylinder => {
             let radius = (w * 0.5).min(h * 0.5);
-            fill_rect_color(
+            project_and_replay_page_scene_fill_rect(
                 surface,
+                scene,
                 x,
                 y + radius * 0.5,
                 w,
                 (h - radius).max(1.0),
                 color,
-            );
+            )?;
             fill_circle_color(surface, scene, x + w * 0.5, y + radius, radius, color)?;
             fill_circle_color(surface, scene, x + w * 0.5, y + h - radius, radius, color)?;
         }
@@ -5816,9 +5803,16 @@ fn fill_chart_column_shape(
         | ChartShape::ConeToMax
         | ChartShape::Pyramid
         | ChartShape::PyramidToMax => {
-            fill_triangle_color(surface, (x + w * 0.5, y), (x, y + h), (x + w, y + h), color);
+            project_and_replay_page_scene_fill_polygon(
+                surface,
+                scene,
+                &[(x + w * 0.5, y), (x, y + h), (x + w, y + h)],
+                color,
+            )?;
         }
-        ChartShape::Box => fill_rect_color(surface, x, y, w, h, color),
+        ChartShape::Box => {
+            project_and_replay_page_scene_fill_rect(surface, scene, x, y, w, h, color)?;
+        }
     }
     Ok(())
 }
@@ -11107,11 +11101,11 @@ mod tests {
         DEFAULT_TAB_STOP_PT,
     };
     use crate::model::{
-        Align, Block, Cell, CellMargins, CharProps, Chart, ChartSeries, Color, DocModel, FieldRole,
-        Image, Indent, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
-        Row, Run, SectionBreakKind, SectionColumnHint, SectionColumnLayoutHints, SectionSetup,
-        Spacing, TabAlignment, TabLeader, TabStop, Table, TableBorderSide, TablePaginationHints,
-        TableRowPaginationHint, VCell, VertAlign,
+        Align, Block, Cell, CellMargins, CharProps, Chart, ChartSeries, ChartShape, Color,
+        DocModel, FieldRole, Image, Indent, LineSpacingHint, ListInfo, PageSetup, PaginationHint,
+        ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionColumnHint,
+        SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
+        TableBorderSide, TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
     };
     use crate::report::FeatureInventory;
     use crate::{FloatingShape, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition};
@@ -14693,6 +14687,238 @@ mod tests {
             );
         };
         assert_eq!(points.len(), 50);
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn chart_3d_shape_bodies_enter_the_scene_before_cylinder_caps() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(120.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let mut scene = super::PageScene::default();
+
+        super::fill_chart_bar_shape(
+            &mut surface,
+            &mut scene,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 40.0,
+                h: 12.0,
+            },
+            ChartShape::Cylinder,
+            color,
+        )
+        .expect("horizontal cylinder paints");
+        super::fill_chart_bar_shape(
+            &mut surface,
+            &mut scene,
+            super::ChartRect {
+                x: 60.0,
+                y: 20.0,
+                w: 20.0,
+                h: 12.0,
+            },
+            ChartShape::Pyramid,
+            color,
+        )
+        .expect("horizontal pyramid paints");
+        super::fill_chart_bar_shape(
+            &mut surface,
+            &mut scene,
+            super::ChartRect {
+                x: 90.0,
+                y: 20.0,
+                w: 20.0,
+                h: 12.0,
+            },
+            ChartShape::Box,
+            color,
+        )
+        .expect("horizontal box paints");
+        super::fill_chart_column_shape(
+            &mut surface,
+            &mut scene,
+            super::ChartRect {
+                x: 10.0,
+                y: 50.0,
+                w: 12.0,
+                h: 40.0,
+            },
+            ChartShape::Cylinder,
+            color,
+        )
+        .expect("vertical cylinder paints");
+        super::fill_chart_column_shape(
+            &mut surface,
+            &mut scene,
+            super::ChartRect {
+                x: 30.0,
+                y: 50.0,
+                w: 12.0,
+                h: 20.0,
+            },
+            ChartShape::Pyramid,
+            color,
+        )
+        .expect("vertical pyramid paints");
+        super::fill_chart_column_shape(
+            &mut surface,
+            &mut scene,
+            super::ChartRect {
+                x: 50.0,
+                y: 50.0,
+                w: 12.0,
+                h: 20.0,
+            },
+            ChartShape::Box,
+            color,
+        )
+        .expect("vertical box paints");
+
+        assert_eq!(scene.operations.len(), 10);
+        assert_eq!(scene.path_point_count, 122);
+        assert_eq!(
+            scene.operations[0],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(13.0, 20.0, 34.0, 12.0).unwrap(),
+                color,
+            }
+        );
+        for index in [1, 2, 6, 7] {
+            let super::PageSceneOp::FillPolygon {
+                points,
+                color: actual_color,
+            } = &scene.operations[index]
+            else {
+                panic!(
+                    "cylinder cap must be a polygon: {:?}",
+                    scene.operations[index]
+                );
+            };
+            assert_eq!(points.len(), 29);
+            assert_eq!(*actual_color, color);
+        }
+        assert_eq!(
+            scene.operations[3],
+            super::PageSceneOp::FillPolygon {
+                points: vec![
+                    super::ScenePoint { x: 60.0, y: 20.0 },
+                    super::ScenePoint { x: 60.0, y: 32.0 },
+                    super::ScenePoint { x: 80.0, y: 26.0 },
+                ]
+                .into_boxed_slice(),
+                color,
+            }
+        );
+        assert_eq!(
+            scene.operations[4],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(90.0, 20.0, 20.0, 12.0).unwrap(),
+                color,
+            }
+        );
+        assert_eq!(
+            scene.operations[5],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(10.0, 53.0, 12.0, 34.0).unwrap(),
+                color,
+            }
+        );
+        assert_eq!(
+            scene.operations[8],
+            super::PageSceneOp::FillPolygon {
+                points: vec![
+                    super::ScenePoint { x: 36.0, y: 50.0 },
+                    super::ScenePoint { x: 30.0, y: 70.0 },
+                    super::ScenePoint { x: 42.0, y: 70.0 },
+                ]
+                .into_boxed_slice(),
+                color,
+            }
+        );
+        assert_eq!(
+            scene.operations[9],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(50.0, 50.0, 12.0, 20.0).unwrap(),
+                color,
+            }
+        );
+
+        surface.finish();
+        page.finish();
+        document.finish().expect("test PDF finishes");
+    }
+
+    #[test]
+    fn chart_3d_shape_bodies_propagate_scene_limits() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+
+        let mut operation_limited = super::PageScene::with_operation_limit(0);
+        let error = super::fill_chart_bar_shape(
+            &mut surface,
+            &mut operation_limited,
+            super::ChartRect {
+                x: 10.0,
+                y: 10.0,
+                w: 20.0,
+                h: 10.0,
+            },
+            ChartShape::Box,
+            color,
+        )
+        .expect_err("box body must honor the operation limit");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(operation_limited.operations.is_empty());
+
+        let mut point_limited = super::PageScene::with_path_point_limit(2);
+        let error = super::fill_chart_column_shape(
+            &mut surface,
+            &mut point_limited,
+            super::ChartRect {
+                x: 10.0,
+                y: 30.0,
+                w: 12.0,
+                h: 20.0,
+            },
+            ChartShape::Pyramid,
+            color,
+        )
+        .expect_err("pyramid body must honor the path-point limit");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 2-path-point limit"
+        );
+        assert!(point_limited.operations.is_empty());
+        assert_eq!(point_limited.path_point_count, 0);
+
+        let mut invalid = super::PageScene::default();
+        super::fill_chart_bar_shape(
+            &mut surface,
+            &mut invalid,
+            super::ChartRect {
+                x: 10.0,
+                y: 60.0,
+                w: 0.0,
+                h: 10.0,
+            },
+            ChartShape::Box,
+            color,
+        )
+        .expect("invalid body remains a no-op");
+        assert!(invalid.operations.is_empty());
 
         surface.finish();
         page.finish();
