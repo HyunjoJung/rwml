@@ -514,15 +514,22 @@ def validation_gate(summary: dict, thresholds: dict | None = None) -> dict:
 
 
 def reference_page_digests(pdf: Path, *, dpi: int, page_cap: int) -> list[str] | None:
-    """Per-page raster digests of a rendered reference, for a stability probe."""
+    """Complete, dimension-bound raster digests for a reference stability probe."""
     try:
-        images, _ = rasterize_pdf_pages(pdf, dpi=dpi, page_cap=page_cap)
+        images, total_pages = rasterize_pdf_pages(pdf, dpi=dpi, page_cap=page_cap)
     except Exception:
+        return None
+    if not images or len(images) != total_pages:
         return None
     digests = []
     for image in images:
         try:
-            digests.append(hashlib.sha256(image.tobytes()).hexdigest())
+            digest = hashlib.sha256()
+            digest.update(image.width.to_bytes(8, "big"))
+            digest.update(image.height.to_bytes(8, "big"))
+            digest.update(image.mode.encode("ascii"))
+            digest.update(image.tobytes())
+            digests.append(digest.hexdigest())
         except Exception:
             return None
     return digests
@@ -579,8 +586,8 @@ def oracle_stability_verdict(
 ) -> bool | None:
     """Whether two renders of the same reference document match.
 
-    `None` when there is nothing to compare, so an unavailable probe is never
-    read as a failure.
+    `None` means a complete comparison is unavailable. A caller requiring
+    repeatability must not treat that unknown result as successful verification.
     """
     if not first or not second:
         return None
@@ -2418,6 +2425,7 @@ def main() -> int:
     rows = []
     corpus_documents = corpus_document_map(corpus)
     reference_stable: bool | None = None
+    reference_incomplete = False
     unstable_references: list[str] = []
     try:
         soffice_mode = resolve_soffice_mode(args.soffice)
@@ -2450,6 +2458,7 @@ def main() -> int:
             except RenderDependencyError as exc:
                 sys.exit(str(exc))
             reference_fonts_valid = True
+            probe_unverified = False
             if ref is not None and local_font_lock is not None:
                 try:
                     validate_pdf_font_identities(
@@ -2493,8 +2502,14 @@ def main() -> int:
                 )
                 if verdict is False:
                     unstable_references.append(src.name)
+                if verdict is None:
+                    probe_unverified = True
                 if verdict is not None:
                     reference_stable = (reference_stable is not False) and verdict
+            if args.verify_oracle and (
+                ref is None or not reference_fonts_valid or probe_unverified
+            ):
+                reference_incomplete = True
             got = tmp / (src.stem + ".rwml.pdf")
             render_report = render_rwml(
                 src,
@@ -2502,14 +2517,18 @@ def main() -> int:
                 tmp / (src.stem + ".rwml.report.json"),
                 fixed_fonts=not args.system_fonts,
             )
-            if ref is None or render_report is None or not reference_fonts_valid:
-                reason = (
-                    "reference-font-lock-failed"
-                    if not reference_fonts_valid and corpus is not None
-                    else "render-failed"
-                    if corpus is not None
-                    else "render failed"
-                )
+            if (
+                ref is None
+                or render_report is None
+                or not reference_fonts_valid
+                or probe_unverified
+            ):
+                if not reference_fonts_valid:
+                    reason = "reference-font-lock-failed" if corpus else "render failed"
+                elif probe_unverified:
+                    reason = "reference-repeat-unverified"
+                else:
+                    reason = "render-failed" if corpus else "render failed"
                 rows.append(
                     ValidationRow(
                         document=src.name,
@@ -2521,7 +2540,7 @@ def main() -> int:
                 if not args.json:
                     print(
                         f"{src.name[:40]:40} {'—':>8} {'—':>10} "
-                        f"{'—':>8} {'—':>8} {'—':>8} {'—':>5}  SKIP (render failed)"
+                        f"{'—':>8} {'—':>8} {'—':>8} {'—':>5}  SKIP ({reason})"
                     )
                 continue
             kinds = warning_kinds(render_report)
@@ -2613,6 +2632,8 @@ def main() -> int:
                     f"{(visual.mean_page_ahash_similarity or 0.0):8.3f} "
                     f"{(visual.foreground_ink_iou or 0.0):8.3f} {warns:5}  {mark}"
                 )
+    if reference_incomplete and reference_stable is not False:
+        reference_stable = None
     report = validation_report(
         rows,
         args.recall_min,
