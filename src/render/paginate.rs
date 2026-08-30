@@ -247,6 +247,51 @@ fn place_row(
     }
 }
 
+struct TableContinuationCursor {
+    rows: std::iter::Enumerate<std::vec::IntoIter<RowLayout>>,
+    repeated_headers: Vec<RowLayout>,
+    header_rows: usize,
+    first_page: Option<usize>,
+}
+
+impl TableContinuationCursor {
+    fn new(rows: Vec<RowLayout>, header_rows: usize, geom: Geom) -> Self {
+        let header_rows = header_rows.min(rows.len());
+        let mut repeated_headers = rows.iter().take(header_rows).cloned().collect::<Vec<_>>();
+        // A repeated header that fills the body would force zero-height fragments forever.
+        let page_height = geom.bottom() - geom.top();
+        if repeated_headers.iter().map(|row| row.height).sum::<f32>() >= page_height {
+            repeated_headers.clear();
+        }
+        Self {
+            rows: rows.into_iter().enumerate(),
+            repeated_headers,
+            header_rows,
+            first_page: None,
+        }
+    }
+
+    fn place_next(&mut self, pages: &mut Pages, cursor: &mut FlowCursor, geom: Geom) -> bool {
+        let Some((index, row)) = self.rows.next() else {
+            return false;
+        };
+        let page = place_row(
+            pages,
+            cursor,
+            row,
+            &self.repeated_headers,
+            index < self.header_rows,
+            geom,
+        );
+        self.first_page.get_or_insert(page);
+        true
+    }
+
+    fn first_page(&self) -> Option<usize> {
+        self.first_page
+    }
+}
+
 /// Paginate a table: place every row, repeating the header rows after each break.
 fn place_table(
     pages: &mut Pages,
@@ -255,20 +300,9 @@ fn place_table(
     header_rows: usize,
     geom: Geom,
 ) -> Option<usize> {
-    let mut headers: Vec<RowLayout> = rows.iter().take(header_rows).cloned().collect();
-    // Only repeat headers that leave body space. A header that fills or exceeds the content box
-    // would overflow or force a zero-height body fragment on every page. Dropping the repeat keeps
-    // pagination linear; the header still renders inline once.
-    let page_h = geom.bottom() - geom.top();
-    if headers.iter().map(|h| h.height).sum::<f32>() >= page_h {
-        headers.clear();
-    }
-    let mut first_page = None;
-    for (i, row) in rows.into_iter().enumerate() {
-        let page = place_row(pages, cursor, row, &headers, i < header_rows, geom);
-        first_page.get_or_insert(page);
-    }
-    first_page
+    let mut table = TableContinuationCursor::new(rows, header_rows, geom);
+    while table.place_next(pages, cursor, geom) {}
+    table.first_page()
 }
 
 #[derive(Default)]
@@ -2203,6 +2237,61 @@ mod tests {
             Some(TableBorderSide::Bottom)
         );
         assert!(cursor.next_fragment(100.0, true).is_none());
+    }
+
+    #[test]
+    fn table_continuation_cursor_owns_headers_rows_and_first_page() {
+        let line_layout = |height| match line(height) {
+            FlowItem::Line(line) => line,
+            _ => unreachable!(),
+        };
+        let row = |table_id, line_count: usize, line_height: f32| RowLayout {
+            height: line_count as f32 * line_height,
+            cells: vec![CellBox {
+                x: 0.0,
+                right: 80.0,
+                width: 80.0,
+                lines: (0..line_count).map(|_| line_layout(line_height)).collect(),
+                insets: CellInsets::zero(),
+                shading: None,
+                valign: VCell::Top,
+                border_edges: CellBorderEdges::outer(),
+            }],
+            cant_split: false,
+            border: TableBorderPaints::default(),
+            table_id: Some(table_id),
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut pages = vec![Vec::new()];
+        let mut flow = FlowCursor::new(geom, Some(2), Some(20.0), None, false);
+        let mut table =
+            TableContinuationCursor::new(vec![row(1, 1, 10.0), row(2, 5, 15.0)], 1, geom);
+
+        assert!(table.place_next(&mut pages, &mut flow, geom));
+        assert!(table.place_next(&mut pages, &mut flow, geom));
+        assert!(!table.place_next(&mut pages, &mut flow, geom));
+        assert_eq!(table.first_page(), Some(0));
+        let placed = pages[0]
+            .iter()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some((placed.x, row.table_id, row.cells[0].lines.len())),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            placed,
+            [
+                (0.0, Some(1), 1),
+                (0.0, Some(2), 3),
+                (100.0, Some(1), 1),
+                (100.0, Some(2), 2),
+            ]
+        );
     }
 
     #[test]
