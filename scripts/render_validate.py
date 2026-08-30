@@ -23,7 +23,7 @@ and report complementary metrics per document:
                     canvases are white-padded, never stretched, before comparison.
   * warnings      — rwml `RenderReport` warning count/kinds for trend tracking.
 
-Local LibreOffice runs use a fresh per-document user profile. With
+Local LibreOffice runs initialize a fresh per-document user profile before export. With
 ``--verify-oracle``, a missing or unequal second reference render is a gate failure;
 it is never reported as a successful fidelity comparison.
 
@@ -685,6 +685,7 @@ def render_rwml(
 
 def render_libreoffice(src: Path, outdir: Path, mode: str) -> Path | None:
     """Render via LibreOffice (`local` soffice or `docker` lo-cli)."""
+    initialize_cmd: list[str] | None = None
     if mode == "docker":
         # Docker Desktop wants forward-slash host paths.
         d = src.parent.resolve().as_posix()
@@ -703,12 +704,23 @@ def render_libreoffice(src: Path, outdir: Path, mode: str) -> Path | None:
             raise RenderDependencyError(
                 "LibreOffice validation requires a fresh per-document profile"
             )
+        profile_argument = f"-env:UserInstallation={profile.resolve().as_uri()}"
+        initialize_cmd = [
+            "soffice",
+            profile_argument,
+            "--headless",
+            "--terminate_after_init",
+        ]
         cmd = [
-            "soffice", f"-env:UserInstallation={profile.resolve().as_uri()}",
+            "soffice", profile_argument,
             "--headless", "--convert-to", "pdf",
             "--outdir", str(outdir), str(src),
         ]
     try:
+        if initialize_cmd is not None:
+            initialized = subprocess.run(initialize_cmd, capture_output=True)
+            if initialized.returncode != 0:
+                return None
         r = subprocess.run(cmd, capture_output=True)
     except FileNotFoundError as exc:
         if mode == "docker":
@@ -882,7 +894,7 @@ def _libreoffice_identity(mode: str) -> dict[str, str]:
             "mode": identity_mode,
             "version": version,
             "executable_sha256": executable_sha256,
-            "profile_policy": "fresh-per-document-v1",
+            "profile_policy": "fresh-warmed-per-document-v1",
         }
     else:
         image_id = _command_text(

@@ -518,14 +518,40 @@ class RenderValidateReportTests(unittest.TestCase):
                 result = render_validate.render_libreoffice(src, out, "local")
 
             self.assertEqual(result, out / "sample.pdf")
-            command = run.call_args.args[0]
+            self.assertEqual(run.call_count, 2)
+            initialize = run.call_args_list[0].args[0]
+            command = run.call_args_list[1].args[0]
+            initialized_profile = [
+                token
+                for token in initialize
+                if token.startswith("-env:UserInstallation=file:")
+            ]
             profile = [
                 token
                 for token in command
                 if token.startswith("-env:UserInstallation=file:")
             ]
+            self.assertEqual(initialized_profile, profile)
             self.assertEqual(len(profile), 1)
+            self.assertIn("--terminate_after_init", initialize)
             self.assertIn("--headless", command)
+            self.assertIn("--convert-to", command)
+
+    def test_local_libreoffice_stops_when_profile_initialization_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            src = root / "sample.docx"
+            src.write_bytes(b"placeholder")
+            out = root / "out"
+            out.mkdir()
+            with mock.patch.object(
+                render_validate.subprocess,
+                "run",
+                return_value=mock.Mock(returncode=1),
+            ) as run:
+                result = render_validate.render_libreoffice(src, out, "local")
+            self.assertIsNone(result)
+            self.assertEqual(run.call_count, 1)
 
     def test_soffice_auto_mode_prefers_local_libreoffice(self):
         with mock.patch.object(
