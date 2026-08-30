@@ -35,7 +35,7 @@ mod shape;
 mod table;
 
 use paginate::*;
-use paragraph_flow::layout_paragraph;
+use paragraph_flow::{layout_paragraph, ParagraphFlowRequest};
 use shape::*;
 use table::*;
 
@@ -3193,14 +3193,16 @@ fn collect_blocks_inner(
                     .copied()
                     .flatten();
                 layout_paragraph(
-                    p,
+                    ParagraphFlowRequest {
+                        paragraph: p,
+                        marker: marker.map(Cow::Owned),
+                        tab_stops,
+                        column_break_offsets,
+                        default_tab_stop_pt: options.default_tab_stop_pt,
+                        line_spacing_hint,
+                        geom: paragraph_geom,
+                    },
                     out,
-                    marker.as_deref(),
-                    tab_stops,
-                    column_break_offsets,
-                    options.default_tab_stop_pt,
-                    line_spacing_hint,
-                    paragraph_geom,
                     cx,
                     capture,
                 );
@@ -7410,6 +7412,7 @@ fn render_pdf(
 mod tests {
     use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
     use parley::{FontContext, LayoutContext};
+    use std::borrow::Cow;
     use std::collections::HashMap;
     use std::rc::Rc;
 
@@ -7422,9 +7425,9 @@ mod tests {
         render_pdf, rgb, running_footer_vertical_bounds, running_header_footer_blocks_for_page,
         running_header_vertical_bounds, running_surface_tab_stops, shape, shape_cell, split_row,
         unsupported_placeholder_texts, ColumnLayout, FlowItem, Geom, LayoutCapture, LineLayout,
-        PageDisplayNumber, RunningSurfaceDistanceHints, RunningSurfaceTabStopHints,
-        RunningSurfaceVariant, SourceRenderHints, StyledText, TablePaginationView, TextCx,
-        DEFAULT_TAB_STOP_PT,
+        PageDisplayNumber, ParagraphFlowRequest, RunningSurfaceDistanceHints,
+        RunningSurfaceTabStopHints, RunningSurfaceVariant, SourceRenderHints, StyledText,
+        TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Chart, ChartSeries, ChartShape, Color,
@@ -8341,14 +8344,16 @@ mod tests {
         let mut flow = Vec::new();
         let mut capture = LayoutCapture::default();
         layout_paragraph(
-            &Paragraph { props, runs },
+            ParagraphFlowRequest {
+                paragraph: &Paragraph { props, runs },
+                marker: marker.map(Cow::Borrowed),
+                tab_stops,
+                column_break_offsets: &[],
+                default_tab_stop_pt: None,
+                line_spacing_hint: None,
+                geom,
+            },
             &mut flow,
-            marker,
-            tab_stops,
-            &[],
-            None,
-            None,
-            geom,
             &mut tcx,
             &mut capture,
         );
