@@ -1,0 +1,23 @@
+{
+  "family": "Noto Sans",
+  "file": {
+    "bytes": 825628,
+    "name": "NotoSans-Regular.ttf",
+    "sha256": "f5f552c8c5edb61fe6efb824baf4d4de47b1a8689ab4925ff43f7bd6a4ebece5"
+  },
+  "license": "SIL-OFL-1.1",
+  "postscript_name": "NotoSans-Regular",
+  "schema": "rwml.word-oracle-font-lock.v1",
+  "source": {
+    "asset": {
+      "bytes": 117491253,
+      "member": "NotoSans/full/ttf/NotoSans-Regular.ttf",
+      "name": "NotoSans-v2.015.zip",
+      "sha256": "0c34df072a3fa7efbb7cbf34950e1f971a4447cffe365d3a359e2d4089b958f5"
+    },
+    "release_tag": "NotoSans-v2.015",
+    "repository": "notofonts/latin-greek-cyrillic",
+    "target_commit": "c4a321e123e4d4ff315f57f4e0adf294fe3a95be"
+  },
+  "style": "Regular"
+}
