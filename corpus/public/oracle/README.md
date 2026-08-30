@@ -33,6 +33,21 @@ subsets cover bounded Korean/hanja, Arabic, and Hebrew text, not arbitrary CJK o
 emoji. A coverage failure remains a failed native render; do not replace the
 input or enable host fallback to make a fixed-font campaign succeed.
 
+For local diagnostics with a separately verified font set, the example accepts
+repeatable `--font` arguments. They select the same isolated PDF path and cannot
+be combined with `--fixed-fonts`:
+
+```sh
+cargo run --features render --example to_pdf -- input.docx output.pdf \
+  --font regular.ttf --font fallback.otf --report-json render.json
+```
+
+Files are loaded in argument order, with limits of 128 files, 64 MiB per file,
+and 256 MiB total. Missing files, invalid arguments, and exceeded limits fail
+before rendering. This local command does not attest font provenance or replace
+the campaign's locked environment. Registered caller families also participate
+in script and emoji fallback; system fallback remains disabled.
+
 Native font isolation does not establish a common font set with LibreOffice.
 Compare actual font selection and locked payloads before interpreting geometry
 differences as renderer behavior. Oracle font validation remains independently

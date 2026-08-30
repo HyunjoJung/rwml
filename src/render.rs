@@ -6888,7 +6888,9 @@ fn collect_and_paginate_pdf_flow<'source>(
 }
 
 fn strict_font_context(fonts: &[Vec<u8>], require_pdf_fonts: bool) -> Result<FontContext> {
-    use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
+    use parley::fontique::{
+        Blob, Collection, CollectionOptions, GenericFamily, Script, ScriptExt, SourceCache,
+    };
     use skrifa::{raw::TableProvider, MetadataProvider};
 
     if fonts.is_empty() {
@@ -6902,14 +6904,20 @@ fn strict_font_context(fonts: &[Vec<u8>], require_pdf_fonts: bool) -> Result<Fon
         system_fonts: false,
     });
     let mut registered = 0usize;
+    let mut families = Vec::new();
     for font in fonts {
         if font.is_empty() {
             continue;
         }
         let data = Blob::from(font.clone());
-        let faces = collection.register_fonts(data.clone(), None);
+        let mut faces = collection.register_fonts(data.clone(), None);
+        // Collection registration returns hash-map order for multi-family files.
+        faces.sort_by_key(|(_, fonts)| fonts.iter().map(|font| font.index()).min());
         let (bytes, _) = data.into_raw_parts();
-        for (_, fonts) in faces {
+        for (family, fonts) in faces {
+            if !fonts.is_empty() && !families.contains(&family) {
+                families.push(family);
+            }
             for font in fonts {
                 if require_pdf_fonts {
                     let usable = Font::new(bytes.clone().into(), font.index()).is_some()
@@ -6934,6 +6942,16 @@ fn strict_font_context(fonts: &[Vec<u8>], require_pdf_fonts: bool) -> Result<Fon
             "fixed-font rendering could not register any supplied fonts".to_string(),
         ));
     }
+
+    // Isolated collections have no platform fallback map. Make caller fonts
+    // available after authored families, including Parley's emoji fallback.
+    for &(script, _) in Script::all_samples() {
+        collection.set_fallbacks(script, families.iter().copied());
+    }
+    for script in [b"Zyyy", b"Zinh", b"Zzzz"] {
+        collection.set_fallbacks(Script::from_bytes(*script), families.iter().copied());
+    }
+    collection.set_generic_families(GenericFamily::Emoji, families.iter().copied());
 
     Ok(FontContext {
         collection,
@@ -7603,6 +7621,42 @@ mod tests {
         FontContext {
             collection,
             source_cache: SourceCache::default(),
+        }
+    }
+
+    #[test]
+    fn fixed_font_fallbacks_preserve_supplied_family_order() {
+        use parley::fontique::{GenericFamily, Script};
+
+        let fonts = [
+            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+            rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+            rwml_fonts::noto_sans_arabic_subset().to_vec(),
+            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+        ];
+        for require_pdf_fonts in [false, true] {
+            let mut context = super::strict_font_context(&fonts, require_pdf_fonts).unwrap();
+            let families = ["Noto Sans Hebrew", "Noto Sans KR", "Noto Sans Arabic"]
+                .map(|name| context.collection.family_id(name).unwrap());
+            assert_eq!(
+                context
+                    .collection
+                    .generic_families(GenericFamily::Emoji)
+                    .collect::<Vec<_>>(),
+                families,
+                "registered fonts must participate in emoji fallback"
+            );
+            for script in [b"Latn", b"Grek", b"Arab", b"Hebr", b"Hani", b"Zyyy"] {
+                assert_eq!(
+                    context
+                        .collection
+                        .fallback_families(Script::from_bytes(*script))
+                        .collect::<Vec<_>>(),
+                    families,
+                    "script fallback must contain only supplied families in order"
+                );
+            }
+            assert_eq!(context.collection.family_names().count(), families.len());
         }
     }
 

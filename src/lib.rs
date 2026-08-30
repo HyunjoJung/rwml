@@ -194,7 +194,8 @@ pub fn try_render_pdf_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<
 /// indices are physical, 1-based page numbers; section page-number restarts and
 /// formats are intentionally not applied. The supplied fonts are used strictly:
 /// system fonts are disabled and only successfully registered caller bytes are
-/// considered. Available with the `render` feature.
+/// considered. Caller families also serve as script and emoji fallbacks in input
+/// order. Available with the `render` feature.
 #[cfg(feature = "render")]
 pub fn layout_pages_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<LayoutPages> {
     render::layout_pages_with_fonts(model, fonts)
@@ -266,6 +267,7 @@ pub fn try_render_pdf_with_fonts_and_report(
 ///
 /// Returns an error if no supplied font can be registered, a registered face
 /// cannot be embedded, or a rendered glyph is missing from the supplied font set.
+/// Registered caller families serve as script and emoji fallbacks in input order.
 /// The report comes from the same pagination pass as the PDF. Available with the
 /// `render` feature.
 #[cfg(feature = "render")]

@@ -13,6 +13,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fonts, rejecting unavailable glyphs, missing glyph artwork, and unembeddable
   registered faces. Existing extra-font and bundled-font APIs retain system
   fallback. The `to_pdf` example's `--fixed-fonts` flag uses the isolated path.
+- The `to_pdf` example accepts repeatable `--font` files for isolated rendering,
+  with file-count and byte limits and rejection of unknown or conflicting
+  arguments. The normal system-font mode remains the default.
+
+### Fixed
+
+- Strict caller-font rendering now makes registered families available as
+  deterministic script and emoji fallbacks. Supplied fonts outside the built-in
+  family stack are no longer unreachable simply because system fonts are disabled.
 
 ### Changed
 
