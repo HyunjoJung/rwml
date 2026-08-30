@@ -481,6 +481,47 @@ struct LoweredBodyFlow {
     block_metrics: Vec<Option<BlockPaginationMetrics>>,
 }
 
+struct PaginationPlan {
+    items: Vec<FlowItem>,
+    columns_by_item: Vec<Option<u16>>,
+    column_gaps_by_item: Vec<Option<f32>>,
+    column_layouts_by_item: Vec<Option<Rc<SectionColumnLayoutHints>>>,
+    column_rtl_by_item: Vec<bool>,
+    geometries_by_item: Vec<Geom>,
+    block_metrics: Vec<Option<BlockPaginationMetrics>>,
+}
+
+impl PaginationPlan {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        items: Vec<FlowItem>,
+        supplied_block_metrics: Option<Vec<Option<BlockPaginationMetrics>>>,
+        geom: Geom,
+        final_section_setup: &SectionSetup,
+        final_column_gap_pt: Option<f32>,
+        final_column_layout: Option<&SectionColumnLayoutHints>,
+        final_column_rtl: bool,
+    ) -> Self {
+        let columns_by_item = section_columns_by_item(&items, final_section_setup.columns);
+        let column_gaps_by_item = section_column_gaps_by_item(&items, final_column_gap_pt);
+        let column_layouts_by_item = section_column_layouts_by_item(&items, final_column_layout);
+        let column_rtl_by_item = section_column_rtl_by_item(&items, final_column_rtl);
+        let geometries_by_item = section_geometries_by_item(&items, geom);
+        let block_metrics = supplied_block_metrics
+            .filter(|metrics| metrics.len() == items.len())
+            .unwrap_or_else(|| block_pagination_metrics(&items));
+        Self {
+            items,
+            columns_by_item,
+            column_gaps_by_item,
+            column_layouts_by_item,
+            column_rtl_by_item,
+            geometries_by_item,
+            block_metrics,
+        }
+    }
+}
+
 fn block_pagination_metrics(items: &[FlowItem]) -> Vec<Option<BlockPaginationMetrics>> {
     let starts = items
         .iter()
@@ -646,12 +687,23 @@ fn paginate_with_column_gap_and_metrics(
 ) -> Pagination {
     // Paginate flow items top-to-bottom through section columns and then across
     // pages. Tables repeat headers after each break and split oversized rows.
-    let columns_by_item = section_columns_by_item(&items, final_section_setup.columns);
-    let column_gaps_by_item = section_column_gaps_by_item(&items, final_column_gap_pt);
-    let column_layouts_by_item = section_column_layouts_by_item(&items, final_column_layout);
-    let column_rtl_by_item = section_column_rtl_by_item(&items, final_column_rtl);
-    let geometries_by_item = section_geometries_by_item(&items, geom);
-    let block_metrics = supplied_block_metrics.unwrap_or_else(|| block_pagination_metrics(&items));
+    let PaginationPlan {
+        items,
+        columns_by_item,
+        column_gaps_by_item,
+        column_layouts_by_item,
+        column_rtl_by_item,
+        geometries_by_item,
+        block_metrics,
+    } = PaginationPlan::new(
+        items,
+        supplied_block_metrics,
+        geom,
+        final_section_setup,
+        final_column_gap_pt,
+        final_column_layout,
+        final_column_rtl,
+    );
     let mut pages: Pages = vec![Vec::new()];
     let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
     let mut section_start_page_index = 0usize;
@@ -1314,6 +1366,96 @@ mod tests {
         );
 
         assert_eq!(page_line_counts(&pagination), vec![3, 1]);
+    }
+
+    #[test]
+    fn pagination_plan_keeps_section_sidecars_and_metrics_item_aligned() {
+        let ending = SectionSetup {
+            columns: Some(2),
+            page: PageSetup {
+                width_pt: 240.0,
+                height_pt: 320.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let final_section = SectionSetup {
+            columns: Some(1),
+            ..SectionSetup::default()
+        };
+        let geom = Geom::from_section(&final_section);
+        let items = vec![
+            FlowItem::BlockStart {
+                index: 0,
+                pagination: PaginationHint::default(),
+            },
+            line(10.0),
+            FlowItem::SectionColumnGap(8.0),
+            FlowItem::SectionColumnRtl,
+            FlowItem::SectionBreak(ending.clone()),
+            FlowItem::BlockStart {
+                index: 1,
+                pagination: PaginationHint::default(),
+            },
+            line(12.0),
+        ];
+        let metrics = block_pagination_metrics(&items);
+        let plan = PaginationPlan::new(
+            items,
+            Some(metrics),
+            geom,
+            &final_section,
+            Some(5.0),
+            None,
+            false,
+        );
+
+        assert_eq!(plan.items.len(), 7);
+        assert_eq!(plan.columns_by_item.len(), plan.items.len());
+        assert_eq!(plan.column_gaps_by_item.len(), plan.items.len());
+        assert_eq!(plan.column_layouts_by_item.len(), plan.items.len());
+        assert_eq!(plan.column_rtl_by_item.len(), plan.items.len());
+        assert_eq!(plan.geometries_by_item.len(), plan.items.len());
+        assert_eq!(plan.block_metrics.len(), plan.items.len());
+        assert!(plan.columns_by_item[..=4]
+            .iter()
+            .all(|columns| *columns == Some(2)));
+        assert!(plan.columns_by_item[5..]
+            .iter()
+            .all(|columns| *columns == Some(1)));
+        assert!(plan.column_gaps_by_item[..=4]
+            .iter()
+            .all(|gap| *gap == Some(8.0)));
+        assert!(plan.column_gaps_by_item[5..]
+            .iter()
+            .all(|gap| *gap == Some(5.0)));
+        assert!(plan.column_rtl_by_item[..=4].iter().all(|rtl| *rtl));
+        assert!(plan.column_rtl_by_item[5..].iter().all(|rtl| !rtl));
+        assert!(plan.geometries_by_item[..=4]
+            .iter()
+            .all(|item_geom| *item_geom == Geom::from_section(&ending)));
+        assert!(plan.geometries_by_item[5..]
+            .iter()
+            .all(|item_geom| *item_geom == geom));
+
+        let fallback = PaginationPlan::new(
+            vec![
+                FlowItem::BlockStart {
+                    index: 0,
+                    pagination: PaginationHint::default(),
+                },
+                line(9.0),
+            ],
+            Some(Vec::new()),
+            geom,
+            &final_section,
+            None,
+            None,
+            false,
+        );
+        assert_eq!(fallback.block_metrics.len(), fallback.items.len());
+        assert!(fallback.block_metrics[0].is_some());
     }
 
     #[test]
