@@ -160,6 +160,7 @@ const COLUMN_SEPARATOR_WIDTH_PT: f32 = 0.5;
 const MIN_COLUMN_WIDTH_PT: f32 = 20.0;
 const MAX_SECTION_COLUMNS: usize = 64;
 const MAX_TARGET_COLUMN_REWRAP_PASSES: usize = 4;
+const MAX_PAGE_SCENE_OPERATIONS: usize = 262_144;
 // Keep hostile numeric attributes away from PDF-coordinate overflow while
 // leaving every practical document value untouched.
 const MAX_ABSOLUTE_LINE_HEIGHT_PT: f32 = 1_000_000.0;
@@ -266,6 +267,83 @@ struct RunPaint {
 }
 
 type PageLink = (f32, f32, f32, f32, Rc<str>);
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SceneRect {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+impl SceneRect {
+    fn new(x: f32, y: f32, width: f32, height: f32) -> Option<Self> {
+        if ![x, y, width, height, x + width, y + height]
+            .into_iter()
+            .all(f32::is_finite)
+            || width <= 0.0
+            || height <= 0.0
+        {
+            return None;
+        }
+        Some(Self {
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum PageSceneOp {
+    FillRect { rect: SceneRect, color: rgb::Color },
+}
+
+struct PageScene {
+    operations: Vec<PageSceneOp>,
+    operation_limit: usize,
+}
+
+impl Default for PageScene {
+    fn default() -> Self {
+        Self {
+            operations: Vec::new(),
+            operation_limit: MAX_PAGE_SCENE_OPERATIONS,
+        }
+    }
+}
+
+impl PageScene {
+    #[cfg(test)]
+    fn with_operation_limit(operation_limit: usize) -> Self {
+        Self {
+            operations: Vec::new(),
+            operation_limit,
+        }
+    }
+
+    fn push_fill_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        color: rgb::Color,
+    ) -> Result<()> {
+        let Some(rect) = SceneRect::new(x, y, width, height) else {
+            return Ok(());
+        };
+        if self.operations.len() >= self.operation_limit {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-operation limit",
+                self.operation_limit
+            )));
+        }
+        self.operations.push(PageSceneOp::FillRect { rect, color });
+        Ok(())
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct LineBackground {
@@ -4427,14 +4505,15 @@ fn push_clipped_page_link(
 
 fn draw_running_surface_items(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     items: Vec<RunningSurfaceItem>,
-    vertical_bounds: (f32, f32),
-    geom: Geom,
-    page_number: PageDisplayNumber,
+    placement: RunningSurfacePaintPlacement,
     page_links: &mut Vec<PageLink>,
     cx: &mut TextCx<'_>,
-) -> f32 {
-    let (mut y, limit_y) = vertical_bounds;
+) -> Result<f32> {
+    let (mut y, limit_y) = placement.vertical_bounds;
+    let geom = placement.geom;
+    let page_number = placement.page_number;
     for item in items {
         match item {
             RunningSurfaceItem::Gap(gap) => {
@@ -4534,6 +4613,7 @@ fn draw_running_surface_items(
                     let mut row_links = Vec::new();
                     previous_row_borders = draw_row_layout(
                         surface,
+                        scene,
                         row,
                         RowPaintPlacement {
                             x_offset: geom.left,
@@ -4543,7 +4623,7 @@ fn draw_running_surface_items(
                         cx,
                         &mut row_links,
                         previous_row_borders.as_ref(),
-                    );
+                    )?;
                     for link in row_links {
                         push_clipped_page_link(
                             page_links,
@@ -4564,7 +4644,7 @@ fn draw_running_surface_items(
             }
         }
     }
-    y
+    Ok(y)
 }
 
 trait RunningSurfaceSetup {
@@ -5453,38 +5533,56 @@ fn table_border_rects(
         .map(|rects| rects.map(|rect| rect.expect("uniform paint has every edge")))
 }
 
-fn draw_horizontal_table_borders(
-    surface: &mut Surface<'_>,
-    left: f32,
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TableCellPaintPlacement {
+    x_offset: f32,
     top: f32,
-    right: f32,
     bottom: f32,
-    paints: CellBorderPaints,
-) {
-    if let Some(rects) = cell_border_rects(left, top, right, bottom, paints) {
-        for (rect, paint) in [(rects[0], paints.top), (rects[1], paints.bottom)] {
-            let (Some(rect), Some(paint)) = (rect, paint) else {
-                continue;
-            };
-            fill_rect_color(surface, rect.x, rect.y, rect.w, rect.h, paint.color);
-        }
-    }
+    row_height: f32,
 }
 
-fn draw_vertical_table_borders(
-    surface: &mut Surface<'_>,
-    left: f32,
-    top: f32,
-    right: f32,
-    bottom: f32,
-    paints: CellBorderPaints,
-) {
-    if let Some(rects) = cell_border_rects(left, top, right, bottom, paints) {
-        for (rect, paint) in [(rects[2], paints.left), (rects[3], paints.right)] {
+fn project_table_cell_paint(
+    scene: &mut PageScene,
+    cell: &CellBox,
+    placement: TableCellPaintPlacement,
+    border: TableBorderPaints,
+) -> Result<std::ops::Range<usize>> {
+    let start = scene.operations.len();
+    let left = placement.x_offset + cell.x;
+    let right = placement.x_offset + cell.right;
+    if let Some(fill) = cell.shading {
+        scene.push_fill_rect(left, placement.top, cell.width, placement.row_height, fill)?;
+    }
+    let paints = CellBorderPaints::resolve(cell.border_edges, border);
+    if let Some(rects) = cell_border_rects(left, placement.top, right, placement.bottom, paints) {
+        for (rect, paint) in [
+            (rects[0], paints.top),
+            (rects[1], paints.bottom),
+            (rects[2], paints.left),
+            (rects[3], paints.right),
+        ] {
             let (Some(rect), Some(paint)) = (rect, paint) else {
                 continue;
             };
-            fill_rect_color(surface, rect.x, rect.y, rect.w, rect.h, paint.color);
+            scene.push_fill_rect(rect.x, rect.y, rect.w, rect.h, paint.color)?;
+        }
+    }
+    Ok(start..scene.operations.len())
+}
+
+fn replay_page_scene_operations(
+    surface: &mut Surface<'_>,
+    scene: &PageScene,
+    operations: std::ops::Range<usize>,
+) {
+    let Some(operations) = scene.operations.get(operations) else {
+        return;
+    };
+    for operation in operations {
+        match operation {
+            PageSceneOp::FillRect { rect, color } => {
+                fill_rect_color(surface, rect.x, rect.y, rect.width, rect.height, *color)
+            }
         }
     }
 }
@@ -5507,21 +5605,14 @@ fn draw_terminal_vertical_junction(
 
 fn draw_table_cell_background_and_borders(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     cell: &CellBox,
-    x_offset: f32,
-    top: f32,
-    bottom: f32,
-    row_height: f32,
+    placement: TableCellPaintPlacement,
     border: TableBorderPaints,
-) {
-    let left = x_offset + cell.x;
-    let right = x_offset + cell.right;
-    if let Some(fill) = cell.shading {
-        fill_rect_color(surface, left, top, cell.width, row_height, fill);
-    }
-    let paints = CellBorderPaints::resolve(cell.border_edges, border);
-    draw_horizontal_table_borders(surface, left, top, right, bottom, paints);
-    draw_vertical_table_borders(surface, left, top, right, bottom, paints);
+) -> Result<()> {
+    let operations = project_table_cell_paint(scene, cell, placement, border)?;
+    replay_page_scene_operations(surface, scene, operations);
+    Ok(())
 }
 
 fn draw_border_color(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32, color: rgb::Color) {
@@ -5549,6 +5640,13 @@ struct RowPaintPlacement {
     page_number: PageDisplayNumber,
 }
 
+#[derive(Clone, Copy)]
+struct RunningSurfacePaintPlacement {
+    vertical_bounds: (f32, f32),
+    geom: Geom,
+    page_number: PageDisplayNumber,
+}
+
 fn cell_lines_extent(lines: &[LineLayout]) -> f32 {
     lines.iter().map(LineLayout::cell_extent).sum()
 }
@@ -5565,12 +5663,13 @@ fn cell_vertical_offset(cell: &CellBox, row_height: f32) -> f32 {
 
 fn draw_table_cell_content(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     cell: CellBox,
     placement: CellContentPlacement,
     page_number: PageDisplayNumber,
     cx: &mut TextCx<'_>,
     page_links: &mut Vec<PageLink>,
-) {
+) -> Result<()> {
     let offset = cell_vertical_offset(&cell, placement.row_height);
     let clip_left = placement.x;
     let clip_width = cell.width;
@@ -5629,6 +5728,7 @@ fn draw_table_cell_content(
             Some(CellVisual::NestedRow { row }) => {
                 let next = draw_row_layout(
                     surface,
+                    scene,
                     *row,
                     RowPaintPlacement {
                         x_offset: line_x,
@@ -5638,7 +5738,7 @@ fn draw_table_cell_content(
                     cx,
                     page_links,
                     previous_nested_borders.as_ref(),
-                );
+                )?;
                 previous_nested_borders = next;
             }
             None => {
@@ -5663,16 +5763,18 @@ fn draw_table_cell_content(
         }
         line_top += line_height + after;
     }
+    Ok(())
 }
 
 fn draw_row_layout(
     surface: &mut Surface<'_>,
+    scene: &mut PageScene,
     row: RowLayout,
     placement: RowPaintPlacement,
     cx: &mut TextCx<'_>,
     page_links: &mut Vec<PageLink>,
     previous: Option<&RenderedRowBorders>,
-) -> Option<RenderedRowBorders> {
+) -> Result<Option<RenderedRowBorders>> {
     let table_id = row.table_id;
     let border = row.border;
     let row_height = row.height;
@@ -5696,16 +5798,20 @@ fn draw_row_layout(
         for cell in cells {
             draw_table_cell_background_and_borders(
                 surface,
+                scene,
                 &cell,
-                placement.x_offset,
-                placement.top,
-                bottom,
-                row_height,
+                TableCellPaintPlacement {
+                    x_offset: placement.x_offset,
+                    top: placement.top,
+                    bottom,
+                    row_height,
+                },
                 border,
-            );
+            )?;
             let cell_x = placement.x_offset + cell.x;
             draw_table_cell_content(
                 surface,
+                scene,
                 cell,
                 CellContentPlacement {
                     x: cell_x,
@@ -5715,19 +5821,22 @@ fn draw_row_layout(
                 placement.page_number,
                 cx,
                 page_links,
-            );
+            )?;
         }
     } else {
         for cell in &cells {
             draw_table_cell_background_and_borders(
                 surface,
+                scene,
                 cell,
-                placement.x_offset,
-                placement.top,
-                bottom,
-                row_height,
+                TableCellPaintPlacement {
+                    x_offset: placement.x_offset,
+                    top: placement.top,
+                    bottom,
+                    row_height,
+                },
                 border,
-            );
+            )?;
         }
         for (line, horizontal_width) in junctions {
             draw_terminal_vertical_junction(surface, placement.top, line, horizontal_width);
@@ -5736,6 +5845,7 @@ fn draw_row_layout(
             let cell_x = placement.x_offset + cell.x;
             draw_table_cell_content(
                 surface,
+                scene,
                 cell,
                 CellContentPlacement {
                     x: cell_x,
@@ -5745,14 +5855,14 @@ fn draw_row_layout(
                 placement.page_number,
                 cx,
                 page_links,
-            );
+            )?;
         }
     }
-    table_id.map(|table_id| RenderedRowBorders {
+    Ok(table_id.map(|table_id| RenderedRowBorders {
         table_id,
         bottom,
         vertical: current_vertical,
-    })
+    }))
 }
 
 fn draw_line_background(surface: &mut Surface<'_>, line: &LineLayout, x_abs: f32, top: f32) {
@@ -9859,6 +9969,7 @@ fn render_pdf(
         // Link rects collected while drawing (top-down coords); added as annotations
         // after the surface is finished (which releases its borrow on the page).
         let mut page_links: Vec<PageLink> = Vec::new();
+        let mut page_scene = PageScene::default();
         let (header_blocks, footer_blocks) = running_header_footer_blocks_for_page(
             &page_section.setup,
             page_number,
@@ -9955,22 +10066,28 @@ fn render_pdf(
         // cannot bleed into body content or beyond the physical page.
         draw_running_surface_items(
             &mut surface,
+            &mut page_scene,
             header_items,
-            header_bounds,
-            page_geom,
-            display_page_number,
+            RunningSurfacePaintPlacement {
+                vertical_bounds: header_bounds,
+                geom: page_geom,
+                page_number: display_page_number,
+            },
             &mut page_links,
             &mut tcx,
-        );
+        )?;
         let fy = draw_running_surface_items(
             &mut surface,
+            &mut page_scene,
             footer_items,
-            footer_bounds,
-            page_geom,
-            display_page_number,
+            RunningSurfacePaintPlacement {
+                vertical_bounds: footer_bounds,
+                geom: page_geom,
+                page_number: display_page_number,
+            },
             &mut page_links,
             &mut tcx,
-        );
+        )?;
         if page_section.setup.page_numbers && explicit_footer_distance.is_none() {
             if let Some(line) = layout_page_number_line(display_page_number, page_geom, &mut tcx) {
                 if fy + line.height <= page_geom.page_h {
@@ -10055,6 +10172,7 @@ fn render_pdf(
                 FlowItem::Row(row) => {
                     previous_row_borders = draw_row_layout(
                         &mut surface,
+                        &mut page_scene,
                         row,
                         RowPaintPlacement {
                             x_offset: page_geom.left + column_x,
@@ -10064,7 +10182,7 @@ fn render_pdf(
                         &mut tcx,
                         &mut page_links,
                         previous_row_borders.as_ref(),
-                    );
+                    )?;
                 }
             }
         }
@@ -12691,6 +12809,133 @@ mod tests {
         assert_eq!(left[3], right[2], "shared edge must overpaint once");
         assert!(super::table_border_rects(0.0, 0.0, 0.0, 4.0, 1.0).is_none());
         assert!(super::table_border_rects(0.0, 0.0, 4.0, 4.0, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn table_cell_paint_projects_ordered_backend_neutral_scene_operations() {
+        let shading = rgb::Color::new(0xE8, 0xEC, 0xF1);
+        let top = super::TableBorderPaint {
+            color: rgb::Color::new(0xC4, 0x21, 0x32),
+            width: 2.0,
+        };
+        let left = super::TableBorderPaint {
+            color: rgb::Color::new(0x1E, 0x7A, 0x46),
+            width: 3.0,
+        };
+        let bottom = super::TableBorderPaint {
+            color: rgb::Color::new(0x16, 0x5D, 0xA8),
+            width: 4.0,
+        };
+        let right = super::TableBorderPaint {
+            color: rgb::Color::new(0x7A, 0x3E, 0xA1),
+            width: 5.0,
+        };
+        let cell = super::CellBox {
+            x: 10.0,
+            right: 50.0,
+            width: 40.0,
+            lines: Vec::new(),
+            insets: super::CellInsets::zero(),
+            shading: Some(shading),
+            valign: VCell::Top,
+            border_edges: super::CellBorderEdges::outer(),
+        };
+        let borders = super::TableBorderPaints {
+            top,
+            left,
+            bottom,
+            right,
+            inside_h: super::TableBorderPaint::default(),
+            inside_v: super::TableBorderPaint::default(),
+        };
+        let mut scene = super::PageScene::default();
+
+        let appended = super::project_table_cell_paint(
+            &mut scene,
+            &cell,
+            super::TableCellPaintPlacement {
+                x_offset: 7.0,
+                top: 20.0,
+                bottom: 50.0,
+                row_height: 30.0,
+            },
+            borders,
+        )
+        .expect("bounded cell paint projects");
+
+        assert_eq!(appended, 0..5);
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 17.0,
+                        y: 20.0,
+                        width: 40.0,
+                        height: 30.0,
+                    },
+                    color: shading,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 15.5,
+                        y: 19.0,
+                        width: 44.0,
+                        height: 2.0,
+                    },
+                    color: top.color,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 15.5,
+                        y: 48.0,
+                        width: 44.0,
+                        height: 4.0,
+                    },
+                    color: bottom.color,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 15.5,
+                        y: 19.0,
+                        width: 3.0,
+                        height: 33.0,
+                    },
+                    color: left.color,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 54.5,
+                        y: 19.0,
+                        width: 5.0,
+                        height: 33.0,
+                    },
+                    color: right.color,
+                },
+            ]
+        );
+
+        let unchanged = scene.operations.len();
+        scene
+            .push_fill_rect(f32::NAN, 0.0, 1.0, 1.0, shading)
+            .expect("invalid rectangles are ignored");
+        scene
+            .push_fill_rect(0.0, 0.0, 0.0, 1.0, shading)
+            .expect("empty rectangles are ignored");
+        assert_eq!(scene.operations.len(), unchanged);
+
+        let mut limited = super::PageScene::with_operation_limit(1);
+        limited
+            .push_fill_rect(0.0, 0.0, 1.0, 1.0, shading)
+            .expect("first operation fits");
+        let error = limited
+            .push_fill_rect(1.0, 0.0, 1.0, 1.0, shading)
+            .expect_err("operation ceiling rejects overflow");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 1-operation limit"
+        );
+        assert_eq!(limited.operations.len(), 1);
     }
 
     #[test]
