@@ -50,3 +50,40 @@ python3 scripts/table_oracle_topology.py compare \
 Use `--require-normalized-exact` only when comparing two independent captures from the
 same producer. Cross-producer comparisons are diagnostic until authoritative Word
 evidence is reviewed.
+
+## Microsoft Word diagnostic capture
+
+`word-font-lock.json` identifies the exact Noto Sans Regular font used by this
+campaign. It pins the official
+[`NotoSans-v2.015`](https://github.com/notofonts/latin-greek-cyrillic/releases/tag/NotoSans-v2.015)
+release tag, target commit, release-archive byte length and SHA-256, archive member,
+and extracted font identity. The font is licensed under SIL Open Font License 1.1,
+but the font binary is not copied into this repository. A capture host must install
+the exact locked file in the Windows system or per-user font directory; the harness
+verifies its byte length and SHA-256 before opening Word and verifies the embedded PDF
+PostScript font name after export.
+
+The authoritative diagnostic backend requires desktop Microsoft Word on Windows,
+Windows PowerShell, PyMuPDF, and a clean checkout at the full source revision being
+captured. It disables macros and dialogs, opens every generated DOCX read-only, uses a
+fixed `ExportAsFixedFormat` option set, records the Word executable and runtime
+identity, and retains no local paths. It does not use the network.
+
+Run the campaign from PowerShell with the exact installed font path:
+
+```powershell
+python scripts/word_oracle_capture.py capture `
+  --font "$env:WINDIR\Fonts\NotoSans-Regular.ttf" `
+  --source-revision (git rev-parse HEAD)
+```
+
+The command creates two fresh Word processes beneath the ignored `target/` tree,
+validates all 48 PDF identities and embedded fonts, extracts both topology reports,
+and requires all 48 normalized reports to match exactly. Transient jobs containing
+local paths are deleted after successful runs. `CAPTURE.json`, each path-neutral
+export metadata file, both topology captures, and `repeatability.json` retain the
+evidence needed for review.
+
+Microsoft Word evidence remains diagnostic until the captured topology has been
+reviewed against the renderer and accepted publicly. A repeatable capture alone does
+not define a parity threshold, change renderer behavior, or add a release gate.
