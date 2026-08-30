@@ -589,8 +589,7 @@ impl StreamingBlockPaginationMetrics {
     }
 }
 
-// The pagination-plan transport will consume these beside their eager fallback spans.
-#[cfg_attr(not(test), allow(dead_code))]
+// Retained beside eager fallback spans until fragment eligibility is selected.
 struct RetainedParagraphFlow<'a> {
     request: ParagraphFlowRequest<'a>,
     item_range: std::ops::Range<usize>,
@@ -602,7 +601,7 @@ struct LoweredBodyFlow<'a> {
     paragraphs: Vec<RetainedParagraphFlow<'a>>,
 }
 
-struct PaginationPlan {
+struct PaginationPlan<'a> {
     items: Vec<FlowItem>,
     columns_by_item: Vec<Option<u16>>,
     column_gaps_by_item: Vec<Option<f32>>,
@@ -610,6 +609,7 @@ struct PaginationPlan {
     column_rtl_by_item: Vec<bool>,
     geometries_by_item: Vec<Geom>,
     block_metrics: Vec<Option<BlockPaginationMetrics>>,
+    paragraphs: Vec<RetainedParagraphFlow<'a>>,
 }
 
 #[derive(Clone, Copy)]
@@ -754,11 +754,37 @@ fn admit_block_start(
     block_cursor.begin(input.block_index, input.item_index);
 }
 
-impl PaginationPlan {
+#[cfg(test)]
+impl PaginationPlan<'static> {
     #[allow(clippy::too_many_arguments)]
     fn new(
         items: Vec<FlowItem>,
         supplied_block_metrics: Option<Vec<Option<BlockPaginationMetrics>>>,
+        geom: Geom,
+        final_section_setup: &SectionSetup,
+        final_column_gap_pt: Option<f32>,
+        final_column_layout: Option<&SectionColumnLayoutHints>,
+        final_column_rtl: bool,
+    ) -> Self {
+        Self::with_paragraphs(
+            items,
+            supplied_block_metrics,
+            Vec::new(),
+            geom,
+            final_section_setup,
+            final_column_gap_pt,
+            final_column_layout,
+            final_column_rtl,
+        )
+    }
+}
+
+impl<'a> PaginationPlan<'a> {
+    #[allow(clippy::too_many_arguments)]
+    fn with_paragraphs(
+        items: Vec<FlowItem>,
+        supplied_block_metrics: Option<Vec<Option<BlockPaginationMetrics>>>,
+        paragraphs: Vec<RetainedParagraphFlow<'a>>,
         geom: Geom,
         final_section_setup: &SectionSetup,
         final_column_gap_pt: Option<f32>,
@@ -781,7 +807,25 @@ impl PaginationPlan {
             column_rtl_by_item,
             geometries_by_item,
             block_metrics,
+            paragraphs,
         }
+    }
+
+    fn retained_paragraphs_are_valid(&self) -> bool {
+        let records_are_valid = self.paragraphs.iter().all(|paragraph| {
+            paragraph.item_range.start <= paragraph.item_range.end
+                && paragraph.item_range.end <= self.items.len()
+                && paragraph
+                    .request
+                    .page_field_indices
+                    .as_ref()
+                    .is_none_or(|indices| indices.len() == paragraph.request.paragraph.runs.len())
+        });
+        let spans_are_ordered = self
+            .paragraphs
+            .windows(2)
+            .all(|pair| pair[0].item_range.end <= pair[1].item_range.start);
+        records_are_valid && spans_are_ordered
     }
 
     fn item_context(&self, index: usize) -> Option<PlannedItemContext<'_>> {
@@ -809,7 +853,7 @@ struct PlacementCoordinator {
 
 impl PlacementCoordinator {
     fn new(
-        plan: &PaginationPlan,
+        plan: &PaginationPlan<'_>,
         geom: Geom,
         final_section_setup: &SectionSetup,
         final_column_gap_pt: Option<f32>,
@@ -1006,6 +1050,7 @@ pub(super) fn paginate_with_column_gap(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn paginate_with_column_gap_and_metrics(
     items: Vec<FlowItem>,
     supplied_block_metrics: Option<Vec<Option<BlockPaginationMetrics>>>,
@@ -1034,7 +1079,7 @@ fn paginate_with_column_gap_and_metrics(
 }
 
 fn paginate_plan(
-    plan: PaginationPlan,
+    plan: PaginationPlan<'_>,
     geom: Geom,
     final_section_setup: &SectionSetup,
     final_column_gap_pt: Option<f32>,
@@ -1051,18 +1096,22 @@ fn paginate_plan(
 }
 
 impl PlacementCoordinator {
-    fn paginate(self, plan: PaginationPlan, final_section_setup: &SectionSetup) -> Pagination {
+    fn paginate(self, plan: PaginationPlan<'_>, final_section_setup: &SectionSetup) -> Pagination {
         paginate_with_state(self, plan, final_section_setup)
     }
 }
 
 fn paginate_with_state(
     state: PlacementCoordinator,
-    mut plan: PaginationPlan,
+    mut plan: PaginationPlan<'_>,
     final_section_setup: &SectionSetup,
 ) -> Pagination {
     // Paginate flow items top-to-bottom through section columns and then across
     // pages. Tables repeat headers after each break and split oversized rows.
+    debug_assert!(
+        plan.retained_paragraphs_are_valid(),
+        "retained paragraph fallback spans and source sidecars stay valid"
+    );
     let items = std::mem::take(&mut plan.items);
     let PlacementCoordinator {
         mut pages,
@@ -1339,17 +1388,25 @@ pub(super) fn paginate_body_flow_with_column_gap(
     let LoweredBodyFlow {
         items,
         block_metrics,
-        paragraphs: _paragraphs,
+        paragraphs,
     } = lower_body_flow_entries_with_metrics(flow, cx, capture);
     #[cfg(test)]
     assert_eq!(block_metrics, block_pagination_metrics(&items));
-    paginate_with_column_gap_and_metrics(
+    let plan = PaginationPlan::with_paragraphs(
         items,
         Some(block_metrics),
+        paragraphs,
         geom,
         final_section_setup,
         final_column_gap_pt,
         final_column_layout,
+        final_column_rtl,
+    );
+    paginate_plan(
+        plan,
+        geom,
+        final_section_setup,
+        final_column_gap_pt,
         final_column_rtl,
     )
 }
@@ -2308,5 +2365,71 @@ mod tests {
         assert_eq!(lowered.paragraphs[1].request.marker.as_deref(), Some("2."));
         assert_eq!(lowered.paragraphs[1].item_range, 4..5);
         assert!(matches!(lowered.items[4], FlowItem::Line(_)));
+    }
+
+    #[test]
+    fn pagination_plan_transports_retained_paragraph_fallbacks() {
+        let paragraph = Paragraph {
+            runs: vec![Run {
+                text: "body".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        let final_section = SectionSetup::default();
+        let geom = Geom::from_section(&final_section);
+        let request_geom = Geom::from_setup(&PageSetup {
+            width_pt: final_section.page.width_pt + 100.0,
+            ..final_section.page
+        });
+        let mut flow = BodyFlowQueue::default();
+        flow.push_ready(FlowItem::Gap(2.0));
+        flow.push_paragraph(ParagraphFlowRequest {
+            paragraph: &paragraph,
+            marker: Some(std::borrow::Cow::Owned("7.".to_string())),
+            tab_stops: &[],
+            column_break_offsets: &[],
+            default_tab_stop_pt: None,
+            line_spacing_hint: None,
+            geom: request_geom,
+            page_field_indices: None,
+        });
+
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut text_cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let lowered = lower_body_flow_entries_with_metrics(flow, &mut text_cx, &mut capture);
+        let plan = PaginationPlan::with_paragraphs(
+            lowered.items,
+            Some(lowered.block_metrics),
+            lowered.paragraphs,
+            geom,
+            &final_section,
+            None,
+            None,
+            false,
+        );
+
+        assert_eq!(plan.items.len(), 2);
+        assert_eq!(plan.geometries_by_item.len(), plan.items.len());
+        assert_eq!(plan.block_metrics.len(), plan.items.len());
+        assert_eq!(plan.paragraphs.len(), 1);
+        assert!(std::ptr::eq(
+            plan.paragraphs[0].request.paragraph,
+            &paragraph
+        ));
+        assert_eq!(plan.paragraphs[0].request.marker.as_deref(), Some("7."));
+        assert_eq!(plan.paragraphs[0].item_range, 1..2);
+        assert!(plan.geometries_by_item[1] != request_geom);
+        assert!(plan.retained_paragraphs_are_valid());
+
+        let pagination = paginate_plan(plan, geom, &final_section, None, false);
+        assert_eq!(page_line_counts(&pagination), vec![1]);
     }
 }
