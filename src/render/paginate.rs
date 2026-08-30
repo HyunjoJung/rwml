@@ -491,6 +491,15 @@ struct PaginationPlan {
     block_metrics: Vec<Option<BlockPaginationMetrics>>,
 }
 
+struct PlannedItemContext<'a> {
+    geom: Geom,
+    columns: Option<u16>,
+    column_gap_pt: Option<f32>,
+    column_layout: &'a Option<Rc<SectionColumnLayoutHints>>,
+    column_rtl: bool,
+    block_metric: Option<&'a BlockPaginationMetrics>,
+}
+
 impl PaginationPlan {
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -519,6 +528,17 @@ impl PaginationPlan {
             geometries_by_item,
             block_metrics,
         }
+    }
+
+    fn item_context(&self, index: usize) -> Option<PlannedItemContext<'_>> {
+        Some(PlannedItemContext {
+            geom: *self.geometries_by_item.get(index)?,
+            columns: *self.columns_by_item.get(index)?,
+            column_gap_pt: *self.column_gaps_by_item.get(index)?,
+            column_layout: self.column_layouts_by_item.get(index)?,
+            column_rtl: *self.column_rtl_by_item.get(index)?,
+            block_metric: self.block_metrics.get(index)?.as_ref(),
+        })
     }
 }
 
@@ -814,20 +834,12 @@ impl PlacementCoordinator {
 
 fn paginate_with_state(
     state: PlacementCoordinator,
-    plan: PaginationPlan,
+    mut plan: PaginationPlan,
     final_section_setup: &SectionSetup,
 ) -> Pagination {
     // Paginate flow items top-to-bottom through section columns and then across
     // pages. Tables repeat headers after each break and split oversized rows.
-    let PaginationPlan {
-        items,
-        columns_by_item,
-        column_gaps_by_item,
-        column_layouts_by_item,
-        column_rtl_by_item,
-        geometries_by_item,
-        block_metrics,
-    } = plan;
+    let items = std::mem::take(&mut plan.items);
     let PlacementCoordinator {
         mut pages,
         mut page_sections,
@@ -854,40 +866,43 @@ fn paginate_with_state(
         mut defer_current_top_bottom_bands,
     } = state;
     for (item_index, item) in items.into_iter().enumerate() {
-        let item_geom = geometries_by_item[item_index];
+        let context = plan
+            .item_context(item_index)
+            .expect("pagination plan keeps item contexts aligned");
+        let item_geom = context.geom;
         if item_geom != active_geom {
             active_geom = item_geom;
             cursor.set_columns(
                 active_geom,
-                columns_by_item[item_index],
-                column_gaps_by_item[item_index],
-                column_layouts_by_item[item_index].as_deref(),
-                column_rtl_by_item[item_index],
+                context.columns,
+                context.column_gap_pt,
+                context.column_layout.as_deref(),
+                context.column_rtl,
             );
-            active_columns = columns_by_item[item_index];
-            active_column_gap_pt = column_gaps_by_item[item_index];
-            active_column_layout = column_layouts_by_item[item_index].clone();
-            active_column_rtl = column_rtl_by_item[item_index];
+            active_columns = context.columns;
+            active_column_gap_pt = context.column_gap_pt;
+            active_column_layout = context.column_layout.as_ref().map(Rc::clone);
+            active_column_rtl = context.column_rtl;
         }
-        let item_columns = columns_by_item[item_index];
-        let item_column_gap_pt = column_gaps_by_item[item_index];
-        let item_column_layout = &column_layouts_by_item[item_index];
+        let item_columns = context.columns;
+        let item_column_gap_pt = context.column_gap_pt;
+        let item_column_layout = context.column_layout;
         if item_columns != active_columns
             || item_column_gap_pt != active_column_gap_pt
             || !same_section_column_layout(item_column_layout, &active_column_layout)
-            || column_rtl_by_item[item_index] != active_column_rtl
+            || context.column_rtl != active_column_rtl
         {
             cursor.set_columns(
                 active_geom,
                 item_columns,
                 item_column_gap_pt,
                 item_column_layout.as_deref(),
-                column_rtl_by_item[item_index],
+                context.column_rtl,
             );
             active_columns = item_columns;
             active_column_gap_pt = item_column_gap_pt;
-            active_column_layout = item_column_layout.clone();
-            active_column_rtl = column_rtl_by_item[item_index];
+            active_column_layout = item_column_layout.as_ref().map(Rc::clone);
+            active_column_rtl = context.column_rtl;
         }
         match item {
             FlowItem::BlockStart {
@@ -909,11 +924,13 @@ fn paginate_with_state(
                     &mut pending_block,
                     pages.len().saturating_sub(1),
                 );
-                if let Some(metric) = block_metrics[item_index].as_ref() {
+                if let Some(metric) = context.block_metric {
                     if pagination.keep_next {
-                        if let Some(height) =
-                            keep_next_chain_height(item_index, &block_metrics, &columns_by_item)
-                        {
+                        if let Some(height) = keep_next_chain_height(
+                            item_index,
+                            &plan.block_metrics,
+                            &plan.columns_by_item,
+                        ) {
                             move_to_fresh_column_for_required_height(
                                 &mut pages,
                                 &mut cursor,
@@ -985,7 +1002,7 @@ fn paginate_with_state(
                     None,
                 );
                 if let Some(metric) = current_block_start
-                    .and_then(|start| block_metrics.get(start))
+                    .and_then(|start| plan.block_metrics.get(start))
                     .and_then(Option::as_ref)
                     .filter(|metric| metric.pagination.widow_control)
                 {
@@ -1564,6 +1581,81 @@ mod tests {
         );
         assert_eq!(fallback.block_metrics.len(), fallback.items.len());
         assert!(fallback.block_metrics[0].is_some());
+    }
+
+    #[test]
+    fn pagination_plan_exposes_checked_item_contexts() {
+        let ending_layout = Rc::new(SectionColumnLayoutHints::default());
+        let final_layout = SectionColumnLayoutHints::default();
+        let ending = SectionSetup {
+            columns: Some(2),
+            page: PageSetup {
+                width_pt: 240.0,
+                height_pt: 320.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let final_section = SectionSetup {
+            columns: Some(1),
+            ..SectionSetup::default()
+        };
+        let geom = Geom::from_section(&final_section);
+        let items = vec![
+            FlowItem::BlockStart {
+                index: 0,
+                pagination: PaginationHint::default(),
+            },
+            FlowItem::SectionColumnLayout(Rc::clone(&ending_layout)),
+            FlowItem::SectionColumnGap(8.0),
+            FlowItem::SectionColumnRtl,
+            FlowItem::SectionBreak(ending.clone()),
+            FlowItem::BlockStart {
+                index: 1,
+                pagination: PaginationHint::default(),
+            },
+            line(12.0),
+        ];
+        let metrics = block_pagination_metrics(&items);
+        let plan = PaginationPlan::new(
+            items,
+            Some(metrics),
+            geom,
+            &final_section,
+            Some(5.0),
+            Some(&final_layout),
+            false,
+        );
+
+        let ending_context = plan.item_context(0).expect("ending-section context");
+        assert!(ending_context.geom == Geom::from_section(&ending));
+        assert_eq!(ending_context.columns, Some(2));
+        assert_eq!(ending_context.column_gap_pt, Some(8.0));
+        assert!(Rc::ptr_eq(
+            ending_context
+                .column_layout
+                .as_ref()
+                .expect("ending layout"),
+            &ending_layout,
+        ));
+        assert!(ending_context.column_rtl);
+        assert!(ending_context.block_metric.is_some());
+
+        let final_context = plan.item_context(5).expect("final-section context");
+        assert!(final_context.geom == geom);
+        assert_eq!(final_context.columns, Some(1));
+        assert_eq!(final_context.column_gap_pt, Some(5.0));
+        assert_eq!(
+            final_context
+                .column_layout
+                .as_deref()
+                .expect("final layout"),
+            &final_layout,
+        );
+        assert!(!final_context.column_rtl);
+        assert!(final_context.block_metric.is_some());
+        assert!(plan.item_context(plan.items.len()).is_none());
     }
 
     #[test]
