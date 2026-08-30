@@ -134,6 +134,13 @@ cargo install rwml --version =0.1.4 --locked --features bundled-fonts
 rwml to-pdf file.docx preview.pdf --report-json render.json
 ```
 
+Bundled and caller-added fonts normally allow system fallback. For isolated
+rendering, the unreleased `try_render_pdf_with_fixed_fonts_and_report` and
+`Document::try_to_pdf_with_fixed_fonts_and_report` APIs use only supplied font
+bytes and fail when required glyph resources are unavailable. Font coverage
+must include every visible script and symbol; the bundled subsets do not cover
+all Unicode text or emoji.
+
 The renderer is a deterministic preview/report renderer, not a Word layout
 engine. See [Compatibility and limits](#compatibility-and-limits) before using
 it for pagination-sensitive output.

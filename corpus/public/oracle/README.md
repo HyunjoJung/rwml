@@ -24,6 +24,20 @@ The generated `RENDER_ORACLE.json` uses the same bounded, path-neutral corpus co
 as the release render campaign. The lock is an input identity contract, not a claim of
 Word parity and not a release threshold.
 
+## Native fixed-font rendering
+
+`scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.
+It disables system fallback and rejects missing visible glyphs, missing glyph
+artwork, and registered faces the PDF backend cannot embed. The supplied Noto
+subsets cover bounded Korean/hanja, Arabic, and Hebrew text, not arbitrary CJK or
+emoji. A coverage failure remains a failed native render; do not replace the
+input or enable host fallback to make a fixed-font campaign succeed.
+
+Native font isolation does not establish a common font set with LibreOffice.
+Compare actual font selection and locked payloads before interpreting geometry
+differences as renderer behavior. Oracle font validation remains independently
+required for every primary and repeated reference PDF.
+
 ## LibreOffice regression font lock
 
 `libreoffice-font-lock.json` pins eight LibreOffice-bundled Noto Sans, Noto Sans

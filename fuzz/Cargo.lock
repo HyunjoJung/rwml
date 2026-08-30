@@ -905,6 +905,7 @@ dependencies = [
  "krilla",
  "parley",
  "quick-xml",
+ "skrifa 0.42.1",
  "thiserror",
  "wasm-bindgen",
  "zip",

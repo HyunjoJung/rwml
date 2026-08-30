@@ -45,8 +45,8 @@ not open a public issue; use [GitHub private vulnerability reporting] instead.
 - **Keep dependencies minimal.** The legacy-`.doc` core depends only on `cfb`,
   `encoding_rs`, and `thiserror`; the default `docx` feature adds `zip`,
   `quick-xml`, and `flate2`, and the opt-in `render` feature adds `parley` and
-  `krilla` (raising the MSRV to 1.92). New dependencies need a strong
-  justification.
+  `krilla` (raising the MSRV to 1.92), plus the PDF backend's `skrifa` font parser
+  for strict font validation. New dependencies need a strong justification.
 - **Follow the spec.** `.doc` behavior should trace to [MS-DOC] / [MS-CFB] and
   `.docx` behavior to [ECMA-376]; cite the relevant section in comments and the
   pull request when implementing format details.

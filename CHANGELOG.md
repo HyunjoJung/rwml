@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in `try_render_pdf_with_fixed_fonts_and_report` and
+  `Document::try_to_pdf_with_fixed_fonts_and_report` render with only supplied
+  fonts, rejecting unavailable glyphs, missing glyph artwork, and unembeddable
+  registered faces. Existing extra-font and bundled-font APIs retain system
+  fallback. The `to_pdf` example's `--fixed-fonts` flag uses the isolated path.
+
 ### Changed
 
 - PDF preview now paints dynamic `PAGE` fields and generated page-number footers

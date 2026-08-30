@@ -262,6 +262,27 @@ pub fn try_render_pdf_with_fonts_and_report(
     render::try_to_pdf_with_fonts_and_report(model, fonts, features)
 }
 
+/// Render a model to PDF using only caller-supplied fonts, without system fallback.
+///
+/// Returns an error if no supplied font can be registered, a registered face
+/// cannot be embedded, or a rendered glyph is missing from the supplied font set.
+/// The report comes from the same pagination pass as the PDF. Available with the
+/// `render` feature.
+#[cfg(feature = "render")]
+pub fn try_render_pdf_with_fixed_fonts_and_report(
+    model: &DocModel,
+    fonts: &[Vec<u8>],
+) -> Result<RenderedPdf> {
+    let features = report::render_inventory_for_model(&model.blocks);
+    render::try_to_pdf_with_fixed_fonts_and_report_and_shapes(
+        model,
+        fonts,
+        features,
+        &[],
+        render::SourceRenderHints::default(),
+    )
+}
+
 /// A parsed Word document — either legacy `.doc` (OLE2/[MS-DOC]) or modern
 /// `.docx` (OOXML). [`Document::open`] format-detects from the magic bytes and
 /// both backends feed the **same** [`DocModel`] and exporters, so `text()`,
@@ -3205,6 +3226,27 @@ impl Document {
         let shapes = self.floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::try_to_pdf_with_fonts_and_report_and_shapes(
+                model,
+                fonts,
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
+    }
+
+    /// Render this document using only caller-supplied fonts, without system fallback.
+    ///
+    /// Preserves the opened document's source layout hints and feature report.
+    /// Returns an error if no supplied font can be registered, a registered face
+    /// cannot be embedded, or a rendered glyph is missing from the font set.
+    /// Available with the `render` feature.
+    #[cfg(feature = "render")]
+    pub fn try_to_pdf_with_fixed_fonts_and_report(&self, fonts: &[Vec<u8>]) -> Result<RenderedPdf> {
+        let features = self.report().features;
+        let shapes = self.floating_shapes();
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::try_to_pdf_with_fixed_fonts_and_report_and_shapes(
                 model,
                 fonts,
                 features,

@@ -6887,12 +6887,13 @@ fn collect_and_paginate_pdf_flow<'source>(
     )
 }
 
-fn strict_font_context(fonts: &[Vec<u8>]) -> Result<FontContext> {
+fn strict_font_context(fonts: &[Vec<u8>], require_pdf_fonts: bool) -> Result<FontContext> {
     use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
+    use skrifa::{raw::TableProvider, MetadataProvider};
 
     if fonts.is_empty() {
         return Err(Error::Render(
-            "layout page calculation requires at least one font".to_string(),
+            "fixed-font rendering requires at least one font".to_string(),
         ));
     }
 
@@ -6905,15 +6906,32 @@ fn strict_font_context(fonts: &[Vec<u8>]) -> Result<FontContext> {
         if font.is_empty() {
             continue;
         }
-        registered += collection
-            .register_fonts(Blob::from(font.clone()), None)
-            .into_iter()
-            .map(|(_, fonts)| fonts.len())
-            .sum::<usize>();
+        let data = Blob::from(font.clone());
+        let faces = collection.register_fonts(data.clone(), None);
+        let (bytes, _) = data.into_raw_parts();
+        for (_, fonts) in faces {
+            for font in fonts {
+                if require_pdf_fonts {
+                    let usable = Font::new(bytes.clone().into(), font.index()).is_some()
+                        && skrifa::FontRef::from_index(bytes.as_ref().as_ref(), font.index())
+                            .is_ok_and(|face| {
+                                face.outline_glyphs().format().is_some()
+                                    || !face.bitmap_strikes().is_empty()
+                                    || face.colr().is_ok()
+                            });
+                    if !usable {
+                        return Err(Error::Render(
+                            "fixed-font PDF cannot embed a supplied font face".into(),
+                        ));
+                    }
+                }
+                registered += 1;
+            }
+        }
     }
     if registered == 0 {
         return Err(Error::Render(
-            "layout page calculation could not register any supplied fonts".to_string(),
+            "fixed-font rendering could not register any supplied fonts".to_string(),
         ));
     }
 
@@ -6992,7 +7010,7 @@ pub(crate) fn layout_pages_with_fonts_and_pagination(
     source_hints: SourceRenderHints<'_>,
     floating_shapes: &[FloatingShape],
 ) -> Result<LayoutPages> {
-    let mut font_cx = strict_font_context(fonts)?;
+    let mut font_cx = strict_font_context(fonts, false)?;
     let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
     let mut font_cache: HashMap<u64, Font> = HashMap::new();
     let mut tcx = TextCx {
@@ -7163,6 +7181,32 @@ pub(crate) fn try_to_pdf_with_fonts_and_report_and_shapes(
     })
 }
 
+pub(crate) fn try_to_pdf_with_fixed_fonts_and_report_and_shapes(
+    model: &DocModel,
+    fonts: &[Vec<u8>],
+    features: FeatureInventory,
+    floating_shapes: &[FloatingShape],
+    source_hints: SourceRenderHints<'_>,
+) -> Result<RenderedPdf> {
+    let unsupported = report::render_unsupported_features(&features);
+    let rendered = render_pdf_with_font_context(
+        model,
+        strict_font_context(fonts, true)?,
+        Some(&unsupported),
+        floating_shapes,
+        source_hints,
+        true,
+    )?;
+    Ok(RenderedPdf {
+        pdf: rendered.pdf,
+        report: RenderReport {
+            pages: rendered.pages,
+            warnings: render_warnings_for_model(&unsupported, model),
+            unsupported,
+        },
+    })
+}
+
 fn render_pdf(
     model: &DocModel,
     extra_fonts: &[Vec<u8>],
@@ -7179,6 +7223,24 @@ fn render_pdf(
                 .register_fonts(Blob::from(f.clone()), None);
         }
     }
+    render_pdf_with_font_context(
+        model,
+        font_cx,
+        unsupported_features,
+        floating_shapes,
+        source_hints,
+        false,
+    )
+}
+
+fn render_pdf_with_font_context(
+    model: &DocModel,
+    mut font_cx: FontContext,
+    unsupported_features: Option<&FeatureInventory>,
+    floating_shapes: &[FloatingShape],
+    source_hints: SourceRenderHints<'_>,
+    fixed_fonts: bool,
+) -> Result<PdfRender> {
     let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
     let mut font_cache: HashMap<u64, Font> = HashMap::new();
     let mut tcx = TextCx {
@@ -7480,6 +7542,9 @@ fn render_pdf(
             draw_floating_shape_overlay(&mut page_scene, overlay, &mut tcx)?;
         }
         page_scene.ensure_balanced()?;
+        if fixed_fonts {
+            pdf::validate_fixed_glyphs(&page_scene)?;
+        }
         let mut page = document.start_page_with(settings);
         let mut surface = page.surface();
         pdf::replay_complete_page_scene(&mut surface, &page_scene)?;

@@ -65,7 +65,7 @@ fn main() -> ExitCode {
     });
     let (pdf, report) = if report_json.is_some() {
         let rendered = match &fixed_fonts {
-            Some(fonts) => doc.try_to_pdf_with_fonts_and_report(fonts),
+            Some(fonts) => doc.try_to_pdf_with_fixed_fonts_and_report(fonts),
             None => doc.try_to_pdf_with_report(),
         };
         match rendered {
@@ -77,7 +77,9 @@ fn main() -> ExitCode {
         }
     } else {
         let rendered = match &fixed_fonts {
-            Some(fonts) => doc.try_to_pdf_with_fonts(fonts),
+            Some(fonts) => doc
+                .try_to_pdf_with_fixed_fonts_and_report(fonts)
+                .map(|rendered| rendered.pdf),
             None => doc.try_to_pdf(),
         };
         match rendered {
