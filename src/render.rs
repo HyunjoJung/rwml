@@ -250,16 +250,25 @@ impl SceneFontResource {
     fn is_valid(&self) -> bool {
         !self.bytes.as_ref().as_ref().is_empty()
     }
+
+    fn to_pdf_font(&self) -> Result<Font> {
+        if !self.is_valid() {
+            return Err(Error::Render(
+                "page scene contains an invalid font resource".into(),
+            ));
+        }
+        Font::new(self.bytes.clone().into(), self.index)
+            .ok_or_else(|| Error::Render("page scene contains an invalid font resource".into()))
+    }
 }
 
-/// One drawable run on a line: its x offset within the content box, the krilla
-/// glyphs, the resolved font, the size, the fill color, and the source text (for
-/// the ToUnicode map that keeps the PDF text selectable).
+/// One drawable run on a line: its x offset within the content box, neutral
+/// glyph and font data, the size, the fill color, and the source text (for the
+/// ToUnicode map that keeps the PDF text selectable).
 #[derive(Clone)]
 struct RunDraw {
     x: f32,
     glyphs: Vec<KrillaGlyph>,
-    font: Font,
     scene_font: SceneFontResource,
     size: f32,
     color: rgb::Color,
@@ -372,6 +381,18 @@ impl SceneGlyph {
             y_advance: glyph.y_advance,
         })
     }
+
+    fn to_krilla(&self) -> KrillaGlyph {
+        KrillaGlyph::new(
+            GlyphId::new(self.glyph_id),
+            self.x_advance,
+            self.x_offset,
+            self.y_offset,
+            self.y_advance,
+            self.text_range.clone(),
+            None,
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -389,6 +410,12 @@ struct SceneGlyphRun {
     strikethrough: Option<TextDecoration>,
     link: Option<Rc<str>>,
     is_rtl: bool,
+}
+
+impl SceneGlyphRun {
+    fn width(&self) -> f32 {
+        self.glyphs.iter().map(|glyph| glyph.x_advance).sum::<f32>() * self.size
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -474,6 +501,34 @@ impl SceneImageResource {
 
     fn is_valid(&self) -> bool {
         !self.bytes.is_empty() && self.width_px > 0 && self.height_px > 0
+    }
+
+    fn to_pdf_image(&self) -> Result<PdfImage> {
+        let invalid = || Error::Render("page scene contains an invalid image resource".into());
+        if !self.is_valid() {
+            return Err(invalid());
+        }
+        let data: Data = self.bytes.clone().into();
+        let image = match self.encoding {
+            SceneImageEncoding::Png => PdfImage::from_png(data, false).map_err(|_| invalid())?,
+            SceneImageEncoding::Jpeg => PdfImage::from_jpeg(data, false).map_err(|_| invalid())?,
+            SceneImageEncoding::Gif => PdfImage::from_gif(data, false).map_err(|_| invalid())?,
+            SceneImageEncoding::Webp => PdfImage::from_webp(data, false).map_err(|_| invalid())?,
+            SceneImageEncoding::Rgba8 => {
+                let expected = (self.width_px as usize)
+                    .checked_mul(self.height_px as usize)
+                    .and_then(|pixels| pixels.checked_mul(4))
+                    .ok_or_else(invalid)?;
+                if self.bytes.len() != expected {
+                    return Err(invalid());
+                }
+                PdfImage::from_rgba8(self.bytes.as_ref().clone(), self.width_px, self.height_px)
+            }
+        };
+        if image.size() != (self.width_px, self.height_px) {
+            return Err(invalid());
+        }
+        Ok(image)
     }
 }
 
@@ -1284,7 +1339,6 @@ struct ImageLayout {
 #[derive(Clone)]
 struct RenderImage {
     scene: SceneImageResource,
-    pdf: PdfImage,
 }
 
 #[derive(Clone)]
@@ -1459,7 +1513,7 @@ fn decode_image(bytes: &[u8], mime: Option<&str>) -> Option<(RenderImage, u32, u
         width_px,
         height_px,
     };
-    Some((RenderImage { scene, pdf }, width_px, height_px))
+    Some((RenderImage { scene }, width_px, height_px))
 }
 
 fn decode_model_image(img: &Image) -> Option<(RenderImage, u32, u32)> {
@@ -1478,8 +1532,7 @@ fn decode_model_image(img: &Image) -> Option<(RenderImage, u32, u32)> {
             width_px: width,
             height_px: height,
         };
-        let pdf = PdfImage::from_rgba8(bytes.clone(), width, height);
-        return Some((RenderImage { scene, pdf }, width, height));
+        return Some((RenderImage { scene }, width, height));
     }
     decode_image(bytes, img.mime.as_deref())
 }
@@ -3035,16 +3088,12 @@ fn shape_extract_lines(
             // A face parley can shape but krilla cannot ingest (bitmap/COLR/odd
             // index) makes `Font::new` return `None` — skip the run rather than
             // panic, honoring the crate's panic-free contract.
-            let krilla_font = match cx.font_cache.get(&id) {
-                Some(f) => f.clone(),
-                None => match Font::new(font_data.into(), font_index) {
-                    Some(f) => {
-                        cx.font_cache.insert(id, f.clone());
-                        f
-                    }
-                    None => continue,
-                },
-            };
+            if let std::collections::hash_map::Entry::Vacant(entry) = cx.font_cache.entry(id) {
+                let Some(krilla_font) = Font::new(font_data.into(), font_index) else {
+                    continue;
+                };
+                entry.insert(krilla_font);
+            }
             let is_rtl = run.is_rtl();
             let font_size = run.font_size();
             let metrics = *run.metrics();
@@ -3074,7 +3123,6 @@ fn shape_extract_lines(
                     runs.push(RunDraw {
                         x: seg_x,
                         glyphs: std::mem::take(&mut glyphs),
-                        font: krilla_font.clone(),
                         scene_font: scene_font.clone(),
                         size: font_size,
                         color: previous.color,
@@ -3121,7 +3169,6 @@ fn shape_extract_lines(
                 runs.push(RunDraw {
                     x: seg_x,
                     glyphs,
-                    font: krilla_font,
                     scene_font,
                     size: font_size,
                     color: paint.color,
@@ -5208,7 +5255,7 @@ fn draw_running_surface_items(
                 } else {
                     false
                 };
-                project_and_replay_page_scene_line_paint(surface, scene, &line, x0, y, baseline)?;
+                project_page_scene_line_paint(surface, scene, &line, x0, y, baseline)?;
                 for run in line.runs {
                     if let Some(url) = run.link.clone() {
                         let left = x0 + run.x;
@@ -5218,7 +5265,7 @@ fn draw_running_surface_items(
                             LinkClip::from_ltrb([0.0, y, geom.page_w, limit_y]),
                         )?;
                     }
-                    project_and_replay_page_scene_run_with_page_context(
+                    project_page_scene_run_with_page_context(
                         surface,
                         scene,
                         run,
@@ -5239,8 +5286,7 @@ fn draw_running_surface_items(
                     break;
                 };
                 let bounds_x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
-                if project_and_replay_page_scene_image(surface, scene, image, layout, bounds_x, y)?
-                {
+                if project_page_scene_image(surface, scene, image, layout, bounds_x, y)? {
                     y += layout.bounds_h;
                 }
             }
@@ -5920,7 +5966,7 @@ fn fill_circle_color(
         return Ok(());
     }
     let steps = 28usize;
-    project_and_replay_page_scene_fill_polygon_iter(
+    project_page_scene_fill_polygon_iter(
         surface,
         scene,
         (0..=steps).map(move |step| {
@@ -5965,7 +6011,7 @@ fn fill_chart_bar_shape(
     match shape {
         ChartShape::Cylinder => {
             let radius = (h * 0.5).min(w * 0.5);
-            project_and_replay_page_scene_fill_rect(
+            project_page_scene_fill_rect(
                 surface,
                 scene,
                 x + radius * 0.5,
@@ -5981,7 +6027,7 @@ fn fill_chart_bar_shape(
         | ChartShape::ConeToMax
         | ChartShape::Pyramid
         | ChartShape::PyramidToMax => {
-            project_and_replay_page_scene_fill_polygon(
+            project_page_scene_fill_polygon(
                 surface,
                 scene,
                 &[(x, y), (x, y + h), (x + w, y + h * 0.5)],
@@ -5989,7 +6035,7 @@ fn fill_chart_bar_shape(
             )?;
         }
         ChartShape::Box => {
-            project_and_replay_page_scene_fill_rect(surface, scene, x, y, w, h, color)?;
+            project_page_scene_fill_rect(surface, scene, x, y, w, h, color)?;
         }
     }
     Ok(())
@@ -6009,7 +6055,7 @@ fn fill_chart_column_shape(
     match shape {
         ChartShape::Cylinder => {
             let radius = (w * 0.5).min(h * 0.5);
-            project_and_replay_page_scene_fill_rect(
+            project_page_scene_fill_rect(
                 surface,
                 scene,
                 x,
@@ -6025,7 +6071,7 @@ fn fill_chart_column_shape(
         | ChartShape::ConeToMax
         | ChartShape::Pyramid
         | ChartShape::PyramidToMax => {
-            project_and_replay_page_scene_fill_polygon(
+            project_page_scene_fill_polygon(
                 surface,
                 scene,
                 &[(x + w * 0.5, y), (x, y + h), (x + w, y + h)],
@@ -6033,7 +6079,7 @@ fn fill_chart_column_shape(
             )?;
         }
         ChartShape::Box => {
-            project_and_replay_page_scene_fill_rect(surface, scene, x, y, w, h, color)?;
+            project_page_scene_fill_rect(surface, scene, x, y, w, h, color)?;
         }
     }
     Ok(())
@@ -6214,6 +6260,40 @@ fn project_table_cell_paint(
     Ok(start..scene.operations.len())
 }
 
+fn replay_page_scene_geometry_operation(
+    surface: &mut Surface<'_>,
+    operation: &PageSceneOp,
+) -> bool {
+    match operation {
+        PageSceneOp::FillRect { rect, color } => {
+            fill_rect_color(surface, rect.x, rect.y, rect.width, rect.height, *color);
+        }
+        PageSceneOp::FillPolygon { points, color } => {
+            fill_polygon_color(surface, points, *color);
+        }
+        PageSceneOp::PushClipRect { rect } => {
+            push_pdf_rect_clip(surface, *rect);
+        }
+        PageSceneOp::PopClip => surface.pop(),
+        PageSceneOp::PushTransform { transform } => {
+            surface.push_transform(&Transform::from_row(
+                transform.sx(),
+                transform.ky(),
+                transform.kx(),
+                transform.sy(),
+                transform.tx(),
+                transform.ty(),
+            ));
+        }
+        PageSceneOp::PopTransform => surface.pop(),
+        PageSceneOp::Link { .. } | PageSceneOp::Image { .. } | PageSceneOp::GlyphRun(_) => {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(test)]
 fn replay_page_scene_operations(
     surface: &mut Surface<'_>,
     scene: &PageScene,
@@ -6223,35 +6303,138 @@ fn replay_page_scene_operations(
         return;
     };
     for operation in operations {
-        match operation {
-            PageSceneOp::FillRect { rect, color } => {
-                fill_rect_color(surface, rect.x, rect.y, rect.width, rect.height, *color)
-            }
-            PageSceneOp::FillPolygon { points, color } => {
-                fill_polygon_color(surface, points, *color)
-            }
-            PageSceneOp::PushClipRect { rect } => {
-                push_pdf_rect_clip(surface, *rect);
-            }
-            PageSceneOp::PopClip => surface.pop(),
-            PageSceneOp::PushTransform { transform } => {
-                surface.push_transform(&Transform::from_row(
-                    transform.sx(),
-                    transform.ky(),
-                    transform.kx(),
-                    transform.sy(),
-                    transform.tx(),
-                    transform.ty(),
-                ));
-            }
-            PageSceneOp::PopTransform => surface.pop(),
-            PageSceneOp::Link { .. } | PageSceneOp::Image { .. } | PageSceneOp::GlyphRun(_) => {}
-        }
+        replay_page_scene_geometry_operation(surface, operation);
     }
 }
 
-fn project_and_replay_page_scene_fill_rect(
-    surface: &mut Surface<'_>,
+fn pdf_scene_font(scene: &PageScene, cache: &mut [Option<Font>], id: SceneFontId) -> Result<Font> {
+    let Some(resource) = scene.font_resources.get(id.0) else {
+        return Err(Error::Render(
+            "page scene references an unknown font resource".into(),
+        ));
+    };
+    let Some(slot) = cache.get_mut(id.0) else {
+        return Err(Error::Render(
+            "page scene references an unknown font resource".into(),
+        ));
+    };
+    if let Some(font) = slot {
+        return Ok(font.clone());
+    }
+    let font = resource.to_pdf_font()?;
+    *slot = Some(font.clone());
+    Ok(font)
+}
+
+fn pdf_scene_image(
+    scene: &PageScene,
+    cache: &mut [Option<PdfImage>],
+    id: SceneImageId,
+) -> Result<PdfImage> {
+    let Some(resource) = scene.image_resources.get(id.0) else {
+        return Err(Error::Render(
+            "page scene references an unknown image resource".into(),
+        ));
+    };
+    let Some(slot) = cache.get_mut(id.0) else {
+        return Err(Error::Render(
+            "page scene references an unknown image resource".into(),
+        ));
+    };
+    if let Some(image) = slot {
+        return Ok(image.clone());
+    }
+    let image = resource.to_pdf_image()?;
+    *slot = Some(image.clone());
+    Ok(image)
+}
+
+fn draw_scene_glyph_run(surface: &mut Surface<'_>, run: &SceneGlyphRun, font: Font) {
+    let width = run.width();
+    if let Some(highlight) = run.highlight {
+        fill_rect_color(
+            surface,
+            run.origin.x,
+            run.origin.y - run.ascent,
+            width,
+            run.ascent + run.descent,
+            highlight,
+        );
+    }
+    surface.set_fill(Some(Fill {
+        paint: run.color.into(),
+        rule: FillRule::NonZero,
+        opacity: NormalizedF32::ONE,
+    }));
+    let glyphs = run
+        .glyphs
+        .iter()
+        .map(SceneGlyph::to_krilla)
+        .collect::<Vec<_>>();
+    surface.draw_glyphs(
+        Point::from_xy(run.origin.x, run.origin.y),
+        &glyphs,
+        font,
+        &run.text,
+        run.size,
+        false,
+    );
+    if let Some(decoration) = run.underline {
+        fill_rect_color(
+            surface,
+            run.origin.x,
+            run.origin.y + decoration.offset,
+            width,
+            decoration.thickness,
+            run.color,
+        );
+    }
+    if let Some(decoration) = run.strikethrough {
+        fill_rect_color(
+            surface,
+            run.origin.x,
+            run.origin.y + decoration.offset,
+            width,
+            decoration.thickness,
+            run.color,
+        );
+    }
+}
+
+fn replay_complete_page_scene(surface: &mut Surface<'_>, scene: &PageScene) -> Result<()> {
+    let mut fonts = vec![None; scene.font_resources.len()];
+    let mut images = vec![None; scene.image_resources.len()];
+    for (operation_index, operation) in scene.operations.iter().enumerate() {
+        if replay_page_scene_geometry_operation(surface, operation) {
+            continue;
+        }
+        match operation {
+            PageSceneOp::Link { .. } => {}
+            PageSceneOp::Image { resource, .. } => {
+                let image = pdf_scene_image(scene, &mut images, *resource)?;
+                if !replay_page_scene_image(surface, scene, operation_index, image) {
+                    return Err(Error::Render(
+                        "page scene contains an invalid image operation".into(),
+                    ));
+                }
+            }
+            PageSceneOp::GlyphRun(run) => {
+                let font = pdf_scene_font(scene, &mut fonts, run.font)?;
+                draw_scene_glyph_run(surface, run, font);
+            }
+            PageSceneOp::FillRect { .. }
+            | PageSceneOp::FillPolygon { .. }
+            | PageSceneOp::PushClipRect { .. }
+            | PageSceneOp::PopClip
+            | PageSceneOp::PushTransform { .. }
+            | PageSceneOp::PopTransform => {}
+        }
+    }
+    Ok(())
+}
+
+fn project_page_scene_fill_rect(
+    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     x: f32,
     y: f32,
@@ -6259,26 +6442,22 @@ fn project_and_replay_page_scene_fill_rect(
     height: f32,
     color: rgb::Color,
 ) -> Result<()> {
-    let start = scene.operations.len();
     scene.push_fill_rect(x, y, width, height, color)?;
-    replay_page_scene_operations(surface, scene, start..scene.operations.len());
     Ok(())
 }
 
-fn project_and_replay_page_scene_fill_polygon(
-    surface: &mut Surface<'_>,
+fn project_page_scene_fill_polygon(
+    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     points: &[(f32, f32)],
     color: rgb::Color,
 ) -> Result<()> {
-    let start = scene.operations.len();
     scene.push_fill_polygon(points, color)?;
-    replay_page_scene_operations(surface, scene, start..scene.operations.len());
     Ok(())
 }
 
-fn project_and_replay_page_scene_fill_polygon_iter<I>(
-    surface: &mut Surface<'_>,
+fn project_page_scene_fill_polygon_iter<I>(
+    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     points: I,
     color: rgb::Color,
@@ -6286,64 +6465,53 @@ fn project_and_replay_page_scene_fill_polygon_iter<I>(
 where
     I: Clone + Iterator<Item = (f32, f32)>,
 {
-    let start = scene.operations.len();
     scene.push_fill_polygon_iter(points, color)?;
-    replay_page_scene_operations(surface, scene, start..scene.operations.len());
     Ok(())
 }
 
-fn project_and_replay_page_scene_glyph_run(
-    surface: &mut Surface<'_>,
+fn project_page_scene_glyph_run(
+    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     run: RunDraw,
     x_abs: f32,
     baseline_y: f32,
 ) -> Result<()> {
     scene.push_glyph_run(&run, x_abs, baseline_y)?;
-    draw_run(surface, run, x_abs, baseline_y);
     Ok(())
 }
 
 fn push_page_scene_clip(
-    surface: &mut Surface<'_>,
+    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     left: f32,
     top: f32,
     height: f32,
     width: f32,
 ) -> Result<bool> {
-    let start = scene.operations.len();
     if !scene.push_clip_rect(left, top, width, height)? {
         return Ok(false);
     }
-    replay_page_scene_operations(surface, scene, start..scene.operations.len());
     Ok(true)
 }
 
-fn pop_page_scene_clip(surface: &mut Surface<'_>, scene: &mut PageScene) -> Result<()> {
-    let start = scene.operations.len();
+fn pop_page_scene_clip(_surface: &mut Surface<'_>, scene: &mut PageScene) -> Result<()> {
     scene.pop_clip()?;
-    replay_page_scene_operations(surface, scene, start..scene.operations.len());
     Ok(())
 }
 
 fn push_page_scene_transform(
-    surface: &mut Surface<'_>,
+    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     transform: SceneTransform,
 ) -> Result<bool> {
-    let start = scene.operations.len();
     if !scene.push_transform(transform)? {
         return Ok(false);
     }
-    replay_page_scene_operations(surface, scene, start..scene.operations.len());
     Ok(true)
 }
 
-fn pop_page_scene_transform(surface: &mut Surface<'_>, scene: &mut PageScene) -> Result<()> {
-    let start = scene.operations.len();
+fn pop_page_scene_transform(_surface: &mut Surface<'_>, scene: &mut PageScene) -> Result<()> {
     scene.pop_transform()?;
-    replay_page_scene_operations(surface, scene, start..scene.operations.len());
     Ok(())
 }
 
@@ -6378,30 +6546,19 @@ fn replay_page_scene_image(
     true
 }
 
-fn project_and_replay_page_scene_image(
-    surface: &mut Surface<'_>,
+fn project_page_scene_image(
+    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     image: RenderImage,
     layout: ImageLayout,
     bounds_x: f32,
     bounds_y: f32,
 ) -> Result<bool> {
-    let RenderImage {
-        scene: resource,
-        pdf,
-    } = image;
+    let RenderImage { scene: resource } = image;
     let transform = image_paint_transform(layout, bounds_x, bounds_y);
-    let Some(operation_index) =
-        scene.push_image(resource, layout.image_w, layout.image_h, transform)?
-    else {
-        return Ok(false);
-    };
-    Ok(replay_page_scene_image(
-        surface,
-        scene,
-        operation_index,
-        pdf,
-    ))
+    Ok(scene
+        .push_image(resource, layout.image_w, layout.image_h, transform)?
+        .is_some())
 }
 
 fn replay_page_scene_annotations(page: &mut Page<'_>, scene: &PageScene) {
@@ -6427,7 +6584,7 @@ fn draw_terminal_vertical_junction(
     line: VerticalBorderLine,
     horizontal_width: f32,
 ) -> Result<()> {
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         line.x - line.paint.width * 0.5,
@@ -6439,14 +6596,13 @@ fn draw_terminal_vertical_junction(
 }
 
 fn draw_table_cell_background_and_borders(
-    surface: &mut Surface<'_>,
+    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     cell: &CellBox,
     placement: TableCellPaintPlacement,
     border: TableBorderPaints,
 ) -> Result<()> {
-    let operations = project_table_cell_paint(scene, cell, placement, border)?;
-    replay_page_scene_operations(surface, scene, operations);
+    project_table_cell_paint(scene, cell, placement, border)?;
     Ok(())
 }
 
@@ -6515,9 +6671,7 @@ fn draw_table_cell_content(
         } else {
             false
         };
-        project_and_replay_page_scene_line_paint(
-            surface, scene, &line, line_x, line_top, baseline,
-        )?;
+        project_page_scene_line_paint(surface, scene, &line, line_x, line_top, baseline)?;
         match line.cell_visual {
             Some(CellVisual::Picture { image, layout }) => {
                 previous_nested_borders = None;
@@ -6526,7 +6680,7 @@ fn draw_table_cell_content(
                 let x = placement.x
                     + cell.insets.left
                     + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
-                project_and_replay_page_scene_image(surface, scene, image, layout, x, line_top)?;
+                project_page_scene_image(surface, scene, image, layout, x, line_top)?;
             }
             Some(CellVisual::Chart {
                 chart,
@@ -6595,7 +6749,7 @@ fn draw_table_cell_content(
                             placement.link_clip,
                         )?;
                     }
-                    project_and_replay_page_scene_run_with_page_context(
+                    project_page_scene_run_with_page_context(
                         surface,
                         scene,
                         run,
@@ -6713,15 +6867,14 @@ fn draw_row_layout(
     }))
 }
 
-fn project_and_replay_page_scene_line_paint(
-    surface: &mut Surface<'_>,
+fn project_page_scene_line_paint(
+    _surface: &mut Surface<'_>,
     scene: &mut PageScene,
     line: &LineLayout,
     x_abs: f32,
     top: f32,
     baseline: f32,
 ) -> Result<()> {
-    let operation_start = scene.operations.len();
     if let Some(background) = line.background {
         scene.push_fill_rect(x_abs, top, background.width, line.height, background.color)?;
     }
@@ -6761,7 +6914,6 @@ fn project_and_replay_page_scene_line_paint(
             segments += 1;
         }
     }
-    replay_page_scene_operations(surface, scene, operation_start..scene.operations.len());
     Ok(())
 }
 
@@ -6803,8 +6955,7 @@ fn draw_floating_shape_overlay(
     overlay: &FloatingShapeOverlay,
     cx: &mut TextCx<'_>,
 ) -> Result<()> {
-    let operations = project_floating_overlay_frame(scene, overlay)?;
-    replay_page_scene_operations(surface, scene, operations);
+    project_floating_overlay_frame(scene, overlay)?;
     draw_chart_text(
         surface,
         scene,
@@ -6874,7 +7025,7 @@ fn draw_chart_text(
     .take(2)
     {
         let baseline = y + consumed + line.baseline;
-        project_and_replay_page_scene_line_paint(
+        project_page_scene_line_paint(
             surface,
             scene,
             &line,
@@ -6883,13 +7034,7 @@ fn draw_chart_text(
             baseline,
         )?;
         for run in line.runs {
-            project_and_replay_page_scene_glyph_run(
-                surface,
-                scene,
-                run,
-                x + line.x_indent,
-                baseline,
-            )?;
+            project_page_scene_glyph_run(surface, scene, run, x + line.x_indent, baseline)?;
         }
         consumed += line.height;
     }
@@ -6997,7 +7142,7 @@ fn fill_line_segment(
     let dy = y2 - y1;
     let len = (dx * dx + dy * dy).sqrt();
     if len <= 0.01 {
-        return project_and_replay_page_scene_fill_rect(
+        return project_page_scene_fill_rect(
             surface,
             scene,
             x1 - width * 0.5,
@@ -7009,7 +7154,7 @@ fn fill_line_segment(
     }
     let px = -dy / len * width * 0.5;
     let py = dx / len * width * 0.5;
-    project_and_replay_page_scene_fill_polygon(
+    project_page_scene_fill_polygon(
         surface,
         scene,
         &[
@@ -7035,7 +7180,7 @@ fn fill_area_shape(
     let Some((last_x, _)) = points.last().copied() else {
         return Ok(());
     };
-    project_and_replay_page_scene_fill_polygon_iter(
+    project_page_scene_fill_polygon_iter(
         surface,
         scene,
         std::iter::once((first_x, baseline_y))
@@ -7079,7 +7224,7 @@ fn fill_pie_slice(
         return Ok(());
     }
     let steps = ((sweep.abs() / (std::f32::consts::PI / 24.0)).ceil() as usize).clamp(2, 96);
-    project_and_replay_page_scene_fill_polygon_iter(
+    project_page_scene_fill_polygon_iter(
         surface,
         scene,
         std::iter::once((cx, cy)).chain((0..=steps).map(move |step| {
@@ -7134,7 +7279,7 @@ fn fill_ring_slice(
             cy + angle.sin() * inner_radius,
         )
     });
-    project_and_replay_page_scene_fill_polygon_iter(surface, scene, outer.chain(inner), color)
+    project_page_scene_fill_polygon_iter(surface, scene, outer.chain(inner), color)
 }
 
 fn draw_pie_chart(
@@ -7296,15 +7441,7 @@ fn draw_radar_chart(
             let (x1, y1) = points[index];
             let (x2, y2) = points[(index + 1) % points.len()];
             fill_line_segment(surface, scene, (x1, y1), (x2, y2), 1.5, color)?;
-            project_and_replay_page_scene_fill_rect(
-                surface,
-                scene,
-                x1 - 2.0,
-                y1 - 2.0,
-                4.0,
-                4.0,
-                color,
-            )?;
+            project_page_scene_fill_rect(surface, scene, x1 - 2.0, y1 - 2.0, 4.0, 4.0, color)?;
         }
     }
     Ok(())
@@ -7347,7 +7484,7 @@ fn draw_waterfall_chart(
     for tick in 0..=4 {
         let frac = tick as f32 / 4.0;
         let y_tick = y + h - frac * h;
-        project_and_replay_page_scene_fill_rect(
+        project_page_scene_fill_rect(
             surface,
             scene,
             x,
@@ -7376,7 +7513,7 @@ fn draw_waterfall_chart(
             tcx,
         )?;
     }
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         x,
@@ -7385,7 +7522,7 @@ fn draw_waterfall_chart(
         0.8,
         rgb::Color::new(0x5D, 0x66, 0x70),
     )?;
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         x,
@@ -7410,10 +7547,10 @@ fn draw_waterfall_chart(
         } else {
             rgb::Color::new(0xC7, 0x52, 0x4A)
         };
-        project_and_replay_page_scene_fill_rect(surface, scene, left, top, bar_w, height, color)?;
+        project_page_scene_fill_rect(surface, scene, left, top, bar_w, height, color)?;
         if index > 0 {
             let prev_x = x + index as f32 * band_w - (band_w - bar_w) * 0.5;
-            project_and_replay_page_scene_fill_rect(
+            project_page_scene_fill_rect(
                 surface,
                 scene,
                 prev_x,
@@ -7493,10 +7630,8 @@ fn draw_treemap_chart(
         };
         remaining = (remaining - value).max(0.0);
         let color = chart_series_color(index);
-        project_and_replay_page_scene_fill_rect(
-            surface, scene, cell_x, cell_y, cell_w, cell_h, color,
-        )?;
-        project_and_replay_page_scene_fill_rect(
+        project_page_scene_fill_rect(surface, scene, cell_x, cell_y, cell_w, cell_h, color)?;
+        project_page_scene_fill_rect(
             surface,
             scene,
             cell_x,
@@ -7505,7 +7640,7 @@ fn draw_treemap_chart(
             0.75,
             rgb::Color::new(0xFF, 0xFF, 0xFF),
         )?;
-        project_and_replay_page_scene_fill_rect(
+        project_page_scene_fill_rect(
             surface,
             scene,
             cell_x,
@@ -7514,7 +7649,7 @@ fn draw_treemap_chart(
             0.75,
             rgb::Color::new(0xFF, 0xFF, 0xFF),
         )?;
-        project_and_replay_page_scene_fill_rect(
+        project_page_scene_fill_rect(
             surface,
             scene,
             cell_x,
@@ -7523,7 +7658,7 @@ fn draw_treemap_chart(
             cell_h,
             rgb::Color::new(0xFF, 0xFF, 0xFF),
         )?;
-        project_and_replay_page_scene_fill_rect(
+        project_page_scene_fill_rect(
             surface,
             scene,
             cell_x + cell_w - 0.75,
@@ -7663,7 +7798,7 @@ fn draw_box_whisker_chart(
     for tick in 0..=4 {
         let frac = tick as f32 / 4.0;
         let y_tick = y + h - frac * h;
-        project_and_replay_page_scene_fill_rect(
+        project_page_scene_fill_rect(
             surface,
             scene,
             x,
@@ -7702,7 +7837,7 @@ fn draw_box_whisker_chart(
     let box_top = q3_y.min(q1_y);
     let box_h = (q1_y - q3_y).abs().max(1.0);
     let line = rgb::Color::new(0x35, 0x43, 0x52);
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         center_x - 0.5,
@@ -7711,7 +7846,7 @@ fn draw_box_whisker_chart(
         min_y - max_y,
         line,
     )?;
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         center_x - box_w * 0.35,
@@ -7720,7 +7855,7 @@ fn draw_box_whisker_chart(
         1.0,
         line,
     )?;
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         center_x - box_w * 0.35,
@@ -7729,7 +7864,7 @@ fn draw_box_whisker_chart(
         1.0,
         line,
     )?;
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         center_x - box_w * 0.5,
@@ -7738,7 +7873,7 @@ fn draw_box_whisker_chart(
         box_h,
         rgb::Color::new(0x7A, 0xA0, 0xC8),
     )?;
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         center_x - box_w * 0.5,
@@ -7747,7 +7882,7 @@ fn draw_box_whisker_chart(
         1.0,
         line,
     )?;
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         center_x - box_w * 0.5,
@@ -7756,7 +7891,7 @@ fn draw_box_whisker_chart(
         1.0,
         line,
     )?;
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         center_x - box_w * 0.5,
@@ -7765,7 +7900,7 @@ fn draw_box_whisker_chart(
         box_h,
         line,
     )?;
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         center_x + box_w * 0.5,
@@ -7774,7 +7909,7 @@ fn draw_box_whisker_chart(
         box_h,
         line,
     )?;
-    project_and_replay_page_scene_fill_rect(
+    project_page_scene_fill_rect(
         surface,
         scene,
         center_x - box_w * 0.5,
@@ -7840,7 +7975,7 @@ fn draw_funnel_chart(
         let bottom_w = (next / max_value) as f32 * w * 0.88;
         let top_y = y + index as f32 * stage_h + 1.0;
         let bottom_y = y + (index + 1) as f32 * stage_h - 1.0;
-        project_and_replay_page_scene_fill_polygon(
+        project_page_scene_fill_polygon(
             surface,
             scene,
             &[
@@ -7901,8 +8036,7 @@ fn draw_authored_chart(
     let ChartRect { x, y, w, h } = rect;
     let axis = rgb::Color::new(0x5D, 0x66, 0x70);
     let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
-    let frame = project_chart_frame(scene, x, y, w, h)?;
-    replay_page_scene_operations(surface, scene, frame);
+    project_chart_frame(scene, x, y, w, h)?;
 
     let mut content_top = y + 8.0;
     if let Some(title) = chart.title.as_deref() {
@@ -7974,7 +8108,7 @@ fn draw_authored_chart(
             if legend_x >= plot_right - 20.0 {
                 break;
             }
-            project_and_replay_page_scene_fill_rect(
+            project_page_scene_fill_rect(
                 surface,
                 scene,
                 legend_x,
@@ -8027,7 +8161,7 @@ fn draw_authored_chart(
             if legend_x >= plot_right - 20.0 {
                 break;
             }
-            project_and_replay_page_scene_fill_rect(
+            project_page_scene_fill_rect(
                 surface,
                 scene,
                 legend_x,
@@ -8176,9 +8310,7 @@ fn draw_authored_chart(
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let x_tick = plot_left + frac * plot_w;
-                project_and_replay_page_scene_fill_rect(
-                    surface, scene, x_tick, plot_top, 0.35, plot_h, grid,
-                )?;
+                project_page_scene_fill_rect(surface, scene, x_tick, plot_top, 0.35, plot_h, grid)?;
                 let label = if percent {
                     format!("{}%", tick * 25)
                 } else {
@@ -8202,10 +8334,8 @@ fn draw_authored_chart(
                     tcx,
                 )?;
             }
-            project_and_replay_page_scene_fill_rect(
-                surface, scene, plot_left, plot_top, 0.8, plot_h, axis,
-            )?;
-            project_and_replay_page_scene_fill_rect(
+            project_page_scene_fill_rect(surface, scene, plot_left, plot_top, 0.8, plot_h, axis)?;
+            project_page_scene_fill_rect(
                 surface,
                 scene,
                 plot_left,
@@ -8274,7 +8404,7 @@ fn draw_authored_chart(
                             color,
                         )?;
                     } else {
-                        project_and_replay_page_scene_fill_rect(
+                        project_page_scene_fill_rect(
                             surface,
                             scene,
                             segment_left,
@@ -8292,9 +8422,7 @@ fn draw_authored_chart(
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let x_tick = plot_left + frac * plot_w;
-                project_and_replay_page_scene_fill_rect(
-                    surface, scene, x_tick, plot_top, 0.35, plot_h, grid,
-                )?;
+                project_page_scene_fill_rect(surface, scene, x_tick, plot_top, 0.35, plot_h, grid)?;
                 let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
                 let label = format_chart_tick(value);
                 draw_chart_text(
@@ -8315,10 +8443,8 @@ fn draw_authored_chart(
                     tcx,
                 )?;
             }
-            project_and_replay_page_scene_fill_rect(
-                surface, scene, zero_x, plot_top, 0.8, plot_h, axis,
-            )?;
-            project_and_replay_page_scene_fill_rect(
+            project_page_scene_fill_rect(surface, scene, zero_x, plot_top, 0.8, plot_h, axis)?;
+            project_page_scene_fill_rect(
                 surface,
                 scene,
                 plot_left,
@@ -8379,7 +8505,7 @@ fn draw_authored_chart(
                             color,
                         )?;
                     } else {
-                        project_and_replay_page_scene_fill_rect(
+                        project_page_scene_fill_rect(
                             surface, scene, bar_left, bar_top, bar_width, bar_h, color,
                         )?;
                     }
@@ -8420,7 +8546,7 @@ fn draw_authored_chart(
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let y_tick = plot_bottom - frac * plot_h;
-                project_and_replay_page_scene_fill_rect(
+                project_page_scene_fill_rect(
                     surface, scene, plot_left, y_tick, plot_w, 0.35, grid,
                 )?;
                 let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
@@ -8443,12 +8569,8 @@ fn draw_authored_chart(
                     tcx,
                 )?;
             }
-            project_and_replay_page_scene_fill_rect(
-                surface, scene, plot_left, zero_y, plot_w, 0.8, axis,
-            )?;
-            project_and_replay_page_scene_fill_rect(
-                surface, scene, plot_left, plot_top, 0.8, plot_h, axis,
-            )?;
+            project_page_scene_fill_rect(surface, scene, plot_left, zero_y, plot_w, 0.8, axis)?;
+            project_page_scene_fill_rect(surface, scene, plot_left, plot_top, 0.8, plot_h, axis)?;
 
             let band_w = plot_w / category_count as f32;
             for (category_index, category) in chart.categories.iter().enumerate() {
@@ -8520,7 +8642,7 @@ fn draw_authored_chart(
                                     color,
                                 )?;
                             } else {
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface,
                                     scene,
                                     column_left,
@@ -8565,7 +8687,7 @@ fn draw_authored_chart(
                                     color,
                                 )?;
                             } else {
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface,
                                     scene,
                                     column_left,
@@ -8647,7 +8769,7 @@ fn draw_authored_chart(
                                         color,
                                     )?;
                                 }
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface,
                                     scene,
                                     point_x - 2.0,
@@ -8710,7 +8832,7 @@ fn draw_authored_chart(
                                 )?;
                             }
                             if chart.kind != ChartKind::LineNoMarkers {
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface,
                                     scene,
                                     point_x - 2.0,
@@ -8745,7 +8867,7 @@ fn draw_authored_chart(
                         let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
                         let y_low = value_y(low).clamp(plot_top, plot_bottom);
                         let y_high = value_y(high).clamp(plot_top, plot_bottom);
-                        project_and_replay_page_scene_fill_rect(
+                        project_page_scene_fill_rect(
                             surface,
                             scene,
                             point_x - 0.7,
@@ -8757,7 +8879,7 @@ fn draw_authored_chart(
                         if chart.kind == ChartKind::Stock {
                             if let Some(open) = values.first().copied() {
                                 let y_open = value_y(open).clamp(plot_top, plot_bottom);
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface,
                                     scene,
                                     point_x - band_w * 0.18,
@@ -8775,7 +8897,7 @@ fn draw_authored_chart(
                                 2.min(chart.series.len().saturating_sub(1))
                             };
                             let y_close = value_y(close).clamp(plot_top, plot_bottom);
-                            project_and_replay_page_scene_fill_rect(
+                            project_page_scene_fill_rect(
                                 surface,
                                 scene,
                                 point_x,
@@ -8820,7 +8942,7 @@ fn draw_authored_chart(
                                 chart.kind,
                                 ChartKind::ScatterLines | ChartKind::ScatterSmoothNoMarkers
                             ) {
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface,
                                     scene,
                                     point_x - 2.5,
@@ -8897,10 +9019,10 @@ fn draw_authored_chart(
                             let cell_w = (band_w - 2.0).max(1.0);
                             let cell_h_inner = (cell_h - 2.0).max(1.0);
                             if chart.wireframe {
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface, scene, cell_left, cell_top, cell_w, 0.45, color,
                                 )?;
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface,
                                     scene,
                                     cell_left,
@@ -8909,7 +9031,7 @@ fn draw_authored_chart(
                                     0.45,
                                     color,
                                 )?;
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface,
                                     scene,
                                     cell_left,
@@ -8918,7 +9040,7 @@ fn draw_authored_chart(
                                     cell_h_inner,
                                     color,
                                 )?;
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface,
                                     scene,
                                     cell_left + cell_w,
@@ -8928,7 +9050,7 @@ fn draw_authored_chart(
                                     color,
                                 )?;
                             } else {
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface,
                                     scene,
                                     cell_left,
@@ -8937,7 +9059,7 @@ fn draw_authored_chart(
                                     cell_h_inner,
                                     color,
                                 )?;
-                                project_and_replay_page_scene_fill_rect(
+                                project_page_scene_fill_rect(
                                     surface, scene, cell_left, cell_top, cell_w, 0.35, grid,
                                 )?;
                             }
@@ -8992,7 +9114,7 @@ fn draw_authored_chart(
         if legend_x >= plot_right - 20.0 {
             break;
         }
-        project_and_replay_page_scene_fill_rect(
+        project_page_scene_fill_rect(
             surface,
             scene,
             legend_x,
@@ -9023,8 +9145,9 @@ fn draw_authored_chart(
     Ok(())
 }
 
-/// Draw a run's glyphs at an absolute baseline position, in the run's color.
-fn draw_run(surface: &mut Surface<'_>, run: RunDraw, x_abs: f32, baseline_y: f32) {
+/// Test oracle for drawing a run directly with a backend font.
+#[cfg(test)]
+fn draw_run(surface: &mut Surface<'_>, run: RunDraw, x_abs: f32, baseline_y: f32, font: Font) {
     let x = x_abs + run.x;
     let baseline = baseline_y + run.baseline_shift;
     let width = run.width();
@@ -9046,7 +9169,7 @@ fn draw_run(surface: &mut Surface<'_>, run: RunDraw, x_abs: f32, baseline_y: f32
     surface.draw_glyphs(
         Point::from_xy(x, baseline),
         &run.glyphs,
-        run.font,
+        font,
         &run.text,
         run.size,
         false,
@@ -9073,7 +9196,7 @@ fn draw_run(surface: &mut Surface<'_>, run: RunDraw, x_abs: f32, baseline_y: f32
     }
 }
 
-fn project_and_replay_page_scene_run_with_page_context(
+fn project_page_scene_run_with_page_context(
     surface: &mut Surface<'_>,
     scene: &mut PageScene,
     run: RunDraw,
@@ -9083,14 +9206,14 @@ fn project_and_replay_page_scene_run_with_page_context(
     tcx: &mut TextCx<'_>,
 ) -> Result<()> {
     let Some(dynamic) = run.dynamic.clone() else {
-        return project_and_replay_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
+        return project_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
     };
 
     let text = match dynamic.kind {
         DynamicTextKind::PageNumber => dynamic_page_number_text(&dynamic, page_number),
     };
     let Some(text) = text else {
-        return project_and_replay_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
+        return project_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
     };
     let Some(line) = shape(
         &text,
@@ -9102,17 +9225,11 @@ fn project_and_replay_page_scene_run_with_page_context(
     )
     .into_iter()
     .next() else {
-        return project_and_replay_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
+        return project_page_scene_glyph_run(surface, scene, run, x_abs, baseline_y);
     };
 
     for replacement in line.runs {
-        project_and_replay_page_scene_glyph_run(
-            surface,
-            scene,
-            replacement,
-            x_abs + run.x,
-            baseline_y,
-        )?;
+        project_page_scene_glyph_run(surface, scene, replacement, x_abs + run.x, baseline_y)?;
     }
     Ok(())
 }
@@ -9283,7 +9400,7 @@ fn draw_section_column_separators(
         let Some(separator_x) = layout.separator_x(index) else {
             continue;
         };
-        project_and_replay_page_scene_fill_rect(
+        project_page_scene_fill_rect(
             surface,
             scene,
             geom.left + separator_x - COLUMN_SEPARATOR_WIDTH_PT * 0.5,
@@ -11264,7 +11381,7 @@ fn render_pdf(
                 if fy + line.height <= page_geom.page_h {
                     let baseline = fy + line.baseline;
                     let x0 = page_geom.left + line.x_indent;
-                    project_and_replay_page_scene_line_paint(
+                    project_page_scene_line_paint(
                         &mut surface,
                         &mut page_scene,
                         &line,
@@ -11273,7 +11390,7 @@ fn render_pdf(
                         baseline,
                     )?;
                     for run in line.runs {
-                        project_and_replay_page_scene_glyph_run(
+                        project_page_scene_glyph_run(
                             &mut surface,
                             &mut page_scene,
                             run,
@@ -11317,7 +11434,7 @@ fn render_pdf(
                     let bounds_x = page_geom.left
                         + column_x
                         + ((placed.width - layout.bounds_w) * 0.5).max(0.0);
-                    project_and_replay_page_scene_image(
+                    project_page_scene_image(
                         &mut surface,
                         &mut page_scene,
                         image,
@@ -11352,7 +11469,7 @@ fn render_pdf(
                     } else {
                         false
                     };
-                    project_and_replay_page_scene_line_paint(
+                    project_page_scene_line_paint(
                         &mut surface,
                         &mut page_scene,
                         &line,
@@ -11369,7 +11486,7 @@ fn render_pdf(
                                 LinkClip::Unbounded,
                             )?;
                         }
-                        project_and_replay_page_scene_run_with_page_context(
+                        project_page_scene_run_with_page_context(
                             &mut surface,
                             &mut page_scene,
                             run,
@@ -11407,6 +11524,7 @@ fn render_pdf(
             draw_floating_shape_overlay(&mut surface, &mut page_scene, overlay, &mut tcx)?;
         }
         page_scene.ensure_balanced()?;
+        replay_complete_page_scene(&mut surface, &page_scene)?;
         surface.finish();
         replay_page_scene_annotations(&mut page, &page_scene);
         page.finish();
@@ -14571,6 +14689,205 @@ mod tests {
     }
 
     #[test]
+    fn complete_page_scene_replay_reconstructs_neutral_resources_exactly() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut line = super::shape(
+            "Scene",
+            StyledText::plain(&[(0, 5, CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            100.0,
+            &mut tcx,
+        )
+        .into_iter()
+        .next()
+        .expect("text shapes");
+        let mut run = line.runs.remove(0);
+        run.highlight = Some(rgb::Color::new(0xFE, 0xF0, 0x9A));
+        run.underline = Some(super::TextDecoration {
+            offset: 1.0,
+            thickness: 0.5,
+        });
+        run.strikethrough = Some(super::TextDecoration {
+            offset: -3.0,
+            thickness: 0.5,
+        });
+
+        let pixels = [0x10, 0x20, 0x30, 0xFF, 0x40, 0x50, 0x60, 0xFF];
+        let (image, width_px, height_px) = super::decode_model_image(&Image {
+            bytes: Some(pixels.to_vec()),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(2),
+            height_px: Some(1),
+            ..Image::default()
+        })
+        .expect("raw image decodes");
+        assert_eq!((width_px, height_px), (2, 1));
+
+        let mut scene = super::PageScene::default();
+        scene
+            .push_fill_rect(2.0, 3.0, 20.0, 8.0, rgb::Color::new(0x12, 0x34, 0x56))
+            .expect("rectangle projects");
+        let image_operation = scene
+            .push_image(
+                image.scene.clone(),
+                12.0,
+                6.0,
+                super::SceneTransform::from_translate(8.0, 12.0),
+            )
+            .expect("image projects")
+            .expect("valid image emits an operation");
+        scene
+            .push_glyph_run(&run, 10.0, 50.0)
+            .expect("glyph run projects");
+
+        let settings = super::PageSettings::from_wh(200.0, 100.0).expect("finite page");
+        let direct_pdf = {
+            let direct_image = image
+                .scene
+                .to_pdf_image()
+                .expect("direct image reconstructs");
+            let direct_font = run
+                .scene_font
+                .to_pdf_font()
+                .expect("direct font reconstructs");
+            let mut document = super::PdfDoc::new();
+            let mut page = document.start_page_with(settings.clone());
+            let mut surface = page.surface();
+            super::replay_page_scene_operations(&mut surface, &scene, 0..1);
+            assert!(super::replay_page_scene_image(
+                &mut surface,
+                &scene,
+                image_operation,
+                direct_image,
+            ));
+            super::draw_run(&mut surface, run, 10.0, 50.0, direct_font);
+            surface.finish();
+            page.finish();
+            document.finish().expect("direct PDF finishes")
+        };
+        let scene_pdf = {
+            let mut document = super::PdfDoc::new();
+            let mut page = document.start_page_with(settings);
+            let mut surface = page.surface();
+            super::replay_complete_page_scene(&mut surface, &scene)
+                .expect("complete scene replays");
+            surface.finish();
+            page.finish();
+            document.finish().expect("scene PDF finishes")
+        };
+
+        assert_eq!(scene_pdf, direct_pdf);
+    }
+
+    #[test]
+    fn neutral_scene_resources_reconstruct_every_raster_encoding_and_reject_invalid_data() {
+        let png = vec![
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x08, 0x02, 0x00, 0x00,
+            0x00, 0x36, 0x88, 0x49, 0xD6, 0x00, 0x00, 0x00, 0x0B, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0xDA, 0x63, 0x60, 0xC0, 0x02, 0x00, 0x00, 0x15, 0x00, 0x01, 0x39, 0xC1, 0xE0, 0x23,
+            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        let jpeg = vec![
+            0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x00,
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xC0, 0x00, 0x11, 0x08, 0x00, 0x03, 0x00,
+            0x02, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00, 0xFF, 0xDA, 0x00,
+            0x0C, 0x03, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x00, 0x3F, 0x00, 0x00, 0xFF, 0xD9,
+        ];
+        let gif = vec![
+            b'G', b'I', b'F', b'8', b'9', b'a', 0x02, 0x00, 0x03, 0x00, 0x80, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x03, 0x00,
+            0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3B,
+        ];
+        let webp = vec![
+            0x52, 0x49, 0x46, 0x46, 0x1A, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50,
+            0x38, 0x4C, 0x0E, 0x00, 0x00, 0x00, 0x2F, 0x01, 0x80, 0x00, 0x00, 0x07, 0x10, 0x11,
+            0xFD, 0x0F, 0x44, 0x44, 0xFF, 0x03,
+        ];
+        for (mime, bytes, encoding) in [
+            ("image/png", png, super::SceneImageEncoding::Png),
+            ("image/jpeg", jpeg, super::SceneImageEncoding::Jpeg),
+            ("image/gif", gif, super::SceneImageEncoding::Gif),
+            ("image/webp", webp, super::SceneImageEncoding::Webp),
+        ] {
+            let (image, width, height) = super::decode_image(&bytes, Some(mime))
+                .unwrap_or_else(|| panic!("{mime} fixture decodes"));
+            assert_eq!(image.scene.encoding, encoding);
+            let rebuilt = image
+                .scene
+                .to_pdf_image()
+                .expect("neutral encoded resource reconstructs");
+            assert_eq!(rebuilt.size(), (width, height));
+            assert_eq!(
+                rebuilt,
+                image
+                    .scene
+                    .to_pdf_image()
+                    .expect("resource reconstruction is deterministic")
+            );
+        }
+
+        let pixels = vec![0x10, 0x20, 0x30, 0xFF, 0x40, 0x50, 0x60, 0xFF];
+        let raw = super::SceneImageResource {
+            encoding: super::SceneImageEncoding::Rgba8,
+            bytes: std::sync::Arc::new(pixels),
+            width_px: 2,
+            height_px: 1,
+        };
+        assert_eq!(
+            raw.to_pdf_image()
+                .expect("raw resource reconstructs")
+                .size(),
+            (2, 1)
+        );
+
+        for invalid in [
+            super::SceneImageResource {
+                encoding: super::SceneImageEncoding::Png,
+                bytes: std::sync::Arc::new(vec![1, 2, 3]),
+                width_px: 1,
+                height_px: 1,
+            },
+            super::SceneImageResource {
+                encoding: super::SceneImageEncoding::Rgba8,
+                bytes: std::sync::Arc::new(vec![1, 2, 3]),
+                width_px: 1,
+                height_px: 1,
+            },
+        ] {
+            assert_eq!(
+                invalid
+                    .to_pdf_image()
+                    .expect_err("invalid image is rejected")
+                    .to_string(),
+                "render failed: page scene contains an invalid image resource"
+            );
+        }
+
+        let invalid_font = super::SceneFontResource {
+            bytes: std::sync::Arc::new(vec![1, 2, 3]),
+            source_id: 1,
+            index: 0,
+        };
+        assert_eq!(
+            invalid_font
+                .to_pdf_font()
+                .expect_err("invalid font is rejected")
+                .to_string(),
+            "render failed: page scene contains an invalid font resource"
+        );
+    }
+
+    #[test]
     fn remaining_rectangles_enter_the_page_scene_in_backend_order() {
         let geom = Geom::from_setup(&PageSetup {
             width_pt: 220.0,
@@ -15011,15 +15328,8 @@ mod tests {
         let mut page = document.start_page_with(settings);
         let mut surface = page.surface();
         let mut scene = super::PageScene::default();
-        super::project_and_replay_page_scene_line_paint(
-            &mut surface,
-            &mut scene,
-            &line,
-            10.0,
-            20.0,
-            30.0,
-        )
-        .expect("leader styles paint");
+        super::project_page_scene_line_paint(&mut surface, &mut scene, &line, 10.0, 20.0, 30.0)
+            .expect("leader styles paint");
         surface.finish();
         page.finish();
         document.finish().expect("test PDF finishes");
