@@ -25,6 +25,8 @@
 //! [`crate::render_pdf_with_fonts`] (the renderer does not embed a multi-megabyte
 //! CJK font into the crate; install one — e.g. Noto Sans CJK — or supply it).
 
+#[cfg(test)]
+mod flow;
 mod paginate;
 mod pdf;
 mod scene;
