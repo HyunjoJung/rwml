@@ -208,6 +208,8 @@ def _character_paint() -> bytes:
 def _fields_document_formula() -> bytes:
     body = _paragraph("Deterministic formula and document fields")
     body += "<w:p>" + _simple_field('= 21 * 2 \\# "0"', "42") + "</w:p>"
+    body += "<w:p>" + _simple_field("NUMWORDS", "7") + "</w:p>"
+    body += "<w:p>" + _simple_field("NUMCHARS", "41") + "</w:p>"
     body += "<w:p>" + _simple_field("PAGE", "1") + "</w:p>"
     body += "<w:p>" + _simple_field("NUMPAGES", "1") + "</w:p>"
     body += "<w:p>" + _simple_field("SECTION", "1") + "</w:p>"
@@ -499,10 +501,10 @@ def _rtl_list() -> bytes:
     body = (
         '<w:p><w:pPr><w:bidi/><w:jc w:val="right"/><w:numPr>'
         '<w:ilvl w:val="0"/><w:numId w:val="27"/></w:numPr></w:pPr>'
-        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>عنصر عربي أول</w:t></w:r></w:p>'
+        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>عنصر عربي أول 123</w:t></w:r></w:p>'
         '<w:p><w:pPr><w:bidi/><w:jc w:val="right"/><w:numPr>'
         '<w:ilvl w:val="1"/><w:numId w:val="27"/></w:numPr></w:pPr>'
-        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>פריט עברי מקונן</w:t></w:r></w:p>'
+        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>פריט עברי מקונן 45</w:t></w:r></w:p>'
     )
     return _document(
         body,
@@ -535,8 +537,14 @@ def _rtl_merged_table() -> bytes:
 def _rtl_mixed_text() -> bytes:
     body = (
         '<w:p><w:pPr><w:bidi/><w:jc w:val="right"/></w:pPr>'
-        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>مرحبا بالعالم</w:t>'
-        '<w:br/><w:t>rwml 2026</w:t><w:br/><w:t>שלום</w:t></w:r></w:p>'
+        '<w:r><w:rPr><w:rtl/></w:rPr>'
+        '<w:t xml:space="preserve">مرحبا بالعالم </w:t></w:r>'
+        '<w:r><w:t>rwml 2026 (A-17)</w:t></w:r>'
+        '<w:r><w:rPr><w:rtl/></w:rPr>'
+        '<w:t xml:space="preserve"> שלום</w:t></w:r></w:p>'
+        '<w:p><w:r><w:t xml:space="preserve">LTR prefix: </w:t></w:r>'
+        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>اختبار 123, עברית 456</w:t></w:r>'
+        '<w:r><w:t xml:space="preserve"> :LTR suffix.</w:t></w:r></w:p>'
     )
     return _document(body)
 
@@ -548,9 +556,7 @@ def _structured_revisions() -> bytes:
         '<w:p><w:ins w:id="71" w:author="rwml" w:date="2026-01-01T00:00:00Z">'
         '<w:r><w:t xml:space="preserve">Accepted inserted text </w:t></w:r></w:ins>'
         '<w:del w:id="72" w:author="rwml" w:date="2026-01-01T00:00:00Z">'
-        '<w:r><w:delText>Rejected deleted text</w:delText></w:r></w:del>'
-        '<w:r><w:t xml:space="preserve"> Visible accepted view includes '
-        'Rejected deleted text vocabulary.</w:t></w:r></w:p>'
+        '<w:r><w:delText>Rejected deleted text</w:delText></w:r></w:del></w:p>'
         '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Structured cell A</w:t>'
         '</w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Structured cell B</w:t>'
         '</w:r></w:p></w:tc></w:tr></w:tbl></w:sdtContent></w:sdt>'
@@ -579,13 +585,20 @@ def _table_cell_spacing() -> bytes:
 
 def _unicode_line_breaking() -> bytes:
     body = _paragraph(
+        "한글 줄바꿈 검증 문장입니다. 日本語の禁則処理を確認します。"
+        "中文标点，不能错误换行。"
+    )
+    body += _paragraph(
+        "Emoji clusters: 👩‍💻 family 👨‍👩‍👧‍👦 flags 🇰🇷 🇺🇸."
+    )
+    body += _paragraph(
         "Greek Ελληνικά and Cyrillic кириллица remain readable across a narrow line."
     )
     body += _paragraph(
         "Combining marks: cafe\u0301 nai\u0308ve re\u0301sume\u0301 and Ångström."
     )
     body += _paragraph(
-        "Break opportunities: alpha-beta/gamma_delta spaced words 123,456.78."
+        "Break opportunities: alpha-beta/gamma_delta soft\u00adhyphen zero\u200bwidth 123,456.78."
     )
     return _document(body, section=_section(width=7200, height=10080))
 
@@ -746,7 +759,7 @@ PILOT_CASES = tuple(
             ),
             PilotCase(
                 "pilot-unicode-line-breaking",
-                ("combining-marks", "multilingual-text", "unicode-line-breaking"),
+                ("cjk", "combining-marks", "emoji", "multilingual-text", "unicode-line-breaking"),
                 1,
                 (),
                 _unicode_line_breaking,

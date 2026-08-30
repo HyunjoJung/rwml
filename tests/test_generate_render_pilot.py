@@ -7,6 +7,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 import zipfile
 
 
@@ -43,25 +44,46 @@ class RenderPilotGeneratorTests(unittest.TestCase):
                 self.assertNotIn(b"/Users/", document)
                 self.assertNotIn(b"/home/", document)
 
-        by_id = {case.case_id: case for case in cases}
-        field_document = by_id["pilot-fields-document-formula"].builder()
-        rtl_document = by_id["pilot-rtl-mixed-text"].builder()
-        unicode_document = by_id["pilot-unicode-line-breaking"].builder()
-        with zipfile.ZipFile(io.BytesIO(field_document)) as archive:
-            field_xml = archive.read("word/document.xml")
-        with zipfile.ZipFile(io.BytesIO(rtl_document)) as archive:
-            rtl_xml = archive.read("word/document.xml")
-        with zipfile.ZipFile(io.BytesIO(unicode_document)) as archive:
-            unicode_xml = archive.read("word/document.xml")
-        self.assertIn(b"NUMPAGES", field_xml)
-        self.assertNotIn(b"NUMWORDS", field_xml)
-        self.assertIn("Ελληνικά".encode(), unicode_xml)
-        self.assertIn("кириллица".encode(), unicode_xml)
-        self.assertNotIn("👩".encode(), unicode_xml)
-        self.assertNotIn("\u00ad".encode(), unicode_xml)
-        self.assertNotIn("\u200b".encode(), unicode_xml)
-        self.assertEqual(rtl_xml.count(b"<w:t"), 3)
-        self.assertEqual(rtl_xml.count(b"<w:p>"), 1)
+    def test_pilot_preserves_discriminating_coverage(self):
+        by_id = {case.case_id: case for case in generate_render_pilot.PILOT_CASES}
+        w = "{" + generate_render_pilot.W + "}"
+
+        def document(case_id):
+            with zipfile.ZipFile(io.BytesIO(by_id[case_id].builder())) as archive:
+                return ET.fromstring(archive.read("word/document.xml"))
+
+        with self.subTest(surface="document-fields"):
+            root = document("pilot-fields-document-formula")
+            instructions = {e.get(w + "instr") for e in root.iter(w + "fldSimple")}
+            self.assertTrue({"NUMWORDS", "NUMCHARS", "NUMPAGES"} <= instructions)
+
+        with self.subTest(surface="unicode"):
+            root = document("pilot-unicode-line-breaking")
+            text = "".join(root.itertext())
+            for fragment in ("한글", "日本語", "中文", "👩‍💻", "Ελληνικά", "кириллица", "\u0301", "\u00ad", "\u200b"):
+                self.assertIn(fragment, text)
+            self.assertTrue({"cjk", "emoji", "combining-marks"} <= set(by_id["pilot-unicode-line-breaking"].features))
+
+        with self.subTest(surface="mixed-direction"):
+            root = document("pilot-rtl-mixed-text")
+            paragraphs = list(root.iter(w + "p"))
+            self.assertEqual(len(paragraphs), 2)
+            self.assertFalse(list(root.iter(w + "br")), "line breaks must not isolate direction changes")
+            text = "".join(root.itertext())
+            for fragment in ("(A-17)", "123,", "456", "مرحبا", "שלום", "rwml"):
+                self.assertIn(fragment, text)
+
+        with self.subTest(surface="rtl-list-numbers"):
+            text = "".join(document("pilot-rtl-list").itertext())
+            self.assertIn("123", text)
+            self.assertIn("45", text)
+
+        with self.subTest(surface="accepted-current-revisions"):
+            root = document("pilot-structured-revisions")
+            accepted = " ".join(e.text or "" for e in root.iter(w + "t"))
+            deleted = " ".join(e.text or "" for e in root.iter(w + "delText"))
+            self.assertIn("Rejected", deleted)
+            self.assertNotIn("Rejected", accepted, "visible duplicates would hide deletion-view disagreement")
 
     def test_pilot_lock_binds_exactly_40_documents_and_generator_closure(self):
         lock = generate_render_pilot.build_lock()

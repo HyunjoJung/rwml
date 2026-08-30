@@ -36,7 +36,7 @@ Every file here is safe to redistribute:
   campaigns that are intentionally outside the ordinary release corpus. The
   unequal-table lock covers 48 table-continuation cases. The render-pilot lock
   combines all 21 ordinary public inputs with 19 focused generated inputs, 51
-  expected pages, and 69 feature labels. Exact DOCX inputs and strict manifests
+  expected pages, and 71 feature labels. Exact DOCX inputs and strict manifests
   are generated under ignored `target/` output.
 - `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
   Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
@@ -121,6 +121,15 @@ paint, paragraph geometry, mixed sections, RTL text/lists/tables, fields and
 notes, table merging/spacing/continuation, floating and inline objects, revision
 structure, and Unicode line breaking. Pilot results remain diagnostic and do not
 change release policy or fidelity thresholds.
+
+Input reproducibility is not a fidelity result. The pilot retains same-line
+Arabic/Hebrew/Latin direction changes, mixed RTL numbers, CJK and emoji,
+discretionary Unicode breaks, document-count fields, and distinct tracked-deletion
+text. These cases must not be simplified or given duplicate visible text to
+improve recall. An unavailable locked font is an explicit skip, not a pass;
+use `--max-skipped 0` to make incomplete measurements fail the campaign gate.
+Oracle view differences and text-extractor disagreements require investigation,
+not a reduced input surface or a parity claim.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:
