@@ -5923,13 +5923,6 @@ fn draw_table_cell_background_and_borders(
     Ok(())
 }
 
-fn draw_border_color(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32, color: rgb::Color) {
-    fill_rect_color(surface, x, y, w, BORDER, color);
-    fill_rect_color(surface, x, y + h - BORDER, w, BORDER, color);
-    fill_rect_color(surface, x, y, BORDER, h, color);
-    fill_rect_color(surface, x + w - BORDER, y, BORDER, h, color);
-}
-
 fn cell_line_origin(cell_x: f32, insets: CellInsets, line: &LineLayout) -> f32 {
     cell_x + insets.left + line.x_indent
 }
@@ -6226,27 +6219,46 @@ fn draw_line_leaders(
     }
 }
 
-fn draw_floating_shape_overlay(
-    surface: &mut Surface<'_>,
+fn project_floating_overlay_frame(
+    scene: &mut PageScene,
     overlay: &FloatingShapeOverlay,
-    cx: &mut TextCx<'_>,
-) {
-    fill_rect_color(
-        surface,
+) -> Result<std::ops::Range<usize>> {
+    let start = scene.operations.len();
+    scene.push_fill_rect(
         overlay.x,
         overlay.y,
         overlay.w,
         overlay.h,
         rgb::Color::new(0xF6, 0xF8, 0xFA),
-    );
-    draw_border_color(
-        surface,
+    )?;
+    let border = rgb::Color::new(0x5D, 0x6B, 0x78);
+    scene.push_fill_rect(overlay.x, overlay.y, overlay.w, BORDER, border)?;
+    scene.push_fill_rect(
         overlay.x,
-        overlay.y,
+        overlay.y + overlay.h - BORDER,
         overlay.w,
+        BORDER,
+        border,
+    )?;
+    scene.push_fill_rect(overlay.x, overlay.y, BORDER, overlay.h, border)?;
+    scene.push_fill_rect(
+        overlay.x + overlay.w - BORDER,
+        overlay.y,
+        BORDER,
         overlay.h,
-        rgb::Color::new(0x5D, 0x6B, 0x78),
-    );
+        border,
+    )?;
+    Ok(start..scene.operations.len())
+}
+
+fn draw_floating_shape_overlay(
+    surface: &mut Surface<'_>,
+    scene: &mut PageScene,
+    overlay: &FloatingShapeOverlay,
+    cx: &mut TextCx<'_>,
+) -> Result<()> {
+    let operations = project_floating_overlay_frame(scene, overlay)?;
+    replay_page_scene_operations(surface, scene, operations);
     draw_chart_text(
         surface,
         &overlay.label,
@@ -6261,6 +6273,7 @@ fn draw_floating_shape_overlay(
         },
         cx,
     );
+    Ok(())
 }
 
 /// The text style for a single chart label: point size, weight, alignment, and
@@ -10359,7 +10372,7 @@ fn render_pdf(
             .iter()
             .filter(|overlay| overlay.page_index == page_index && overlay.behind_doc)
         {
-            draw_floating_shape_overlay(&mut surface, overlay, &mut tcx);
+            draw_floating_shape_overlay(&mut surface, &mut page_scene, overlay, &mut tcx)?;
         }
         // Running surfaces are bounded to their margin bands so text and images
         // cannot bleed into body content or beyond the physical page.
@@ -10494,7 +10507,7 @@ fn render_pdf(
             .iter()
             .filter(|overlay| overlay.page_index == page_index && !overlay.behind_doc)
         {
-            draw_floating_shape_overlay(&mut surface, overlay, &mut tcx);
+            draw_floating_shape_overlay(&mut surface, &mut page_scene, overlay, &mut tcx)?;
         }
         surface.finish();
         replay_page_scene_annotations(&mut page, &page_scene);
@@ -15993,6 +16006,95 @@ mod tests {
         assert!(!overlays[1].behind_doc);
         assert!(overlays[0].label.contains("Back"));
         assert!(overlays[1].label.contains("Front"));
+    }
+
+    #[test]
+    fn floating_overlay_frames_project_behind_body_front_scene_order() {
+        let overlay = |x, y, behind_doc| super::FloatingShapeOverlay {
+            page_index: 0,
+            behind_doc,
+            label: "shape".to_string(),
+            x,
+            y,
+            w: 30.0,
+            h: 40.0,
+        };
+        let fill = rgb::Color::new(0xF6, 0xF8, 0xFA);
+        let border = rgb::Color::new(0x5D, 0x6B, 0x78);
+        let body = rgb::Color::new(0x10, 0x20, 0x30);
+        let expected_frame = |x, y| {
+            vec![
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x,
+                        y,
+                        width: 30.0,
+                        height: 40.0,
+                    },
+                    color: fill,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x,
+                        y,
+                        width: 30.0,
+                        height: super::BORDER,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x,
+                        y: y + 40.0 - super::BORDER,
+                        width: 30.0,
+                        height: super::BORDER,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x,
+                        y,
+                        width: super::BORDER,
+                        height: 40.0,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: x + 30.0 - super::BORDER,
+                        y,
+                        width: super::BORDER,
+                        height: 40.0,
+                    },
+                    color: border,
+                },
+            ]
+        };
+
+        let mut scene = super::PageScene::default();
+        let behind = super::project_floating_overlay_frame(&mut scene, &overlay(10.0, 20.0, true))
+            .expect("behind frame projects");
+        scene
+            .push_fill_rect(0.0, 0.0, 1.0, 1.0, body)
+            .expect("body sentinel projects");
+        let front = super::project_floating_overlay_frame(&mut scene, &overlay(50.0, 60.0, false))
+            .expect("front frame projects");
+
+        assert_eq!(behind, 0..5);
+        assert_eq!(front, 6..11);
+        let mut expected = expected_frame(10.0, 20.0);
+        expected.push(super::PageSceneOp::FillRect {
+            rect: super::SceneRect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            color: body,
+        });
+        expected.extend(expected_frame(50.0, 60.0));
+        assert_eq!(scene.operations, expected);
     }
 
     #[test]
