@@ -112,6 +112,16 @@ def valid_core_report() -> dict:
     semantic_report = render_pdf_diagnostics.semantic_report(
         [render_pdf_diagnostics.semantic_metrics(("fixture",), ("fixture",))]
     )
+    text_box = render_pdf_diagnostics.canonical_text_box(
+        ("fixture",), (0, 0, 10, 10)
+    )
+    text_geometry_report = render_pdf_diagnostics.text_geometry_report(
+        [
+            render_pdf_diagnostics.text_geometry_page(
+                [text_box], [text_box], [text_box], [text_box]
+            )
+        ]
+    )
     return {
         "visual_comparison": {
             "dpi": 110,
@@ -127,6 +137,11 @@ def valid_core_report() -> dict:
             [geometry_report]
         ),
         "semantic_text_metrics": semantic_report,
+        "text_geometry_metrics": (
+            render_pdf_diagnostics.aggregate_text_geometry_reports(
+                [text_geometry_report]
+            )
+        ),
         "summary": {
             "documents": 1,
             "measured": 1,
@@ -170,6 +185,7 @@ def valid_core_report() -> dict:
                 "integer_visual_metrics": integer_metrics,
                 "pdf_point_geometry": geometry_report,
                 "semantic_text_metrics": semantic_report,
+                "text_geometry_metrics": text_geometry_report,
             }
         ],
     }
@@ -326,7 +342,7 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
             )
             render_oracle_contract.validate_evidence_report(evidence, corpus)
 
-        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v3")
+        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v4")
         self.assertEqual(evidence["campaign"]["name"], "test-campaign")
         self.assertEqual(evidence["campaign"]["documents"], 1)
         self.assertEqual(evidence["campaign"]["expected_pages"], 1)
@@ -499,6 +515,19 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
             evidence["semantic_text_metrics"]["semantic_token_matched_items"] = 0
 
             with self.assertRaisesRegex(ValueError, "semantic_token"):
+                render_oracle_contract.validate_evidence_report(evidence, corpus)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(root, valid_manifest())
+            )
+            evidence = render_oracle_contract.bind_evidence_report(
+                valid_core_report(), corpus, valid_environment()
+            )
+            evidence["text_geometry_metrics"]["word_boxes"]["matched_items"] = 0
+
+            with self.assertRaisesRegex(ValueError, "text geometry"):
                 render_oracle_contract.validate_evidence_report(evidence, corpus)
 
     def test_evidence_allows_candidate_to_reference_page_ratio_above_one(self):

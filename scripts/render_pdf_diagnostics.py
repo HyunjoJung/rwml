@@ -6,15 +6,26 @@ from __future__ import annotations
 import unicodedata
 from collections import Counter
 from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 
-DIAGNOSTIC_SCHEMA = "rwml.pdf-diagnostics.v1"
+DIAGNOSTIC_SCHEMA = "rwml.pdf-diagnostics.v2"
 PPM = 1_000_000
 MAX_POINT_MAGNITUDE = 1_000_000
 MAX_POINT_MILLIPOINTS = MAX_POINT_MAGNITUDE * 1000
 MAX_SEMANTIC_CODEPOINTS = 1_000_000
 MAX_SEMANTIC_TOKENS = 250_000
+MAX_TEXT_GEOMETRY_ITEMS = 250_000
+MAX_TEXT_GEOMETRY_BUCKETS = 21
+MAX_TEXT_GEOMETRY_PAGES = 4_096
+MAX_TEXT_GEOMETRY_DELTA_MILLIPOINTS = 1_000_000_000
+TEXT_GEOMETRY_EXACT_LIMIT_MILLIPOINTS = 2
+TEXT_GEOMETRY_MIDDLE_LIMIT_MILLIPOINTS = 1_000
+TEXT_GEOMETRY_MIDDLE_BUCKET_MILLIPOINTS = 500
+TEXT_GEOMETRY_OUTER_LIMIT_MILLIPOINTS = 10_000
+TEXT_GEOMETRY_OUTER_BUCKET_MILLIPOINTS = 2_000
+TEXT_GEOMETRY_OVERFLOW_MILLIPOINTS = 12_000
 VALID_ROTATIONS = frozenset({0, 90, 180, 270})
 SEMANTIC_IGNORED_CODEPOINTS = frozenset(
     {
@@ -104,6 +115,54 @@ SEMANTIC_REPORT_KEYS = frozenset(
         for suffix in SEMANTIC_RATIO_SUFFIXES
     }
 )
+TEXT_GEOMETRY_AXES = (
+    "x_min",
+    "x_max",
+    "y_min",
+    "y_max",
+    "center_x",
+    "center_y",
+    "width",
+    "height",
+)
+TEXT_GEOMETRY_COUNT_KEYS = frozenset(
+    {
+        "reference_items",
+        "candidate_items",
+        "reference_unique_items",
+        "candidate_unique_items",
+        "reference_ambiguous_items",
+        "candidate_ambiguous_items",
+        "reference_unmatched_unique_items",
+        "candidate_unmatched_unique_items",
+        "matched_items",
+        "precision_ppm",
+        "recall_ppm",
+        "f1_ppm",
+    }
+)
+TEXT_GEOMETRY_METRIC_KEYS = frozenset(
+    set(TEXT_GEOMETRY_COUNT_KEYS)
+    | {
+        "delta_histograms_millipoints",
+        "exact_delta_summaries_millipoints",
+    }
+)
+TEXT_GEOMETRY_EXACT_SUMMARY_KEYS = frozenset(
+    {
+        "count",
+        "sum",
+        "min",
+        "max",
+        "negative_overflow_items",
+        "positive_overflow_items",
+    }
+)
+TEXT_GEOMETRY_PAGE_KEYS = frozenset({"word_boxes", "line_boxes"})
+TEXT_GEOMETRY_REPORT_KEYS = frozenset({"pages", "summary"})
+TEXT_GEOMETRY_REPORT_SUMMARY_KEYS = frozenset(
+    {"pages", "word_boxes", "line_boxes"}
+)
 DIAGNOSTIC_CONTRACT_KEYS = frozenset(
     {
         "schema",
@@ -116,8 +175,19 @@ DIAGNOSTIC_CONTRACT_KEYS = frozenset(
         "semantic_ignored_codepoints",
         "max_semantic_codepoints",
         "max_semantic_tokens",
+        "text_geometry_matching",
+        "text_geometry_axes",
+        "max_text_geometry_items_per_side_per_page",
+        "max_text_geometry_histogram_buckets_per_axis",
+        "text_geometry_histogram_millipoints",
     }
 )
+
+
+@dataclass(frozen=True)
+class SemanticTextBox:
+    tokens: tuple[str, ...]
+    bbox_millipoints: tuple[int, int, int, int]
 
 
 def diagnostic_contract() -> dict[str, object]:
@@ -135,6 +205,18 @@ def diagnostic_contract() -> dict[str, object]:
         ],
         "max_semantic_codepoints": MAX_SEMANTIC_CODEPOINTS,
         "max_semantic_tokens": MAX_SEMANTIC_TOKENS,
+        "text_geometry_matching": "exact-token-tuple-unique-on-both-sides",
+        "text_geometry_axes": list(TEXT_GEOMETRY_AXES),
+        "max_text_geometry_items_per_side_per_page": MAX_TEXT_GEOMETRY_ITEMS,
+        "max_text_geometry_histogram_buckets_per_axis": MAX_TEXT_GEOMETRY_BUCKETS,
+        "text_geometry_histogram_millipoints": {
+            "exact_absolute_limit": TEXT_GEOMETRY_EXACT_LIMIT_MILLIPOINTS,
+            "middle_absolute_limit": TEXT_GEOMETRY_MIDDLE_LIMIT_MILLIPOINTS,
+            "middle_bucket_width": TEXT_GEOMETRY_MIDDLE_BUCKET_MILLIPOINTS,
+            "outer_absolute_limit": TEXT_GEOMETRY_OUTER_LIMIT_MILLIPOINTS,
+            "outer_bucket_width": TEXT_GEOMETRY_OUTER_BUCKET_MILLIPOINTS,
+            "overflow_bucket_absolute": TEXT_GEOMETRY_OVERFLOW_MILLIPOINTS,
+        },
     }
 
 
@@ -656,3 +738,422 @@ def aggregate_semantic_reports(
         )
     validate_semantic_report(aggregate)
     return aggregate
+
+
+def canonical_text_box(
+    tokens: Sequence[str], bbox_points: Sequence[object]
+) -> SemanticTextBox:
+    normalized = _validate_tokens(tokens, "text box")
+    if not normalized:
+        raise ValueError("text box tokens are empty")
+    return SemanticTextBox(normalized, _box_millipoints(bbox_points, "text"))
+
+
+def _signed_round_half_away(numerator: int, denominator: int) -> int:
+    if denominator <= 0:
+        raise ValueError("signed rounding denominator is invalid")
+    magnitude = (abs(numerator) + denominator // 2) // denominator
+    return -magnitude if numerator < 0 else magnitude
+
+
+def _text_geometry_bucket(delta: int) -> int:
+    magnitude = abs(delta)
+    if magnitude <= TEXT_GEOMETRY_EXACT_LIMIT_MILLIPOINTS:
+        return delta
+    if magnitude <= TEXT_GEOMETRY_MIDDLE_LIMIT_MILLIPOINTS:
+        width = TEXT_GEOMETRY_MIDDLE_BUCKET_MILLIPOINTS
+        bucket = max(width, (magnitude + width // 2) // width * width)
+        return -bucket if delta < 0 else bucket
+    if magnitude <= TEXT_GEOMETRY_OUTER_LIMIT_MILLIPOINTS:
+        width = TEXT_GEOMETRY_OUTER_BUCKET_MILLIPOINTS
+        bucket = (magnitude + width // 2) // width * width
+        return -bucket if delta < 0 else bucket
+    return (
+        -TEXT_GEOMETRY_OVERFLOW_MILLIPOINTS
+        if delta < 0
+        else TEXT_GEOMETRY_OVERFLOW_MILLIPOINTS
+    )
+
+
+def _text_geometry_ratio_evidence(
+    reference_unique: int, candidate_unique: int, matched: int
+) -> dict[str, int]:
+    both_empty = reference_unique == 0 and candidate_unique == 0
+    return {
+        "precision_ppm": _ratio_ppm(
+            matched,
+            candidate_unique,
+            empty=PPM if both_empty else 0,
+        ),
+        "recall_ppm": _ratio_ppm(
+            matched,
+            reference_unique,
+            empty=PPM if both_empty else 0,
+        ),
+        "f1_ppm": _ratio_ppm(
+            2 * matched,
+            reference_unique + candidate_unique,
+            empty=PPM if both_empty else 0,
+        ),
+    }
+
+
+def _text_box_deltas(
+    reference: SemanticTextBox, candidate: SemanticTextBox
+) -> dict[str, int]:
+    reference_x0, reference_y0, reference_x1, reference_y1 = (
+        reference.bbox_millipoints
+    )
+    candidate_x0, candidate_y0, candidate_x1, candidate_y1 = (
+        candidate.bbox_millipoints
+    )
+    return {
+        "x_min": candidate_x0 - reference_x0,
+        "x_max": candidate_x1 - reference_x1,
+        "y_min": candidate_y0 - reference_y0,
+        "y_max": candidate_y1 - reference_y1,
+        "center_x": _signed_round_half_away(
+            (candidate_x0 + candidate_x1) - (reference_x0 + reference_x1),
+            2,
+        ),
+        "center_y": _signed_round_half_away(
+            (candidate_y0 + candidate_y1) - (reference_y0 + reference_y1),
+            2,
+        ),
+        "width": (candidate_x1 - candidate_x0) - (reference_x1 - reference_x0),
+        "height": (candidate_y1 - candidate_y0) - (reference_y1 - reference_y0),
+    }
+
+
+def _empty_text_geometry_summaries() -> dict[str, dict[str, int | None]]:
+    return {
+        axis: {
+            "count": 0,
+            "sum": 0,
+            "min": None,
+            "max": None,
+            "negative_overflow_items": 0,
+            "positive_overflow_items": 0,
+        }
+        for axis in TEXT_GEOMETRY_AXES
+    }
+
+
+def unique_text_geometry_metrics(
+    reference_boxes: Sequence[SemanticTextBox],
+    candidate_boxes: Sequence[SemanticTextBox],
+    *,
+    max_items: int = MAX_TEXT_GEOMETRY_ITEMS,
+) -> dict[str, object]:
+    if (
+        not isinstance(max_items, int)
+        or isinstance(max_items, bool)
+        or not 1 <= max_items <= MAX_TEXT_GEOMETRY_ITEMS
+        or len(reference_boxes) > max_items
+        or len(candidate_boxes) > max_items
+    ):
+        raise ValueError("text geometry item limit exceeded")
+    if any(not isinstance(box, SemanticTextBox) for box in reference_boxes):
+        raise ValueError("reference text geometry item is invalid")
+    if any(not isinstance(box, SemanticTextBox) for box in candidate_boxes):
+        raise ValueError("candidate text geometry item is invalid")
+
+    reference_counts = Counter(box.tokens for box in reference_boxes)
+    candidate_counts = Counter(box.tokens for box in candidate_boxes)
+    reference_unique = {
+        box.tokens: box
+        for box in reference_boxes
+        if reference_counts[box.tokens] == 1
+    }
+    candidate_unique = {
+        box.tokens: box
+        for box in candidate_boxes
+        if candidate_counts[box.tokens] == 1
+    }
+    histograms = {axis: Counter() for axis in TEXT_GEOMETRY_AXES}
+    summaries = _empty_text_geometry_summaries()
+    matched = 0
+    for tokens, candidate in candidate_unique.items():
+        reference = reference_unique.get(tokens)
+        if reference is None:
+            continue
+        deltas = _text_box_deltas(reference, candidate)
+        for axis, delta in deltas.items():
+            if abs(delta) > MAX_TEXT_GEOMETRY_DELTA_MILLIPOINTS:
+                raise ValueError("text geometry delta limit exceeded")
+            histograms[axis][_text_geometry_bucket(delta)] += 1
+            summary = summaries[axis]
+            summary["count"] += 1
+            summary["sum"] += delta
+            summary["min"] = (
+                delta if summary["min"] is None else min(summary["min"], delta)
+            )
+            summary["max"] = (
+                delta if summary["max"] is None else max(summary["max"], delta)
+            )
+            summary["negative_overflow_items"] += int(
+                delta < -TEXT_GEOMETRY_OUTER_LIMIT_MILLIPOINTS
+            )
+            summary["positive_overflow_items"] += int(
+                delta > TEXT_GEOMETRY_OUTER_LIMIT_MILLIPOINTS
+            )
+        matched += 1
+
+    evidence: dict[str, object] = {
+        "reference_items": len(reference_boxes),
+        "candidate_items": len(candidate_boxes),
+        "reference_unique_items": len(reference_unique),
+        "candidate_unique_items": len(candidate_unique),
+        "reference_ambiguous_items": len(reference_boxes) - len(reference_unique),
+        "candidate_ambiguous_items": len(candidate_boxes) - len(candidate_unique),
+        "reference_unmatched_unique_items": len(reference_unique) - matched,
+        "candidate_unmatched_unique_items": len(candidate_unique) - matched,
+        "matched_items": matched,
+        **_text_geometry_ratio_evidence(
+            len(reference_unique), len(candidate_unique), matched
+        ),
+        "delta_histograms_millipoints": {
+            axis: [
+                {"delta_millipoints": delta, "count": count}
+                for delta, count in sorted(histograms[axis].items())
+            ]
+            for axis in TEXT_GEOMETRY_AXES
+        },
+        "exact_delta_summaries_millipoints": summaries,
+    }
+    validate_unique_text_geometry_metrics(evidence)
+    return evidence
+
+
+def validate_unique_text_geometry_metrics(value: object) -> None:
+    if not isinstance(value, dict) or set(value) != TEXT_GEOMETRY_METRIC_KEYS:
+        raise ValueError("text geometry metric keys are invalid")
+    for key in TEXT_GEOMETRY_COUNT_KEYS:
+        item = value[key]
+        if not isinstance(item, int) or isinstance(item, bool) or item < 0:
+            raise ValueError(f"text geometry metric is invalid: {key}")
+        if key.endswith("_ppm") and item > PPM:
+            raise ValueError(f"text geometry metric is out of range: {key}")
+    if value["reference_items"] != (
+        value["reference_unique_items"] + value["reference_ambiguous_items"]
+    ):
+        raise ValueError("reference text geometry counts are inconsistent")
+    if value["candidate_items"] != (
+        value["candidate_unique_items"] + value["candidate_ambiguous_items"]
+    ):
+        raise ValueError("candidate text geometry counts are inconsistent")
+    matched = value["matched_items"]
+    if matched > min(
+        value["reference_unique_items"], value["candidate_unique_items"]
+    ):
+        raise ValueError("text geometry matched count is invalid")
+    if value["reference_unmatched_unique_items"] != (
+        value["reference_unique_items"] - matched
+    ):
+        raise ValueError("reference unmatched text geometry count is inconsistent")
+    if value["candidate_unmatched_unique_items"] != (
+        value["candidate_unique_items"] - matched
+    ):
+        raise ValueError("candidate unmatched text geometry count is inconsistent")
+    expected_ratios = _text_geometry_ratio_evidence(
+        value["reference_unique_items"], value["candidate_unique_items"], matched
+    )
+    for key, expected in expected_ratios.items():
+        if value[key] != expected:
+            raise ValueError(f"text geometry metric is inconsistent: {key}")
+
+    histograms = value["delta_histograms_millipoints"]
+    summaries = value["exact_delta_summaries_millipoints"]
+    if not isinstance(histograms, dict) or set(histograms) != set(TEXT_GEOMETRY_AXES):
+        raise ValueError("text geometry histograms are invalid")
+    if not isinstance(summaries, dict) or set(summaries) != set(TEXT_GEOMETRY_AXES):
+        raise ValueError("text geometry exact summaries are invalid")
+    for axis in TEXT_GEOMETRY_AXES:
+        rows = histograms[axis]
+        if not isinstance(rows, list) or len(rows) > MAX_TEXT_GEOMETRY_BUCKETS:
+            raise ValueError(f"text geometry histogram is invalid: {axis}")
+        previous = None
+        count = 0
+        for row in rows:
+            if not isinstance(row, dict) or set(row) != {"delta_millipoints", "count"}:
+                raise ValueError(f"text geometry histogram row is invalid: {axis}")
+            delta = row["delta_millipoints"]
+            row_count = row["count"]
+            if (
+                not isinstance(delta, int)
+                or isinstance(delta, bool)
+                or _text_geometry_bucket(delta) != delta
+                or not isinstance(row_count, int)
+                or isinstance(row_count, bool)
+                or row_count <= 0
+                or (previous is not None and delta <= previous)
+            ):
+                raise ValueError(f"text geometry histogram row is invalid: {axis}")
+            previous = delta
+            count += row_count
+        if count != matched:
+            raise ValueError(f"text geometry histogram count is inconsistent: {axis}")
+
+        summary = summaries[axis]
+        if not isinstance(summary, dict) or set(summary) != TEXT_GEOMETRY_EXACT_SUMMARY_KEYS:
+            raise ValueError(f"text geometry exact summary is invalid: {axis}")
+        if summary["count"] != matched:
+            raise ValueError(f"text geometry exact summary count is inconsistent: {axis}")
+        for key in ("count", "sum", "negative_overflow_items", "positive_overflow_items"):
+            if not isinstance(summary[key], int) or isinstance(summary[key], bool):
+                raise ValueError(f"text geometry exact summary value is invalid: {axis}")
+        if not 0 <= summary["negative_overflow_items"] <= matched:
+            raise ValueError(f"text geometry negative overflow count is invalid: {axis}")
+        if not 0 <= summary["positive_overflow_items"] <= matched:
+            raise ValueError(f"text geometry positive overflow count is invalid: {axis}")
+        if matched == 0:
+            if summary["min"] is not None or summary["max"] is not None or summary["sum"] != 0:
+                raise ValueError(f"empty text geometry summary is invalid: {axis}")
+        elif (
+            not isinstance(summary["min"], int)
+            or isinstance(summary["min"], bool)
+            or not isinstance(summary["max"], int)
+            or isinstance(summary["max"], bool)
+            or summary["min"] > summary["max"]
+            or abs(summary["min"]) > MAX_TEXT_GEOMETRY_DELTA_MILLIPOINTS
+            or abs(summary["max"]) > MAX_TEXT_GEOMETRY_DELTA_MILLIPOINTS
+        ):
+            raise ValueError(f"text geometry exact summary range is invalid: {axis}")
+
+
+def _aggregate_unique_text_geometry_metrics(
+    rows: Sequence[dict[str, object]],
+) -> dict[str, object]:
+    if not rows:
+        raise ValueError("text geometry aggregation requires rows")
+    for row in rows:
+        validate_unique_text_geometry_metrics(row)
+    reference_unique = sum(row["reference_unique_items"] for row in rows)
+    candidate_unique = sum(row["candidate_unique_items"] for row in rows)
+    matched = sum(row["matched_items"] for row in rows)
+    histogram_counters = {axis: Counter() for axis in TEXT_GEOMETRY_AXES}
+    summaries = _empty_text_geometry_summaries()
+    for row in rows:
+        for axis in TEXT_GEOMETRY_AXES:
+            for bucket in row["delta_histograms_millipoints"][axis]:
+                histogram_counters[axis][bucket["delta_millipoints"]] += bucket["count"]
+            source = row["exact_delta_summaries_millipoints"][axis]
+            target = summaries[axis]
+            target["count"] += source["count"]
+            target["sum"] += source["sum"]
+            target["negative_overflow_items"] += source["negative_overflow_items"]
+            target["positive_overflow_items"] += source["positive_overflow_items"]
+            if source["min"] is not None:
+                target["min"] = source["min"] if target["min"] is None else min(target["min"], source["min"])
+                target["max"] = source["max"] if target["max"] is None else max(target["max"], source["max"])
+    evidence: dict[str, object] = {
+        "reference_items": sum(row["reference_items"] for row in rows),
+        "candidate_items": sum(row["candidate_items"] for row in rows),
+        "reference_unique_items": reference_unique,
+        "candidate_unique_items": candidate_unique,
+        "reference_ambiguous_items": sum(row["reference_ambiguous_items"] for row in rows),
+        "candidate_ambiguous_items": sum(row["candidate_ambiguous_items"] for row in rows),
+        "reference_unmatched_unique_items": reference_unique - matched,
+        "candidate_unmatched_unique_items": candidate_unique - matched,
+        "matched_items": matched,
+        **_text_geometry_ratio_evidence(reference_unique, candidate_unique, matched),
+        "delta_histograms_millipoints": {
+            axis: [
+                {"delta_millipoints": delta, "count": count}
+                for delta, count in sorted(histogram_counters[axis].items())
+            ]
+            for axis in TEXT_GEOMETRY_AXES
+        },
+        "exact_delta_summaries_millipoints": summaries,
+    }
+    validate_unique_text_geometry_metrics(evidence)
+    return evidence
+
+
+def text_geometry_page(
+    reference_word_boxes: Sequence[SemanticTextBox],
+    candidate_word_boxes: Sequence[SemanticTextBox],
+    reference_line_boxes: Sequence[SemanticTextBox],
+    candidate_line_boxes: Sequence[SemanticTextBox],
+) -> dict[str, object]:
+    page = {
+        "word_boxes": unique_text_geometry_metrics(
+            reference_word_boxes, candidate_word_boxes
+        ),
+        "line_boxes": unique_text_geometry_metrics(
+            reference_line_boxes, candidate_line_boxes
+        ),
+    }
+    validate_text_geometry_page(page)
+    return page
+
+
+def validate_text_geometry_page(value: object) -> None:
+    if not isinstance(value, dict) or set(value) != TEXT_GEOMETRY_PAGE_KEYS:
+        raise ValueError("text geometry page keys are invalid")
+    validate_unique_text_geometry_metrics(value["word_boxes"])
+    validate_unique_text_geometry_metrics(value["line_boxes"])
+
+
+def _text_geometry_summary(pages: Sequence[dict[str, object]]) -> dict[str, object]:
+    return {
+        "pages": len(pages),
+        "word_boxes": _aggregate_unique_text_geometry_metrics(
+            [page["word_boxes"] for page in pages]
+        ),
+        "line_boxes": _aggregate_unique_text_geometry_metrics(
+            [page["line_boxes"] for page in pages]
+        ),
+    }
+
+
+def text_geometry_report(
+    pages: Sequence[dict[str, object]],
+) -> dict[str, object]:
+    if not pages or len(pages) > MAX_TEXT_GEOMETRY_PAGES:
+        raise ValueError("text geometry report page limit exceeded")
+    for page in pages:
+        validate_text_geometry_page(page)
+    report = {"pages": list(pages), "summary": _text_geometry_summary(pages)}
+    validate_text_geometry_report(report)
+    return report
+
+
+def validate_text_geometry_summary(value: object) -> None:
+    if not isinstance(value, dict) or set(value) != TEXT_GEOMETRY_REPORT_SUMMARY_KEYS:
+        raise ValueError("text geometry report summary keys are invalid")
+    if (
+        not isinstance(value["pages"], int)
+        or isinstance(value["pages"], bool)
+        or not 1 <= value["pages"] <= MAX_TEXT_GEOMETRY_PAGES
+    ):
+        raise ValueError("text geometry report page count is invalid")
+    validate_unique_text_geometry_metrics(value["word_boxes"])
+    validate_unique_text_geometry_metrics(value["line_boxes"])
+
+
+def validate_text_geometry_report(value: object) -> None:
+    if not isinstance(value, dict) or set(value) != TEXT_GEOMETRY_REPORT_KEYS:
+        raise ValueError("text geometry report keys are invalid")
+    pages = value["pages"]
+    if not isinstance(pages, list) or not pages or len(pages) > MAX_TEXT_GEOMETRY_PAGES:
+        raise ValueError("text geometry report pages are invalid")
+    for page in pages:
+        validate_text_geometry_page(page)
+    validate_text_geometry_summary(value["summary"])
+    if value["summary"] != _text_geometry_summary(pages):
+        raise ValueError("text geometry report summary is inconsistent")
+
+
+def aggregate_text_geometry_reports(
+    reports: Sequence[dict[str, object]],
+) -> dict[str, object]:
+    if not reports:
+        raise ValueError("text geometry report aggregation requires reports")
+    pages = []
+    for report in reports:
+        validate_text_geometry_report(report)
+        pages.extend(report["pages"])
+    if len(pages) > MAX_TEXT_GEOMETRY_PAGES:
+        raise ValueError("text geometry aggregate page limit exceeded")
+    return _text_geometry_summary(pages)

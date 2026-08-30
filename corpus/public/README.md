@@ -65,7 +65,7 @@ For every `.docx` here, rwml must:
 For LibreOffice A/B evidence, `scripts/render_validate.py` uses the bundled Noto
 subsets by default and reports the retained page-1 aHash plus bounded all-page
 aHash, foreground ink IoU, and explicit unmatched/capped page counts. Strict
-JSON evidence v3 also retains raw integer RGB error counts, integer PPM scores,
+JSON evidence v4 also retains raw integer RGB error counts, integer PPM scores,
 one-pixel-matched foreground/edge/conservative text-ink masks, matched foreground
 color error, three-pixel blurred-luma similarity, and fixed work-unit accounting.
 Document and campaign values are recomputed from raw counts rather than averaging
@@ -75,6 +75,9 @@ The same bounded PDF reader records page, MediaBox, and CropBox coordinates in
 millipoints and emits content-free token, codepoint, and token-bigram counts with
 integer PPM precision/recall/F1. It normalizes NFC, removes only listed layout
 direction controls, preserves page boundaries, and retains no document text.
+Word and line boxes are compared only when their exact normalized token tuple is
+unique on both sides; repeated labels are reported as ambiguous, never greedily
+paired. Signed millipoint summaries and bounded histograms retain no token text.
 These diagnostics do not define or relax a fidelity threshold. Strict JSON runs
 additionally bind the report to the corpus root, source revision, Cargo lock,
 harness, platform, tool versions, and recorded LibreOffice identity.

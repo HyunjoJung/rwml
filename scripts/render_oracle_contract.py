@@ -25,10 +25,13 @@ try:
     from render_pdf_diagnostics import (
         aggregate_geometry_reports as aggregate_pdf_geometry_reports,
         aggregate_semantic_reports as aggregate_pdf_semantic_reports,
+        aggregate_text_geometry_reports as aggregate_pdf_text_geometry_reports,
         validate_diagnostic_contract,
         validate_geometry_report as validate_pdf_geometry_report,
         validate_geometry_summary as validate_pdf_geometry_summary,
         validate_semantic_report as validate_pdf_semantic_report,
+        validate_text_geometry_report as validate_pdf_text_geometry_report,
+        validate_text_geometry_summary as validate_pdf_text_geometry_summary,
     )
 except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
     from scripts.render_evidence_metrics import (
@@ -39,15 +42,18 @@ except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
     from scripts.render_pdf_diagnostics import (
         aggregate_geometry_reports as aggregate_pdf_geometry_reports,
         aggregate_semantic_reports as aggregate_pdf_semantic_reports,
+        aggregate_text_geometry_reports as aggregate_pdf_text_geometry_reports,
         validate_diagnostic_contract,
         validate_geometry_report as validate_pdf_geometry_report,
         validate_geometry_summary as validate_pdf_geometry_summary,
         validate_semantic_report as validate_pdf_semantic_report,
+        validate_text_geometry_report as validate_pdf_text_geometry_report,
+        validate_text_geometry_summary as validate_pdf_text_geometry_summary,
     )
 
 
 CORPUS_SCHEMA = "rwml.render-oracle-corpus.v1"
-EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v3"
+EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v4"
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
 MAX_JSON_DEPTH = 64
@@ -86,6 +92,7 @@ EVIDENCE_KEYS = {
     "pdf_diagnostic_contract",
     "pdf_point_geometry",
     "semantic_text_metrics",
+    "text_geometry_metrics",
     "summary",
     "gate",
     "rows",
@@ -131,6 +138,7 @@ ROW_KEYS = {
     "integer_visual_metrics",
     "pdf_point_geometry",
     "semantic_text_metrics",
+    "text_geometry_metrics",
     "render_warnings",
     "render_warning_kinds",
     "reason",
@@ -732,6 +740,9 @@ def _validate_evidence_row(row: object, document: CorpusDocument) -> None:
         validate_pdf_semantic_report(row["semantic_text_metrics"])
         if row["semantic_text_metrics"]["pages"] != row["compared_pages"]:
             raise ValueError("evidence row semantic text page count mismatch")
+        validate_pdf_text_geometry_report(row["text_geometry_metrics"])
+        if row["text_geometry_metrics"]["summary"]["pages"] != row["compared_pages"]:
+            raise ValueError("evidence row text geometry page count mismatch")
     for key, value in row.items():
         if key in {
             "recall",
@@ -838,12 +849,13 @@ def _validate_pdf_diagnostic_aggregates(
     contract: object,
     geometry: object,
     semantics: object,
+    text_geometry: object,
     rows: list[dict[str, Any]],
 ) -> None:
     validate_diagnostic_contract(contract)
     measured = [row for row in rows if row["status"] != "skip"]
     if not measured:
-        if geometry is not None or semantics is not None:
+        if geometry is not None or semantics is not None or text_geometry is not None:
             raise ValueError("PDF diagnostics require measured rows")
         return
     validate_pdf_geometry_summary(geometry)
@@ -858,6 +870,12 @@ def _validate_pdf_diagnostic_aggregates(
     )
     if semantics != expected_semantics:
         raise ValueError("semantic text aggregate is inconsistent")
+    validate_pdf_text_geometry_summary(text_geometry)
+    expected_text_geometry = aggregate_pdf_text_geometry_reports(
+        [row["text_geometry_metrics"] for row in measured]
+    )
+    if text_geometry != expected_text_geometry:
+        raise ValueError("text geometry aggregate is inconsistent")
 
 
 def _validate_summary(
@@ -1010,6 +1028,7 @@ def validate_evidence_report(
         evidence["pdf_diagnostic_contract"],
         evidence["pdf_point_geometry"],
         evidence["semantic_text_metrics"],
+        evidence["text_geometry_metrics"],
         rows,
     )
     _validate_visual_comparison(evidence["visual_comparison"])

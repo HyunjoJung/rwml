@@ -28,6 +28,8 @@ and report complementary metrics per document:
                     millipoints, with exact candidate-minus-reference deltas.
   * semantics     — privacy-preserving token, codepoint, and token-bigram counts
                     and integer PPM precision/recall/F1; no document text is kept.
+  * text geometry — word/line boxes whose normalized token tuple is unique on
+                    both sides, with bounded signed millipoint histograms.
   * warnings      — rwml `RenderReport` warning count/kinds for trend tracking.
 
 Local LibreOffice runs seed and initialize a fresh per-document user profile before
@@ -91,17 +93,24 @@ try:
     from render_pdf_diagnostics import (
         MAX_SEMANTIC_CODEPOINTS,
         MAX_SEMANTIC_TOKENS,
+        MAX_TEXT_GEOMETRY_ITEMS,
+        SemanticTextBox as PdfSemanticTextBox,
         aggregate_geometry_reports as aggregate_pdf_geometry_reports,
         aggregate_semantic_reports as aggregate_pdf_semantic_reports,
+        aggregate_text_geometry_reports as aggregate_pdf_text_geometry_reports,
         canonical_page_geometry as canonical_pdf_page_geometry,
+        canonical_text_box as canonical_pdf_text_box,
         diagnostic_contract as pdf_diagnostic_contract,
         geometry_report as pdf_geometry_report,
         normalize_semantic_tokens as normalize_pdf_semantic_tokens,
         page_geometry_metrics as pdf_page_geometry_metrics,
         semantic_metrics as pdf_semantic_metrics,
         semantic_report as pdf_semantic_report,
+        text_geometry_page as pdf_text_geometry_page,
+        text_geometry_report as pdf_text_geometry_report,
         validate_geometry_report as validate_pdf_geometry_report,
         validate_semantic_report as validate_pdf_semantic_report,
+        validate_text_geometry_report as validate_pdf_text_geometry_report,
     )
 except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
     from scripts.render_oracle_contract import (
@@ -129,17 +138,24 @@ except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
     from scripts.render_pdf_diagnostics import (
         MAX_SEMANTIC_CODEPOINTS,
         MAX_SEMANTIC_TOKENS,
+        MAX_TEXT_GEOMETRY_ITEMS,
+        SemanticTextBox as PdfSemanticTextBox,
         aggregate_geometry_reports as aggregate_pdf_geometry_reports,
         aggregate_semantic_reports as aggregate_pdf_semantic_reports,
+        aggregate_text_geometry_reports as aggregate_pdf_text_geometry_reports,
         canonical_page_geometry as canonical_pdf_page_geometry,
+        canonical_text_box as canonical_pdf_text_box,
         diagnostic_contract as pdf_diagnostic_contract,
         geometry_report as pdf_geometry_report,
         normalize_semantic_tokens as normalize_pdf_semantic_tokens,
         page_geometry_metrics as pdf_page_geometry_metrics,
         semantic_metrics as pdf_semantic_metrics,
         semantic_report as pdf_semantic_report,
+        text_geometry_page as pdf_text_geometry_page,
+        text_geometry_report as pdf_text_geometry_report,
         validate_geometry_report as validate_pdf_geometry_report,
         validate_semantic_report as validate_pdf_semantic_report,
+        validate_text_geometry_report as validate_pdf_text_geometry_report,
     )
 
 with contextlib.redirect_stdout(sys.stderr):
@@ -243,6 +259,7 @@ class ValidationRow:
     integer_visual_metrics: dict[str, int] | None = None
     pdf_point_geometry: dict[str, object] | None = None
     semantic_text_metrics: dict[str, int] | None = None
+    text_geometry_metrics: dict[str, object] | None = None
     render_warnings: int | None = None
     render_warning_kinds: list[str] | None = None
     reason: str | None = None
@@ -259,6 +276,7 @@ class VisualMetrics:
     integer_visual_metrics: dict[str, int] | None
     pdf_point_geometry: dict[str, object] | None
     semantic_text_metrics: dict[str, int] | None
+    text_geometry_metrics: dict[str, object] | None
 
 
 def is_finite_number(value: object) -> bool:
@@ -676,6 +694,10 @@ def validation_report(
             validate_pdf_semantic_report(row.semantic_text_metrics)
             if row.compared_pages != row.semantic_text_metrics["pages"]:
                 raise ValueError("semantic text metric page count mismatch")
+        if row.text_geometry_metrics is not None:
+            validate_pdf_text_geometry_report(row.text_geometry_metrics)
+            if row.compared_pages != row.text_geometry_metrics["summary"]["pages"]:
+                raise ValueError("text geometry metric page count mismatch")
         if row.status == "skip" and any(
             getattr(row, metric) is not None
             for metric in (
@@ -693,6 +715,7 @@ def validation_report(
                 "integer_visual_metrics",
                 "pdf_point_geometry",
                 "semantic_text_metrics",
+                "text_geometry_metrics",
                 "render_warnings",
                 "render_warning_kinds",
             )
@@ -737,6 +760,18 @@ def validation_report(
         raise ValueError("semantic text evidence is partial")
     semantic_summary = (
         aggregate_pdf_semantic_reports(semantic_rows) if semantic_rows else None
+    )
+    text_geometry_rows = [
+        r.text_geometry_metrics
+        for r in measured
+        if r.text_geometry_metrics is not None
+    ]
+    if text_geometry_rows and len(text_geometry_rows) != len(measured):
+        raise ValueError("text geometry evidence is partial")
+    text_geometry_summary = (
+        aggregate_pdf_text_geometry_reports(text_geometry_rows)
+        if text_geometry_rows
+        else None
     )
     summary = {
         "documents": len(rows),
@@ -811,6 +846,7 @@ def validation_report(
         "pdf_diagnostic_contract": pdf_diagnostic_contract(),
         "pdf_point_geometry": geometry_summary,
         "semantic_text_metrics": semantic_summary,
+        "text_geometry_metrics": text_geometry_summary,
         "summary": summary,
         "gate": validation_gate(summary, thresholds),
         "rows": [row_dict(r) for r in rows],
@@ -1761,6 +1797,66 @@ def pymupdf_page_semantic_tokens(
     )
 
 
+def pymupdf_page_text_boxes(
+    page,
+    *,
+    max_items: int,
+    max_codepoints: int,
+    max_tokens: int,
+) -> tuple[tuple[PdfSemanticTextBox, ...], tuple[PdfSemanticTextBox, ...], int, int]:
+    if (
+        not isinstance(max_items, int)
+        or isinstance(max_items, bool)
+        or not 1 <= max_items <= MAX_TEXT_GEOMETRY_ITEMS
+    ):
+        raise ValueError("text geometry item limit is invalid")
+    records = page.get_text("words", sort=False)
+    if not isinstance(records, (list, tuple)) or len(records) > max_items:
+        raise ValueError("text geometry word item limit exceeded")
+    words = []
+    line_groups: dict[tuple[int, int], list[tuple[int, int, PdfSemanticTextBox]]] = {}
+    used_codepoints = 0
+    used_tokens = 0
+    for order, record in enumerate(records):
+        if not isinstance(record, (list, tuple)) or len(record) < 8:
+            raise ValueError("PyMuPDF word record is invalid")
+        block_number, line_number, word_number = record[5:8]
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value < 0
+            for value in (block_number, line_number, word_number)
+        ):
+            raise ValueError("PyMuPDF word record index is invalid")
+        tokens = normalize_pdf_semantic_tokens(
+            record[4],
+            max_codepoints=max_codepoints - used_codepoints,
+            max_tokens=max_tokens - used_tokens,
+        )
+        if not tokens:
+            continue
+        box = canonical_pdf_text_box(tokens, record[:4])
+        words.append(box)
+        used_codepoints += sum(map(len, tokens))
+        used_tokens += len(tokens)
+        line_groups.setdefault((block_number, line_number), []).append(
+            (word_number, order, box)
+        )
+    if len(words) > max_items or len(line_groups) > max_items:
+        raise ValueError("text geometry item limit exceeded")
+    lines = []
+    for entries in line_groups.values():
+        entries.sort(key=lambda entry: (entry[0], entry[1]))
+        boxes = [entry[2] for entry in entries]
+        line_tokens = tuple(token for box in boxes for token in box.tokens)
+        line_bbox = (
+            min(box.bbox_millipoints[0] for box in boxes),
+            min(box.bbox_millipoints[1] for box in boxes),
+            max(box.bbox_millipoints[2] for box in boxes),
+            max(box.bbox_millipoints[3] for box in boxes),
+        )
+        lines.append(PdfSemanticTextBox(line_tokens, line_bbox))
+    return tuple(words), tuple(lines), used_codepoints, used_tokens
+
+
 def opaque_rgb(image):
     if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
         rgba = image.convert("RGBA")
@@ -1928,6 +2024,7 @@ def visual_metrics_from_scores(
     page_cap: int,
     pdf_point_geometry: dict[str, object] | None = None,
     semantic_text_metrics: dict[str, int] | None = None,
+    text_geometry_metrics: dict[str, object] | None = None,
 ) -> VisualMetrics:
     if len(page_hashes) != len(page_ink_ious):
         raise ValueError("visual page metric count mismatch")
@@ -1948,6 +2045,7 @@ def visual_metrics_from_scores(
         ),
         pdf_point_geometry=pdf_point_geometry,
         semantic_text_metrics=semantic_text_metrics,
+        text_geometry_metrics=text_geometry_metrics,
     )
 
 
@@ -2038,10 +2136,15 @@ def compare_pdf_visuals(
             integer_pages = []
             geometry_pages = []
             semantic_pages = []
+            text_geometry_pages = []
             reference_codepoints = 0
             reference_tokens = 0
             candidate_codepoints = 0
             candidate_tokens = 0
+            reference_box_codepoints = 0
+            reference_box_tokens = 0
+            candidate_box_codepoints = 0
+            candidate_box_tokens = 0
             for index in range(compared_pages):
                 reference_source_page = reference_document[index]
                 candidate_source_page = candidate_document[index]
@@ -2068,6 +2171,44 @@ def compare_pdf_visuals(
                 semantic_pages.append(
                     pdf_semantic_metrics(
                         reference_page_tokens, candidate_page_tokens
+                    )
+                )
+                (
+                    reference_word_boxes,
+                    reference_line_boxes,
+                    used_reference_box_codepoints,
+                    used_reference_box_tokens,
+                ) = pymupdf_page_text_boxes(
+                    reference_source_page,
+                    max_items=MAX_TEXT_GEOMETRY_ITEMS,
+                    max_codepoints=(
+                        MAX_SEMANTIC_CODEPOINTS - reference_box_codepoints
+                    ),
+                    max_tokens=MAX_SEMANTIC_TOKENS - reference_box_tokens,
+                )
+                (
+                    candidate_word_boxes,
+                    candidate_line_boxes,
+                    used_candidate_box_codepoints,
+                    used_candidate_box_tokens,
+                ) = pymupdf_page_text_boxes(
+                    candidate_source_page,
+                    max_items=MAX_TEXT_GEOMETRY_ITEMS,
+                    max_codepoints=(
+                        MAX_SEMANTIC_CODEPOINTS - candidate_box_codepoints
+                    ),
+                    max_tokens=MAX_SEMANTIC_TOKENS - candidate_box_tokens,
+                )
+                reference_box_codepoints += used_reference_box_codepoints
+                reference_box_tokens += used_reference_box_tokens
+                candidate_box_codepoints += used_candidate_box_codepoints
+                candidate_box_tokens += used_candidate_box_tokens
+                text_geometry_pages.append(
+                    pdf_text_geometry_page(
+                        reference_word_boxes,
+                        candidate_word_boxes,
+                        reference_line_boxes,
+                        candidate_line_boxes,
                     )
                 )
                 reference_page = rasterize_pdf_page(
@@ -2120,6 +2261,11 @@ def compare_pdf_visuals(
                 ),
                 semantic_text_metrics=(
                     pdf_semantic_report(semantic_pages) if semantic_pages else None
+                ),
+                text_geometry_metrics=(
+                    pdf_text_geometry_report(text_geometry_pages)
+                    if text_geometry_pages
+                    else None
                 ),
             )
     except VisualMetricError:
@@ -2443,6 +2589,7 @@ def main() -> int:
                     integer_visual_metrics=visual.integer_visual_metrics,
                     pdf_point_geometry=visual.pdf_point_geometry,
                     semantic_text_metrics=visual.semantic_text_metrics,
+                    text_geometry_metrics=visual.text_geometry_metrics,
                     render_warnings=len(kinds) if kinds is not None else None,
                     render_warning_kinds=kinds,
                     **row_identity(src, corpus_documents),

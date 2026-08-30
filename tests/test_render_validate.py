@@ -1018,6 +1018,32 @@ class RenderValidateImageMetricTests(unittest.TestCase):
         self.assertEqual(geometry["rotation_degrees"], 90)
         self.assertEqual(tokens, ("Café", "שלום"))
 
+    def test_pymupdf_word_records_build_bounded_word_and_line_boxes(self):
+        records = [
+            (0, 0, 10, 10, "first", 0, 0, 0),
+            (12, 0, 22, 10, "word", 0, 0, 1),
+            (0, 20, 10, 30, "next", 0, 1, 0),
+        ]
+        page = types.SimpleNamespace(
+            get_text=lambda kind, sort=False: records if kind == "words" else ""
+        )
+
+        words, lines, used_codepoints, used_tokens = (
+            render_validate.pymupdf_page_text_boxes(
+                page,
+                max_items=8,
+                max_codepoints=64,
+                max_tokens=8,
+            )
+        )
+
+        self.assertEqual(len(words), 3)
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(lines[0].tokens, ("first", "word"))
+        self.assertEqual(lines[0].bbox_millipoints, (0, 0, 22_000, 10_000))
+        self.assertEqual(used_codepoints, 13)
+        self.assertEqual(used_tokens, 3)
+
     def test_validation_report_recomputes_pdf_diagnostic_aggregates(self):
         integer = render_validate.integer_image_metrics(
             b"\xff\xff\xff", b"\xff\xff\xff", 1, 1
@@ -1040,6 +1066,22 @@ class RenderValidateImageMetricTests(unittest.TestCase):
         semantic = render_validate.pdf_semantic_report(
             [render_validate.pdf_semantic_metrics(("a", "b"), ("a", "c"))]
         )
+        reference_box = render_validate.canonical_pdf_text_box(
+            ("label",), (0, 0, 10, 10)
+        )
+        candidate_box = render_validate.canonical_pdf_text_box(
+            ("label",), (0.001, 0, 10.001, 10)
+        )
+        text_geometry = render_validate.pdf_text_geometry_report(
+            [
+                render_validate.pdf_text_geometry_page(
+                    [reference_box],
+                    [candidate_box],
+                    [reference_box],
+                    [candidate_box],
+                )
+            ]
+        )
         row = render_validate.ValidationRow(
             document="diagnostic.docx",
             status="pass",
@@ -1048,6 +1090,7 @@ class RenderValidateImageMetricTests(unittest.TestCase):
             integer_visual_metrics=integer,
             pdf_point_geometry=geometry,
             semantic_text_metrics=semantic,
+            text_geometry_metrics=text_geometry,
         )
 
         report = render_validate.validation_report([row], recall_min=0.8)
@@ -1057,6 +1100,8 @@ class RenderValidateImageMetricTests(unittest.TestCase):
         self.assertEqual(report["pdf_point_geometry"]["max_abs_delta_millipoints"], 1)
         self.assertEqual(report["semantic_text_metrics"]["pages"], 1)
         self.assertEqual(report["semantic_text_metrics"]["semantic_token_f1_ppm"], 500_000)
+        self.assertEqual(report["text_geometry_metrics"]["pages"], 1)
+        self.assertEqual(report["text_geometry_metrics"]["word_boxes"]["matched_items"], 1)
 
     def test_validation_report_rejects_partial_pdf_diagnostics(self):
         integer = render_validate.integer_image_metrics(

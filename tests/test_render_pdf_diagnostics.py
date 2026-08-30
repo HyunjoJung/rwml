@@ -118,7 +118,7 @@ class PdfSemanticMetricTests(unittest.TestCase):
     def test_diagnostic_contract_discloses_limits_and_retains_no_content(self):
         contract = diagnostics.diagnostic_contract()
 
-        self.assertEqual(contract["schema"], "rwml.pdf-diagnostics.v1")
+        self.assertEqual(contract["schema"], "rwml.pdf-diagnostics.v2")
         self.assertFalse(contract["content_retained"])
         self.assertEqual(contract["point_unit"], "millipoints")
         self.assertEqual(contract["delta_direction"], "candidate-minus-reference")
@@ -163,6 +163,87 @@ class PdfSemanticMetricTests(unittest.TestCase):
         evidence["semantic_token_f1_ppm"] = 0
         with self.assertRaisesRegex(ValueError, "semantic_token_f1_ppm"):
             diagnostics.validate_semantic_metrics(evidence)
+
+
+class UniqueTextGeometryTests(unittest.TestCase):
+    @staticmethod
+    def box(token, bbox):
+        return diagnostics.canonical_text_box((token,), bbox)
+
+    def test_unique_tokens_match_without_retaining_content(self):
+        reference = [self.box("private-label", (0, 0, 10, 10))]
+        candidate = [self.box("private-label", (0.001, 0.002, 10.003, 10.004))]
+
+        evidence = diagnostics.unique_text_geometry_metrics(reference, candidate)
+
+        self.assertEqual(evidence["matched_items"], 1)
+        self.assertEqual(evidence["candidate_unique_items"], 1)
+        self.assertEqual(evidence["reference_unique_items"], 1)
+        self.assertEqual(evidence["precision_ppm"], 1_000_000)
+        self.assertEqual(
+            evidence["exact_delta_summaries_millipoints"]["x_min"]["sum"], 1
+        )
+        self.assertEqual(
+            evidence["exact_delta_summaries_millipoints"]["center_x"]["sum"],
+            2,
+        )
+        serialized = json.dumps(evidence, sort_keys=True)
+        self.assertNotIn("private-label", serialized)
+        diagnostics.validate_unique_text_geometry_metrics(evidence)
+
+    def test_repeated_labels_are_ambiguous_and_never_greedily_paired(self):
+        reference = [
+            self.box("repeat", (0, 0, 10, 10)),
+            self.box("repeat", (0, 20, 10, 30)),
+        ]
+        candidate = [self.box("repeat", (0, 0, 10, 10))]
+
+        evidence = diagnostics.unique_text_geometry_metrics(reference, candidate)
+
+        self.assertEqual(evidence["matched_items"], 0)
+        self.assertEqual(evidence["reference_ambiguous_items"], 2)
+        self.assertEqual(evidence["candidate_ambiguous_items"], 0)
+        self.assertEqual(evidence["candidate_unmatched_unique_items"], 1)
+        self.assertEqual(evidence["precision_ppm"], 0)
+        self.assertEqual(evidence["recall_ppm"], 0)
+
+    def test_histograms_are_bounded_and_report_aggregation_recomputes_counts(self):
+        exact = diagnostics.text_geometry_page(
+            [self.box("word-a", (0, 0, 10, 10))],
+            [self.box("word-a", (0, 0, 10, 10))],
+            [self.box("line-a", (0, 0, 20, 10))],
+            [self.box("line-a", (0, 0, 20, 10))],
+        )
+        shifted = diagnostics.text_geometry_page(
+            [self.box("word-b", (0, 0, 10, 10))],
+            [self.box("word-b", (0.003, 0, 10.003, 10))],
+            [self.box("line-b", (0, 0, 20, 10))],
+            [self.box("line-b", (0.003, 0, 20.003, 10))],
+        )
+
+        report = diagnostics.text_geometry_report([exact, shifted])
+
+        self.assertEqual(report["summary"]["pages"], 2)
+        self.assertEqual(report["summary"]["word_boxes"]["matched_items"], 2)
+        histogram = report["summary"]["word_boxes"][
+            "delta_histograms_millipoints"
+        ]["x_min"]
+        self.assertEqual(
+            histogram,
+            [
+                {"delta_millipoints": 0, "count": 1},
+                {"delta_millipoints": 500, "count": 1},
+            ],
+        )
+        self.assertLessEqual(len(histogram), diagnostics.MAX_TEXT_GEOMETRY_BUCKETS)
+        diagnostics.validate_text_geometry_report(report)
+
+    def test_text_box_item_limits_are_hard(self):
+        box = self.box("one", (0, 0, 10, 10))
+        with self.assertRaisesRegex(ValueError, "item limit"):
+            diagnostics.unique_text_geometry_metrics(
+                [box, box], [box], max_items=1
+            )
 
 
 if __name__ == "__main__":
