@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A strict retained render-campaign pair verifier revalidates both capture and
+  metric-evidence bundles, independently replays native outputs, requires exact
+  native PDF/report/font-receipt bytes and complete reference page rasters, and
+  writes a fresh path-neutral repeat receipt. This remains diagnostic evidence
+  and does not expand release gates or claim Word parity.
 - Optional digest-locked Linux LibreOffice captures for the generated
   unequal-table campaign, with bounded containers, exact font checks,
   independent artifact verification, and repeated raster/topology evidence.
