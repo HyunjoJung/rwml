@@ -19,6 +19,11 @@ SPEC.loader.exec_module(render_validate)
 
 
 class RenderValidateReportTests(unittest.TestCase):
+    @unittest.skipIf(render_validate.Image is None, "Pillow is unavailable")
+    def test_metric_pillow_modules_load_before_analysis_identity(self):
+        self.assertIn("PIL.ImageColor", sys.modules)
+        self.assertIn("PIL.ImageFile", sys.modules)
+
     def test_cli_prefers_warning_free_pymupdf_module(self):
         with tempfile.TemporaryDirectory() as tmp:
             modules = pathlib.Path(tmp)

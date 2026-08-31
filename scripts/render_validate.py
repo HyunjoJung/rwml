@@ -167,10 +167,15 @@ with contextlib.redirect_stdout(sys.stderr):
         except ImportError:
             fitz = None
 try:
+    # Load every metric-time Pillow module before the analysis closure is hashed.
     from PIL import Image, ImageChops
+    from PIL import ImageColor, ImageFile
+
+    _PIL_METRIC_MODULES = (ImageColor, ImageFile)
 except ImportError:
     Image = None
     ImageChops = None
+    _PIL_METRIC_MODULES = ()
 
 
 DEFAULT_RASTER_DPI = 110

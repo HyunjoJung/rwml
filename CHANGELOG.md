@@ -106,6 +106,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Shared capture metric validation now loads every Pillow metric module before
+  hashing the analysis-tool closure, so a fresh environment cannot create new
+  bytecode inside its attested payload midway through validation.
 - PDF preview no longer paints a font's missing-glyph box for horizontal tab
   controls. Tab advances, explicit alignment, selectable surrounding text,
   leaders, highlighting, and text decorations retain their existing geometry.
