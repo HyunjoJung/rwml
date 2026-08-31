@@ -51,6 +51,29 @@ def extraction(kind="truetype", name="ABCDEF+Regular"):
 
 
 class CaptureTests(unittest.TestCase):
+    def test_native_build_is_offline_and_does_not_install_a_toolchain(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            compiled = root / "compiled"
+            compiled.write_bytes(b"renderer")
+            artifact = {
+                "reason": "compiler-artifact",
+                "target": {"name": "to_pdf"},
+                "executable": str(compiled),
+            }
+            with mock.patch.object(
+                capture.runtime,
+                "run_bounded",
+                side_effect=[json.dumps(artifact).encode(), b"rustc 1.92.0"],
+            ) as run:
+                capture.build_renderer(root / "retained")
+            command = run.call_args_list[0].args[0]
+            self.assertEqual(command[:5], ["rustup", "run", "1.92.0", "cargo", "build"])
+            self.assertIn("--offline", command)
+            self.assertIn("--locked", command)
+            self.assertNotIn("--install", command)
+            self.assertEqual(run.call_count, 2)
+
     def test_capture_cli_rejects_partial_and_conflicting_profiles_before_verification(
         self,
     ):

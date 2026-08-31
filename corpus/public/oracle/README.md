@@ -450,6 +450,7 @@ evidence needed for review.
 Microsoft Word evidence remains diagnostic until the captured topology has been
 reviewed against the renderer and accepted publicly. A repeatable capture alone does
 not define a parity threshold, change renderer behavior, or add a release gate.
+
 ## Shared-font campaign capture
 
 The diagnostic capture command composes the locked LibreOffice runtime, verified
@@ -474,8 +475,10 @@ python3 scripts/render_validate.py --json \
   --pypdf-wheel target/pypdf-6.16.2-py3-none-any.whl
 ```
 
-Capture builds `to_pdf` once with Rust 1.92.0 and passes every shared font in lock
-order without system fallback. Each DOCX is rendered by both engines; the input,
+Capture builds `to_pdf` once, offline, with an already installed Rust 1.92.0
+toolchain and dependency cache. It does not install tools or download missing
+dependencies. Every shared font is passed in lock order without system fallback.
+Each DOCX is rendered by both engines; the input,
 PDFs, native warning report, reference runtime/font-closure records, and complete
 font-check receipts are retained. Any conversion or font-check failure prevents
 the final `CAPTURE.json` receipt. The process, output, and campaign bounds are

@@ -221,9 +221,12 @@ def prepare_environment(
 def build_renderer(output: Path) -> dict:
     env = render.rust_tool_environment()
     command = [
+        "rustup",
+        "run",
+        "1.92.0",
         "cargo",
-        "+1.92.0",
         "build",
+        "--offline",
         "--locked",
         "--features",
         "render",
