@@ -261,6 +261,14 @@ pub(crate) struct FreshConversionNotes {
     pub(crate) payloads: Vec<Vec<Option<crate::model::NoteWritePayload>>>,
 }
 
+#[cfg(feature = "render")]
+pub(crate) struct NoteRenderBody {
+    /// Body blocks reparsed with deterministic structural note labels.
+    pub(crate) blocks: Vec<Block>,
+    /// Layout sidecars aligned to `blocks` after labels affect text offsets.
+    pub(crate) hints: body::BodyLayoutHints,
+}
+
 pub(crate) struct DocxState {
     /// The **body-only** model (no footnote/endnote blocks). `Document::model()`
     /// re-appends `notes` for the read view; the lossy model is read/render only.
@@ -268,6 +276,12 @@ pub(crate) struct DocxState {
     /// Footnote/endnote blocks, kept separate from `model.blocks` (their `.docx`
     /// parts are preserved on save, never inlined into the body).
     pub notes: Vec<Block>,
+    /// Render-only body view containing resolved note-reference labels.
+    #[cfg(feature = "render")]
+    pub render_body: Option<NoteRenderBody>,
+    /// Render-only note view containing resolved note-entry labels.
+    #[cfg(feature = "render")]
+    pub render_notes: Option<Vec<Block>>,
     /// Conversion-only body blocks and exact note-paragraph payloads.
     /// `None` keeps the historical flattened-note fallback.
     pub fresh_conversion_notes: Option<FreshConversionNotes>,
@@ -565,7 +579,17 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         paragraph_charts: Default::default(),
         section_column_capture: Default::default(),
         pagination_capture: Default::default(),
+        #[cfg(feature = "render")]
+        render_notes: None,
+        #[cfg(feature = "render")]
+        render_note_entry: Default::default(),
     };
+    #[cfg(feature = "render")]
+    let render_ctx = note_ref_context.has_render_targets().then(|| {
+        let mut render_ctx = ctx.clone();
+        render_ctx.render_notes = Some(&note_ref_context);
+        render_ctx
+    });
     ctx.begin_section_column_capture();
     ctx.begin_pagination_capture();
     let mut blocks = body::parse_document(&doc_xml, &ctx); // body only
@@ -602,6 +626,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         b"footnote",
         NoteKind::Footnote,
         part_env,
+        #[cfg(feature = "render")]
+        &note_ref_context,
     );
     let mut endnote_part = read_notes(
         &mut zip,
@@ -609,7 +635,24 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         b"endnote",
         NoteKind::Endnote,
         part_env,
+        #[cfg(feature = "render")]
+        &note_ref_context,
     );
+    #[cfg(feature = "render")]
+    let render_notes = (note_part.render_blocks.is_some() || endnote_part.render_blocks.is_some())
+        .then(|| {
+            let mut blocks = note_part
+                .render_blocks
+                .take()
+                .unwrap_or_else(|| note_part.blocks.clone());
+            blocks.extend(
+                endnote_part
+                    .render_blocks
+                    .take()
+                    .unwrap_or_else(|| endnote_part.blocks.clone()),
+            );
+            blocks
+        });
     #[cfg(feature = "render")]
     let endnote_block_offset = note_part.blocks.len();
     note_part.blocks.extend(endnote_part.blocks);
@@ -814,6 +857,27 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         all.extend(note_part.blocks.iter().cloned());
         assemble::compute_stats(&all)
     };
+    #[cfg(feature = "render")]
+    let render_body = render_ctx.map(|ctx| {
+        ctx.begin_pagination_capture();
+        let mut rendered = body::parse_document(&doc_xml, &ctx);
+        // Header/footer relationships are attached after body parsing.
+        let mut source_sections = blocks
+            .iter()
+            .filter(|block| matches!(block, Block::SectionBreak(_)));
+        for target in rendered
+            .iter_mut()
+            .filter(|block| matches!(block, Block::SectionBreak(_)))
+        {
+            if let Some(source) = source_sections.next() {
+                *target = source.clone();
+            }
+        }
+        NoteRenderBody {
+            blocks: rendered,
+            hints: ctx.take_layout_hints(),
+        }
+    });
     let model = DocModel {
         blocks, // body only
         regions: Vec::new(),
@@ -875,6 +939,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     Ok(DocxState {
         model,
         notes: note_part.blocks,
+        #[cfg(feature = "render")]
+        render_body,
+        #[cfg(feature = "render")]
+        render_notes,
         fresh_conversion_notes,
         text,
         main_text,
@@ -1723,6 +1791,10 @@ fn read_hf_parts(
             paragraph_charts: Default::default(),
             section_column_capture: Default::default(),
             pagination_capture: Default::default(),
+            #[cfg(feature = "render")]
+            render_notes: None,
+            #[cfg(feature = "render")]
+            render_note_entry: Default::default(),
         };
         let type_name = normalized_header_footer_type(&reference.type_name);
         extend_missing_comment_anchors(
@@ -1953,6 +2025,8 @@ fn header_footer_kind(part_kind: HeaderFooterPartKind, type_name: &str) -> Heade
 #[derive(Default)]
 struct NotePartRead {
     blocks: Vec<Block>,
+    #[cfg(feature = "render")]
+    render_blocks: Option<Vec<Block>>,
     source_entries: Vec<NoteSourceEntry>,
     #[cfg(feature = "render")]
     pagination: Vec<crate::model::PaginationHint>,
@@ -1994,6 +2068,7 @@ fn read_notes(
     tag: &[u8],
     kind: NoteKind,
     env: PartParseEnv<'_>,
+    #[cfg(feature = "render")] render_note_context: &fields::NoteRefContext,
 ) -> NotePartRead {
     let PartParseEnv {
         styles,
@@ -2124,6 +2199,10 @@ fn read_notes(
         paragraph_charts: Default::default(),
         section_column_capture: Default::default(),
         pagination_capture: Default::default(),
+        #[cfg(feature = "render")]
+        render_notes: None,
+        #[cfg(feature = "render")]
+        render_note_entry: Default::default(),
     };
     let mut blocks = Vec::new();
     let mut records = Vec::new();
@@ -2170,6 +2249,12 @@ fn read_notes(
         },
         preserve_legacy_form_cache,
     );
+    #[cfg(feature = "render")]
+    let render_ctx = render_note_context.has_render_targets().then(|| {
+        let mut render_ctx = ctx.clone();
+        render_ctx.render_notes = Some(render_note_context);
+        render_ctx
+    });
     ctx.begin_pagination_capture();
     let note_entries = body::parse_note_entries(&xml, &ctx, tag);
     let layout_hints = ctx.take_layout_hints();
@@ -2198,8 +2283,25 @@ fn read_notes(
         });
         blocks.extend(note_blocks);
     }
+    #[cfg(feature = "render")]
+    let (render_blocks, layout_hints, entry_starts) = if let Some(ctx) = render_ctx {
+        ctx.begin_pagination_capture();
+        let mut rendered = Vec::new();
+        let mut starts = Vec::new();
+        for (_, entry) in body::parse_note_entries(&xml, &ctx, tag) {
+            if !entry.is_empty() {
+                starts.push(rendered.len());
+            }
+            rendered.extend(entry);
+        }
+        (Some(rendered), ctx.take_layout_hints(), starts)
+    } else {
+        (None, layout_hints, entry_starts)
+    };
     NotePartRead {
         blocks,
+        #[cfg(feature = "render")]
+        render_blocks,
         source_entries,
         #[cfg(feature = "render")]
         pagination: layout_hints.pagination,

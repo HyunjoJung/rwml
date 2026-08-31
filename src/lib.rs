@@ -3296,8 +3296,14 @@ impl Document {
             #[cfg(feature = "docx")]
             Backend::Docx(d) => {
                 let mut model = d.model.clone();
+                let note_body = d.render_body.as_ref();
+                if let Some(body) = note_body {
+                    model.blocks.clone_from(&body.blocks);
+                }
                 let body_block_count = model.blocks.len();
-                model.blocks.extend(d.notes.iter().cloned());
+                model
+                    .blocks
+                    .extend(d.render_notes.as_ref().unwrap_or(&d.notes).iter().cloned());
                 let mut pagination_boundaries = d
                     .note_entry_starts
                     .iter()
@@ -3306,21 +3312,39 @@ impl Document {
                     .collect::<Vec<_>>();
                 pagination_boundaries.sort_unstable();
                 pagination_boundaries.dedup();
-                let mut pagination = d.pagination_hints.clone();
+                let mut pagination = note_body
+                    .map_or(&d.pagination_hints, |body| &body.hints.pagination)
+                    .clone();
                 pagination.extend_from_slice(&d.note_pagination_hints);
-                let mut line_spacing = d.line_spacing_hints.clone();
+                let mut line_spacing = note_body
+                    .map_or(&d.line_spacing_hints, |body| &body.hints.line_spacing)
+                    .clone();
                 line_spacing.extend_from_slice(&d.note_line_spacing_hints);
-                let mut table_row_pagination = d.table_row_pagination.clone();
+                let mut table_row_pagination = note_body
+                    .map_or(&d.table_row_pagination, |body| &body.hints.table_rows)
+                    .clone();
                 table_row_pagination.extend_from_slice(&d.note_table_row_pagination);
-                let mut table_cell_pagination = d.table_cell_pagination.clone();
+                let mut table_cell_pagination = note_body
+                    .map_or(&d.table_cell_pagination, |body| &body.hints.table_cells)
+                    .clone();
                 table_cell_pagination.extend_from_slice(&d.note_table_cell_pagination);
-                let mut table_cell_line_spacing = d.table_cell_line_spacing.clone();
+                let mut table_cell_line_spacing = note_body
+                    .map_or(&d.table_cell_line_spacing, |body| {
+                        &body.hints.table_cell_line_spacing
+                    })
+                    .clone();
                 table_cell_line_spacing.extend_from_slice(&d.note_table_cell_line_spacing);
-                let mut table_nested_pagination = d.table_nested_pagination.clone();
+                let mut table_nested_pagination = note_body
+                    .map_or(&d.table_nested_pagination, |body| &body.hints.table_nested)
+                    .clone();
                 table_nested_pagination.extend_from_slice(&d.note_table_nested_pagination);
-                let mut tab_stops = d.tab_stops.clone();
+                let mut tab_stops = note_body
+                    .map_or(&d.tab_stops, |body| &body.hints.tab_stops)
+                    .clone();
                 tab_stops.extend_from_slice(&d.note_tab_stops);
-                let mut table_cell_tab_stops = d.table_cell_tab_stops.clone();
+                let mut table_cell_tab_stops = note_body
+                    .map_or(&d.table_cell_tab_stops, |body| &body.hints.table_cell_tabs)
+                    .clone();
                 table_cell_tab_stops.extend_from_slice(&d.note_table_cell_tab_stops);
                 render_document(
                     &model,
@@ -3329,7 +3353,9 @@ impl Document {
                         pagination_boundaries: &pagination_boundaries,
                         line_spacing: &line_spacing,
                         tab_stops: &tab_stops,
-                        column_break_offsets: &d.column_break_offsets,
+                        column_break_offsets: note_body.map_or(&d.column_break_offsets, |body| {
+                            &body.hints.column_break_offsets
+                        }),
                         section_column_gap_pt: &d.section_column_gap_pt,
                         section_column_layouts: &d.section_column_layouts,
                         section_column_separators: &d.section_column_separators,

@@ -23,6 +23,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened DOCX PDF preview now renders automatic footnote/endnote reference marks
+  in the body and their matching note-entry labels using accepted-current source
+  order plus document-level `numStart`/`numFmt`. Footnote and endnote sequences,
+  nonsequential source IDs, table references, run styling, and custom marks stay
+  isolated. Layout-dependent page/section restarts, section numbering overrides,
+  duplicate IDs, and unsupported formats remain unnumbered rather than deriving
+  labels from note IDs; note placement remains flattened end-flow content.
 - Strict caller-font rendering now makes registered families available as
   deterministic script and emoji fallbacks. Supplied fonts outside the built-in
   family stack are no longer unreachable simply because system fonts are disabled.
