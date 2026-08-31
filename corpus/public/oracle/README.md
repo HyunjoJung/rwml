@@ -71,6 +71,31 @@ canonical-lock, and strict-manifest contracts. This batch does not establish
 external-oracle fidelity, complete the planned 800 cases, or change release
 validation.
 
+## Full-corpus list/RTL batch
+
+`render-full-list-rtl-v1.json` is the third bounded batch toward the reviewed
+full render corpus. It binds 64 generated one-page DOCX inputs forming the
+complete two-level factorial over Arabic/Hebrew script, paragraph bidi,
+explicit run RTL, ordered/bullet numbering, list level zero/one, and
+plain/explicitly tabbed content. All six factors meet in the same primary list
+paragraph: each level appears in 32 inputs and each of the 15 factor pairs has
+all four states 16 times. Fixed probes in every input cover start overrides, a
+replacement level, a three-level decimal/letter/Roman label, and bullet
+fallback.
+
+```sh
+python3 scripts/generate_render_list_rtl_corpus.py
+python3 scripts/generate_render_list_rtl_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-list-rtl-v1/RENDER_ORACLE.json
+```
+
+The separate generator closure leaves both earlier batch locks unchanged and
+enforces fresh output, exact factor coverage, unique identities and payloads,
+byte limits, a canonical lock, and the strict manifest contract. The lock does
+not establish complete RTL support, external-oracle fidelity, completion of the
+planned 800 cases, or a release-validation change.
+
 ## Native fixed-font rendering
 
 `scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.

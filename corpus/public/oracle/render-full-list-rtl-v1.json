@@ -1,0 +1,1994 @@
+{
+  "campaign": "public-render-full-list-rtl-v1",
+  "coverage": {
+    "case_count": 64,
+    "cohort": "list-rtl",
+    "design": "complete-2-level-factorial",
+    "factor_case_counts": {
+      "arabic-script": 32,
+      "explicit-tabs": 32,
+      "list-level-one": 32,
+      "ordered-list": 32,
+      "paragraph-bidi": 32,
+      "run-rtl": 32
+    },
+    "factor_levels": {
+      "arabic-script": [
+        "script-hebrew",
+        "script-arabic"
+      ],
+      "explicit-tabs": [
+        "plain-separator",
+        "explicit-tabs"
+      ],
+      "list-level-one": [
+        "list-level-0",
+        "list-level-1"
+      ],
+      "ordered-list": [
+        "bullet-list",
+        "ordered-list"
+      ],
+      "paragraph-bidi": [
+        "paragraph-ltr",
+        "paragraph-bidi"
+      ],
+      "run-rtl": [
+        "run-inherited",
+        "run-rtl"
+      ]
+    },
+    "factor_names": [
+      "arabic-script",
+      "paragraph-bidi",
+      "run-rtl",
+      "ordered-list",
+      "list-level-one",
+      "explicit-tabs"
+    ],
+    "factorial_rows": 64,
+    "interaction_scope": "primary-paragraph",
+    "pairwise_state_counts": [
+      {
+        "factors": [
+          "arabic-script",
+          "paragraph-bidi"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "arabic-script",
+          "run-rtl"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "arabic-script",
+          "ordered-list"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "arabic-script",
+          "list-level-one"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "arabic-script",
+          "explicit-tabs"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "paragraph-bidi",
+          "run-rtl"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "paragraph-bidi",
+          "ordered-list"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "paragraph-bidi",
+          "list-level-one"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "paragraph-bidi",
+          "explicit-tabs"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "run-rtl",
+          "ordered-list"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "run-rtl",
+          "list-level-one"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "run-rtl",
+          "explicit-tabs"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "ordered-list",
+          "list-level-one"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "ordered-list",
+          "explicit-tabs"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "list-level-one",
+          "explicit-tabs"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      }
+    ],
+    "primary_label_case_counts": {
+      "1.": 16,
+      "1.a)": 16,
+      "\u2022": 16,
+      "\u25e6": 16
+    },
+    "supplemental_probes": [
+      "bullet-fallback",
+      "multilevel-numbering",
+      "numbering-level-override",
+      "numbering-start-override"
+    ]
+  },
+  "documents": [
+    {
+      "bytes": 7658,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-000",
+      "path": "documents/full-list-rtl-000.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "6261986cf717584f3c1daf282af01ae869f08f4023129b8656af6c82a0b4b655",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-000"
+    },
+    {
+      "bytes": 7662,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-001",
+      "path": "documents/full-list-rtl-001.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "376a0b966e0eef91239854b425e4c9d9f5ef160b22bcd2faa1b3e3074d5529c3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-001"
+    },
+    {
+      "bytes": 7667,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-002",
+      "path": "documents/full-list-rtl-002.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "b5bace7aa2f0121991f89758b5d7b38582fbc46d8337d1fd4bddb1767897784d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-002"
+    },
+    {
+      "bytes": 7671,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-003",
+      "path": "documents/full-list-rtl-003.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "a02eab3ebb30736ac1374f4752a25f0b0dd307db2670661d46e6b41cf4712f14",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-003"
+    },
+    {
+      "bytes": 7681,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-004",
+      "path": "documents/full-list-rtl-004.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "d9b34378643f5d962ae48fc22effea63d3460771cb0ca9ab3227b239ba653eb7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-004"
+    },
+    {
+      "bytes": 7685,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-005",
+      "path": "documents/full-list-rtl-005.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "8fbb81e3311ff6711a7dccbccbe8898182025e0d983047b8b5d7e5c2b554d974",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-005"
+    },
+    {
+      "bytes": 7690,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-006",
+      "path": "documents/full-list-rtl-006.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "dc03f5f1bce3429027680e948900c2020316dafa7f302ecf611496884db24d1b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-006"
+    },
+    {
+      "bytes": 7694,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-007",
+      "path": "documents/full-list-rtl-007.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "81ad121ad9fc732c17fe9613cf9dca091fcc7ff79716cceeef8954cd82b93582",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-007"
+    },
+    {
+      "bytes": 7658,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-008",
+      "path": "documents/full-list-rtl-008.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "5e0ae5b61d3af0fd6e4d3712ff276ff66a5ecd3651e26a794b7e253944160fdd",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-008"
+    },
+    {
+      "bytes": 7662,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-009",
+      "path": "documents/full-list-rtl-009.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "86dbccf94eaa90d73f25b7b0ba2dd18fffdfca62a95b4ac108058a643dd6c1e6",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-009"
+    },
+    {
+      "bytes": 7667,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-010",
+      "path": "documents/full-list-rtl-010.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "802c976412f11f0f965544718d720c23130bee2e0612b0089fe73a8ed8e11b5e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-010"
+    },
+    {
+      "bytes": 7671,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-011",
+      "path": "documents/full-list-rtl-011.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "784cbc3982a4169a827a83d0d6639a5010a515f8a3f0bf690c95013ebf9a04f2",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-011"
+    },
+    {
+      "bytes": 7681,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-012",
+      "path": "documents/full-list-rtl-012.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "2574dc2a39de01427637279cdf0bfa918250829be013565d2fcf65617314ae86",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-012"
+    },
+    {
+      "bytes": 7685,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-013",
+      "path": "documents/full-list-rtl-013.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "7ef3579558bcba7957e2e7db2f82afd5188146a5eb3de7fb2dddc90d8e440339",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-013"
+    },
+    {
+      "bytes": 7690,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-014",
+      "path": "documents/full-list-rtl-014.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "69e93adde7fb2301b66122a621c0fc3ab72a68ab462d54efa437abde52cbf26e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-014"
+    },
+    {
+      "bytes": 7694,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-015",
+      "path": "documents/full-list-rtl-015.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "450988ce4ad8acd12f55c940dfc2e83dee9df22f18d816ebd97853f8ec779cd7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-015"
+    },
+    {
+      "bytes": 7658,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-016",
+      "path": "documents/full-list-rtl-016.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "fc7214a313256fed69cf9559a492637db1967c1522b04bf4e2098abd548a4b7f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-016"
+    },
+    {
+      "bytes": 7662,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-017",
+      "path": "documents/full-list-rtl-017.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "2857a7967515b5ee26a7e2fdb0ca29e7b26b965e44fd3d97995f988b3549f6e5",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-017"
+    },
+    {
+      "bytes": 7667,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-018",
+      "path": "documents/full-list-rtl-018.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "9ee00025ffad33c14845ff0b1d0da69970733ce53353f38418ab16eadfed8c08",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-018"
+    },
+    {
+      "bytes": 7671,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-019",
+      "path": "documents/full-list-rtl-019.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "6865a5cd01846de51ab627d8f11d5b8461dbe8201423e400a45af908e0d05e53",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-019"
+    },
+    {
+      "bytes": 7681,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-020",
+      "path": "documents/full-list-rtl-020.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "d3146f752332fbfa6519c6e837caacf10adf1a8dab84a3807658fcc58b914e0e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-020"
+    },
+    {
+      "bytes": 7685,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-021",
+      "path": "documents/full-list-rtl-021.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "3154dcf9fd44ada83e0ce377aad5c1d5f8ec9ba472e9d17aafab80257a93dea7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-021"
+    },
+    {
+      "bytes": 7690,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-022",
+      "path": "documents/full-list-rtl-022.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "aea467cc79d97534ef126d6e731811d021f6f672e1649f47c80fa682e1560d61",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-022"
+    },
+    {
+      "bytes": 7694,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-023",
+      "path": "documents/full-list-rtl-023.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "1d64088e986bc1e5db35e8f398b39bc4d3c6da772f4ff9c27d681613ae4dc42a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-023"
+    },
+    {
+      "bytes": 7658,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-024",
+      "path": "documents/full-list-rtl-024.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "1459b74adedc325a6d87a47b09d336e0d77f390fe3cc878755f4b10b1c77b5c8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-024"
+    },
+    {
+      "bytes": 7662,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-025",
+      "path": "documents/full-list-rtl-025.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "2a2bd107761848e5bce798a241ca2d817082deb8217a965b0f2a6b193e54fe39",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-025"
+    },
+    {
+      "bytes": 7667,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-026",
+      "path": "documents/full-list-rtl-026.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "683f8b2f0c07f24fdd7bd11b39521dc05280003fc2ed756241c22b5d531d4b3f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-026"
+    },
+    {
+      "bytes": 7671,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-027",
+      "path": "documents/full-list-rtl-027.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "ca8d7008391490e64d7dc2624deb51ec586bd0674151a868b27d7f049e1cef79",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-027"
+    },
+    {
+      "bytes": 7681,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-028",
+      "path": "documents/full-list-rtl-028.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "cdbe5361f965775a4034fe0e88b52aa4bb2773d983500ffc8f37b0c5d8f3d9dc",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-028"
+    },
+    {
+      "bytes": 7685,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "plain-separator",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-029",
+      "path": "documents/full-list-rtl-029.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "dcf6f3475de7f5fdc4eb13d993669c9ef76a6d0333323604bbd32326f7503b41",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-029"
+    },
+    {
+      "bytes": 7690,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-030",
+      "path": "documents/full-list-rtl-030.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "d66addd20beb4f9b507d11c8872c33afb8fdc7ec4c78013cf5299e616fb34416",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-030"
+    },
+    {
+      "bytes": 7694,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "plain-separator",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-031",
+      "path": "documents/full-list-rtl-031.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "0eb8a960a46dbddbf4f34eee61a5abbb0df2daa30a109f4b078e393b20699a04",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-031"
+    },
+    {
+      "bytes": 7764,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-032",
+      "path": "documents/full-list-rtl-032.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "74f89d9cf05470ef152da958dbbebb40c32677b23b60dc43a6b49c11b178265f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-032"
+    },
+    {
+      "bytes": 7768,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-033",
+      "path": "documents/full-list-rtl-033.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "4e7dd1e402449ffda908df8043c9b2348b0a0e6f6acf29c78006fec3b5fd2023",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-033"
+    },
+    {
+      "bytes": 7773,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-034",
+      "path": "documents/full-list-rtl-034.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "c54be3e8b774029500e66a18db81148254194de75b2a93c3f997721a5eda272e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-034"
+    },
+    {
+      "bytes": 7777,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-035",
+      "path": "documents/full-list-rtl-035.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "4d45ce5782f25fcb559de74a9f07424863bee6ac6866a57729db3dd983b9672d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-035"
+    },
+    {
+      "bytes": 7787,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-036",
+      "path": "documents/full-list-rtl-036.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "ef0ba1e2183a1d81791e187c5bd74fceac13c1f83fe1910cb062bc329b2fbc8c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-036"
+    },
+    {
+      "bytes": 7791,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-037",
+      "path": "documents/full-list-rtl-037.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "cefcbed3cbf741bd531857729baf052524a0c9337d0d1a511860a63e21ad0be9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-037"
+    },
+    {
+      "bytes": 7796,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-038",
+      "path": "documents/full-list-rtl-038.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "987b3db67d6f7cac4e1ca38697042afa53c47541e5609adad546ab1a63821828",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-038"
+    },
+    {
+      "bytes": 7800,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-039",
+      "path": "documents/full-list-rtl-039.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "43288b6c09d233f41f393f7b95ff5f3f6acae0f7ae54f0ad398e97e34326eb63",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-039"
+    },
+    {
+      "bytes": 7764,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-040",
+      "path": "documents/full-list-rtl-040.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "fc37fd6f105147f9eccbd9d088c4ba098564749f211f27156e3e926bb7045288",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-040"
+    },
+    {
+      "bytes": 7768,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-041",
+      "path": "documents/full-list-rtl-041.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "9371448990585f9da8fdee412dc78a15b8381008d6ccf3f0592495aad69f996b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-041"
+    },
+    {
+      "bytes": 7773,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-042",
+      "path": "documents/full-list-rtl-042.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "b3c333e47164919d986f0907cc14942eb65d5676a8637f108f7192cbf50cc479",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-042"
+    },
+    {
+      "bytes": 7777,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-043",
+      "path": "documents/full-list-rtl-043.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "1d2962a14eb1ace29df18b4bb2b665153747eccd714aca07bf16fe857b6a0b3b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-043"
+    },
+    {
+      "bytes": 7787,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-044",
+      "path": "documents/full-list-rtl-044.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "cffd29dd21160b9f91c4a55b5d345fb9dfc43781f3ccea43d37b41604450845b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-044"
+    },
+    {
+      "bytes": 7791,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-045",
+      "path": "documents/full-list-rtl-045.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "7394bb8c94851ef0a03cc0698321eadfb4bf519764850ef20ebe2dde839cf0b1",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-045"
+    },
+    {
+      "bytes": 7796,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-046",
+      "path": "documents/full-list-rtl-046.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "11974020b6380612debed39cf606a9a2fadf652a75e0a3c7a2b1c216826ed6e8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-046"
+    },
+    {
+      "bytes": 7800,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-0",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-047",
+      "path": "documents/full-list-rtl-047.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "8fbffa7554fa8934c4b1d7fb27eb077d0564def0596108b8bb1d3f3e3549af6c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-047"
+    },
+    {
+      "bytes": 7764,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-048",
+      "path": "documents/full-list-rtl-048.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "c9eec87b16ac14f5adf873254d9101e55e8be38d9eadbae848272824709c100b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-048"
+    },
+    {
+      "bytes": 7768,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-049",
+      "path": "documents/full-list-rtl-049.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "0685c0856d6af901ef63d02aa086aca352f4759d5bc4f217106107c3b38fd733",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-049"
+    },
+    {
+      "bytes": 7773,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-050",
+      "path": "documents/full-list-rtl-050.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "8eaaacb969135981b17f5c265d91ba8ec432f70a57b99b80f9ef1e0105700e54",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-050"
+    },
+    {
+      "bytes": 7777,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-051",
+      "path": "documents/full-list-rtl-051.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "416eb9ebcaf8186f7aa4fe2a64106470fb3c1c2a9b13f2eaa46ab37232635be1",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-051"
+    },
+    {
+      "bytes": 7787,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-052",
+      "path": "documents/full-list-rtl-052.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "d3b0f2ceea982e19829369475e53c74df178800ae7463645885a2ed54d16bfbe",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-052"
+    },
+    {
+      "bytes": 7791,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-ltr",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-053",
+      "path": "documents/full-list-rtl-053.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "18e5a99799c3f477ce9905d18f81d487e29ab9428be626225498e4b0230c58bb",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-053"
+    },
+    {
+      "bytes": 7796,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-054",
+      "path": "documents/full-list-rtl-054.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "f0a7cd3cf60e3cc7170e857d75c25883ad2d99af0eb21c4eeeb1d5397a3cd4e1",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-054"
+    },
+    {
+      "bytes": 7800,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "bullet-list",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "paragraph-bidi",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-055",
+      "path": "documents/full-list-rtl-055.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "9cdb5740b6554fd5e988ac7b2789e3ac88f75c6d0dbdda95273eca6e7971f8e8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-055"
+    },
+    {
+      "bytes": 7764,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-056",
+      "path": "documents/full-list-rtl-056.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "6ca16e535b424a325a876098b7fedfd8092927707847c0020474c96d29196d06",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-056"
+    },
+    {
+      "bytes": 7768,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-057",
+      "path": "documents/full-list-rtl-057.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "1118ee956e56f5b25415e6bae3b845f2def2d0a373ed0c3ca2d07b6bb5e513f8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-057"
+    },
+    {
+      "bytes": 7773,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "run-inherited",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-058",
+      "path": "documents/full-list-rtl-058.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "b7bf559a4ec5d17eac4a612c0aecb088c55fde94fc3032e16439b4817ddf1b15",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-058"
+    },
+    {
+      "bytes": 7777,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "run-inherited",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-059",
+      "path": "documents/full-list-rtl-059.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "407d1e0c9738b16027030f0c0a958ef9b332e27d34ccc52bcabb144820cf859a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-059"
+    },
+    {
+      "bytes": 7787,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-060",
+      "path": "documents/full-list-rtl-060.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "4b31a140ba126779089a02e1b720e734912805ed392548637581bd45751e62cd",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-060"
+    },
+    {
+      "bytes": 7791,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-ltr",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-061",
+      "path": "documents/full-list-rtl-061.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "bbd406130361f746e3e138d82d6a6e2e288731e6a8a8ebea630234f4dc25331a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-061"
+    },
+    {
+      "bytes": 7796,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "run-rtl",
+        "script-hebrew"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-062",
+      "path": "documents/full-list-rtl-062.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "9d2a0d240bcdce95ba0e684df95b64191faf20b843ba20fc584d2b1ee67a48b5",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-062"
+    },
+    {
+      "bytes": 7800,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bullet-fallback",
+        "explicit-tabs",
+        "list-level-1",
+        "list-rtl",
+        "multilevel-numbering",
+        "numbering-level-override",
+        "numbering-start-override",
+        "ordered-list",
+        "paragraph-bidi",
+        "run-rtl",
+        "script-arabic"
+      ],
+      "format": "docx",
+      "id": "full-list-rtl-063",
+      "path": "documents/full-list-rtl-063.docx",
+      "provenance": "rwml-render-full-list-rtl",
+      "sha256": "e5fa8f8f44d7806c1ff9c60aaf2642c04af4a8067d0cb112db20bbc8dfbcebc3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_list_rtl_corpus.py#full-list-rtl-063"
+    }
+  ],
+  "generator_closure_sha256": "e78980e89e3b60d9ae6c478fb2721906c85769e8816dafb6c52dc77c7c6e11a7",
+  "limits": {
+    "max_documents": 64,
+    "max_input_bytes": 65536,
+    "max_pages_per_document": 4,
+    "max_total_input_bytes": 4194304
+  },
+  "provenance": [
+    {
+      "bytes": 1235,
+      "id": "rwml-render-full-list-rtl",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "provenance/rwml-render-full-list-rtl.md",
+      "sha256": "08a5512b8dfdfcc19d11c7f44af95eb10b7ed7f2cc59343862082508b07dc52c"
+    }
+  ],
+  "schema": "rwml.render-corpus-batch-lock.v1"
+}

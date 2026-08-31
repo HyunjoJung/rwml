@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The third reviewed full-render corpus batch adds 64 deterministic synthetic
+  DOCX inputs for list/RTL interactions. A complete six-factor grid combines
+  Arabic/Hebrew text, paragraph and run direction, ordered/bullet numbering,
+  list depth, and explicit tabs in the same primary paragraph; fixed probes
+  also cover start overrides, replacement levels, multilevel labels, and
+  bullet fallback. The separate byte lock does not claim complete RTL support,
+  complete the 800-case campaign, or expand release gates.
 - The second reviewed full-render corpus batch adds 64 deterministic synthetic
   DOCX inputs for paragraph geometry. Fifteen alignment, indentation, spacing,
   line-height, shading, border, and tab-stop properties are balanced across a
