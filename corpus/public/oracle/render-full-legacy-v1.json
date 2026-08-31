@@ -1,0 +1,166 @@
+{
+  "campaign": "public-render-full-legacy-v1",
+  "coverage": {
+    "case_count": 3,
+    "cohort": "bounded-legacy-doc",
+    "conversion": {
+      "date": "2026-07-15",
+      "filter": "MS Word 97",
+      "producer": "LibreOffice",
+      "version": "26.2.3.2"
+    },
+    "design": "fixed-reviewed-subset",
+    "reference_extractors": [
+      "Apache POI 5.2.3",
+      "LibreOffice 26.2.3.2"
+    ],
+    "scope": [
+      "floating-source-text",
+      "nested-table-source",
+      "native-legacy-render-execution"
+    ]
+  },
+  "documents": [
+    {
+      "bytes": 9216,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "apache-poi-text-reference",
+        "legacy-doc",
+        "libreoffice-text-reference",
+        "source-floating-text-bearing"
+      ],
+      "format": "doc",
+      "id": "full-legacy-floating-text-bearing",
+      "path": "documents/full-legacy-floating-text-bearing.doc",
+      "provenance": "rwml-render-full-legacy",
+      "references": {
+        "apache-poi": {
+          "bytes": 51,
+          "extractor": "Apache POI",
+          "path": "corpus/public/benchmark/sample-poi/floating_text_bearing.poi.txt",
+          "sha256": "bf108533cceb86c267387a2018c334261840b5f0924b2364f4fbf67d5cb7963d",
+          "version": "5.2.3"
+        },
+        "libreoffice": {
+          "bytes": 53,
+          "extractor": "LibreOffice",
+          "path": "corpus/public/benchmark/sample-lo/floating_text_bearing.txt",
+          "sha256": "31eb7c3414b593fe340a00677361f4c11183d667a9496a6af9672c4101158a24",
+          "version": "26.2.3.2"
+        }
+      },
+      "sha256": "6a60920d650d9ec55372eef7607f708dfe5d856875c4d0162273856c1caefdf4",
+      "source": "converted",
+      "source_docx": {
+        "bytes": 1840,
+        "path": "corpus/public/synthetic/floating_text_bearing.docx",
+        "sha256": "6f91bc55068f9d2d794058083eebf221d8bd781ac28ae6ae384ae8a88cf38c2a"
+      },
+      "source_path": "corpus/public/benchmark/sample/floating_text_bearing.doc"
+    },
+    {
+      "bytes": 9216,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "apache-poi-text-reference",
+        "legacy-doc",
+        "libreoffice-text-reference",
+        "source-floating-wrap-policy"
+      ],
+      "format": "doc",
+      "id": "full-legacy-floating-wrap-policy",
+      "path": "documents/full-legacy-floating-wrap-policy.doc",
+      "provenance": "rwml-render-full-legacy",
+      "references": {
+        "apache-poi": {
+          "bytes": 27,
+          "extractor": "Apache POI",
+          "path": "corpus/public/benchmark/sample-poi/floating_wrap_policy.poi.txt",
+          "sha256": "3ee35f014bd769e20137c4ccedbb02aef533b1b79dcaf8fdd679c4040c5f03ba",
+          "version": "5.2.3"
+        },
+        "libreoffice": {
+          "bytes": 29,
+          "extractor": "LibreOffice",
+          "path": "corpus/public/benchmark/sample-lo/floating_wrap_policy.txt",
+          "sha256": "756099d2a94ee340c9f8db3b37d956576ea316038e8f131ca77d9466983a0490",
+          "version": "26.2.3.2"
+        }
+      },
+      "sha256": "65965d61822fdc4377ecc1754506494b9daf7b63572c39d68d5eac008e9f74f1",
+      "source": "converted",
+      "source_docx": {
+        "bytes": 2148,
+        "path": "corpus/public/synthetic/floating_wrap_policy.docx",
+        "sha256": "dcaab9d6c4e258223d4dadc8c2a598ca7115be1b70b3e2f32170511c086948dd"
+      },
+      "source_path": "corpus/public/benchmark/sample/floating_wrap_policy.doc"
+    },
+    {
+      "bytes": 9216,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "apache-poi-text-reference",
+        "legacy-doc",
+        "libreoffice-text-reference",
+        "source-nested-tables"
+      ],
+      "format": "doc",
+      "id": "full-legacy-nested-tables",
+      "path": "documents/full-legacy-nested-tables.doc",
+      "provenance": "rwml-render-full-legacy",
+      "references": {
+        "apache-poi": {
+          "bytes": 34,
+          "extractor": "Apache POI",
+          "path": "corpus/public/benchmark/sample-poi/nested_tables.poi.txt",
+          "sha256": "4e34d321f48b899460d158d6c089ed4ec3bd5699ac098d52aae3604c4e4096ab",
+          "version": "5.2.3"
+        },
+        "libreoffice": {
+          "bytes": 36,
+          "extractor": "LibreOffice",
+          "path": "corpus/public/benchmark/sample-lo/nested_tables.txt",
+          "sha256": "1f4f217444e74f7ee83a12d44ee8150e8833b6531188c20b43760ff24394b9c6",
+          "version": "26.2.3.2"
+        }
+      },
+      "sha256": "9997f2b1eaa132c23e96d133c8b1e26f5df0f86702ae96e5655a3edf56e238fd",
+      "source": "converted",
+      "source_docx": {
+        "bytes": 1419,
+        "path": "corpus/public/synthetic/nested_tables.docx",
+        "sha256": "77bb54f41e5f6148bffb29238985898a62cb14dbc5004f1a2bbe408307f719c0"
+      },
+      "source_path": "corpus/public/benchmark/sample/nested_tables.doc"
+    }
+  ],
+  "generator_closure_sha256": "40e3ff5658a6086cb73b0f42fc37abbff3b4367df0706f5afa328eb4e937ea16",
+  "limits": {
+    "max_documents": 3,
+    "max_input_bytes": 65536,
+    "max_pages_per_document": 4,
+    "max_total_input_bytes": 196608
+  },
+  "provenance": [
+    {
+      "bytes": 988,
+      "id": "rwml-render-full-legacy",
+      "kind": "converted",
+      "license": "MIT",
+      "reference": "provenance/rwml-render-full-legacy.md",
+      "sha256": "29c56b1dcf9a2382e9e4b6206f3fe6eed5447bf78af446518785650eb0770ea5"
+    }
+  ],
+  "schema": "rwml.render-corpus-batch-lock.v1"
+}

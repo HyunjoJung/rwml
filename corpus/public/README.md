@@ -41,7 +41,9 @@ Every file here is safe to redistribute:
   table topology/paint, section/column/running surfaces, note/field/revisions,
   metafile rasters, and floating geometry/wrap. Each batch has balanced factors
   and complete declared pairwise coverage. Exact DOCX inputs and strict
-  manifests are generated under ignored `target/` output.
+  manifests are generated under ignored `target/` output. A separate three-case
+  lock materializes the existing generated legacy benchmark DOC files and binds
+  their synthetic sources, conversion metadata, and two extractor references.
 - `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
   Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
   self-contained input for the strict public extraction benchmark.
@@ -177,6 +179,11 @@ python3 scripts/generate_render_floating_corpus.py
 python3 scripts/generate_render_floating_corpus.py --check
 python3 scripts/render_oracle_contract.py \
   target/render-oracle/render-full-floating-v1/RENDER_ORACLE.json
+
+python3 scripts/generate_render_legacy_corpus.py
+python3 scripts/generate_render_legacy_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-legacy-v1/RENDER_ORACLE.json
 ```
 
 The 64 one-page inputs form a complete orthogonal lattice over bold, italic,
@@ -243,6 +250,14 @@ make anchor placement, paint order, and bounded flow effects independently
 observable. The explicit `FloatingShapePlaceholderOnly` warning remains; this
 batch does not establish arbitrary exclusion-zone reflow, Word-exact
 pagination, external fidelity, or a release requirement.
+
+The separate three-input legacy batch copies the exact generated DOC files from
+the public extraction benchmark and binds each binary to its synthetic DOCX
+source, LibreOffice conversion metadata, and Apache POI and LibreOffice text
+references. It adds reviewed native legacy render execution without adding new
+public documents. The subset does not establish Microsoft Word provenance,
+broad producer diversity, PDF-layout fidelity against the text extractors,
+completion of the planned 800 cases, or a release requirement.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:

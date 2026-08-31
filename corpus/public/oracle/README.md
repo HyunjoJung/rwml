@@ -224,6 +224,31 @@ remains. This does not establish arbitrary exclusion-zone reflow, Word-exact
 pagination, external fidelity, completion of the planned 800 cases, or a
 release-validation change.
 
+## Full-corpus bounded legacy-DOC batch
+
+`render-full-legacy-v1.json` adds a fixed reviewed subset of three generated
+Word 97-2003 DOC inputs already present in the public extraction benchmark. The
+lock copies the exact committed binaries into a fresh campaign directory and
+binds each one to its repository-owned synthetic DOCX source, LibreOffice
+26.2.3.2 `MS Word 97` conversion metadata, and exact Apache POI 5.2.3 and
+LibreOffice 26.2.3.2 text references.
+
+```sh
+python3 scripts/generate_render_legacy_corpus.py
+python3 scripts/generate_render_legacy_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-legacy-v1/RENDER_ORACLE.json
+```
+
+All three inputs expect one native PDF page and no renderer warning. The
+generator enforces the authoritative benchmark inventory, OLE2/DOCX magic,
+exact source and reference identities, byte limits, fresh output, a canonical
+lock, and the strict manifest contract. This subset adds reviewed native legacy
+render execution to the batch inventory; it does not add three new public
+documents, establish Microsoft Word provenance or broad producer diversity,
+compare PDF layout with the text extractors, complete the planned 800 cases, or
+change release validation.
+
 ## Native fixed-font rendering
 
 `scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.

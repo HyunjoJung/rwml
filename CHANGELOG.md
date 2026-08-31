@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A fixed reviewed legacy-render subset now binds the three generated Word
+  97-2003 DOC benchmark inputs to their exact synthetic DOCX sources,
+  LibreOffice conversion metadata, and Apache POI and LibreOffice text
+  references. Its strict copier materializes fresh campaign input and records
+  one-page, warning-free native render expectations without adding public
+  documents, claiming Microsoft Word provenance or broad producer diversity,
+  completing the planned 800 cases, or expanding release gates.
 - The eighth reviewed full-render corpus batch adds 64 deterministic synthetic
   DOCX inputs for floating-shape geometry, layer, and bounded wrap interactions.
   A complete six-factor grid combines page/margin horizontal and vertical
