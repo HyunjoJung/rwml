@@ -340,7 +340,7 @@ def validate_visual_settings(settings: dict | None = None) -> dict[str, int | st
         value = values[name]
         if not isinstance(value, int) or isinstance(value, bool):
             raise ValueError(f"visual setting is invalid: {name}")
-    if values["font_mode"] not in {"fixed-noto-subsets", "system"}:
+    if values["font_mode"] not in {"fixed-noto-subsets", "system", "locked-shared-fonts"}:
         raise ValueError(
             f"visual setting is out of range: font_mode={values['font_mode']}"
         )
@@ -2324,6 +2324,174 @@ def hash_similarity(ref: Path, got: Path, size: int = 16) -> float:
     return 1.0 - ham / (size * size)
 
 
+def captured_validation_report(args, corpus, thresholds, visual_settings) -> dict:
+    import render_campaign_capture as capture
+
+    root = args.capture_dir.absolute()
+    retained = capture.runtime.read_regular_file(
+        root / "CAPTURE.json", capture.MAX_BUNDLE_BYTES
+    )
+    bundle = capture.run(
+        corpus.path,
+        root,
+        args.shared_font_pack.absolute(),
+        args.fonttools_wheel.absolute(),
+        args.pypdf_wheel.absolute(),
+        verify=True,
+    )
+    if (
+        args.source_revision is not None
+        and bundle["source_revision"] != args.source_revision
+    ):
+        raise ValueError("capture source revision differs from requested revision")
+    material = bundle["environment"]
+    tools = [
+        {"name": name, "version": version}
+        for name, version in sorted(material["analysis_tools"].items())
+    ]
+    environment = {
+        "source_revision": bundle["source_revision"],
+        "source_dirty": False,
+        "harness_sha256": _harness_sha256(),
+        "cargo_lock_sha256": bundle["renderer"]["cargo_lock_sha256"],
+        "renderer": {"name": "rwml", "font_mode": "locked-shared-fonts"},
+        "oracle": {
+            "name": "libreoffice",
+            "mode": "locked-container",
+            "version": capture.runtime.VERSION_LINE,
+            "identity_sha256": capture.digest(capture.canonical(material)),
+        },
+        "platform": {
+            "system": platform.system(),
+            "release": platform.release(),
+            "machine": platform.machine(),
+        },
+        "tools": tools,
+    }
+    rows = []
+    for document in corpus.documents:
+        directory = root / "cases" / document.case_id
+        reference, candidate = (
+            directory / "reference/output.pdf",
+            directory / "native.pdf",
+        )
+        report, _ = capture._load_json(directory / "native-report.json", 1024 * 1024)
+        kinds = warning_kinds(report)
+        if kinds is None:
+            raise ValueError("captured native warning report is invalid")
+        recall = text_recall(reference, candidate, kinds, report)
+        candidate_pages, reference_pages = page_count(candidate), page_count(reference)
+        visual = compare_pdf_visuals(
+            reference,
+            candidate,
+            dpi=visual_settings["dpi"],
+            page_cap=visual_settings["page_cap"],
+            foreground_threshold=visual_settings["foreground_threshold"],
+            ahash_size=visual_settings["ahash_size"],
+        )
+        rows.append(
+            ValidationRow(
+                document=document.path.name,
+                case_id=document.case_id,
+                input_bytes=document.input_bytes,
+                input_sha256=document.sha256,
+                status="pass" if recall >= args.recall_min else "fail",
+                recall=round(recall, 4),
+                rwml_pages=candidate_pages,
+                reference_pages=reference_pages,
+                page_ratio=round(candidate_pages / max(1, reference_pages), 4),
+                ahash_similarity=round(hash_similarity(reference, candidate), 4),
+                mean_page_ahash_similarity=visual.mean_page_ahash_similarity,
+                foreground_ink_iou=visual.foreground_ink_iou,
+                compared_pages=visual.compared_pages,
+                unmatched_candidate_pages=visual.unmatched_candidate_pages,
+                unmatched_reference_pages=visual.unmatched_reference_pages,
+                capped_matched_pages=visual.capped_matched_pages,
+                integer_visual_metrics=visual.integer_visual_metrics,
+                pdf_point_geometry=visual.pdf_point_geometry,
+                semantic_text_metrics=visual.semantic_text_metrics,
+                text_geometry_metrics=visual.text_geometry_metrics,
+                render_warnings=len(kinds),
+                render_warning_kinds=sorted(kinds),
+            )
+        )
+    binding = {
+        "schema": capture.SCHEMA,
+        "sha256": capture.digest(retained),
+        "environment_sha256": environment["oracle"]["identity_sha256"],
+        "source_revision": bundle["source_revision"],
+        "campaign": corpus.identity(),
+        "renderer_sha256": bundle["renderer"]["sha256"],
+        "font_scope": "declared-font-resources",
+        "cases": [
+            {
+                "case_id": row["case_id"],
+                "input_sha256": row["input"]["sha256"],
+                "native_pdf_sha256": row["native"]["pdf"]["sha256"],
+                "reference_pdf_sha256": row["reference"]["pdf"]["sha256"],
+                "native_fonts_sha256": row["native"]["font_checks"]["sha256"],
+                "reference_fonts_sha256": row["reference"]["font_checks"]["sha256"],
+            }
+            for row in bundle["rows"]
+        ],
+    }
+    verify_campaign_inputs(corpus, environment)
+    capture.require_equal(
+        retained,
+        capture.runtime.read_regular_file(
+            root / "CAPTURE.json", capture.MAX_BUNDLE_BYTES
+        ),
+        "capture during metrics",
+    )
+    # Metric analysis must not turn modified retained artifacts into fresh evidence.
+    for row in bundle["rows"]:
+        directory = root / "cases" / row["case_id"]
+        for name, path in (
+            ("native", directory / "native.pdf"),
+            ("reference", directory / "reference/output.pdf"),
+        ):
+            capture.require_equal(
+                row[name]["pdf"],
+                capture.identity(
+                    capture.runtime.read_regular_file(
+                        path, capture.resources.worker.MAX_PDF_BYTES
+                    )
+                ),
+                "PDF during metrics",
+            )
+            capture.require_equal(
+                row[name]["font_checks"],
+                capture.identity(
+                    capture.runtime.read_regular_file(
+                        directory / f"{name}-fonts.json",
+                        capture.resources.worker.MAX_RESULT_BYTES,
+                    )
+                ),
+                "font receipt during metrics",
+            )
+        capture.require_equal(
+            row["native_report"],
+            capture.identity(
+                capture.runtime.read_regular_file(
+                    directory / "native-report.json", 1024 * 1024
+                )
+            ),
+            "native report during metrics",
+        )
+    final_material, _, _, _ = capture.prepare_environment(
+        args.shared_font_pack.absolute(),
+        args.fonttools_wheel.absolute(),
+        args.pypdf_wheel.absolute(),
+    )
+    capture.require_equal(
+        material, final_material, "capture environment during metrics"
+    )
+    report = validation_report(
+        rows, args.recall_min, thresholds=thresholds, visual_settings=visual_settings
+    )
+    return bind_evidence_report(report, corpus, environment, capture=binding)
+
+
 def main() -> int:
     # Keep --help ASCII-only so it remains printable on Windows consoles using
     # legacy code pages such as cp949. The module docstring remains the detailed
@@ -2332,6 +2500,10 @@ def main() -> int:
         description="Validate rwml PDF output against LibreOffice reference renders."
     )
     ap.add_argument("inputs", nargs="*", type=Path)
+    ap.add_argument("--capture-dir", type=Path, help="Independently verify and measure a retained shared-font capture.")
+    ap.add_argument("--shared-font-pack", type=Path)
+    ap.add_argument("--fonttools-wheel", type=Path)
+    ap.add_argument("--pypdf-wheel", type=Path)
     ap.add_argument(
         "--manifest",
         type=Path,
@@ -2418,7 +2590,8 @@ def main() -> int:
                 "page_cap": args.page_cap,
                 "foreground_threshold": args.foreground_threshold,
                 "ahash_size": args.ahash_size,
-                "font_mode": "system" if args.system_fonts else DEFAULT_FONT_MODE,
+                "font_mode": ("locked-shared-fonts" if args.capture_dir else
+                              "system" if args.system_fonts else DEFAULT_FONT_MODE),
             }
         )
     except ValueError as exc:
@@ -2435,6 +2608,20 @@ def main() -> int:
         )
     except ValueError as exc:
         ap.error(str(exc))
+
+    capture_options = (args.shared_font_pack, args.fonttools_wheel, args.pypdf_wheel)
+    if args.capture_dir:
+        if (corpus is None or not args.json or not all(capture_options) or args.inputs
+                or args.system_fonts or args.verify_oracle or args.soffice != "auto"):
+            ap.error("--capture-dir requires a strict manifest, --json, shared font pack and both wheels; renderer overrides and --verify-oracle are not allowed")
+        try:
+            report = captured_validation_report(args, corpus, thresholds, visual_settings)
+        except (OSError, ValueError, RenderDependencyError, VisualMetricError) as exc:
+            ap.error(str(exc))
+        print(json_report_payload(report))
+        return 0 if report["gate"]["passed"] else 1
+    elif any(capture_options):
+        ap.error("shared capture options require --capture-dir")
 
     if not args.json:
         print(

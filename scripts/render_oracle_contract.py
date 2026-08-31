@@ -54,6 +54,7 @@ except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
 
 CORPUS_SCHEMA = "rwml.render-oracle-corpus.v1"
 EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v4"
+CAPTURE_EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v5"
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
 MAX_JSON_DEPTH = 64
@@ -193,8 +194,8 @@ KNOWN_WARNING_KINDS = {
 PROVENANCE_KINDS = {"generated", "vendored", "converted"}
 FORMATS = {"doc", "docx"}
 ORACLE_NAMES = {"libreoffice", "microsoft-word"}
-ORACLE_MODES = {"local", "container", "com", "applescript"}
-FONT_MODES = {"fixed-noto-subsets", "system"}
+ORACLE_MODES = {"local", "container", "com", "applescript", "locked-container"}
+FONT_MODES = {"fixed-noto-subsets", "system", "locked-shared-fonts"}
 
 CANONICAL_ID_RE = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*\Z")
 FEATURE_RE = CANONICAL_ID_RE
@@ -424,7 +425,9 @@ def _resolve_beneath(root: Path, relative: str, label: str) -> Path:
         resolved = candidate.resolve(strict=True)
         resolved.relative_to(resolved_root)
     except (FileNotFoundError, ValueError) as error:
-        raise ValueError(f"{label} does not exist beneath corpus root: {relative}") from error
+        raise ValueError(
+            f"{label} does not exist beneath corpus root: {relative}"
+        ) from error
     if not resolved.is_file():
         raise ValueError(f"{label} is not a regular file: {relative}")
     return resolved
@@ -492,7 +495,9 @@ def load_corpus_manifest(path: Path) -> CorpusManifest:
         kind = item["kind"]
         if kind not in PROVENANCE_KINDS:
             raise ValueError(f"provenance kind is invalid: {kind}")
-        license_name = _require_safe_text(item["license"], "provenance license", maximum=64)
+        license_name = _require_safe_text(
+            item["license"], "provenance license", maximum=64
+        )
         reference = _safe_relative_path(
             item["reference"], "provenance reference", suffix=".md"
         )
@@ -540,9 +545,7 @@ def load_corpus_manifest(path: Path) -> CorpusManifest:
         if input_bytes > limits["max_input_bytes"]:
             raise ValueError(f"document exceeds max_input_bytes: {case_id}")
         expected_sha256 = _require_sha256(item["sha256"], "document sha256")
-        provenance_id = _require_canonical_id(
-            item["provenance"], "document provenance"
-        )
+        provenance_id = _require_canonical_id(item["provenance"], "document provenance")
         if provenance_id not in provenance_ids:
             raise ValueError(f"document has unknown provenance: {provenance_id}")
         features_value = item["features"]
@@ -695,17 +698,21 @@ def bind_evidence_report(
     core_report: dict[str, Any],
     corpus: CorpusManifest,
     environment: dict[str, Any],
+    *,
+    capture: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(core_report, dict):
         raise ValueError("core report must be an object")
     expected_core_keys = EVIDENCE_KEYS - {"schema", "campaign", "environment"}
     _require_exact_keys(core_report, expected_core_keys, "core report")
     evidence = {
-        "schema": EVIDENCE_SCHEMA,
+        "schema": EVIDENCE_SCHEMA if capture is None else CAPTURE_EVIDENCE_SCHEMA,
         "campaign": corpus.identity(),
         "environment": copy.deepcopy(environment),
         **copy.deepcopy(core_report),
     }
+    if capture is not None:
+        evidence["capture"] = copy.deepcopy(capture)
     validate_evidence_report(evidence, corpus)
     return evidence
 
@@ -897,7 +904,9 @@ def _validate_summary(
     for row in measured:
         expected_status = "pass" if row["recall"] >= recall_min else "fail"
         if row["status"] != expected_status:
-            raise ValueError(f"evidence row status contradicts recall: {row['case_id']}")
+            raise ValueError(
+                f"evidence row status contradicts recall: {row['case_id']}"
+            )
     expected = {
         "documents": len(rows),
         "measured": len(measured),
@@ -905,9 +914,7 @@ def _validate_summary(
         "below_recall_min": sum(row["recall"] < recall_min for row in measured),
         "mean_recall": _mean([row["recall"] for row in measured]),
         "mean_page_ratio": _mean([row["page_ratio"] for row in measured]),
-        "mean_ahash_similarity": _mean(
-            [row["ahash_similarity"] for row in measured]
-        ),
+        "mean_ahash_similarity": _mean([row["ahash_similarity"] for row in measured]),
         "mean_page_ahash_similarity": _mean(
             [row["mean_page_ahash_similarity"] for row in measured]
         ),
@@ -921,12 +928,8 @@ def _validate_summary(
         "unmatched_reference_pages": sum(
             row["unmatched_reference_pages"] for row in measured
         ),
-        "capped_matched_pages": sum(
-            row["capped_matched_pages"] for row in measured
-        ),
-        "mean_render_warnings": _mean(
-            [row["render_warnings"] for row in measured]
-        ),
+        "capped_matched_pages": sum(row["capped_matched_pages"] for row in measured),
+        "mean_render_warnings": _mean([row["render_warnings"] for row in measured]),
     }
     for key, expected_value in expected.items():
         if value[key] != expected_value:
@@ -993,8 +996,7 @@ def _validate_gate(value: object) -> None:
         ):
             raise ValueError("evidence gate actual is invalid")
         expected_passed = actual is not None and (
-            (op == ">=" and actual >= threshold)
-            or (op == "<=" and actual <= threshold)
+            (op == ">=" and actual >= threshold) or (op == "<=" and actual <= threshold)
         )
         if check["passed"] is not expected_passed:
             raise ValueError("evidence gate check result is inconsistent")
@@ -1002,14 +1004,73 @@ def _validate_gate(value: object) -> None:
         raise ValueError("evidence gate passed result is inconsistent")
 
 
-def validate_evidence_report(
-    evidence: dict[str, Any], corpus: CorpusManifest
-) -> None:
+def _validate_capture_binding(evidence: dict, corpus: CorpusManifest) -> None:
+    value = evidence["capture"]
+    if not isinstance(value, dict):
+        raise ValueError("capture binding must be an object")
+    _require_exact_keys(
+        value,
+        {
+            "schema",
+            "sha256",
+            "environment_sha256",
+            "source_revision",
+            "campaign",
+            "renderer_sha256",
+            "font_scope",
+            "cases",
+        },
+        "capture binding",
+    )
+    environment = evidence["environment"]
+    if (
+        value["schema"] != "rwml.render-campaign-capture.v1"
+        or value["source_revision"] != environment["source_revision"]
+        or environment["source_dirty"] is not False
+        or value["campaign"] != corpus.identity()
+        or environment["oracle"]["name"] != "libreoffice"
+        or environment["oracle"]["mode"] != "locked-container"
+        or environment["renderer"]["font_mode"] != "locked-shared-fonts"
+        or evidence["visual_comparison"]["font_mode"] != "locked-shared-fonts"
+        or value["environment_sha256"] != environment["oracle"]["identity_sha256"]
+        or value["font_scope"] != "declared-font-resources"
+        or evidence["summary"].get("reference_stable") is not None
+        or evidence["summary"].get("unstable_references") != []
+    ):
+        raise ValueError("capture binding identity differs")
+    for name in ("sha256", "environment_sha256", "renderer_sha256"):
+        _require_sha256(value[name], f"capture {name}")
+    if not isinstance(value["cases"], list) or len(value["cases"]) != len(
+        corpus.documents
+    ):
+        raise ValueError("capture binding coverage differs")
+    keys = {
+        "case_id",
+        "input_sha256",
+        "native_pdf_sha256",
+        "reference_pdf_sha256",
+        "native_fonts_sha256",
+        "reference_fonts_sha256",
+    }
+    for row, document in zip(value["cases"], corpus.documents, strict=True):
+        if not isinstance(row, dict):
+            raise ValueError("capture case must be an object")
+        _require_exact_keys(row, keys, "capture case")
+        if row["case_id"] != document.case_id or row["input_sha256"] != document.sha256:
+            raise ValueError("capture case identity differs")
+        for key in keys - {"case_id"}:
+            _require_sha256(row[key], f"capture case {key}")
+
+
+def validate_evidence_report(evidence: dict[str, Any], corpus: CorpusManifest) -> None:
     if not isinstance(evidence, dict):
         raise ValueError("evidence must be an object")
-    _require_exact_keys(evidence, EVIDENCE_KEYS, "evidence")
-    if evidence["schema"] != EVIDENCE_SCHEMA:
-        raise ValueError(f"evidence schema must be {EVIDENCE_SCHEMA}")
+    captured = evidence.get("schema") == CAPTURE_EVIDENCE_SCHEMA
+    _require_exact_keys(
+        evidence, EVIDENCE_KEYS | ({"capture"} if captured else set()), "evidence"
+    )
+    if evidence["schema"] not in {EVIDENCE_SCHEMA, CAPTURE_EVIDENCE_SCHEMA}:
+        raise ValueError("evidence schema is unsupported")
     campaign = evidence["campaign"]
     if not isinstance(campaign, dict):
         raise ValueError("evidence campaign must be an object")
@@ -1032,11 +1093,17 @@ def validate_evidence_report(
         rows,
     )
     _validate_visual_comparison(evidence["visual_comparison"])
-    _validate_metric_environment(
-        evidence["visual_comparison"], evidence["environment"]
-    )
+    _validate_metric_environment(evidence["visual_comparison"], evidence["environment"])
     _validate_summary(evidence["summary"], rows, corpus)
     _validate_gate(evidence["gate"])
+    if captured:
+        _validate_capture_binding(evidence, corpus)
+    elif (
+        evidence["environment"]["renderer"]["font_mode"] == "locked-shared-fonts"
+        or evidence["environment"]["oracle"]["mode"] == "locked-container"
+        or evidence["visual_comparison"]["font_mode"] == "locked-shared-fonts"
+    ):
+        raise ValueError("shared capture profile requires v5 evidence")
     _assert_path_neutral(evidence)
 
 

@@ -152,7 +152,12 @@ def validate_image(info: dict, lock: dict) -> str:
 
 
 def run_bounded(
-    command: list[str], *, timeout: float = 30, stdout_limit: int = 1024 * 1024
+    command: list[str],
+    *,
+    timeout: float = 30,
+    stdout_limit: int = 1024 * 1024,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> bytes:
     """Drain both pipes within byte/time limits; terminate the owned process group."""
     if os.name != "posix":
@@ -162,7 +167,12 @@ def run_bounded(
     output = {"stdout": bytearray(), "stderr": bytearray()}
     deadline = time.monotonic() + timeout
     with subprocess.Popen(
-        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+        cwd=cwd,
+        env=env,
     ) as process:
         try:
             with selectors.DefaultSelector() as selector:

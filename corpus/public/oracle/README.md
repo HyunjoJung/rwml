@@ -450,3 +450,54 @@ evidence needed for review.
 Microsoft Word evidence remains diagnostic until the captured topology has been
 reviewed against the renderer and accepted publicly. A repeatable capture alone does
 not define a parity threshold, change renderer behavior, or add a release gate.
+## Shared-font campaign capture
+
+The diagnostic capture command composes the locked LibreOffice runtime, verified
+shared font pack, native renderer, and declared PDF font-resource checks. It
+requires a clean checkout and a strict corpus manifest; outputs must be fresh
+and outside the input corpus and font pack. Build/load the locked container and
+prepare the shared font pack and pinned wheels using the commands above first.
+
+```sh
+python3 scripts/render_campaign_capture.py capture \
+  --manifest corpus/public/RENDER_SMOKE_ORACLE.json \
+  --output target/render-oracle/shared-smoke-a \
+  --font-pack target/shared-font-pack \
+  --fonttools-wheel target/fonttools-4.63.0-py3-none-any.whl \
+  --pypdf-wheel target/pypdf-6.16.2-py3-none-any.whl
+
+python3 scripts/render_validate.py --json \
+  --manifest corpus/public/RENDER_SMOKE_ORACLE.json \
+  --capture-dir target/render-oracle/shared-smoke-a \
+  --shared-font-pack target/shared-font-pack \
+  --fonttools-wheel target/fonttools-4.63.0-py3-none-any.whl \
+  --pypdf-wheel target/pypdf-6.16.2-py3-none-any.whl
+```
+
+Capture builds `to_pdf` once with Rust 1.92.0 and passes every shared font in lock
+order without system fallback. Each DOCX is rendered by both engines; the input,
+PDFs, native warning report, reference runtime/font-closure records, and complete
+font-check receipts are retained. Any conversion or font-check failure prevents
+the final `CAPTURE.json` receipt. The process, output, and campaign bounds are
+enforced rather than treating timeouts or skipped cases as successful captures.
+
+The measurement command first independently verifies the retained capture:
+it rebuilds the native executable and repeats PDF extraction and applicable
+font checks, then computes the existing visual/text/geometry metrics. Use
+`render_campaign_capture.py verify` with the same capture arguments for this
+verification without metric analysis. Verification does not rerender the
+documents or establish authenticated producer provenance. Receipts bind observed
+bytes and identities; two separately captured campaigns are still needed for
+repeatability, and reviewed Word diagnostics remain a separate requirement.
+
+Shared capture metrics use `rwml.render-oracle-evidence.v5`, with complete
+per-case capture bindings. Existing local/legacy-container validation remains
+v4. A single captured campaign leaves reference repeatability unverified;
+`--verify-oracle`, system-font, and renderer overrides cannot be combined with
+`--capture-dir`. The schema and command do not change release requirements.
+
+Font results distinguish exact Type 1/native CFF glyph-outline checks from
+TrueType descriptor-name/SFNT-revision metadata checks. Empty inventories are
+explicit, and every declared resource is accounted for. Metadata agreement is
+not outline equivalence, font-selection correctness, Unicode/shaping correctness,
+or full PDF/Word fidelity. The current locked capture recipe accepts DOCX only.
