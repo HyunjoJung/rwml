@@ -313,14 +313,18 @@ fn shape_extract_lines(
             let mut seg_link: Option<Rc<str>> = None;
             let mut seg_dynamic: Option<DynamicTextRun> = None;
             let mut seg_x = run_x;
-            for cluster in run.visual_clusters() {
-                if cluster.is_ligature_continuation() {
-                    let range = drawable_text_range(text, cluster.text_range());
-                    if let Some(g) = glyphs.last_mut() {
-                        g.text_range.end = g.text_range.end.max(range.end);
-                    }
-                    continue;
+            let mut clusters = run.visual_clusters().peekable();
+            while let Some(cluster) = clusters.next() {
+                // Continuations follow their glyph-bearing cluster in visual order;
+                // RTL extends its start, and every glyph needs the complete range.
+                let mut text_range = cluster.text_range();
+                while let Some(component) = clusters.next_if(|next| next.is_ligature_continuation())
+                {
+                    let range = component.text_range();
+                    text_range.start = text_range.start.min(range.start);
+                    text_range.end = text_range.end.max(range.end);
                 }
+                let text_range = drawable_text_range(text, text_range);
                 let paint = paint_at(ranges, cluster.text_range().start, font_size);
                 let lk = link_at(links, cluster.text_range().start);
                 let dynamic = dynamic_at(dynamic_ranges, cluster.text_range().start);
@@ -357,7 +361,6 @@ fn shape_extract_lines(
                 seg_paint = Some(paint);
                 seg_link = lk;
                 seg_dynamic = dynamic;
-                let text_range = drawable_text_range(text, cluster.text_range());
                 for glyph in cluster.glyphs() {
                     if !text_range.is_empty() {
                         glyphs.push(KrillaGlyph::new(
@@ -869,4 +872,131 @@ fn apply_rtl_tab_stops(
         });
     }
     reservations
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shape_bundled(text: &str, styled: StyledText<'_>, width: f32) -> Vec<LineLayout> {
+        let fonts = [
+            rwml_fonts::noto_sans_arabic_subset().to_vec(),
+            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+            rwml_fonts::noto_sans_kr_subset().to_vec(),
+        ];
+        let mut font_cx = strict_font_context(&fonts, true).unwrap();
+        let mut layout_cx = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        shape(
+            text,
+            styled,
+            None,
+            Alignment::Start,
+            width,
+            &mut TextCx {
+                font_cx: &mut font_cx,
+                layout_cx: &mut layout_cx,
+                font_cache: &mut font_cache,
+            },
+        )
+    }
+
+    #[test]
+    fn ligature_ranges_cover_rtl_ltr_and_mixed_source_text() {
+        for text in [
+            "أولى",
+            "لا",
+            "لَا",
+            "لَّا",
+            "office e\u{301}",
+            "אבג أولى 123",
+            "أولى أولى أولى",
+        ] {
+            for width in [320.0, 32.0] {
+                let props = [(0, text.len(), CharProps::default())];
+                let lines = shape_bundled(text, StyledText::plain(&props), width);
+                let mut ranges = lines
+                    .iter()
+                    .flat_map(|line| &line.runs)
+                    .flat_map(|run| &run.glyphs)
+                    .map(|glyph| {
+                        assert_ne!(glyph.glyph_id.to_u32(), 0, "missing font glyph: {text}");
+                        assert!(text.is_char_boundary(glyph.text_range.start));
+                        assert!(text.is_char_boundary(glyph.text_range.end));
+                        glyph.text_range.clone()
+                    })
+                    .collect::<Vec<_>>();
+                ranges.sort_unstable_by_key(|range| (range.start, range.end));
+                ranges.dedup();
+                let mut cursor = 0;
+                for range in &ranges {
+                    assert_eq!(range.start, cursor, "{text:?} at {width}: {ranges:?}");
+                    cursor = range.end;
+                }
+                assert_eq!(cursor, text.len(), "{text:?} at {width}: {ranges:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn ligature_ranges_cover_every_glyph_of_an_arabic_mark_cluster() {
+        let text = "لَا";
+        let props = [(0, text.len(), CharProps::default())];
+        let lines = shape_bundled(text, StyledText::plain(&props), 320.0);
+        let glyphs = lines
+            .iter()
+            .flat_map(|line| &line.runs)
+            .flat_map(|run| &run.glyphs)
+            .collect::<Vec<_>>();
+        assert_eq!(glyphs.len(), 3, "alef plus the lam/vowel cluster");
+        assert_eq!(glyphs[0].text_range, 4..6);
+        assert_eq!(glyphs[1].text_range, 0..4);
+        assert_eq!(glyphs[2].text_range, 0..4);
+    }
+
+    #[test]
+    fn ligature_ranges_preserve_paint_and_link_ownership() {
+        let text = "لَا";
+        let props = [
+            (0, 2, CharProps::default()),
+            (
+                2,
+                4,
+                CharProps {
+                    color: Some(crate::model::Color { r: 255, g: 0, b: 0 }),
+                    ..CharProps::default()
+                },
+            ),
+            (4, text.len(), CharProps::default()),
+        ];
+        let link: Rc<str> = Rc::from("https://example.com/ligature");
+        let links = [(2, 4, link.clone())];
+        let lines = shape_bundled(
+            text,
+            StyledText {
+                ranges: &props,
+                links: &links,
+                dynamic_ranges: &[],
+            },
+            320.0,
+        );
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].runs.len(), 2);
+        let ligature = &lines[0].runs[1];
+        assert!(ligature.is_rtl);
+        assert_eq!(ligature.color, rgb::Color::new(255, 0, 0));
+        assert_eq!(ligature.link.as_ref(), Some(&link));
+        assert_eq!(ligature.glyphs.len(), 2);
+        assert_eq!(ligature.glyphs[0].text_range, 0..4);
+        assert_eq!(ligature.glyphs[1].text_range, 0..4);
+        let preceding = &lines[0].runs[0];
+        assert_eq!(preceding.color, rgb::Color::new(0, 0, 0));
+        assert!(preceding.link.is_none());
+        assert_eq!(preceding.glyphs.len(), 1);
+        assert_eq!(preceding.glyphs[0].text_range, 4..6);
+        assert!(
+            (ligature.x - preceding.x - preceding.glyphs[0].x_advance * preceding.size).abs()
+                < 0.001
+        );
+    }
 }
