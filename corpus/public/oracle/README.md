@@ -477,7 +477,14 @@ python3 scripts/render_validate.py --json \
 
 Capture builds `to_pdf` once, offline, with an already installed Rust 1.92.0
 toolchain and dependency cache. It does not install tools or download missing
-dependencies. Every shared font is passed in lock order without system fallback.
+dependencies. Each build uses a fresh temporary target directory, disables
+incremental compilation and debug information, and strips debug metadata during
+compilation. The capture environment records those settings. Custom compiler,
+wrapper, Cargo build/profile/target overrides are rejected; an inherited
+`CARGO_TARGET_DIR` is ignored and incremental compilation is explicitly disabled.
+The source checkout and installed toolchain still define the build environment;
+this is not a claim of hermetic or cross-platform executable reproducibility.
+Every shared font is passed in lock order without system fallback.
 Each DOCX is rendered by both engines; the input,
 PDFs, native warning report, reference runtime/font-closure records, and complete
 font-check receipts are retained. Any conversion or font-check failure prevents

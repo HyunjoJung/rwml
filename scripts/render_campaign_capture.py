@@ -34,6 +34,11 @@ MAX_BUNDLE_BYTES = 16 * 1024 * 1024
 MAX_RENDERER_BYTES = 256 * 1024 * 1024
 MAX_CAMPAIGN_BYTES = 2 * 1024 * 1024 * 1024
 MAX_CAMPAIGN_SECONDS = 4 * 60 * 60
+NATIVE_BUILD_ENV = {
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_PROFILE_DEV_STRIP": "debuginfo",
+}
 canonical = runtime.canonical_json
 digest = runtime.sha256
 verify_files = table_capture.verify_directory
@@ -195,6 +200,7 @@ def harness_identity() -> dict:
 def prepare_environment(
     pack: Path, fonttools: Path, pypdf: Path
 ) -> tuple[dict, dict, object, dict]:
+    native_build_environment()
     lock = shared.load_lock()
     receipt = shared.verify_pack(pack, lock)
     sources = shared._read_inputs(pack / "fonts", lock.fonts, shared.MAX_FONT_BYTES)
@@ -210,6 +216,10 @@ def prepare_environment(
         "pypdf": resources.tool_lock(),
         "harness": harness_identity(),
         "analysis_tools": table_capture.analysis_tools(),
+        "native_build": {
+            "environment": dict(NATIVE_BUILD_ENV),
+            "target_directory": "fresh",
+        },
     }
     numpy = render.integer_metric_numpy()
     if numpy is not None:
@@ -218,39 +228,67 @@ def prepare_environment(
     return material, sources, lock, {"image": image}
 
 
-def build_renderer(output: Path) -> dict:
+def native_build_environment() -> dict[str, str]:
     env = render.rust_tool_environment()
-    command = [
-        "rustup",
-        "run",
-        "1.92.0",
-        "cargo",
-        "build",
-        "--offline",
-        "--locked",
-        "--features",
-        "render",
-        "--example",
-        "to_pdf",
-        "--message-format=json",
-        "--target-dir",
-        str(ROOT / "target/codex-1.92"),
-    ]
-    log = runtime.run_bounded(
-        command, cwd=ROOT, env=env, timeout=900, stdout_limit=4 * 1024 * 1024
-    )
-    executables = []
-    for line in log.splitlines():
-        row = resources.strict_json(line)
+    for name, value in env.items():
         if (
-            row.get("reason") == "compiler-artifact"
-            and row.get("target", {}).get("name") == "to_pdf"
-            and row.get("executable")
+            value
+            and name != "CARGO_TARGET_DIR"
+            and value != NATIVE_BUILD_ENV.get(name)
+            and (
+                name
+                in {
+                    "RUSTFLAGS",
+                    "CARGO_ENCODED_RUSTFLAGS",
+                    "RUSTC",
+                    "RUSTC_WRAPPER",
+                    "RUSTC_WORKSPACE_WRAPPER",
+                }
+                or name.startswith(("CARGO_BUILD_", "CARGO_PROFILE_", "CARGO_TARGET_"))
+            )
         ):
-            executables.append(Path(row["executable"]))
-    if len(executables) != 1:
-        raise ValueError("native renderer build artifact is ambiguous")
-    payload = runtime.read_regular_file(executables[0], MAX_RENDERER_BYTES)
+            raise ValueError(f"native capture does not accept build override {name}")
+    env.update(NATIVE_BUILD_ENV)
+    return env
+
+
+def build_renderer(output: Path) -> dict:
+    env = native_build_environment()
+    scratch = ROOT / "target/render-oracle/native-builds"
+    scratch.mkdir(parents=True, exist_ok=True)
+    # Never verify by reusing the capture's incremental/compiler artifacts.
+    with tempfile.TemporaryDirectory(dir=scratch) as temporary:
+        command = [
+            "rustup",
+            "run",
+            "1.92.0",
+            "cargo",
+            "build",
+            "--offline",
+            "--locked",
+            "--features",
+            "render",
+            "--example",
+            "to_pdf",
+            "--message-format=json",
+            "--target-dir",
+            temporary,
+        ]
+        log = runtime.run_bounded(
+            command, cwd=ROOT, env=env, timeout=900, stdout_limit=4 * 1024 * 1024
+        )
+        executables = []
+        for line in log.splitlines():
+            row = resources.strict_json(line)
+            if (
+                row.get("reason") == "compiler-artifact"
+                and row.get("target", {}).get("name") == "to_pdf"
+                and row.get("executable")
+            ):
+                executables.append(Path(row["executable"]))
+        if len(executables) != 1:
+            raise ValueError("native renderer build artifact is ambiguous")
+        payload = runtime.read_regular_file(executables[0], MAX_RENDERER_BYTES)
     write_new(output, payload)
     output.chmod(0o755)
     rustc = (

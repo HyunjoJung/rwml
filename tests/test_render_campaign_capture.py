@@ -3,6 +3,7 @@ import contextlib
 import copy
 import io
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -51,6 +52,12 @@ def extraction(kind="truetype", name="ABCDEF+Regular"):
 
 
 class CaptureTests(unittest.TestCase):
+    def setUp(self):
+        # CI's warning policy is not an input to the mocked capture compiler.
+        flags = mock.patch.dict(os.environ, {"RUSTFLAGS": ""})
+        flags.start()
+        self.addCleanup(flags.stop)
+
     def test_native_build_is_offline_and_does_not_install_a_toolchain(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -73,6 +80,92 @@ class CaptureTests(unittest.TestCase):
             self.assertIn("--locked", command)
             self.assertNotIn("--install", command)
             self.assertEqual(run.call_count, 2)
+
+    def test_native_build_pins_reproducibility_settings_and_uses_fresh_targets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            compiled = root / "compiled"
+            compiled.write_bytes(b"renderer")
+            artifact = {
+                "reason": "compiler-artifact",
+                "target": {"name": "to_pdf"},
+                "executable": str(compiled),
+            }
+            builds = []
+
+            def execute(command, **kwargs):
+                if "build" not in command:
+                    return b"rustc 1.92.0"
+                target = Path(command[command.index("--target-dir") + 1])
+                self.assertEqual(
+                    target.parent, capture.ROOT / "target/render-oracle/native-builds"
+                )
+                self.assertTrue(target.is_dir())
+                for key, value in {
+                    "CARGO_INCREMENTAL": "0",
+                    "CARGO_PROFILE_DEV_DEBUG": "0",
+                    "CARGO_PROFILE_DEV_STRIP": "debuginfo",
+                }.items():
+                    self.assertEqual(kwargs["env"].get(key), value)
+                builds.append(target)
+                return json.dumps(artifact).encode()
+
+            with (
+                mock.patch.dict(os.environ, capture.NATIVE_BUILD_ENV),
+                mock.patch.object(capture.runtime, "run_bounded", side_effect=execute),
+            ):
+                first = capture.build_renderer(root / "first")
+                second = capture.build_renderer(root / "second")
+            self.assertEqual(first, second)
+            self.assertEqual(len(builds), 2)
+            self.assertNotEqual(builds[0], builds[1])
+            self.assertTrue(all(not target.exists() for target in builds))
+            self.assertEqual((root / "first").read_bytes(), b"renderer")
+            self.assertEqual((root / "second").read_bytes(), b"renderer")
+
+    def test_native_build_cleans_its_target_after_failure(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            targets = []
+
+            def fail(command, **kwargs):
+                target = Path(command[command.index("--target-dir") + 1])
+                self.assertEqual(
+                    target.parent, capture.ROOT / "target/render-oracle/native-builds"
+                )
+                targets.append(target)
+                raise ValueError("compiler failed")
+
+            output = Path(temporary) / "renderer"
+            with mock.patch.object(capture.runtime, "run_bounded", side_effect=fail):
+                with self.assertRaisesRegex(ValueError, "compiler failed"):
+                    capture.build_renderer(output)
+            self.assertEqual(len(targets), 1)
+            self.assertFalse(targets[0].exists())
+            self.assertFalse(output.exists())
+
+    def test_native_build_rejects_unbound_compiler_overrides(self):
+        for variable in (
+            "RUSTFLAGS",
+            "CARGO_ENCODED_RUSTFLAGS",
+            "RUSTC",
+            "RUSTC_WRAPPER",
+            "RUSTC_WORKSPACE_WRAPPER",
+            "CARGO_BUILD_TARGET",
+            "CARGO_BUILD_RUSTFLAGS",
+            "CARGO_PROFILE_DEV_OPT_LEVEL",
+            "CARGO_PROFILE_DEV_DEBUG",
+            "CARGO_PROFILE_DEV_STRIP",
+            "CARGO_TARGET_AARCH64_APPLE_DARWIN_RUSTFLAGS",
+        ):
+            with (
+                self.subTest(variable=variable),
+                tempfile.TemporaryDirectory() as temporary,
+                mock.patch.dict(os.environ, {variable: "custom-override"}),
+                mock.patch.object(capture.runtime, "run_bounded") as run,
+            ):
+                with self.assertRaisesRegex(ValueError, variable):
+                    capture.build_renderer(Path(temporary) / "renderer")
+                run.assert_not_called()
 
     def test_capture_cli_rejects_partial_and_conflicting_profiles_before_verification(
         self,
@@ -508,6 +601,15 @@ class CaptureTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "fresh"):
                     capture.run(*args)
                 self.assertEqual((output / "CAPTURE.json").read_bytes(), before)
+                changed_binary = b"different renderer"
+                altered = copy.deepcopy(result)
+                altered["renderer"].update(capture.identity(changed_binary))
+                (output / "renderer").write_bytes(changed_binary)
+                (output / "CAPTURE.json").write_text(json.dumps(altered))
+                with self.assertRaisesRegex(ValueError, "independently rebuilt"):
+                    capture.run(*args, verify=True)
+                (output / "renderer").write_bytes(b"renderer")
+                (output / "CAPTURE.json").write_bytes(before)
                 receipt = output / "cases/fixture-basic/native-fonts.json"
                 changed = copy.deepcopy(check)
                 changed["resources"][0]["source"] = "Other.ttf"
