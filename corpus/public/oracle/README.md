@@ -248,6 +248,57 @@ RWML_PYPDF_WHEEL=<locked-pypdf-wheel> \
 
 Missing prerequisites fail this explicit gate; they are not skipped.
 
+### Automatic native CFF witnesses
+
+`scripts/native_cff_attestation.py` composes PDF resource extraction, bounded
+source-glyph discovery, and the independent raw-CFF proof worker. It checks
+every extracted CIDFontType0C resource against the shared pack's exact Noto Sans
+CJK KR source. No hand-written map is needed. Other font representations stay
+listed in `unverified_resources`; this is not a whole-PDF font-fidelity proof.
+A PDF with no native CFF resources is an explicit error, not an empty success.
+
+ToUnicode values provide candidate hints only. Source GSUB single, alternate,
+and ligature substitutions, including extension lookups, widen those candidates.
+The discovery worker requires one exact width/outline-fingerprint match per
+subset glyph, including `.notdef`, and rejects ambiguity or missing coverage.
+The generated complete map then goes through the independent worker's exact
+matrix, width, and outline-command comparison. A discovery result alone is not
+accepted as proof, and hints do not establish Unicode or shaping correctness.
+
+```sh
+python3 scripts/native_cff_attestation.py \
+  --pdf <native.pdf> --font-pack target/render-oracle/shared-font-pack \
+  --fonttools-wheel <locked-FontTools-wheel> \
+  --pypdf-wheel <locked-pypdf-wheel> --output <fresh-cff-receipt.json>
+python3 scripts/native_cff_attestation.py \
+  --pdf <native.pdf> --font-pack target/render-oracle/shared-font-pack \
+  --fonttools-wheel <locked-FontTools-wheel> \
+  --pypdf-wheel <locked-pypdf-wheel> --verify <cff-receipt.json>
+```
+
+Verification repeats extraction, discovery, and proof from the original inputs.
+Receipts bind both workers to the original PDF font references, embedded CFF and
+ToUnicode bytes, locked source font, parser/tool identities, and runtime. Missing,
+duplicate, extra, empty, oversized, or surrogate hints fail. Contextual shaping
+and arbitrary multi-glyph transformations are not simulated. Hint sequences are
+limited to eight Unicode scalars; candidate sets to 256 per glyph; source draws
+to 4,096 glyphs; and candidate search and outline work to 131,072 steps/commands
+each. GSUB construction is limited to 1,024 lookups, 4,096 subtables, 65,536
+single/alternate edges, and 4,096 ligature records. The existing isolated parser
+limits remain in force. A 120-second batch budget is checked between bounded
+operations; cleanup and Docker lifecycle operations retain their own deadlines.
+The existing 8-MiB receipt limit applies to the composed evidence.
+
+```sh
+RWML_FONTTOOLS_WHEEL=<locked-FontTools-wheel> \
+RWML_PYPDF_WHEEL=<locked-pypdf-wheel> \
+  python3 -m unittest discover -s tests/cff_discovery -p 'test_*.py' -v
+```
+
+This diagnostic gate is separate from the earlier font/PDF checks and the
+release gate. It does not establish Word layout, content-operator validity,
+font-selection parity, or general strict-campaign acceptance.
+
 ## LibreOffice regression font lock
 
 `libreoffice-font-lock.json` pins eight LibreOffice-bundled Noto Sans, Noto Sans
