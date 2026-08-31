@@ -148,6 +148,33 @@ and payloads, byte limits, fresh output, and the strict manifest contract. This
 does not establish Word-exact pagination, external fidelity, completion of the
 planned 800 cases, or a release-validation change.
 
+## Full-corpus note, field, and revision batch
+
+`render-full-note-field-v1.json` is the sixth bounded batch toward the reviewed
+full render corpus. It binds 64 generated one-page DOCX inputs forming the
+complete two-level factorial over footnote/endnote kind, numbering start one or
+five, decimal/lower-Roman format, simple/complex `NOTEREF`, plain/accepted-
+insertion context, and direct-body/table-cell placement. Each factor level
+appears in 32 inputs and each of the 15 factor pairs has all four states 16
+times.
+
+```sh
+python3 scripts/generate_render_note_field_corpus.py
+python3 scripts/generate_render_note_field_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-note-field-v1/RENDER_ORACLE.json
+```
+
+Every document also carries a deleted note-reference decoy, a custom-mark note
+before the primary automatic note, accepted and rejected note-body revisions,
+and a deterministic formula in the primary note body. Note IDs and note-part
+order are deliberately unrelated to the visible sequence. The separate lock
+preserves all five earlier generator closures and enforces exact factor
+coverage, unique identities and payloads, byte limits, fresh output, and the
+strict manifest contract. This does not establish page-bottom note placement,
+Word-exact pagination, external fidelity, completion of the planned 800 cases,
+or a release-validation change.
+
 ## Native fixed-font rendering
 
 `scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.

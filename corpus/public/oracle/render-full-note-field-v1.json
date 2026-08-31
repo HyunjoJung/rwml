@@ -1,0 +1,2053 @@
+{
+  "campaign": "public-render-full-note-field-v1",
+  "coverage": {
+    "case_count": 64,
+    "cohort": "note-field-revision-interactions",
+    "design": "complete-2-level-factorial",
+    "factor_case_counts": {
+      "accepted-insertion-primary": 32,
+      "complex-noteref-field": 32,
+      "endnote-kind": 32,
+      "lower-roman-note-numbering": 32,
+      "note-start-five": 32,
+      "table-cell-primary": 32
+    },
+    "factor_levels": {
+      "accepted-insertion-primary": [
+        "plain-primary",
+        "accepted-insertion-primary"
+      ],
+      "complex-noteref-field": [
+        "simple-noteref-field",
+        "complex-noteref-field"
+      ],
+      "endnote-kind": [
+        "footnote-kind",
+        "endnote-kind"
+      ],
+      "lower-roman-note-numbering": [
+        "decimal-note-numbering",
+        "lower-roman-note-numbering"
+      ],
+      "note-start-five": [
+        "note-start-one",
+        "note-start-five"
+      ],
+      "table-cell-primary": [
+        "direct-body-primary",
+        "table-cell-primary"
+      ]
+    },
+    "factor_names": [
+      "endnote-kind",
+      "note-start-five",
+      "lower-roman-note-numbering",
+      "complex-noteref-field",
+      "accepted-insertion-primary",
+      "table-cell-primary"
+    ],
+    "factorial_rows": 64,
+    "held_constant": [
+      "accepted-current-view",
+      "custom-mark-before-primary",
+      "deleted-decoy-before-primary",
+      "one-page-geometry",
+      "primary-note-id-four"
+    ],
+    "interaction_scope": "primary-note-and-noteref",
+    "pairwise_state_counts": [
+      {
+        "factors": [
+          "endnote-kind",
+          "note-start-five"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "endnote-kind",
+          "lower-roman-note-numbering"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "endnote-kind",
+          "complex-noteref-field"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "endnote-kind",
+          "accepted-insertion-primary"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "endnote-kind",
+          "table-cell-primary"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "note-start-five",
+          "lower-roman-note-numbering"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "note-start-five",
+          "complex-noteref-field"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "note-start-five",
+          "accepted-insertion-primary"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "note-start-five",
+          "table-cell-primary"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "lower-roman-note-numbering",
+          "complex-noteref-field"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "lower-roman-note-numbering",
+          "accepted-insertion-primary"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "lower-roman-note-numbering",
+          "table-cell-primary"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "complex-noteref-field",
+          "accepted-insertion-primary"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "complex-noteref-field",
+          "table-cell-primary"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "accepted-insertion-primary",
+          "table-cell-primary"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      }
+    ]
+  },
+  "documents": [
+    {
+      "bytes": 5523,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-000",
+      "path": "documents/full-note-field-000.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "b827c0d7a168f3fe3d4886dcc0b6ed6dc6dbbe94eb0778de88c92b08af7a9bed",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-000"
+    },
+    {
+      "bytes": 5498,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-001",
+      "path": "documents/full-note-field-001.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "a5629e3d20efb26f2a7e9841b6bfd8a98698f514bab1b07cbe78a2a06785cb4a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-001"
+    },
+    {
+      "bytes": 5523,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-002",
+      "path": "documents/full-note-field-002.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "fc694d7cf7dcee3c1bbfd0c3e2fa22b415765d81522dbb89ab3854564892c5fc",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-002"
+    },
+    {
+      "bytes": 5498,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-003",
+      "path": "documents/full-note-field-003.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "2b8ed6afd3544ef8b22fea54167715320f950ec76da374fb86ae5b289a0315e7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-003"
+    },
+    {
+      "bytes": 5526,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-004",
+      "path": "documents/full-note-field-004.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "c17e3ae254faf8bb3ec6f80935f299c0d5c563a646adc760ddd05c4ff10b9295",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-004"
+    },
+    {
+      "bytes": 5501,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-005",
+      "path": "documents/full-note-field-005.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "efe92aaacc7e7af8c69dfb9d61387456b3d330d6cc3ee93ee35ff18f157be016",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-005"
+    },
+    {
+      "bytes": 5526,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-006",
+      "path": "documents/full-note-field-006.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "f89c23cd10f4da2a62dae20dcc964fcdfa19af9a9f89a564ccf591afe2f25cf9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-006"
+    },
+    {
+      "bytes": 5501,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-007",
+      "path": "documents/full-note-field-007.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "1bd62d107b3b9e253b081429f1d5f15a3230b567c7df0692168c9a213d142bfc",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-007"
+    },
+    {
+      "bytes": 5680,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-008",
+      "path": "documents/full-note-field-008.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "3a089cb54c516d49575b97dd51a5fb320cb7c7f3e9aa997d3274f6a257d79725",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-008"
+    },
+    {
+      "bytes": 5655,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-009",
+      "path": "documents/full-note-field-009.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "1a5ce9b2afc8928cbed58acf23797d7951f7853b9a9f8fde4b6e205bc84eb8fa",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-009"
+    },
+    {
+      "bytes": 5680,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-010",
+      "path": "documents/full-note-field-010.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "494ebb15f285b5b5acd67a64da518cea46aa6b3d293971a5d60de7d6f1eb1780",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-010"
+    },
+    {
+      "bytes": 5655,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-011",
+      "path": "documents/full-note-field-011.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "51d496d3e48d54c0762c6faea5a1f933ea43684e721aceb71ea7f5a76f4bd551",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-011"
+    },
+    {
+      "bytes": 5683,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-012",
+      "path": "documents/full-note-field-012.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "a79fe0e82362fb15140c062f273c3f03b4aa9cee252f57ad511a282c069123c7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-012"
+    },
+    {
+      "bytes": 5658,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-013",
+      "path": "documents/full-note-field-013.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "23267446c95b63ecac77226ed5ad1a98a32eca9f8b0a88c7e501106b0b1ad130",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-013"
+    },
+    {
+      "bytes": 5683,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-014",
+      "path": "documents/full-note-field-014.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "338b7cfd85fbffc611f33866ab83acd02c07bfa85fa2aef4efd6f265080c42d7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-014"
+    },
+    {
+      "bytes": 5658,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-015",
+      "path": "documents/full-note-field-015.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "583fdaddfc412b69adade4cfaa6e45c8eb608958591e002578b7be5180ca3077",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-015"
+    },
+    {
+      "bytes": 5667,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-016",
+      "path": "documents/full-note-field-016.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "66696982c26f1a2c48b590965687b476b4db5359010ac026d44bfe2df68d8541",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-016"
+    },
+    {
+      "bytes": 5642,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-017",
+      "path": "documents/full-note-field-017.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "05e4d755b06071efb2fa5f4d15717dcf463d58c48f2d51d1794de1ca0d033fe4",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-017"
+    },
+    {
+      "bytes": 5667,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-018",
+      "path": "documents/full-note-field-018.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "4ee1520aac2f711dfafa3cc93a90fbd06b34fd4fe61eebc621c3e5980fcb1af9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-018"
+    },
+    {
+      "bytes": 5642,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-019",
+      "path": "documents/full-note-field-019.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "f5ed78590da2cdd583b0c5daac8f3da5945daac4496d102bb19ff5ef99d9dbe9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-019"
+    },
+    {
+      "bytes": 5670,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-020",
+      "path": "documents/full-note-field-020.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "252f9c36ad791e018b04ca8aaf90f7e3cb0ce2b8ae3d42fcfde6b7fdb82ec73a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-020"
+    },
+    {
+      "bytes": 5645,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-021",
+      "path": "documents/full-note-field-021.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "a9bad2efa823091c8c059ffc03dc5d9991e9abbc90247391064781d83b301585",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-021"
+    },
+    {
+      "bytes": 5670,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-022",
+      "path": "documents/full-note-field-022.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "193be95e0d3f9b7ff60b4f75b4894043309fc33bf89c6f13073227cee4581e86",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-022"
+    },
+    {
+      "bytes": 5645,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "simple-noteref-field",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-023",
+      "path": "documents/full-note-field-023.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "c589046b5f8b966d44c542c96bde15efa617354dde8b7fff98bd8e9ac8e733f7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-023"
+    },
+    {
+      "bytes": 5824,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-024",
+      "path": "documents/full-note-field-024.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "bdf8a89e367efee134e20e0d13ea005764c3198f37a94d9b177123c787eb277e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-024"
+    },
+    {
+      "bytes": 5799,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-025",
+      "path": "documents/full-note-field-025.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "52ecd96f194a8afbd83551069ba126ac83b6e0f679f543b5c1d3b7c835561c59",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-025"
+    },
+    {
+      "bytes": 5824,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-026",
+      "path": "documents/full-note-field-026.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "0df2275b53c9774d7b695de67226d0bb9f09857c10c5751feb663063088a4143",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-026"
+    },
+    {
+      "bytes": 5799,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-027",
+      "path": "documents/full-note-field-027.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "c5104227644a92801150c314c1d89df4dbf7c34113fa8d59c1028b19cee6ccd6",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-027"
+    },
+    {
+      "bytes": 5827,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-028",
+      "path": "documents/full-note-field-028.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "2ef2f0fd26295bc0b121dfb0363276ba8fca2c41cbe003a21b8a4285d80dc923",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-028"
+    },
+    {
+      "bytes": 5802,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-029",
+      "path": "documents/full-note-field-029.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "1ee3c9baac6ed049972ad6665ebc01a50ced92e47c8319a9e7fb87441c8ca6d7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-029"
+    },
+    {
+      "bytes": 5827,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-030",
+      "path": "documents/full-note-field-030.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "d6916f88963bceb40374ea0efa254be73a838208d8ccc68478aada7bc0a6e0ed",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-030"
+    },
+    {
+      "bytes": 5802,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "direct-body-primary",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "source-order-note-numbering"
+      ],
+      "format": "docx",
+      "id": "full-note-field-031",
+      "path": "documents/full-note-field-031.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "cab44d3a1a64a457579733bfb8357f9248a360fcf25546e57c2c7cdfac4a4de9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-031"
+    },
+    {
+      "bytes": 5971,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-032",
+      "path": "documents/full-note-field-032.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "a3acbf6e4831da4434f91c15deb4386d753e2297003f5081ed201ed313cd147b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-032"
+    },
+    {
+      "bytes": 5946,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-033",
+      "path": "documents/full-note-field-033.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "42600ae6af8c52586293f0acd166253a8257f1d55b5647ca2145adafa3dd3aa0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-033"
+    },
+    {
+      "bytes": 5971,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-034",
+      "path": "documents/full-note-field-034.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "144ce717164e3d5a0645704ae8edd09f6da48c85ff657ff35db734c00017e915",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-034"
+    },
+    {
+      "bytes": 5946,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-035",
+      "path": "documents/full-note-field-035.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "38b6d9f4a95622133800b62ea0c60d9e09394de584241feb44dd1daf5b941839",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-035"
+    },
+    {
+      "bytes": 5974,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-036",
+      "path": "documents/full-note-field-036.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "d7f1ec6974bba7828fa566e0ac50424827504af4bc06e3083b05c074d5884a2e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-036"
+    },
+    {
+      "bytes": 5949,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-037",
+      "path": "documents/full-note-field-037.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "74e728ddd9ad15cbe09ad4dd97068bdfafa782880da001c8cb79cc66c3ac92f9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-037"
+    },
+    {
+      "bytes": 5974,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-038",
+      "path": "documents/full-note-field-038.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "1ff0af722e5290320706857312abaf233b1e4258dc4131922fbebcaf49459c66",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-038"
+    },
+    {
+      "bytes": 5949,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-039",
+      "path": "documents/full-note-field-039.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "52d1dad4fe4fd750ac6fda9236506c9c4fa00db9172afbc375fad7ac67c88125",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-039"
+    },
+    {
+      "bytes": 6128,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-040",
+      "path": "documents/full-note-field-040.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "19dff0c612046c9427d1ba125c215e66cad0210f2f4b9ce426636792cefddbdd",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-040"
+    },
+    {
+      "bytes": 6103,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-041",
+      "path": "documents/full-note-field-041.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "64c5f007f9d522642fd6d155c899a738342e9ae1f5d66bf191fcd5def9a16d3a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-041"
+    },
+    {
+      "bytes": 6128,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-042",
+      "path": "documents/full-note-field-042.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "67fc7bfdb23df5c6b70095c8d9449bc4351d06cf5847ce4506802caf1328c72f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-042"
+    },
+    {
+      "bytes": 6103,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-043",
+      "path": "documents/full-note-field-043.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "c0ecc2cea454333c6d4a5e8aa86827052952f46cc1186f2ff855bf69240909f0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-043"
+    },
+    {
+      "bytes": 6131,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-044",
+      "path": "documents/full-note-field-044.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "e42ad5cd871850359376fc14941bbfbf135f0048a826f193d53adf46c800d828",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-044"
+    },
+    {
+      "bytes": 6106,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "plain-primary",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-045",
+      "path": "documents/full-note-field-045.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "7b05904b98f7db40a063310ad083432d09d9118fb09ea427bd07a17c311952ec",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-045"
+    },
+    {
+      "bytes": 6131,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-046",
+      "path": "documents/full-note-field-046.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "38474f87bea8fecbe73c61eb7c4566b2fe69ca5921508c3aa9b2946215e29f3c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-046"
+    },
+    {
+      "bytes": 6106,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "plain-primary",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-047",
+      "path": "documents/full-note-field-047.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "0806b15877f9590ab40db4efda5be4c46836aa1bf0fa29240dd519b9dc51dd1e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-047"
+    },
+    {
+      "bytes": 6115,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-048",
+      "path": "documents/full-note-field-048.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "e0c398b3653cb1263eb9ad989ba7c9fb9c6f1179d507e6cfd6feda3930522a54",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-048"
+    },
+    {
+      "bytes": 6090,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-049",
+      "path": "documents/full-note-field-049.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "00f99b73f7b47eff54bfae30f67897e9b6111deaa191618b2535f2e938e810d2",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-049"
+    },
+    {
+      "bytes": 6115,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-050",
+      "path": "documents/full-note-field-050.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "589e256fa2687afdea6333e833c9361544102d8a2cb6a3a519b4759f6deee644",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-050"
+    },
+    {
+      "bytes": 6090,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-051",
+      "path": "documents/full-note-field-051.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "5818d4c712b42d64514e35fa13f7ffacac75d9b404b4f2c57433b753d2fae18c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-051"
+    },
+    {
+      "bytes": 6118,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-052",
+      "path": "documents/full-note-field-052.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "339036ddd0bfd39dc071025ec0e697ab4dd359704d30abb2d0968f8211fe9edb",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-052"
+    },
+    {
+      "bytes": 6093,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-053",
+      "path": "documents/full-note-field-053.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "f5f9249c7df8ed18b101b52ba6c0c8cfd3ab85cd2e5abae432bac6a6caba3dc7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-053"
+    },
+    {
+      "bytes": 6118,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-054",
+      "path": "documents/full-note-field-054.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "f270b120abd70cb4852958df49ba1c6cfd57d4c5288e1e6863e93eb63bfee4ea",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-054"
+    },
+    {
+      "bytes": 6093,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "simple-noteref-field",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-055",
+      "path": "documents/full-note-field-055.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "5c98eee7b777543a38246a0b34311c10fdd1592d290cf4bdd8d726eef9654175",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-055"
+    },
+    {
+      "bytes": 6272,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-056",
+      "path": "documents/full-note-field-056.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "a38311182e8edf46872bf01ae96a010694f9af45eb51d377ace969a59978b2ef",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-056"
+    },
+    {
+      "bytes": 6247,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-057",
+      "path": "documents/full-note-field-057.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "0c789df47a7047ddca6f56a01709f0fa63d63a5c6e14c8c9b19b75a090fc89ef",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-057"
+    },
+    {
+      "bytes": 6272,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-058",
+      "path": "documents/full-note-field-058.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "e541696ea351de553b6ea7e602b9c4b3967063db7a741f618a4f17fadddc50c6",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-058"
+    },
+    {
+      "bytes": 6247,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "decimal-note-numbering",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-059",
+      "path": "documents/full-note-field-059.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "c2a66e005cc22cfa1b5a8468dedcd378419fa9bcde7b5a23c5afec6cb92e380e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-059"
+    },
+    {
+      "bytes": 6275,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-060",
+      "path": "documents/full-note-field-060.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "6f56ea5162f587768d3a7c8667c9c796a57b0c714df87136d806c029fad76d16",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-060"
+    },
+    {
+      "bytes": 6250,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-one",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-061",
+      "path": "documents/full-note-field-061.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "06b2ef806509a14f015740b90f3ea53a1f51df8023efdcf75801298c384c3ec2",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-061"
+    },
+    {
+      "bytes": 6275,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "footnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-062",
+      "path": "documents/full-note-field-062.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "b8fa4f49b9b3578c35ca1674c87e91b5f615accb5e4f65f0ce26f18523161625",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-062"
+    },
+    {
+      "bytes": 6250,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "accepted-current-revisions",
+        "accepted-insertion-primary",
+        "complex-noteref-field",
+        "custom-note-mark",
+        "deleted-note-reference-decoy",
+        "endnote-kind",
+        "lower-roman-note-numbering",
+        "note-body-formula-field",
+        "note-body-revisions",
+        "note-start-five",
+        "source-order-note-numbering",
+        "table-cell-primary"
+      ],
+      "format": "docx",
+      "id": "full-note-field-063",
+      "path": "documents/full-note-field-063.docx",
+      "provenance": "rwml-render-full-note-field",
+      "sha256": "c2d3e61af6fdf592cfd71f4418042f913f7807192d88f0b36f5b5162a85e3735",
+      "source": "generated",
+      "source_path": "scripts/generate_render_note_field_corpus.py#full-note-field-063"
+    }
+  ],
+  "generator_closure_sha256": "fa1c6ec481d88c0bf09b66d72cb39620ace570ddc6862d908df59eaed1276016",
+  "limits": {
+    "max_documents": 64,
+    "max_input_bytes": 65536,
+    "max_pages_per_document": 4,
+    "max_total_input_bytes": 4194304
+  },
+  "provenance": [
+    {
+      "bytes": 1414,
+      "id": "rwml-render-full-note-field",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "provenance/rwml-render-full-note-field.md",
+      "sha256": "ee18efbfac253be7949c4f7e05385a847a7c7173ddc9d6aa0a7b3f7f516f049f"
+    }
+  ],
+  "schema": "rwml.render-corpus-batch-lock.v1"
+}

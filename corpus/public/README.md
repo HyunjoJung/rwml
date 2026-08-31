@@ -163,6 +163,11 @@ python3 scripts/generate_render_section_corpus.py
 python3 scripts/generate_render_section_corpus.py --check
 python3 scripts/render_oracle_contract.py \
   target/render-oracle/render-full-section-v1/RENDER_ORACLE.json
+
+python3 scripts/generate_render_note_field_corpus.py
+python3 scripts/generate_render_note_field_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-note-field-v1/RENDER_ORACLE.json
 ```
 
 The 64 one-page inputs form a complete orthogonal lattice over bold, italic,
@@ -203,6 +208,15 @@ make page and section selection observable; odd-page cases retain the parity
 filler as a fifth page. The explicit page and column breaks bound the input but
 do not establish Word-exact automatic pagination, external fidelity, or a
 release requirement.
+
+The sixth 64-input batch combines footnotes/endnotes, numbering starts one/five,
+decimal/lower-Roman formats, simple/complex `NOTEREF`, plain/accepted-insertion
+contexts, and body/table placement in one primary note-reference interaction.
+Fixed controls cover a preceding custom mark, a deleted reference decoy,
+accepted/rejected note-body revisions, a deterministic formula, and note IDs
+and part order unrelated to visible sequence. This batch establishes bounded
+accepted-current input coverage, not page-bottom note placement, Word-exact
+pagination, external fidelity, or a release requirement.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:
