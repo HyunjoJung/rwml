@@ -98,6 +98,37 @@ impl SceneGlyphRun {
     }
 }
 
+fn is_tab_glyph(text: &str, glyph: &SceneGlyph) -> bool {
+    text.get(glyph.text_range.clone()) == Some("\t")
+}
+
+fn drawable_glyph_spans(
+    text: &str,
+    glyphs: &[SceneGlyph],
+    size: f32,
+) -> Vec<(f32, std::ops::Range<usize>)> {
+    let mut spans = Vec::new();
+    let mut span_start = 0;
+    let mut span_offset = 0.0;
+    let mut advance = 0.0;
+    for (index, glyph) in glyphs.iter().enumerate() {
+        if is_tab_glyph(text, glyph) {
+            if span_start < index {
+                spans.push((span_offset, span_start..index));
+            }
+            advance += glyph.x_advance * size;
+            span_start = index + 1;
+            span_offset = advance;
+        } else {
+            advance += glyph.x_advance * size;
+        }
+    }
+    if span_start < glyphs.len() {
+        spans.push((span_offset, span_start..glyphs.len()));
+    }
+    spans
+}
+
 impl SceneImageResource {
     pub(super) fn to_pdf_image(&self) -> Result<PdfImage> {
         let invalid = || Error::Render("page scene contains an invalid image resource".into());
@@ -268,6 +299,27 @@ fn scene_image(
     Ok(image)
 }
 
+fn draw_glyph_span(
+    surface: &mut Surface<'_>,
+    run: &SceneGlyphRun,
+    font: Font,
+    x_offset: f32,
+    range: std::ops::Range<usize>,
+) {
+    let glyphs = run.glyphs[range]
+        .iter()
+        .map(SceneGlyph::to_krilla)
+        .collect::<Vec<_>>();
+    surface.draw_glyphs(
+        Point::from_xy(run.origin.x + x_offset, run.origin.y),
+        &glyphs,
+        font,
+        &run.text,
+        run.size,
+        false,
+    );
+}
+
 fn draw_glyph_run(surface: &mut Surface<'_>, run: &SceneGlyphRun, font: Font) {
     let width = run.width();
     if let Some(highlight) = run.highlight {
@@ -285,19 +337,17 @@ fn draw_glyph_run(surface: &mut Surface<'_>, run: &SceneGlyphRun, font: Font) {
         rule: FillRule::NonZero,
         opacity: NormalizedF32::ONE,
     }));
-    let glyphs = run
+    let has_tabs = run
         .glyphs
         .iter()
-        .map(SceneGlyph::to_krilla)
-        .collect::<Vec<_>>();
-    surface.draw_glyphs(
-        Point::from_xy(run.origin.x, run.origin.y),
-        &glyphs,
-        font,
-        &run.text,
-        run.size,
-        false,
-    );
+        .any(|glyph| is_tab_glyph(&run.text, glyph));
+    if has_tabs {
+        for (x_offset, range) in drawable_glyph_spans(&run.text, &run.glyphs, run.size) {
+            draw_glyph_span(surface, run, font.clone(), x_offset, range);
+        }
+    } else {
+        draw_glyph_span(surface, run, font, 0.0, 0..run.glyphs.len());
+    }
     if let Some(decoration) = run.underline {
         fill_rect_color(
             surface,
@@ -465,6 +515,49 @@ pub(super) fn draw_run_for_test(
             width,
             decoration.thickness,
             run.color,
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Range;
+
+    use super::*;
+
+    fn glyph(text_range: Range<usize>, x_advance: f32) -> SceneGlyph {
+        SceneGlyph {
+            glyph_id: 1,
+            text_range,
+            x_advance,
+            x_offset: 0.0,
+            y_offset: 0.0,
+            y_advance: 0.0,
+        }
+    }
+
+    #[test]
+    fn tab_clusters_split_drawable_glyph_spans_without_losing_advance() {
+        let text = "A\tB";
+        let glyphs = [glyph(0..1, 0.5), glyph(1..2, 2.0), glyph(2..3, 0.5)];
+
+        assert_eq!(
+            drawable_glyph_spans(text, &glyphs, 10.0),
+            vec![(0.0, 0..1), (25.0, 2..3)]
+        );
+
+        let text = "\tA\t\tB\t";
+        let glyphs = [
+            glyph(0..1, 1.0),
+            glyph(1..2, 0.5),
+            glyph(2..3, 2.0),
+            glyph(3..4, 3.0),
+            glyph(4..5, 0.5),
+            glyph(5..6, 4.0),
+        ];
+        assert_eq!(
+            drawable_glyph_spans(text, &glyphs, 10.0),
+            vec![(10.0, 1..2), (65.0, 4..5)]
         );
     }
 }

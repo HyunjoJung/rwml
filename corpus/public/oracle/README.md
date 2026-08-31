@@ -47,6 +47,30 @@ noncanonical lock, package-size overflow, or strict-manifest failure. This
 64-case batch is not the complete 800-case corpus, does not establish external-
 oracle fidelity, and does not change release validation.
 
+## Full-corpus paragraph-geometry batch
+
+`render-full-paragraph-v1.json` is the second bounded batch toward the reviewed
+full render corpus. It binds 64 generated one-page DOCX inputs over fifteen
+modeled paragraph properties: three alignments, four indent modes, before/after
+spacing, automatic/exact/minimum line spacing, shading, borders, and explicit
+tabs. The complete orthogonal lattice gives each property 32 cases and every
+one of the 105 property pairs all four on/off states 16 times. Mutually
+exclusive values use separate labeled paragraphs, and the recorded interaction
+scope is the document.
+
+```sh
+python3 scripts/generate_render_paragraph_corpus.py
+python3 scripts/generate_render_paragraph_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-paragraph-v1/RENDER_ORACLE.json
+```
+
+The separate generator closure leaves the run-paint lock unchanged. The
+paragraph generator enforces the same fresh-output, unique-identity, byte-limit,
+canonical-lock, and strict-manifest contracts. This batch does not establish
+external-oracle fidelity, complete the planned 800 cases, or change release
+validation.
+
 ## Native fixed-font rendering
 
 `scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.

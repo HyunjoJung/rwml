@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The second reviewed full-render corpus batch adds 64 deterministic synthetic
+  DOCX inputs for paragraph geometry. Fifteen alignment, indentation, spacing,
+  line-height, shading, border, and tab-stop properties are balanced across a
+  complete six-bit orthogonal lattice; all 105 property pairs occur in every
+  on/off state exactly 16 times. The separate lock preserves the first batch's
+  generator identity and does not complete the 800-case campaign or expand
+  release gates.
 - The first reviewed full-render corpus batch adds 64 deterministic synthetic
   DOCX inputs for modeled character paint. A complete six-bit orthogonal
   lattice balances twelve properties and covers every property pair in all four
@@ -51,6 +58,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- PDF preview no longer paints a font's missing-glyph box for horizontal tab
+  controls. Tab advances, explicit alignment, selectable surrounding text,
+  leaders, highlighting, and text decorations retain their existing geometry.
 - Opened DOCX PDF preview now renders automatic footnote/endnote reference marks
   in the body and their matching note-entry labels using accepted-current source
   order plus document-level `numStart`/`numFmt`. Footnote and endnote sequences,

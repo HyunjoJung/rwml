@@ -1,0 +1,2910 @@
+{
+  "campaign": "public-render-full-paragraph-v1",
+  "coverage": {
+    "case_count": 64,
+    "cohort": "paragraph-geometry",
+    "feature_case_counts": {
+      "align-center": 32,
+      "align-justify": 32,
+      "align-right": 32,
+      "explicit-tabs": 32,
+      "first-line-indent": 32,
+      "hanging-indent": 32,
+      "left-indent": 32,
+      "line-spacing-at-least": 32,
+      "line-spacing-auto": 32,
+      "line-spacing-exact": 32,
+      "paragraph-borders": 32,
+      "paragraph-shading": 32,
+      "right-indent": 32,
+      "space-after": 32,
+      "space-before": 32
+    },
+    "feature_masks": {
+      "align-center": 1,
+      "align-justify": 2,
+      "align-right": 4,
+      "explicit-tabs": 8,
+      "first-line-indent": 16,
+      "hanging-indent": 32,
+      "left-indent": 3,
+      "line-spacing-at-least": 5,
+      "line-spacing-auto": 9,
+      "line-spacing-exact": 17,
+      "paragraph-borders": 33,
+      "paragraph-shading": 6,
+      "right-indent": 10,
+      "space-after": 18,
+      "space-before": 34
+    },
+    "interaction_scope": "document",
+    "lattice_features": [
+      "align-center",
+      "align-justify",
+      "align-right",
+      "explicit-tabs",
+      "first-line-indent",
+      "hanging-indent",
+      "left-indent",
+      "line-spacing-at-least",
+      "line-spacing-auto",
+      "line-spacing-exact",
+      "paragraph-borders",
+      "paragraph-shading",
+      "right-indent",
+      "space-after",
+      "space-before"
+    ],
+    "lattice_rows": 64,
+    "pairwise_state_counts": [
+      {
+        "features": [
+          "align-center",
+          "align-justify"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "align-right"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "explicit-tabs"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "first-line-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "hanging-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "left-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "line-spacing-at-least"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "line-spacing-auto"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "line-spacing-exact"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "paragraph-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-center",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "align-right"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "explicit-tabs"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "first-line-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "hanging-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "left-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "line-spacing-at-least"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "line-spacing-auto"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "line-spacing-exact"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "paragraph-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-justify",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "explicit-tabs"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "first-line-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "hanging-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "left-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "line-spacing-at-least"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "line-spacing-auto"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "line-spacing-exact"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "paragraph-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "align-right",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "first-line-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "hanging-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "left-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "line-spacing-at-least"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "line-spacing-auto"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "line-spacing-exact"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "paragraph-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "explicit-tabs",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "first-line-indent",
+          "hanging-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "first-line-indent",
+          "left-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "first-line-indent",
+          "line-spacing-at-least"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "first-line-indent",
+          "line-spacing-auto"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "first-line-indent",
+          "line-spacing-exact"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "first-line-indent",
+          "paragraph-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "first-line-indent",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "first-line-indent",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "first-line-indent",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "first-line-indent",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hanging-indent",
+          "left-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hanging-indent",
+          "line-spacing-at-least"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hanging-indent",
+          "line-spacing-auto"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hanging-indent",
+          "line-spacing-exact"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hanging-indent",
+          "paragraph-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hanging-indent",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hanging-indent",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hanging-indent",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hanging-indent",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "left-indent",
+          "line-spacing-at-least"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "left-indent",
+          "line-spacing-auto"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "left-indent",
+          "line-spacing-exact"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "left-indent",
+          "paragraph-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "left-indent",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "left-indent",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "left-indent",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "left-indent",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-at-least",
+          "line-spacing-auto"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-at-least",
+          "line-spacing-exact"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-at-least",
+          "paragraph-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-at-least",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-at-least",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-at-least",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-at-least",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-auto",
+          "line-spacing-exact"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-auto",
+          "paragraph-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-auto",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-auto",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-auto",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-auto",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-exact",
+          "paragraph-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-exact",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-exact",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-exact",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "line-spacing-exact",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "paragraph-borders",
+          "paragraph-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "paragraph-borders",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "paragraph-borders",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "paragraph-borders",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "paragraph-shading",
+          "right-indent"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "paragraph-shading",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "paragraph-shading",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "right-indent",
+          "space-after"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "right-indent",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "space-after",
+          "space-before"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      }
+    ]
+  },
+  "documents": [
+    {
+      "bytes": 6108,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "align-right",
+        "explicit-tabs",
+        "first-line-indent",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-000",
+      "path": "documents/full-paragraph-000.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "774a67924fbaa05d74d7d6916146d9d2348e9c813cac4b70e784b83182cd3d9e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-000"
+    },
+    {
+      "bytes": 5575,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "align-right",
+        "explicit-tabs",
+        "first-line-indent",
+        "hanging-indent",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-001",
+      "path": "documents/full-paragraph-001.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "1ce3cf8d354e53205876fba351a667ce52fb0b2ba8ff2e76b5799ee1e9467363",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-001"
+    },
+    {
+      "bytes": 5849,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-right",
+        "explicit-tabs",
+        "first-line-indent",
+        "hanging-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-002",
+      "path": "documents/full-paragraph-002.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "ad8d0427d334aa6af24051a946421dc60f3449c23c6fcb34bb9eb9c1c7de1014",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-002"
+    },
+    {
+      "bytes": 5388,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-right",
+        "explicit-tabs",
+        "first-line-indent",
+        "hanging-indent",
+        "left-indent",
+        "paragraph-geometry"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-003",
+      "path": "documents/full-paragraph-003.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "c0e04c8005c10fd9ebb7d965c02fae4ff1528f24c735a5dced8e9a34780d4c1b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-003"
+    },
+    {
+      "bytes": 5943,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "explicit-tabs",
+        "first-line-indent",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "right-indent",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-004",
+      "path": "documents/full-paragraph-004.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "ade64c07381d81fb99a1f3b535ed11f686fbbdf0b51e4e798d21ed0102d7631c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-004"
+    },
+    {
+      "bytes": 5532,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "explicit-tabs",
+        "first-line-indent",
+        "hanging-indent",
+        "line-spacing-at-least",
+        "paragraph-geometry",
+        "right-indent",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-005",
+      "path": "documents/full-paragraph-005.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "b079d8176fabc6d38fd451c3c34da652b05025a57366d24fa94ae40ffd42c51c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-005"
+    },
+    {
+      "bytes": 5820,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "explicit-tabs",
+        "first-line-indent",
+        "hanging-indent",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-006",
+      "path": "documents/full-paragraph-006.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "01692b78d1460c3b2eb28f84a8fdd01b87213591405506904f4b2e3557138228",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-006"
+    },
+    {
+      "bytes": 5481,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "explicit-tabs",
+        "first-line-indent",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "paragraph-geometry",
+        "paragraph-shading"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-007",
+      "path": "documents/full-paragraph-007.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "f5ac44c1510fe9b2ad7c53d89198bc65ab60eda10fea59c022788dd9028a7522",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-007"
+    },
+    {
+      "bytes": 5839,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "align-right",
+        "first-line-indent",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-008",
+      "path": "documents/full-paragraph-008.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "09f7e93206bb01d8f309a7b845508186b583647c49a1be63fffdfbb20fdf17d3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-008"
+    },
+    {
+      "bytes": 5422,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "align-right",
+        "first-line-indent",
+        "hanging-indent",
+        "line-spacing-auto",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-009",
+      "path": "documents/full-paragraph-009.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "837cb5d9f0ad1bcd711c38ef8948d123f747a4800860555c464d92b85b16bcfc",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-009"
+    },
+    {
+      "bytes": 5654,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-right",
+        "first-line-indent",
+        "hanging-indent",
+        "line-spacing-at-least",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "right-indent"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-010",
+      "path": "documents/full-paragraph-010.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "911657be279e3fdd85804a6f19d13953a0650ba29f8106ab2a25b9aa6f2be555",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-010"
+    },
+    {
+      "bytes": 5309,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-right",
+        "first-line-indent",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-auto",
+        "paragraph-geometry",
+        "right-indent"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-011",
+      "path": "documents/full-paragraph-011.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "18aabb200474210a91a6f0cfdafc3f63ec81315235e3b3221f091453e45c1985",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-011"
+    },
+    {
+      "bytes": 5674,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "first-line-indent",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-012",
+      "path": "documents/full-paragraph-012.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "17f5ea16320ade53ea8f8e5aad1ba5fa6b2d8b56ab795cd8a3b08223a0e3492a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-012"
+    },
+    {
+      "bytes": 5379,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "first-line-indent",
+        "hanging-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "paragraph-geometry",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-013",
+      "path": "documents/full-paragraph-013.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "310913244ee745fb25a2d7305856761b60e4eed27f762c9e4a91aa4a5b144b06",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-013"
+    },
+    {
+      "bytes": 5625,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "first-line-indent",
+        "hanging-indent",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-014",
+      "path": "documents/full-paragraph-014.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "f4e08505113d428d1cd4686185e23944b4fa3b59caf22c6782967e66dcacea13",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-014"
+    },
+    {
+      "bytes": 5402,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "first-line-indent",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-015",
+      "path": "documents/full-paragraph-015.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "809ae7d115635c984990909bfc44c426dafc789d738cfb5d528d0edbf6cc2f59",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-015"
+    },
+    {
+      "bytes": 5967,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "align-right",
+        "explicit-tabs",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-016",
+      "path": "documents/full-paragraph-016.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "1a4dcf69c910aabae2ce2786dbce1866963709271c92bc51d12e83cbdd880efd",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-016"
+    },
+    {
+      "bytes": 5552,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "align-right",
+        "explicit-tabs",
+        "hanging-indent",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-017",
+      "path": "documents/full-paragraph-017.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "b071027cefc19d4b8a9ff6105734d60fbfab7230c85c041de97e3d9deaae5439",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-017"
+    },
+    {
+      "bytes": 5790,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-right",
+        "explicit-tabs",
+        "hanging-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-018",
+      "path": "documents/full-paragraph-018.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "0c096228ded80df01ef168c06b31ef42eaa732d6e25187d1c0985ee56777fab9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-018"
+    },
+    {
+      "bytes": 5447,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-right",
+        "explicit-tabs",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-019",
+      "path": "documents/full-paragraph-019.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "7c7537f7ff898580f8d787c85bcff840f6a8dd1c762120db8afb58d332eb98e7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-019"
+    },
+    {
+      "bytes": 5802,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "explicit-tabs",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-auto",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "right-indent",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-020",
+      "path": "documents/full-paragraph-020.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "b6198cf36bea6a465cadb323c9a6e3d8903b26748a35a0c592078b22da88e707",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-020"
+    },
+    {
+      "bytes": 5509,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "explicit-tabs",
+        "hanging-indent",
+        "line-spacing-at-least",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "right-indent",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-021",
+      "path": "documents/full-paragraph-021.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "6817008b59f6a7b09d8f72bb82b41466538f368f891e762a1c22eff3dd2597bf",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-021"
+    },
+    {
+      "bytes": 5761,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "explicit-tabs",
+        "hanging-indent",
+        "line-spacing-auto",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-022",
+      "path": "documents/full-paragraph-022.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "ab4d85392c82961639f8673893be9077466b8ac1b1c39669ab891ab30c9af7d7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-022"
+    },
+    {
+      "bytes": 5540,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "explicit-tabs",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-023",
+      "path": "documents/full-paragraph-023.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "b9cd2ae606c8f498c1323c7a9569c2f09fd4e342df7792f89c434c4046866021",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-023"
+    },
+    {
+      "bytes": 5698,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "align-right",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-024",
+      "path": "documents/full-paragraph-024.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "802bf28c004db06bfc02bd9f53dc3774f876c61126831f2615b5aa36d4317fcd",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-024"
+    },
+    {
+      "bytes": 5399,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "align-right",
+        "hanging-indent",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-025",
+      "path": "documents/full-paragraph-025.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "c0b903e71cf2f28f3860700b34449079f16ebaa36546cb0f0ac2c08b7fd675d1",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-025"
+    },
+    {
+      "bytes": 5595,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-right",
+        "hanging-indent",
+        "line-spacing-at-least",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "right-indent",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-026",
+      "path": "documents/full-paragraph-026.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "e6b40b94663851f068333a5557e2f3c050a87fcca1a6867ef244e90ce7312db1",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-026"
+    },
+    {
+      "bytes": 5368,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-right",
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "right-indent",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-027",
+      "path": "documents/full-paragraph-027.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "81f10e964d258144f4e5ea20757b1f7c7984181d7169c8151020f18888e5736f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-027"
+    },
+    {
+      "bytes": 5533,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "hanging-indent",
+        "left-indent",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-028",
+      "path": "documents/full-paragraph-028.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "396ef624a33fac092057e7ca3013d126690668df65d37f7bba455bdf96fd2103",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-028"
+    },
+    {
+      "bytes": 5356,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "hanging-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-029",
+      "path": "documents/full-paragraph-029.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "6134ceff771efefc1267d29e72fde56afb2ce343ed7cb7298352137463397c24",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-029"
+    },
+    {
+      "bytes": 5566,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "hanging-indent",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-030",
+      "path": "documents/full-paragraph-030.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "6b118c214323785fe016610ed2e19312d02ba1f7e478fd37811e822983128f94",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-030"
+    },
+    {
+      "bytes": 5461,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "hanging-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-031",
+      "path": "documents/full-paragraph-031.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "0907b79832b0b60ecfc6041bd0f8252c8c2e0e39adab2e3d0f4b0dedb4eb0c61",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-031"
+    },
+    {
+      "bytes": 5732,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "align-right",
+        "explicit-tabs",
+        "first-line-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-032",
+      "path": "documents/full-paragraph-032.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "5dcf84d60f6039e83ad10aaf49aeb64cb023e2d86a2d3e3b00a70f5427ce05d8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-032"
+    },
+    {
+      "bytes": 5763,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "align-right",
+        "explicit-tabs",
+        "first-line-indent",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-033",
+      "path": "documents/full-paragraph-033.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "4ec58bd60c1438ed33a652bb267a2ccfa025b4a1530b92e24d12b113653622c8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-033"
+    },
+    {
+      "bytes": 5557,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-right",
+        "explicit-tabs",
+        "first-line-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-034",
+      "path": "documents/full-paragraph-034.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "201cca3a87a0d5f45979e1d950d1fab5700f1eabd9675d1f2a7f96381eef48e3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-034"
+    },
+    {
+      "bytes": 5660,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-right",
+        "explicit-tabs",
+        "first-line-indent",
+        "left-indent",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-035",
+      "path": "documents/full-paragraph-035.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "06fc788545bbe777ed847eca4da72b536e8186113e119fdb16e8faa2028e96a3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-035"
+    },
+    {
+      "bytes": 5567,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "explicit-tabs",
+        "first-line-indent",
+        "left-indent",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "right-indent",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-036",
+      "path": "documents/full-paragraph-036.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "c29f6ed3a0013e77fe27ff417a9bbe657dc6d598ebd21007ade996cae571e962",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-036"
+    },
+    {
+      "bytes": 5720,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "explicit-tabs",
+        "first-line-indent",
+        "line-spacing-at-least",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "right-indent",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-037",
+      "path": "documents/full-paragraph-037.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "caf6018c753ad6f68cd64af93b4741df508274689e121059f8d9be9c0139609f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-037"
+    },
+    {
+      "bytes": 5528,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "explicit-tabs",
+        "first-line-indent",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-038",
+      "path": "documents/full-paragraph-038.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "0e363010a4be0ec7d0dc2cd1708a4154d805c457235938e0700df6d787e5b86d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-038"
+    },
+    {
+      "bytes": 5753,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "explicit-tabs",
+        "first-line-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-039",
+      "path": "documents/full-paragraph-039.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "5e5cfa4cbb22c0a1e599b571dacea408776fe0ecc29bd27b61a4a604b1e5d0cb",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-039"
+    },
+    {
+      "bytes": 5463,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "align-right",
+        "first-line-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-040",
+      "path": "documents/full-paragraph-040.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "c0db89807ffe88be1287e6759a54d0841ac13900b4306436a05027c32b139628",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-040"
+    },
+    {
+      "bytes": 5610,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "align-right",
+        "first-line-indent",
+        "line-spacing-auto",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-041",
+      "path": "documents/full-paragraph-041.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "a1808b230dec493411b879829cef75f299e220c48237d8e49d39c9f3d45c86a1",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-041"
+    },
+    {
+      "bytes": 5362,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-right",
+        "first-line-indent",
+        "line-spacing-at-least",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "right-indent",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-042",
+      "path": "documents/full-paragraph-042.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "6f05bb7d800b421c783f293e9cb61fa9094f6502deee7c5d61d2e47890805b1b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-042"
+    },
+    {
+      "bytes": 5581,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-right",
+        "first-line-indent",
+        "left-indent",
+        "line-spacing-auto",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "right-indent",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-043",
+      "path": "documents/full-paragraph-043.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "c722d85f5fdd6e1aa951d2cea91c01892c904dbb4059bc47074daf172a7535af",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-043"
+    },
+    {
+      "bytes": 5298,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "first-line-indent",
+        "left-indent",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-044",
+      "path": "documents/full-paragraph-044.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "3cbda57fb5d59251fe4719333c93599041bcd248fbb5a3b08531b7f9af1d7008",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-044"
+    },
+    {
+      "bytes": 5567,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "first-line-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "space-after"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-045",
+      "path": "documents/full-paragraph-045.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "de6e0382fd6c4733dcd2880ae1a02d07f5232098c86a9aee09070b01c52afb0c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-045"
+    },
+    {
+      "bytes": 5333,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "first-line-indent",
+        "line-spacing-exact",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-046",
+      "path": "documents/full-paragraph-046.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "fce1d97f06b6199b457759230af964c6c51135d013e95412896ba40f2901e18e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-046"
+    },
+    {
+      "bytes": 5674,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "first-line-indent",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-047",
+      "path": "documents/full-paragraph-047.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "b21a12afef8144db2fe381a6f856244e1076376138b4fffc4994b387f77e55ba",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-047"
+    },
+    {
+      "bytes": 5591,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "align-right",
+        "explicit-tabs",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-048",
+      "path": "documents/full-paragraph-048.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "c08022cd50707e94ed8410f90597986cc02b5080e1946baad933e845faf621c3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-048"
+    },
+    {
+      "bytes": 5740,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "align-right",
+        "explicit-tabs",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-049",
+      "path": "documents/full-paragraph-049.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "8ee8fcb869730a06de4641dcee18cdbc8474c8f42b3adb1b5526a07d2d43d675",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-049"
+    },
+    {
+      "bytes": 5498,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-right",
+        "explicit-tabs",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "paragraph-geometry",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-050",
+      "path": "documents/full-paragraph-050.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "7e7fb53d8887998dee4cb73e784d22b00bb9072c689f7680bf6c24ff1f96f1d2",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-050"
+    },
+    {
+      "bytes": 5719,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-right",
+        "explicit-tabs",
+        "left-indent",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-051",
+      "path": "documents/full-paragraph-051.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "7fff3aa142a779974425f07c058503980032c3f0c817749d2dd0afa392b7fded",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-051"
+    },
+    {
+      "bytes": 5426,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "explicit-tabs",
+        "left-indent",
+        "line-spacing-auto",
+        "paragraph-geometry",
+        "right-indent"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-052",
+      "path": "documents/full-paragraph-052.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "1fe61e0a8a6ad58e7d329002d06cf00f09203abf0e94d575303f73867aa1d259",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-052"
+    },
+    {
+      "bytes": 5697,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "explicit-tabs",
+        "line-spacing-at-least",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "right-indent"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-053",
+      "path": "documents/full-paragraph-053.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "7e0a8709d34e49b7dca48bef2349ede115ca58f2cd5bccfc1298d31466d4df90",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-053"
+    },
+    {
+      "bytes": 5469,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "explicit-tabs",
+        "line-spacing-auto",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-054",
+      "path": "documents/full-paragraph-054.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "bccd558a33d1a519aaf4d16f3b228ff51edc97bdb18aa7d3e52b99c4bc7f752d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-054"
+    },
+    {
+      "bytes": 5812,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "explicit-tabs",
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-055",
+      "path": "documents/full-paragraph-055.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "02ffd0accf9c833287f390050871fc6b6bbf38ecce14638e2d9c39cd4d273ed4",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-055"
+    },
+    {
+      "bytes": 5322,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "align-right",
+        "left-indent",
+        "line-spacing-at-least",
+        "paragraph-geometry",
+        "paragraph-shading"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-056",
+      "path": "documents/full-paragraph-056.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "f42e639b6a8abd07385563c1783fd3d1fc70fa9d8a8bbae94812e42dfa701a0b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-056"
+    },
+    {
+      "bytes": 5587,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "align-right",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-057",
+      "path": "documents/full-paragraph-057.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "17ec31071421683b4a1ac6319787e37fe93cd19e8b805edce0e404d172e1a4d9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-057"
+    },
+    {
+      "bytes": 5303,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-right",
+        "line-spacing-at-least",
+        "paragraph-geometry",
+        "right-indent",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-058",
+      "path": "documents/full-paragraph-058.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "0d5e94706d991ea8fac84fafd04d6a16a429393d3e90b7e846023c9eb35d18b4",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-058"
+    },
+    {
+      "bytes": 5640,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-right",
+        "left-indent",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "right-indent",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-059",
+      "path": "documents/full-paragraph-059.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "efdc04910dcc363518a9a35e9a88b0c0d6571c8a8fda81391854c0a796b38c26",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-059"
+    },
+    {
+      "bytes": 5157,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "align-justify",
+        "left-indent",
+        "paragraph-geometry"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-060",
+      "path": "documents/full-paragraph-060.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "95d9434f28d2067e9d6bedecb0cd7a4df6e6ceb6959be270d3833b0302b4a1f2",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-060"
+    },
+    {
+      "bytes": 5544,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-justify",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-061",
+      "path": "documents/full-paragraph-061.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "1c98d6d63e73febc1cc6cd868f0dc88a17a87a0ef7d3de07a36f8555400569d9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-061"
+    },
+    {
+      "bytes": 5274,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "align-center",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-062",
+      "path": "documents/full-paragraph-062.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "acb70c994b1796391707b133627d29f3cccf372b075cf127f78079a8bcc3fde0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-062"
+    },
+    {
+      "bytes": 5733,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "left-indent",
+        "line-spacing-at-least",
+        "line-spacing-auto",
+        "line-spacing-exact",
+        "paragraph-borders",
+        "paragraph-geometry",
+        "paragraph-shading",
+        "right-indent",
+        "space-after",
+        "space-before"
+      ],
+      "format": "docx",
+      "id": "full-paragraph-063",
+      "path": "documents/full-paragraph-063.docx",
+      "provenance": "rwml-render-full-paragraph",
+      "sha256": "97c6fdc55a80646acd76740711d200a6f0f2251db630e8cc7ffced944f6c796b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_paragraph_corpus.py#full-paragraph-063"
+    }
+  ],
+  "generator_closure_sha256": "a6a57b92901aa0e3c6efc6cbe3f1198a35e53ddfe24bb4866432a3f2a154a4a5",
+  "limits": {
+    "max_documents": 64,
+    "max_input_bytes": 65536,
+    "max_pages_per_document": 4,
+    "max_total_input_bytes": 4194304
+  },
+  "provenance": [
+    {
+      "bytes": 958,
+      "id": "rwml-render-full-paragraph",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "provenance/rwml-render-full-paragraph.md",
+      "sha256": "4c25b9f72a285690ecbf5f127d01009561fc3a6065b133674f1d564a26e0915c"
+    }
+  ],
+  "schema": "rwml.render-corpus-batch-lock.v1"
+}
