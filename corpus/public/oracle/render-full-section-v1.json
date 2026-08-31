@@ -1,0 +1,2053 @@
+{
+  "campaign": "public-render-full-section-v1",
+  "coverage": {
+    "case_count": 64,
+    "cohort": "section-columns-running-surfaces",
+    "design": "complete-2-level-factorial",
+    "factor_case_counts": {
+      "landscape-final-section": 32,
+      "odd-page-section-start": 32,
+      "rtl-section-columns": 32,
+      "running-surface-distance": 32,
+      "section-column-separator": 32,
+      "unequal-section-columns": 32
+    },
+    "factor_levels": {
+      "landscape-final-section": [
+        "portrait-final-section",
+        "landscape-final-section"
+      ],
+      "odd-page-section-start": [
+        "next-page-section-start",
+        "odd-page-section-start"
+      ],
+      "rtl-section-columns": [
+        "ltr-section-columns",
+        "rtl-section-columns"
+      ],
+      "running-surface-distance": [
+        "quarter-inch-running-distance",
+        "half-inch-running-distance"
+      ],
+      "section-column-separator": [
+        "columns-without-separator",
+        "section-column-separator"
+      ],
+      "unequal-section-columns": [
+        "equal-section-columns",
+        "unequal-section-columns"
+      ]
+    },
+    "factor_names": [
+      "odd-page-section-start",
+      "landscape-final-section",
+      "unequal-section-columns",
+      "rtl-section-columns",
+      "section-column-separator",
+      "running-surface-distance"
+    ],
+    "factorial_rows": 64,
+    "held_constant": [
+      "explicit-page-count-drivers",
+      "one-inch-top-and-bottom-body-margins",
+      "six-final-running-surface-stories",
+      "three-final-section-pages",
+      "two-final-section-columns"
+    ],
+    "interaction_scope": "final-section-pages",
+    "pairwise_state_counts": [
+      {
+        "factors": [
+          "odd-page-section-start",
+          "landscape-final-section"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "odd-page-section-start",
+          "unequal-section-columns"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "odd-page-section-start",
+          "rtl-section-columns"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "odd-page-section-start",
+          "section-column-separator"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "odd-page-section-start",
+          "running-surface-distance"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "landscape-final-section",
+          "unequal-section-columns"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "landscape-final-section",
+          "rtl-section-columns"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "landscape-final-section",
+          "section-column-separator"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "landscape-final-section",
+          "running-surface-distance"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "unequal-section-columns",
+          "rtl-section-columns"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "unequal-section-columns",
+          "section-column-separator"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "unequal-section-columns",
+          "running-surface-distance"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "rtl-section-columns",
+          "section-column-separator"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "rtl-section-columns",
+          "running-surface-distance"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "section-column-separator",
+          "running-surface-distance"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      }
+    ]
+  },
+  "documents": [
+    {
+      "bytes": 10815,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-000",
+      "path": "documents/full-section-000.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "9405230c571bab7cc6872ba5cedb3cb718dc4c04d7a778b98cd6253dd82e02c8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-000"
+    },
+    {
+      "bytes": 10814,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-001",
+      "path": "documents/full-section-001.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "08905cfc874a24a160b9c0b27615fc232d1e631c7498226f5c78dee8a46170c0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-001"
+    },
+    {
+      "bytes": 10836,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "quarter-inch-running-distance",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-002",
+      "path": "documents/full-section-002.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "5dfa46a2da096a7190e47a6ca06e42ff765847b3ea3c2385ca69b28661ecfff7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-002"
+    },
+    {
+      "bytes": 10835,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "quarter-inch-running-distance",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-003",
+      "path": "documents/full-section-003.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "5e1e67b46ab22b147e49d877acb3c6d74c4dcb10b80b8f6d30bdf9ccb0dd7b04",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-003"
+    },
+    {
+      "bytes": 10861,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-004",
+      "path": "documents/full-section-004.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "64844aa3678dae80cc4ba802a485523fc6fa66a20f2cae84f4b37ce5cb972a92",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-004"
+    },
+    {
+      "bytes": 10860,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-005",
+      "path": "documents/full-section-005.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "a12dfdc05967c08bff2c96ce5087bbafca96b07965f4b5253629da8dc9696890",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-005"
+    },
+    {
+      "bytes": 10882,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "quarter-inch-running-distance",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-006",
+      "path": "documents/full-section-006.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "2110250599108085d00048d58dd429992766d3a0ca980537317d8c61d4dc196f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-006"
+    },
+    {
+      "bytes": 10881,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "quarter-inch-running-distance",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-007",
+      "path": "documents/full-section-007.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "b180ebb6bd5937b3c6861bab85061c217e224cead6199e2f1a040626def168b8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-007"
+    },
+    {
+      "bytes": 10824,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-008",
+      "path": "documents/full-section-008.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "e853577a26fb80ce13c8f1d877b52b60c7ed7566d97198f38c7352b53a414f38",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-008"
+    },
+    {
+      "bytes": 10823,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-009",
+      "path": "documents/full-section-009.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "36a19bde24d7eeb603b317701d506263c64f74d2bc4b020e50eb4db70eb588ae",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-009"
+    },
+    {
+      "bytes": 10845,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "multi-section",
+        "next-page-section-start",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-010",
+      "path": "documents/full-section-010.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "31c4c6463ab379cd878670d2b9675a61e864bf08f014ecf43b9de258b892c890",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-010"
+    },
+    {
+      "bytes": 10844,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "multi-section",
+        "odd-page-section-start",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-011",
+      "path": "documents/full-section-011.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "a0bca02317b24b996665f89b6f934f20458df2332e4b8a6db1e4003726bbcebe",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-011"
+    },
+    {
+      "bytes": 10870,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-012",
+      "path": "documents/full-section-012.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "1303a6600891b910224ab9b56439399d311927a4cd1b3260489e0d693a1bbfa9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-012"
+    },
+    {
+      "bytes": 10869,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-013",
+      "path": "documents/full-section-013.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "407494a63bc01debe7f35903c4b6ff37044dd7dccabca18d52c97b34b43065a3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-013"
+    },
+    {
+      "bytes": 10891,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "multi-section",
+        "next-page-section-start",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-014",
+      "path": "documents/full-section-014.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "c89aeffde487044d893347fac11d8f407f5586e183fc4389f70f2277e803aa3a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-014"
+    },
+    {
+      "bytes": 10890,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "multi-section",
+        "odd-page-section-start",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-015",
+      "path": "documents/full-section-015.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "dce7d33b7a2b005badf31a2882bc858e6899ed5db276712010e9a681cd8d71af",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-015"
+    },
+    {
+      "bytes": 10825,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-016",
+      "path": "documents/full-section-016.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "be79978f136b75301baf670cd079a30f88046a5b06addab7ce2360c67bbda9ff",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-016"
+    },
+    {
+      "bytes": 10824,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-017",
+      "path": "documents/full-section-017.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "5b379cb9937b994eab4ca9f313ca7e0bd0312b591f918f65ce914133934d4536",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-017"
+    },
+    {
+      "bytes": 10846,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "quarter-inch-running-distance",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-018",
+      "path": "documents/full-section-018.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "efb3c96fc169258b17aa2f630e2bbfcadf0a034c66c6c7b55d9a83c457853d57",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-018"
+    },
+    {
+      "bytes": 10845,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "quarter-inch-running-distance",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-019",
+      "path": "documents/full-section-019.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "62f3b18a420700abbb54fcc54237b03e06b47e592e56b71f412c21b4e6097b27",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-019"
+    },
+    {
+      "bytes": 10871,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-020",
+      "path": "documents/full-section-020.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "a9935948f0651d8e7a130bfee9c79d11e9b9ba51378f6a5db1f3d8ee5be7583e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-020"
+    },
+    {
+      "bytes": 10870,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-021",
+      "path": "documents/full-section-021.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "0982e2ddc9a593302151e6870641babaa93229ec5d4967c047462a76133a5ba7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-021"
+    },
+    {
+      "bytes": 10892,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "quarter-inch-running-distance",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-022",
+      "path": "documents/full-section-022.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "c526513656df7d79c0d0667eef527a69e2c9a56cfc070e92b2d3a8ba81c1ce74",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-022"
+    },
+    {
+      "bytes": 10891,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "quarter-inch-running-distance",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-023",
+      "path": "documents/full-section-023.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "dc1aedc0304864179ef080eff5851177847cd05538237cf395923f2932127fb4",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-023"
+    },
+    {
+      "bytes": 10834,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-024",
+      "path": "documents/full-section-024.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "1aaf54b36ed1a155220816bd250b92f4a8ed875645beea68fec092b6a1001094",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-024"
+    },
+    {
+      "bytes": 10833,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-025",
+      "path": "documents/full-section-025.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "ea3509cf7d68b9487feafe66972a7488d8713ce7005fe8f4f758bd4f8dc2f725",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-025"
+    },
+    {
+      "bytes": 10855,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "multi-section",
+        "next-page-section-start",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-026",
+      "path": "documents/full-section-026.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "45ea552de0a7737c7b4c5214aad214bb3f1723d4e9be01324dd1d04f722a963f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-026"
+    },
+    {
+      "bytes": 10854,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "multi-section",
+        "odd-page-section-start",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-027",
+      "path": "documents/full-section-027.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "a6607a1a60bee0f5e2ece143cf064117b4185b03a296f26bf793a47bb0c0fa2e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-027"
+    },
+    {
+      "bytes": 10880,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-028",
+      "path": "documents/full-section-028.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "ec93ed6f573aac021e48e7e06fd51d08cdc6083dc0e7eadecb634bd1fa2441e0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-028"
+    },
+    {
+      "bytes": 10879,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-029",
+      "path": "documents/full-section-029.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "e30977fb56c0985c83d1075f9ad69cb2d5b5e8a3a08c330706fe4b618d9416e0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-029"
+    },
+    {
+      "bytes": 10901,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "multi-section",
+        "next-page-section-start",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-030",
+      "path": "documents/full-section-030.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "cf5c94bb47d2f56a60892594567ac184288fd2596a82a9ed3488324b34534d1e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-030"
+    },
+    {
+      "bytes": 10900,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "landscape-final-section",
+        "multi-section",
+        "odd-page-section-start",
+        "quarter-inch-running-distance",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-031",
+      "path": "documents/full-section-031.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "e4d53ff71711f167a5ae7d7ac00aeba9dd695fa71e5746488474a35a5989c26c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-031"
+    },
+    {
+      "bytes": 10815,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-032",
+      "path": "documents/full-section-032.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "05be51cdf9d0d1fb61c1647bb00abee469ce32310022e2e1710dd3d793623b1b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-032"
+    },
+    {
+      "bytes": 10814,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-033",
+      "path": "documents/full-section-033.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "d4f57aa2fc41dc7ee79e432231cd7c64bc6f4c031a92adf5d14f7f699f2a49ba",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-033"
+    },
+    {
+      "bytes": 10836,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-034",
+      "path": "documents/full-section-034.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "caaaf09f8e6ffcf4ec25d22365336f27dd48b1b2ddb9ff2a60e1e80bd2e7504e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-034"
+    },
+    {
+      "bytes": 10835,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-035",
+      "path": "documents/full-section-035.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "7363f2ff7da75163b2c3b10bce4c41356001b88939f888c7b9f89e5c35cb439d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-035"
+    },
+    {
+      "bytes": 10861,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-036",
+      "path": "documents/full-section-036.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "e1e4756cb0f6b8be31861efbd29a2b73e6eecf383131b8f278e4fb7aeb68324f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-036"
+    },
+    {
+      "bytes": 10860,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-037",
+      "path": "documents/full-section-037.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "47988baf4e15b4024c81800871d924936294d8b9e8ff6f7cf76e415138e32ac4",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-037"
+    },
+    {
+      "bytes": 10882,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-038",
+      "path": "documents/full-section-038.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "bc78d023a06be3994d609b6893f80dd7b08223a5252aaeb4d6f9b164084d1cf8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-038"
+    },
+    {
+      "bytes": 10881,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-039",
+      "path": "documents/full-section-039.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "9c12e4dd3d42a37f490af3cd2e3a670f9503eedad5ac0ef074b231a4e844ed6e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-039"
+    },
+    {
+      "bytes": 10824,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-040",
+      "path": "documents/full-section-040.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "789bd671f950060e6b04a21443512832d6cb1626643488158564c62fb2d90eef",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-040"
+    },
+    {
+      "bytes": 10823,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-041",
+      "path": "documents/full-section-041.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "0fded09f2f8388019eb4de80d7f290fcb8bf66b489482b7d544e5cc321af9d79",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-041"
+    },
+    {
+      "bytes": 10845,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "multi-section",
+        "next-page-section-start",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-042",
+      "path": "documents/full-section-042.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "821d8436ceb185610da2a7490658c3ab38577d065c16240222c7822be0e17e45",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-042"
+    },
+    {
+      "bytes": 10844,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "multi-section",
+        "odd-page-section-start",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-043",
+      "path": "documents/full-section-043.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "e4e5190ae525cb1618c5bc20631ae599c1e667fad361cd28e6e7724f5e367407",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-043"
+    },
+    {
+      "bytes": 10870,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-044",
+      "path": "documents/full-section-044.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "db48a82c1460266f3f4d7a44551c48d40ef94a536aef45de0e9b717b4272e6bd",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-044"
+    },
+    {
+      "bytes": 10869,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-045",
+      "path": "documents/full-section-045.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "b87fc7d9745b976cbbb987ef2eafd1545e8c1d9691951a15c8c3560cd2513a0a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-045"
+    },
+    {
+      "bytes": 10891,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "multi-section",
+        "next-page-section-start",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-046",
+      "path": "documents/full-section-046.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "aa0c75aacddaec86e4807a0beeeb5f4273c825ba57100f954182faf8272c1832",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-046"
+    },
+    {
+      "bytes": 10890,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "columns-without-separator",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "multi-section",
+        "odd-page-section-start",
+        "rtl-section-columns",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-047",
+      "path": "documents/full-section-047.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "802a16e8b7ebc1fe50c5bffedf5332810d3b38b9a6c238594cd5ddb571ba8476",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-047"
+    },
+    {
+      "bytes": 10825,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-048",
+      "path": "documents/full-section-048.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "1ba31a35a8313a31352479dc370f517d64d68ef468df4ac152c58f5e6e6c9041",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-048"
+    },
+    {
+      "bytes": 10824,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-049",
+      "path": "documents/full-section-049.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "8a073e44e4904564535124f749c516e532b0ef4a1e59983e9ffa0cbd41f5be93",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-049"
+    },
+    {
+      "bytes": 10846,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-050",
+      "path": "documents/full-section-050.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "426d09418c7f06bec0e2a52119897b9a3eb8c3789535f29f1a2a6a58fd38fb4b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-050"
+    },
+    {
+      "bytes": 10845,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-051",
+      "path": "documents/full-section-051.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "ac658174e55a46670840c7cf0b70b9c168f5de140d336317d912f02d6dc4ab8e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-051"
+    },
+    {
+      "bytes": 10871,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-052",
+      "path": "documents/full-section-052.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "f22c47eda1dc3cf44fd41a6e65c3cfe780a5e599f659f708a186916247c5c334",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-052"
+    },
+    {
+      "bytes": 10870,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-053",
+      "path": "documents/full-section-053.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "5ee53622932d3ae34ad9f48fe83795d2bc9d69dcd0f238bffc01eee9f8529f05",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-053"
+    },
+    {
+      "bytes": 10892,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "next-page-section-start",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-054",
+      "path": "documents/full-section-054.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "d59fba5545f1c256d97b44bdce86ae7e39a4217a3732cd3b8317b600cfa7b87a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-054"
+    },
+    {
+      "bytes": 10891,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "ltr-section-columns",
+        "multi-section",
+        "odd-page-section-start",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-055",
+      "path": "documents/full-section-055.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "d29169360eb74752dc56fc7ce34aba2fd62f0a3a76059f6efc1d551f12083790",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-055"
+    },
+    {
+      "bytes": 10834,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-056",
+      "path": "documents/full-section-056.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "01034160f626cd722b4049e8939ad813b9463f363918b6a7d9a23ccc904acb25",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-056"
+    },
+    {
+      "bytes": 10833,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-057",
+      "path": "documents/full-section-057.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "700c7d6aac4968d64233c96bdeb549a075f6264303b955b9a72f279013fd90ee",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-057"
+    },
+    {
+      "bytes": 10855,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "multi-section",
+        "next-page-section-start",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-058",
+      "path": "documents/full-section-058.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "514a029d835abfc5497704e4cfaa47ca91475548817ecd65e067afd2e4e8f91b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-058"
+    },
+    {
+      "bytes": 10854,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "equal-section-columns",
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "multi-section",
+        "odd-page-section-start",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces"
+      ],
+      "format": "docx",
+      "id": "full-section-059",
+      "path": "documents/full-section-059.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "6fbf4e26c216c27defa982f5c8bf618a1d7720a2640fd2314018ef8774fbccd2",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-059"
+    },
+    {
+      "bytes": 10880,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "multi-section",
+        "next-page-section-start",
+        "portrait-final-section",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-060",
+      "path": "documents/full-section-060.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "25826a8187727abe3d1375b2285ba29ca69ca52a2cadeff77e451f595ea7cc4e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-060"
+    },
+    {
+      "bytes": 10879,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "multi-section",
+        "odd-page-section-start",
+        "portrait-final-section",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-061",
+      "path": "documents/full-section-061.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "e5eee184c310ccf145e57bbd2f1cbf47a20e319fc8a1cff3897dd1486736c5e3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-061"
+    },
+    {
+      "bytes": 10901,
+      "expected": {
+        "pages": 4,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "multi-section",
+        "next-page-section-start",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-062",
+      "path": "documents/full-section-062.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "19f605ec9501072f945c63e1d10e69236a45732814a1a8b0ea47083d463bd16b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-062"
+    },
+    {
+      "bytes": 10900,
+      "expected": {
+        "pages": 5,
+        "warnings": []
+      },
+      "features": [
+        "explicit-column-breaks",
+        "first-even-default-footers",
+        "first-even-default-headers",
+        "half-inch-running-distance",
+        "landscape-final-section",
+        "multi-section",
+        "odd-page-section-start",
+        "rtl-section-columns",
+        "section-column-separator",
+        "three-page-final-section",
+        "title-page-running-surfaces",
+        "unequal-section-columns"
+      ],
+      "format": "docx",
+      "id": "full-section-063",
+      "path": "documents/full-section-063.docx",
+      "provenance": "rwml-render-full-section",
+      "sha256": "182e1bcdb18e352645e7324de6cf03fb3f79db36a7224679c75f79739adb0ce0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_section_corpus.py#full-section-063"
+    }
+  ],
+  "generator_closure_sha256": "f76e67617a1731cac87e8673eea72f4fa119060f5459c2d68f9dac68d6d6067c",
+  "limits": {
+    "max_documents": 64,
+    "max_input_bytes": 98304,
+    "max_pages_per_document": 5,
+    "max_total_input_bytes": 8388608
+  },
+  "provenance": [
+    {
+      "bytes": 1394,
+      "id": "rwml-render-full-section",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "provenance/rwml-render-full-section.md",
+      "sha256": "0833023ba2325dd81486b4cd0300908fdf4195b01dbe56fc014a87561ef7b21e"
+    }
+  ],
+  "schema": "rwml.render-corpus-batch-lock.v1"
+}

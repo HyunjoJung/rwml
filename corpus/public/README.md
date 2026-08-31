@@ -36,12 +36,13 @@ Every file here is safe to redistribute:
   campaigns that are intentionally outside the ordinary release corpus. The
   unequal-table lock covers 48 table-continuation cases. The render-pilot lock
   combines all 21 ordinary public inputs with 19 focused generated inputs, 51
-  expected pages, and 71 feature labels. The first four full-corpus batch
+  expected pages, and 71 feature labels. The first five full-corpus batch
   locks separately cover 64 generated run-paint cases, 64 generated paragraph-
   geometry cases, 64 generated list/RTL interaction cases, and 64 generated
-  table topology/paint cases. Each batch has balanced factors and complete
-  declared pairwise coverage. Exact DOCX inputs and strict manifests are
-  generated under ignored `target/` output.
+  table topology/paint cases, plus 64 generated section/column/running-surface
+  cases. Each batch has balanced factors and complete declared pairwise
+  coverage. Exact DOCX inputs and strict manifests are generated under ignored
+  `target/` output.
 - `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
   Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
   self-contained input for the strict public extraction benchmark.
@@ -157,6 +158,11 @@ python3 scripts/generate_render_table_corpus.py
 python3 scripts/generate_render_table_corpus.py --check
 python3 scripts/render_oracle_contract.py \
   target/render-oracle/render-full-table-v1/RENDER_ORACLE.json
+
+python3 scripts/generate_render_section_corpus.py
+python3 scripts/generate_render_section_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-section-v1/RENDER_ORACLE.json
 ```
 
 The 64 one-page inputs form a complete orthogonal lattice over bold, italic,
@@ -188,6 +194,15 @@ cell margins in one primary table. A fixed bottom-aligned cell with a taller
 peer makes vertical placement observable. Width-policy, row-fragment, and
 column/page-handoff coverage remains in the unequal-column oracle. This batch is
 diagnostic input evidence, not external fidelity or a release requirement.
+
+The fifth 64-input batch varies next-page/odd-page section starts, portrait/
+landscape geometry, equal/unequal two-column layouts, LTR/RTL column progression,
+column separators, and quarter-inch/half-inch running-surface distances in one
+three-page final section. Distinct first, even, and default headers and footers
+make page and section selection observable; odd-page cases retain the parity
+filler as a fifth page. The explicit page and column breaks bound the input but
+do not establish Word-exact automatic pagination, external fidelity, or a
+release requirement.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:

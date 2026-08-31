@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The fifth reviewed full-render corpus batch adds 64 deterministic synthetic
+  DOCX inputs for section, column, and running-surface interactions. A complete
+  six-factor grid combines next/odd-page section starts, portrait/landscape
+  geometry, equal/unequal two-column layouts, LTR/RTL column progression,
+  separators, and explicit header/footer distances while exercising distinct
+  first, even, and default stories. It does not claim Word-exact pagination or
+  expand release gates.
 - The fourth reviewed full-render corpus batch adds 64 deterministic synthetic
   DOCX inputs for table topology and paint interactions. A complete six-factor
   grid combines visual RTL order, horizontal and vertical spans, asymmetric

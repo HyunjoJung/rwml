@@ -121,6 +121,33 @@ unique identities and payloads, byte limits, a canonical lock, and the strict
 manifest contract. This lock does not establish external fidelity, complete the
 planned 800 cases, or change release validation.
 
+## Full-corpus section and running-surface batch
+
+`render-full-section-v1.json` is the fifth bounded batch toward the reviewed
+full render corpus. It binds 64 generated DOCX inputs forming the complete
+two-level factorial over next-page/odd-page section start, portrait/landscape
+final geometry, equal/unequal two-column layout, LTR/RTL column progression,
+absent/present column separator, and quarter-inch/half-inch header and footer
+distance. Each factor level appears in 32 inputs and each of the 15 factor pairs
+has all four states 16 times.
+
+```sh
+python3 scripts/generate_render_section_corpus.py
+python3 scripts/generate_render_section_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-section-v1/RENDER_ORACLE.json
+```
+
+Every document has one ending section and an explicitly bounded three-page final
+section. The final section carries distinct first, even, and default headers and
+footers, title-page selection, even/odd selection, and one explicit column break
+per page. Next-page cases expect four pages; odd-page cases retain the ending
+section's parity filler and expect five. The separate lock preserves all four
+earlier generator closures and enforces exact factor coverage, unique identities
+and payloads, byte limits, fresh output, and the strict manifest contract. This
+does not establish Word-exact pagination, external fidelity, completion of the
+planned 800 cases, or a release-validation change.
+
 ## Native fixed-font rendering
 
 `scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.
