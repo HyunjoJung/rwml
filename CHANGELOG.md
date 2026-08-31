@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The first reviewed full-render corpus batch adds 64 deterministic synthetic
+  DOCX inputs for modeled character paint. A complete six-bit orthogonal
+  lattice balances twelve properties and covers every property pair in all four
+  on/off states; the checked-in lock binds generator, provenance, coverage, and
+  exact payload identities. This is diagnostic corpus material, not the full
+  800-case campaign or a release-gate expansion.
 - Version 3 render-campaign captures and version 7 capture-bound metric evidence
   run every native render and retained replay through a digest-bound POSIX
   launcher. Kernel limits cap CPU time at 120 seconds, each output file at 16

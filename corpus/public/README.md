@@ -36,8 +36,10 @@ Every file here is safe to redistribute:
   campaigns that are intentionally outside the ordinary release corpus. The
   unequal-table lock covers 48 table-continuation cases. The render-pilot lock
   combines all 21 ordinary public inputs with 19 focused generated inputs, 51
-  expected pages, and 71 feature labels. Exact DOCX inputs and strict manifests
-  are generated under ignored `target/` output.
+  expected pages, and 71 feature labels. The first full-corpus batch lock covers
+  64 generated run-paint cases with balanced property counts and complete
+  pairwise on/off coverage. Exact DOCX inputs and strict manifests are generated
+  under ignored `target/` output.
 - `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
   Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
   self-contained input for the strict public extraction benchmark.
@@ -130,6 +132,22 @@ improve recall. An unavailable locked font is an explicit skip, not a pass;
 use `--max-skipped 0` to make incomplete measurements fail the campaign gate.
 Oracle view differences and text-extractor disagreements require investigation,
 not a reduced input surface or a parity claim.
+
+Materialize and verify the first reviewed full-corpus batch:
+
+```sh
+python3 scripts/generate_render_full_corpus.py
+python3 scripts/generate_render_full_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-run-paint-v1/RENDER_ORACLE.json
+```
+
+The 64 one-page inputs form a complete orthogonal lattice over bold, italic,
+underline, strike, font size/color, highlight, caps, small caps, super/subscript,
+and hidden text. Each property appears in 32 inputs; every pair has all four
+on/off states exactly 16 times. The batch is generated, MIT-licensed, bounded,
+and byte-locked. It is one reviewed component of the planned 800-case corpus,
+not a completed full campaign, fidelity threshold, or release requirement.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:

@@ -1,0 +1,2401 @@
+{
+  "campaign": "public-render-full-run-paint-v1",
+  "coverage": {
+    "case_count": 64,
+    "cohort": "run-paint",
+    "feature_case_counts": {
+      "bold": 32,
+      "caps": 32,
+      "font-color": 32,
+      "font-size": 32,
+      "hidden-text": 32,
+      "highlight": 32,
+      "italic": 32,
+      "small-caps": 32,
+      "strike": 32,
+      "subscript": 32,
+      "superscript": 32,
+      "underline": 32
+    },
+    "feature_masks": {
+      "bold": 1,
+      "caps": 2,
+      "font-color": 4,
+      "font-size": 8,
+      "hidden-text": 16,
+      "highlight": 32,
+      "italic": 3,
+      "small-caps": 5,
+      "strike": 9,
+      "subscript": 17,
+      "superscript": 33,
+      "underline": 6
+    },
+    "interaction_scope": "document",
+    "lattice_features": [
+      "bold",
+      "caps",
+      "font-color",
+      "font-size",
+      "hidden-text",
+      "highlight",
+      "italic",
+      "small-caps",
+      "strike",
+      "subscript",
+      "superscript",
+      "underline"
+    ],
+    "lattice_rows": 64,
+    "pairwise_state_counts": [
+      {
+        "features": [
+          "bold",
+          "caps"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "bold",
+          "font-color"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "bold",
+          "font-size"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "bold",
+          "hidden-text"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "bold",
+          "highlight"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "bold",
+          "italic"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "bold",
+          "small-caps"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "bold",
+          "strike"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "bold",
+          "subscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "bold",
+          "superscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "bold",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "caps",
+          "font-color"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "caps",
+          "font-size"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "caps",
+          "hidden-text"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "caps",
+          "highlight"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "caps",
+          "italic"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "caps",
+          "small-caps"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "caps",
+          "strike"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "caps",
+          "subscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "caps",
+          "superscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "caps",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-color",
+          "font-size"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-color",
+          "hidden-text"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-color",
+          "highlight"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-color",
+          "italic"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-color",
+          "small-caps"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-color",
+          "strike"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-color",
+          "subscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-color",
+          "superscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-color",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-size",
+          "hidden-text"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-size",
+          "highlight"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-size",
+          "italic"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-size",
+          "small-caps"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-size",
+          "strike"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-size",
+          "subscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-size",
+          "superscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "font-size",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hidden-text",
+          "highlight"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hidden-text",
+          "italic"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hidden-text",
+          "small-caps"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hidden-text",
+          "strike"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hidden-text",
+          "subscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hidden-text",
+          "superscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "hidden-text",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "highlight",
+          "italic"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "highlight",
+          "small-caps"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "highlight",
+          "strike"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "highlight",
+          "subscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "highlight",
+          "superscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "highlight",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "italic",
+          "small-caps"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "italic",
+          "strike"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "italic",
+          "subscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "italic",
+          "superscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "italic",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "small-caps",
+          "strike"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "small-caps",
+          "subscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "small-caps",
+          "superscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "small-caps",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "strike",
+          "subscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "strike",
+          "superscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "strike",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "subscript",
+          "superscript"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "subscript",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "features": [
+          "superscript",
+          "underline"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      }
+    ]
+  },
+  "documents": [
+    {
+      "bytes": 3659,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "hidden-text",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "subscript",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-000",
+      "path": "documents/full-run-paint-000.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "dc02a8c66f71f31445048f4636e278a21c70d586189fefde8fcd4783dacc8b99",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-000"
+    },
+    {
+      "bytes": 3263,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "hidden-text",
+        "highlight",
+        "run-formatting",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-001",
+      "path": "documents/full-run-paint-001.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "504a55c5342f1f1ffafb2b327182ce9bcb420ff0eb431e7b0efc21b8867994a2",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-001"
+    },
+    {
+      "bytes": 3551,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "hidden-text",
+        "highlight",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "subscript",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-002",
+      "path": "documents/full-run-paint-002.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "f45fdab87ea277157b9f23a77e20d939a0214ac0d5ed901e115584b8edd403c7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-002"
+    },
+    {
+      "bytes": 3215,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-color",
+        "font-size",
+        "hidden-text",
+        "highlight",
+        "italic",
+        "run-formatting"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-003",
+      "path": "documents/full-run-paint-003.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "5a4e61926df587cbf77b3b960f18469084ccc4ace2cf6c1ea93594f684c28d16",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-003"
+    },
+    {
+      "bytes": 3479,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-size",
+        "hidden-text",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "strike",
+        "subscript",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-004",
+      "path": "documents/full-run-paint-004.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "25589a30b355fc626f856ae88b1b3d2cb5d202e5b508a03b191072db6072e313",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-004"
+    },
+    {
+      "bytes": 3199,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-size",
+        "hidden-text",
+        "highlight",
+        "run-formatting",
+        "small-caps"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-005",
+      "path": "documents/full-run-paint-005.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "d7d85745f6c8853217a2eaf954da1269fbeac2e879434fa151b73c3144f24dd3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-005"
+    },
+    {
+      "bytes": 3497,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-size",
+        "hidden-text",
+        "highlight",
+        "run-formatting",
+        "strike",
+        "subscript",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-006",
+      "path": "documents/full-run-paint-006.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "e1672f5c3bdb8e7d1e8bd150e34fb4841f468b0995c68ecb3cca9f2ca03dd4ef",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-006"
+    },
+    {
+      "bytes": 3235,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-size",
+        "hidden-text",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-007",
+      "path": "documents/full-run-paint-007.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "52ca084145d2b63801053702fd138b77f6b6e62d67d6f7e92be95bb2c3976475",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-007"
+    },
+    {
+      "bytes": 3569,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-color",
+        "hidden-text",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "subscript",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-008",
+      "path": "documents/full-run-paint-008.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "8074879f68abef10f335f14064ec8a4d0dc7217094a930b605b434722492cfd0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-008"
+    },
+    {
+      "bytes": 3247,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-color",
+        "hidden-text",
+        "highlight",
+        "run-formatting",
+        "strike",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-009",
+      "path": "documents/full-run-paint-009.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "f73a64747820d93f641ae13a5beebad18fe374c281ff0ad374cf75d41540abcf",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-009"
+    },
+    {
+      "bytes": 3461,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-color",
+        "hidden-text",
+        "highlight",
+        "run-formatting",
+        "small-caps",
+        "subscript",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-010",
+      "path": "documents/full-run-paint-010.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "d0ef34baf8d803177935125017109f862ab31da2c222d887dc7ab718c5603779",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-010"
+    },
+    {
+      "bytes": 3199,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-color",
+        "hidden-text",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "strike"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-011",
+      "path": "documents/full-run-paint-011.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "b416070e1f938af640d7cc3a5be163ef5dfc0bb8067d7f4024f0381454808e86",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-011"
+    },
+    {
+      "bytes": 3389,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "hidden-text",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "subscript",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-012",
+      "path": "documents/full-run-paint-012.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "4bf023787ada003f14c05947fbc2a96e29b6ffb1a4c3e8ed46d7d8484079a3ec",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-012"
+    },
+    {
+      "bytes": 3183,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "hidden-text",
+        "highlight",
+        "run-formatting",
+        "small-caps",
+        "strike"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-013",
+      "path": "documents/full-run-paint-013.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "b0b7ee452fbcd8e505e6845b41abc58f6b0f020f178bf234a91f59bd4fa42af8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-013"
+    },
+    {
+      "bytes": 3407,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "hidden-text",
+        "highlight",
+        "run-formatting",
+        "subscript",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-014",
+      "path": "documents/full-run-paint-014.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "4ffeaa793984e51b7f36c3ef16148ed406b25cfccc176eb141c160c9ee42465d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-014"
+    },
+    {
+      "bytes": 3219,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "hidden-text",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-015",
+      "path": "documents/full-run-paint-015.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "4fb26ec54de5a450efae9a9b69c0ec79681a42f04551bc4e4a7ffd18608f9a2d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-015"
+    },
+    {
+      "bytes": 3054,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-016",
+      "path": "documents/full-run-paint-016.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "607aea4b8077f8fa49d7565c56b07e7e3e98d7b9bb98b9a07797ae612e4b1974",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-016"
+    },
+    {
+      "bytes": 3013,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "highlight",
+        "run-formatting",
+        "subscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-017",
+      "path": "documents/full-run-paint-017.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "39f6c8549f3bb3f14490544c26b6f7d075e54877c138fb757befa87e72cee234",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-017"
+    },
+    {
+      "bytes": 3018,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "highlight",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-018",
+      "path": "documents/full-run-paint-018.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "52b5b7a6e648b8a6701bed5d2770e4851a85dfe1a8de184ad69ebbf8708203c3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-018"
+    },
+    {
+      "bytes": 2989,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-color",
+        "font-size",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "subscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-019",
+      "path": "documents/full-run-paint-019.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "2311fa294762950bc0e753b14a8233d1177630db5bda878f6900e402241f75c5",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-019"
+    },
+    {
+      "bytes": 2994,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-size",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "strike",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-020",
+      "path": "documents/full-run-paint-020.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "e0bb0196bdc6c96d7cc8b4c8fd30c7fe7727ba26a558249fb10fdb78e8dcd393",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-020"
+    },
+    {
+      "bytes": 2981,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-size",
+        "highlight",
+        "run-formatting",
+        "small-caps",
+        "subscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-021",
+      "path": "documents/full-run-paint-021.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "7b1ef8cb99e938297cf4a0a3a34dc54863a0613627cf6dfa8a9152f6723c2463",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-021"
+    },
+    {
+      "bytes": 3000,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-size",
+        "highlight",
+        "run-formatting",
+        "strike",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-022",
+      "path": "documents/full-run-paint-022.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "8fe7ae1c3e6888b486a1a12e873aa3b6835237a5c43e2385426435968fe3946c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-022"
+    },
+    {
+      "bytes": 2999,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-size",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "subscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-023",
+      "path": "documents/full-run-paint-023.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "631570a46fe028ba1456c522bea6edf3ff33be746ef88e6e693351735c321cb8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-023"
+    },
+    {
+      "bytes": 3028,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-color",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-024",
+      "path": "documents/full-run-paint-024.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "9ecbc66378e469c11d05b25692007a78d490efe86294e8a77657b18e45356bdf",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-024"
+    },
+    {
+      "bytes": 3009,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-color",
+        "highlight",
+        "run-formatting",
+        "strike",
+        "subscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-025",
+      "path": "documents/full-run-paint-025.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "9ddd52469dae179a5197a1f8bbff89cd6df9e53e6cdaea227684b0ef726f4711",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-025"
+    },
+    {
+      "bytes": 2992,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-color",
+        "highlight",
+        "run-formatting",
+        "small-caps",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-026",
+      "path": "documents/full-run-paint-026.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "81b737ab773eee1b60d62ba1148283be364c881b75076573020acf28d7522e6d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-026"
+    },
+    {
+      "bytes": 2985,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-color",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "strike",
+        "subscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-027",
+      "path": "documents/full-run-paint-027.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "859725a67fbd2d38e68cfe7b043ecd115f99a013061e109f6516d4a1e89165d0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-027"
+    },
+    {
+      "bytes": 2968,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-028",
+      "path": "documents/full-run-paint-028.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "371d96af9081394e93b0aeb642c7d4cbc5242a8f9f7428bec0f05b6e52ec4d3f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-028"
+    },
+    {
+      "bytes": 2977,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "highlight",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "subscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-029",
+      "path": "documents/full-run-paint-029.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "cc94af429e0777681772f38e10c295183a82b3f9c31a977b36181330b99df0c7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-029"
+    },
+    {
+      "bytes": 2974,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "highlight",
+        "run-formatting",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-030",
+      "path": "documents/full-run-paint-030.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "4675935f0cb366d506de9579579e272a586f74e6f0ee5050767c6d4df0decd07",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-030"
+    },
+    {
+      "bytes": 2995,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "highlight",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "subscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-031",
+      "path": "documents/full-run-paint-031.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "6b94cc21bd1beb5e1b92290eee6a19892efeb66122e43aa0d53aa0b43975e0c7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-031"
+    },
+    {
+      "bytes": 3321,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "hidden-text",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "subscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-032",
+      "path": "documents/full-run-paint-032.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "638507a4e3f969d7a2ed025f823ebb5544767bfad4609bde1bc2e7141eead129",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-032"
+    },
+    {
+      "bytes": 3251,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "hidden-text",
+        "run-formatting",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-033",
+      "path": "documents/full-run-paint-033.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "47e5645bc959bec6a9cac06d422b5b951c85cdef0b6e7eb3fb4373d393338a65",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-033"
+    },
+    {
+      "bytes": 3249,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "hidden-text",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "subscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-034",
+      "path": "documents/full-run-paint-034.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "086e36b7b5eb2153d4a4df839c8f25250f033a6e788ff2594ec3687f81846ae4",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-034"
+    },
+    {
+      "bytes": 3203,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-color",
+        "font-size",
+        "hidden-text",
+        "italic",
+        "run-formatting",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-035",
+      "path": "documents/full-run-paint-035.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "ed20edb82e25c073011c1c4e3ee61770f8c4bf5535398f8a1f463954c0f2e4be",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-035"
+    },
+    {
+      "bytes": 3201,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-size",
+        "hidden-text",
+        "italic",
+        "run-formatting",
+        "strike",
+        "subscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-036",
+      "path": "documents/full-run-paint-036.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "ceb4d49255c8d7dfbee2182a57a2711cf6d8c66c4e349a9fb5290e6d6a8b9bd3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-036"
+    },
+    {
+      "bytes": 3187,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-size",
+        "hidden-text",
+        "run-formatting",
+        "small-caps",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-037",
+      "path": "documents/full-run-paint-037.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "b50a496adcbae830969bc827841b079c64b0cf76ce624598601df3b8bd9bcf35",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-037"
+    },
+    {
+      "bytes": 3213,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-size",
+        "hidden-text",
+        "run-formatting",
+        "strike",
+        "subscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-038",
+      "path": "documents/full-run-paint-038.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "1b298f31901035499908caacee7f4f30613288805eed935bd348680baa868ef3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-038"
+    },
+    {
+      "bytes": 3223,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-size",
+        "hidden-text",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-039",
+      "path": "documents/full-run-paint-039.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "5725178f76be781b132eb31582877ac89ca67a20a322262170f7ce08b6449833",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-039"
+    },
+    {
+      "bytes": 3263,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-color",
+        "hidden-text",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "subscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-040",
+      "path": "documents/full-run-paint-040.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "47bc1274913394c7d3cbc995f7c3ff2de8c8375d7de9a5d058319721b87a6248",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-040"
+    },
+    {
+      "bytes": 3237,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-color",
+        "hidden-text",
+        "run-formatting",
+        "strike",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-041",
+      "path": "documents/full-run-paint-041.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "332521cd31fd5df7f39ed31ea4c2436571aeb7ea574c96aa4a5ff2f5414d965a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-041"
+    },
+    {
+      "bytes": 3191,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-color",
+        "hidden-text",
+        "run-formatting",
+        "small-caps",
+        "subscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-042",
+      "path": "documents/full-run-paint-042.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "44388a435c18e333467c4f076e3f1edc8006064e0c49a6987c925ea443db3d0a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-042"
+    },
+    {
+      "bytes": 3189,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-color",
+        "hidden-text",
+        "italic",
+        "run-formatting",
+        "strike",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-043",
+      "path": "documents/full-run-paint-043.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "017ffc04ee5ee885751d99828e398fd8091a2ca17253be66a854257ea2deb6f4",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-043"
+    },
+    {
+      "bytes": 3143,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "hidden-text",
+        "italic",
+        "run-formatting",
+        "subscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-044",
+      "path": "documents/full-run-paint-044.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "c776e3911f14f673f640c00b36ced6c02c91f8196275dbe3c962513f4b8d39a0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-044"
+    },
+    {
+      "bytes": 3173,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "hidden-text",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-045",
+      "path": "documents/full-run-paint-045.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "2696ab88d3aab1432a47beed9dde7ac617d78ec7c9479ba2898bf5914f2909b8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-045"
+    },
+    {
+      "bytes": 3155,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "hidden-text",
+        "run-formatting",
+        "subscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-046",
+      "path": "documents/full-run-paint-046.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "5c131dc342ddbb9da48aee8b0c2acb23e9aaf06468b8cef0e071a6b2369d749e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-046"
+    },
+    {
+      "bytes": 3209,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "hidden-text",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-047",
+      "path": "documents/full-run-paint-047.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "d6700f765ca940e5acd780be2716820ecfb2671bd48539410116d6f8ff780999",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-047"
+    },
+    {
+      "bytes": 2981,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-048",
+      "path": "documents/full-run-paint-048.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "47d80f2fdcfc2193888106a9c763c48896f3f73a9da466fe986c6574f432c03c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-048"
+    },
+    {
+      "bytes": 3200,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "run-formatting",
+        "subscript",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-049",
+      "path": "documents/full-run-paint-049.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "3e02e3b8a55507cf6b09f1a1300a5eba5a4e957965c92bc36c1d47c2f3501c01",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-049"
+    },
+    {
+      "bytes": 2945,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-color",
+        "font-size",
+        "run-formatting",
+        "small-caps",
+        "strike"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-050",
+      "path": "documents/full-run-paint-050.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "6796d525b50cc1f38d129aedba83760cddfd8e1ff11fa01c289c6c9330760812",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-050"
+    },
+    {
+      "bytes": 3152,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-color",
+        "font-size",
+        "italic",
+        "run-formatting",
+        "subscript",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-051",
+      "path": "documents/full-run-paint-051.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "41b3dd950cb6a3aa0a774add5df431b0bdc860834da3e3b3ea430b343a1c7d61",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-051"
+    },
+    {
+      "bytes": 2921,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-size",
+        "italic",
+        "run-formatting",
+        "strike"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-052",
+      "path": "documents/full-run-paint-052.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "9f0dd46c3a5d2bf19885025080a91183f3cf40105fe9fff704a1f06cb541b196",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-052"
+    },
+    {
+      "bytes": 3136,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-size",
+        "run-formatting",
+        "small-caps",
+        "subscript",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-053",
+      "path": "documents/full-run-paint-053.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "ae1cb4845c23d5f230ac4bf782743665839b7a63115dbd3737cb15f40e90fc92",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-053"
+    },
+    {
+      "bytes": 2927,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-size",
+        "run-formatting",
+        "strike",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-054",
+      "path": "documents/full-run-paint-054.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "cf75d71779efa321111a1f01966ecbdba5240d1e3a91afe6bec33cc216e78b6c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-054"
+    },
+    {
+      "bytes": 3172,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-size",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "subscript",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-055",
+      "path": "documents/full-run-paint-055.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "4d79af024da9fd966ac2a00abe1f1921a27795905374005b430f2560c8fcd2af",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-055"
+    },
+    {
+      "bytes": 2952,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "font-color",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-056",
+      "path": "documents/full-run-paint-056.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "9e39a2d55228e714c658042dca21a739c3fdee907596686f85f2b025957da3d2",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-056"
+    },
+    {
+      "bytes": 3186,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "font-color",
+        "run-formatting",
+        "strike",
+        "subscript",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-057",
+      "path": "documents/full-run-paint-057.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "e8e4f2a28d8e50d4ed3584ad51878d3f07a003220e9a9fa48ec52f2bfc0bb18d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-057"
+    },
+    {
+      "bytes": 2916,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "font-color",
+        "run-formatting",
+        "small-caps"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-058",
+      "path": "documents/full-run-paint-058.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "70532aa2d39171984c16ab58c4e35f5ac24fdbfb2a07e6f73f8c0974a5f14cb8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-058"
+    },
+    {
+      "bytes": 3138,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "font-color",
+        "italic",
+        "run-formatting",
+        "strike",
+        "subscript",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-059",
+      "path": "documents/full-run-paint-059.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "833fdc117789162e2f4044b6630e94611e394ab67dcbcc39f3f8dc110a8b9a47",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-059"
+    },
+    {
+      "bytes": 2892,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "caps",
+        "character-paint",
+        "italic",
+        "run-formatting"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-060",
+      "path": "documents/full-run-paint-060.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "aeafdcff2911b85c5df56b49c80ada8411d1383d846c915048eb93596148d15f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-060"
+    },
+    {
+      "bytes": 3122,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "caps",
+        "character-paint",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "subscript",
+        "superscript"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-061",
+      "path": "documents/full-run-paint-061.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "23617c68ac87117084303f21173d3a5da1b11ff6892cd686f738831b408f2e26",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-061"
+    },
+    {
+      "bytes": 2898,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bold",
+        "character-paint",
+        "run-formatting",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-062",
+      "path": "documents/full-run-paint-062.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "854f1ff6f86978e357c473acfb19b6eab3b5a15a4d3fe04a39ab20ddfb7b7214",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-062"
+    },
+    {
+      "bytes": 3158,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "character-paint",
+        "italic",
+        "run-formatting",
+        "small-caps",
+        "strike",
+        "subscript",
+        "superscript",
+        "underline"
+      ],
+      "format": "docx",
+      "id": "full-run-paint-063",
+      "path": "documents/full-run-paint-063.docx",
+      "provenance": "rwml-render-full-run-paint",
+      "sha256": "a0d0d35a7e08a2ab593b07f57924e770ed87bd3128598a9dac6ee8bf5c6dc5f8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_full_corpus.py#full-run-paint-063"
+    }
+  ],
+  "generator_closure_sha256": "3256fa210bcc8150544f84b64f9338a213266488867daecdae4cc611693125a8",
+  "limits": {
+    "max_documents": 64,
+    "max_input_bytes": 65536,
+    "max_pages_per_document": 4,
+    "max_total_input_bytes": 4194304
+  },
+  "provenance": [
+    {
+      "bytes": 812,
+      "id": "rwml-render-full-run-paint",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "provenance/rwml-render-full-run-paint.md",
+      "sha256": "2c0e898284b5b35e15acaa27413dae48053f39216a0089522a614da991a70591"
+    }
+  ],
+  "schema": "rwml.render-corpus-batch-lock.v1"
+}

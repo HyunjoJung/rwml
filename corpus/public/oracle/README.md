@@ -24,6 +24,29 @@ The generated `RENDER_ORACLE.json` uses the same bounded, path-neutral corpus co
 as the release render campaign. The lock is an input identity contract, not a claim of
 Word parity and not a release threshold.
 
+## Full-corpus run-paint batch
+
+`render-full-run-paint-v1.json` is the first bounded batch toward the reviewed
+full render corpus. It binds 64 generated one-page DOCX inputs over twelve
+modeled character properties. Six basis masks make all 64 feature vectors
+distinct; the complete orthogonal lattice places each property in 32 cases and
+every property pair in the `00`, `01`, `10`, and `11` states 16 times each.
+The lock records those counts, the masks, exact package bytes, generator closure,
+and generated MIT provenance.
+
+```sh
+python3 scripts/generate_render_full_corpus.py
+python3 scripts/generate_render_full_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-run-paint-v1/RENDER_ORACLE.json
+```
+
+The generator requires a fresh materialization directory and rejects an
+incomplete lattice, duplicate case identity, duplicate payload, stale or
+noncanonical lock, package-size overflow, or strict-manifest failure. This
+64-case batch is not the complete 800-case corpus, does not establish external-
+oracle fidelity, and does not change release validation.
+
 ## Native fixed-font rendering
 
 `scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.
