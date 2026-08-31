@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Version 2 LibreOffice table and render-campaign capture receipts, paired with
+  version 6 capture-bound metric evidence, bind bounded, path-neutral byte
+  identities for the CPython executable, shared and standard libraries,
+  runtime flags, complete executable `site-packages` tree, and the imported
+  PyMuPDF, Pillow, and optional NumPy distributions. Import origins, file-set
+  stability, and pre/post-campaign identities are checked; retained v5/v1
+  evidence remains valid. This is diagnostic hardening and does not expand
+  release gates.
 - A strict retained render-campaign pair verifier revalidates both capture and
   metric-evidence bundles, independently replays native outputs, requires exact
   native PDF/report/font-receipt bytes and complete reference page rasters, and

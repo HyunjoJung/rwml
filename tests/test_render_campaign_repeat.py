@@ -87,7 +87,7 @@ class RepeatVerifierTests(unittest.TestCase):
 
     def write_evidence(self, path: Path, root: Path, bundle: dict) -> dict:
         evidence = {
-            "schema": "rwml.render-oracle-evidence.v5",
+            "schema": repeat.contract.CAPTURE_EVIDENCE_SCHEMA,
             "campaign": self.corpus.identity(),
             "environment": {"fixed": True},
             "rows": [{"case_id": self.document.case_id, "recall": 1.0}],

@@ -5,12 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import platform
 from pathlib import Path
 import re
 import shutil
 import sys
 
+import analysis_tool_identity as analysis
 import libreoffice_container as runtime
 from generate_unequal_table_oracle import CASES, check_materialized, materialize
 from libreoffice_oracle_fonts import sfnt_revision
@@ -40,7 +40,7 @@ from table_oracle_topology import (
 from word_oracle_capture import load_word_font_lock
 
 ROOT = runtime.ROOT
-SCHEMA = "rwml.libreoffice-table-capture.v1"
+SCHEMA = "rwml.libreoffice-table-capture.v2"
 RUN_SCHEMA = "rwml.libreoffice-table-export.v1"
 DEFAULT_OUTPUT = ROOT / "target/render-oracle/libreoffice-tables"
 FONT_NAME = "NotoSans-Regular.ttf"
@@ -141,6 +141,7 @@ def harness_identity() -> dict[str, str]:
     names = [
         "libreoffice_container.py",
         "libreoffice_table_capture.py",
+        "analysis_tool_identity.py",
         "libreoffice_oracle_fonts.py",
         "word_oracle_capture.py",
         "render_oracle_contract.py",
@@ -158,14 +159,20 @@ def harness_identity() -> dict[str, str]:
     }
 
 
-def analysis_tools() -> dict[str, str]:
+def analysis_tools(
+    additional: dict[str, tuple[str, str, object]] | None = None,
+) -> dict[str, object]:
     if fitz is None or Image is None:
         raise ValueError("PyMuPDF and Pillow are required for capture validation")
-    return {
-        "python": platform.python_version(),
-        "pymupdf": str(fitz.__version__),
-        "pillow": str(Image.__version__),
+    distributions = {
+        "pillow": ("Pillow", str(Image.__version__), Image),
+        "pymupdf": ("PyMuPDF", str(fitz.__version__), fitz),
     }
+    if additional:
+        if set(distributions) & set(additional):
+            raise ValueError("analysis distribution declaration is duplicated")
+        distributions.update(additional)
+    return analysis.analysis_identity(distributions)
 
 
 def execution_identity() -> dict:
@@ -340,7 +347,12 @@ def validate_topology_binding(topology: dict, producer: dict, revision: str) -> 
         topology_harness_sha256(), environment["harness_sha256"], "topology harness"
     )
     require_equal(
-        [{"name": "pymupdf", "version": analysis_tools()["pymupdf"]}],
+        [
+            {
+                "name": "pymupdf",
+                "version": analysis.tool_versions(analysis_tools())["pymupdf"],
+            }
+        ],
         environment["tools"],
         "topology tools",
     )

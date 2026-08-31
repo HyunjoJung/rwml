@@ -2345,9 +2345,12 @@ def captured_validation_report(args, corpus, thresholds, visual_settings) -> dic
     ):
         raise ValueError("capture source revision differs from requested revision")
     material = bundle["environment"]
+    versions = capture.table_capture.analysis.tool_versions(
+        material["analysis_tools"]
+    )
     tools = [
         {"name": name, "version": version}
-        for name, version in sorted(material["analysis_tools"].items())
+        for name, version in sorted(versions.items())
     ]
     environment = {
         "source_revision": bundle["source_revision"],

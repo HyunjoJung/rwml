@@ -54,7 +54,14 @@ except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
 
 CORPUS_SCHEMA = "rwml.render-oracle-corpus.v1"
 EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v4"
-CAPTURE_EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v5"
+LEGACY_CAPTURE_EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v5"
+CAPTURE_EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v6"
+LEGACY_CAMPAIGN_CAPTURE_SCHEMA = "rwml.render-campaign-capture.v1"
+CAMPAIGN_CAPTURE_SCHEMA = "rwml.render-campaign-capture.v2"
+CAPTURE_SCHEMAS = {
+    LEGACY_CAPTURE_EVIDENCE_SCHEMA: LEGACY_CAMPAIGN_CAPTURE_SCHEMA,
+    CAPTURE_EVIDENCE_SCHEMA: CAMPAIGN_CAPTURE_SCHEMA,
+}
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
 MAX_JSON_DEPTH = 64
@@ -1024,7 +1031,7 @@ def _validate_capture_binding(evidence: dict, corpus: CorpusManifest) -> None:
     )
     environment = evidence["environment"]
     if (
-        value["schema"] != "rwml.render-campaign-capture.v1"
+        value["schema"] != CAPTURE_SCHEMAS[evidence["schema"]]
         or value["source_revision"] != environment["source_revision"]
         or environment["source_dirty"] is not False
         or value["campaign"] != corpus.identity()
@@ -1065,11 +1072,11 @@ def _validate_capture_binding(evidence: dict, corpus: CorpusManifest) -> None:
 def validate_evidence_report(evidence: dict[str, Any], corpus: CorpusManifest) -> None:
     if not isinstance(evidence, dict):
         raise ValueError("evidence must be an object")
-    captured = evidence.get("schema") == CAPTURE_EVIDENCE_SCHEMA
+    captured = evidence.get("schema") in CAPTURE_SCHEMAS
     _require_exact_keys(
         evidence, EVIDENCE_KEYS | ({"capture"} if captured else set()), "evidence"
     )
-    if evidence["schema"] not in {EVIDENCE_SCHEMA, CAPTURE_EVIDENCE_SCHEMA}:
+    if evidence["schema"] not in {EVIDENCE_SCHEMA, *CAPTURE_SCHEMAS}:
         raise ValueError("evidence schema is unsupported")
     campaign = evidence["campaign"]
     if not isinstance(campaign, dict):
@@ -1103,7 +1110,7 @@ def validate_evidence_report(evidence: dict[str, Any], corpus: CorpusManifest) -
         or evidence["environment"]["oracle"]["mode"] == "locked-container"
         or evidence["visual_comparison"]["font_mode"] == "locked-shared-fonts"
     ):
-        raise ValueError("shared capture profile requires v5 evidence")
+        raise ValueError("shared capture profile requires capture-bound evidence")
     _assert_path_neutral(evidence)
 
 

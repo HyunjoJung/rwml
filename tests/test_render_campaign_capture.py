@@ -58,6 +58,40 @@ class CaptureTests(unittest.TestCase):
         flags.start()
         self.addCleanup(flags.stop)
 
+    def test_prepare_environment_binds_numpy_in_analysis_identity(self):
+        numpy = SimpleNamespace(__version__="2.4.4")
+        lock = SimpleNamespace(fonts=[])
+        with (
+            mock.patch.object(capture, "native_build_environment"),
+            mock.patch.object(capture.shared, "load_lock", return_value=lock),
+            mock.patch.object(capture.shared, "verify_pack", return_value={}),
+            mock.patch.object(capture.shared, "_read_inputs", return_value={}),
+            mock.patch.object(capture.runtime, "load_runtime_lock", return_value={}),
+            mock.patch.object(capture.runtime, "inspect_image", return_value="image"),
+            mock.patch.object(capture.attestation, "wheel_payload"),
+            mock.patch.object(capture.resources, "wheel_payload"),
+            mock.patch.object(capture.attestation, "tool_lock", return_value={}),
+            mock.patch.object(capture.resources, "tool_lock", return_value={}),
+            mock.patch.object(capture, "harness_identity", return_value={}),
+            mock.patch.object(
+                capture.table_capture, "execution_identity", return_value={}
+            ),
+            mock.patch.object(
+                capture.render, "integer_metric_numpy", return_value=numpy
+            ),
+            mock.patch.object(
+                capture.table_capture,
+                "analysis_tools",
+                return_value={"identity": "bound"},
+            ) as analysis_tools,
+        ):
+            material, _, _, execution = capture.prepare_environment(
+                Path("pack"), Path("fonttools.whl"), Path("pypdf.whl")
+            )
+        analysis_tools.assert_called_once_with({"numpy": ("numpy", "2.4.4", numpy)})
+        self.assertEqual(material["analysis_tools"], {"identity": "bound"})
+        self.assertEqual(execution, {"image": "image"})
+
     def test_native_build_is_offline_and_does_not_install_a_toolchain(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -249,7 +283,19 @@ class CaptureTests(unittest.TestCase):
             evidence = contract.bind_evidence_report(
                 report, corpus, environment, capture=binding
             )
-            self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v5")
+            self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v6")
+            legacy = copy.deepcopy(evidence)
+            legacy["schema"] = "rwml.render-oracle-evidence.v5"
+            legacy["capture"]["schema"] = "rwml.render-campaign-capture.v1"
+            contract.validate_evidence_report(legacy, corpus)
+            for incompatible in (copy.deepcopy(evidence), copy.deepcopy(legacy)):
+                incompatible["capture"]["schema"] = (
+                    "rwml.render-campaign-capture.v1"
+                    if incompatible["schema"] == "rwml.render-oracle-evidence.v6"
+                    else "rwml.render-campaign-capture.v2"
+                )
+                with self.assertRaises(ValueError):
+                    contract.validate_evidence_report(incompatible, corpus)
             for mutation in (
                 "missing",
                 "duplicate",
@@ -457,15 +503,14 @@ class CaptureTests(unittest.TestCase):
             entry = font_entry()
             lock = SimpleNamespace(fonts=[entry])
             sources = {entry["name"]: b"source"}
+            numpy = capture.render.integer_metric_numpy()
             material = {
                 "identity": "fixed",
-                "analysis_tools": capture.table_capture.analysis_tools()
-                if capture.render.fitz
-                else {"python": "test", "pymupdf": "test", "pillow": "test"},
+                "analysis_tools": {"identity": "fixed"},
             }
-            numpy = capture.render.integer_metric_numpy()
+            tool_versions = {"pillow": "test", "pymupdf": "test", "python": "test"}
             if numpy is not None:
-                material["analysis_tools"]["numpy"] = str(numpy.__version__)
+                tool_versions["numpy"] = str(numpy.__version__)
             expected_fonts = capture.font_files(lock.fonts, sources)[
                 "expected-paths.txt"
             ]
@@ -581,6 +626,11 @@ class CaptureTests(unittest.TestCase):
                         capture.render, "compare_pdf_visuals", return_value=visual
                     ),
                     mock.patch.object(capture.render, "verify_campaign_inputs"),
+                    mock.patch.object(
+                        capture.table_capture.analysis,
+                        "tool_versions",
+                        return_value=tool_versions,
+                    ),
                 ):
                     metrics = capture.render.captured_validation_report(
                         arguments,
@@ -590,7 +640,7 @@ class CaptureTests(unittest.TestCase):
                             {"font_mode": "locked-shared-fonts"}
                         ),
                     )
-                self.assertEqual(metrics["schema"], "rwml.render-oracle-evidence.v5")
+                self.assertEqual(metrics["schema"], "rwml.render-oracle-evidence.v6")
                 self.assertEqual(metrics["summary"]["skipped"], 0)
                 self.assertIsNone(metrics["summary"]["reference_stable"])
                 self.assertEqual(

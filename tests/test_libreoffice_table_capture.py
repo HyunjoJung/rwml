@@ -12,9 +12,33 @@ capture = importlib.import_module("libreoffice_table_capture")
 
 
 class LibreOfficeTableCaptureTests(unittest.TestCase):
+    def test_analysis_tools_bind_imported_distribution_payloads(self):
+        expected = {"identity": "bound"}
+        image = mock.Mock(__version__="12.3.0")
+        fitz = mock.Mock(__version__="1.28.2")
+        with (
+            mock.patch.object(capture, "Image", image),
+            mock.patch.object(capture, "fitz", fitz),
+            mock.patch.object(
+                capture.analysis, "analysis_identity", return_value=expected
+            ) as build,
+        ):
+            self.assertIs(capture.analysis_tools(), expected)
+        build.assert_called_once_with(
+            {
+                "pillow": ("Pillow", "12.3.0", image),
+                "pymupdf": ("PyMuPDF", "1.28.2", fitz),
+            }
+        )
+
     def test_topology_binding_rejects_stale_nested_harness_tools_and_extractor(self):
-        with mock.patch.object(
-            capture, "analysis_tools", return_value={"pymupdf": "1.28.2"}
+        with (
+            mock.patch.object(capture, "analysis_tools", return_value={}),
+            mock.patch.object(
+                capture.analysis,
+                "tool_versions",
+                return_value={"pymupdf": "1.28.2"},
+            ),
         ):
             value = {
                 "producer": {},

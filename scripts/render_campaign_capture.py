@@ -22,13 +22,14 @@ import render_validate as render
 import shared_oracle_fonts as shared
 from libreoffice_oracle_fonts import normalized_postscript_name, sfnt_revision
 from render_oracle_contract import (
+    CAMPAIGN_CAPTURE_SCHEMA,
     _assert_path_neutral,
     _load_json,
     load_corpus_manifest,
 )
 
 ROOT = runtime.ROOT
-SCHEMA = "rwml.render-campaign-capture.v1"
+SCHEMA = CAMPAIGN_CAPTURE_SCHEMA
 FONT_SCHEMA = "rwml.campaign-font-checks.v1"
 MAX_BUNDLE_BYTES = 16 * 1024 * 1024
 MAX_RENDERER_BYTES = 256 * 1024 * 1024
@@ -208,6 +209,10 @@ def prepare_environment(
     image = runtime.inspect_image(runtime_lock)
     attestation.wheel_payload(fonttools)
     resources.wheel_payload(pypdf)
+    numpy = render.integer_metric_numpy()
+    additional = (
+        {"numpy": ("numpy", str(numpy.__version__), numpy)} if numpy is not None else {}
+    )
     material = {
         "runtime": runtime_lock,
         "executor": table_capture.execution_identity(),
@@ -215,15 +220,12 @@ def prepare_environment(
         "fonttools": attestation.tool_lock(),
         "pypdf": resources.tool_lock(),
         "harness": harness_identity(),
-        "analysis_tools": table_capture.analysis_tools(),
+        "analysis_tools": table_capture.analysis_tools(additional),
         "native_build": {
             "environment": dict(NATIVE_BUILD_ENV),
             "target_directory": "fresh",
         },
     }
-    numpy = render.integer_metric_numpy()
-    if numpy is not None:
-        material["analysis_tools"]["numpy"] = str(numpy.__version__)
     _assert_path_neutral(material)
     return material, sources, lock, {"image": image}
 
