@@ -1,0 +1,1988 @@
+{
+  "campaign": "public-render-full-floating-v1",
+  "coverage": {
+    "case_count": 64,
+    "cohort": "floating-geometry-interactions",
+    "design": "complete-2-level-factorial",
+    "factor_case_counts": {
+      "far-horizontal-offset": 32,
+      "front-layer": 32,
+      "horizontal-margin-reference": 32,
+      "low-vertical-offset": 32,
+      "top-and-bottom-wrap": 32,
+      "vertical-margin-reference": 32
+    },
+    "factor_levels": {
+      "far-horizontal-offset": [
+        "near-horizontal-offset",
+        "far-horizontal-offset"
+      ],
+      "front-layer": [
+        "behind-text-layer",
+        "front-text-layer"
+      ],
+      "horizontal-margin-reference": [
+        "horizontal-page-reference",
+        "horizontal-margin-reference"
+      ],
+      "low-vertical-offset": [
+        "high-vertical-offset",
+        "low-vertical-offset"
+      ],
+      "top-and-bottom-wrap": [
+        "no-wrap",
+        "top-and-bottom-wrap"
+      ],
+      "vertical-margin-reference": [
+        "vertical-page-reference",
+        "vertical-margin-reference"
+      ]
+    },
+    "factor_names": [
+      "horizontal-margin-reference",
+      "far-horizontal-offset",
+      "vertical-margin-reference",
+      "low-vertical-offset",
+      "top-and-bottom-wrap",
+      "front-layer"
+    ],
+    "factorial_rows": 64,
+    "held_constant": [
+      "anchor-distance",
+      "one-page-geometry",
+      "shape-extent",
+      "visible-text"
+    ],
+    "interaction_scope": "primary-floating-shape",
+    "pairwise_state_counts": [
+      {
+        "factors": [
+          "horizontal-margin-reference",
+          "far-horizontal-offset"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "horizontal-margin-reference",
+          "vertical-margin-reference"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "horizontal-margin-reference",
+          "low-vertical-offset"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "horizontal-margin-reference",
+          "top-and-bottom-wrap"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "horizontal-margin-reference",
+          "front-layer"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "far-horizontal-offset",
+          "vertical-margin-reference"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "far-horizontal-offset",
+          "low-vertical-offset"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "far-horizontal-offset",
+          "top-and-bottom-wrap"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "far-horizontal-offset",
+          "front-layer"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "vertical-margin-reference",
+          "low-vertical-offset"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "vertical-margin-reference",
+          "top-and-bottom-wrap"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "vertical-margin-reference",
+          "front-layer"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "low-vertical-offset",
+          "top-and-bottom-wrap"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "low-vertical-offset",
+          "front-layer"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "top-and-bottom-wrap",
+          "front-layer"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      }
+    ]
+  },
+  "documents": [
+    {
+      "bytes": 6438,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-000",
+      "path": "documents/full-floating-000.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "4fae3bf836aa04213bdb987a71ced520682ca37880287a2d4b090ec1b31182ce",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-000"
+    },
+    {
+      "bytes": 6440,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-001",
+      "path": "documents/full-floating-001.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "a5b9b9fdc4b77872440f0b3d7e0a60ebd869256030fc8d085ea456e576ac7b4c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-001"
+    },
+    {
+      "bytes": 6439,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-002",
+      "path": "documents/full-floating-002.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "45953992d5eba8228190f203fb3e0e8f860bae4c69f94ad7800bc18143a004f3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-002"
+    },
+    {
+      "bytes": 6441,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-003",
+      "path": "documents/full-floating-003.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "f1a8f6fafe6e16897f2454c86ae4d68fb3ac37415055bc5e1575d9bbfbaff604",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-003"
+    },
+    {
+      "bytes": 6440,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-004",
+      "path": "documents/full-floating-004.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "576c6890c474342e4dbfb48c4fc46ac9e9905fd476290fd1ff72a8110684d5dc",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-004"
+    },
+    {
+      "bytes": 6442,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-005",
+      "path": "documents/full-floating-005.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "7df24b4f3aa34ad2f217783353988258678106128751d2f71c486a86d3d8e5f1",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-005"
+    },
+    {
+      "bytes": 6441,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-006",
+      "path": "documents/full-floating-006.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "71ef5dc339addf4976d13416c7d5e1753de6d8ad7c806a0b2e9b6828a3533926",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-006"
+    },
+    {
+      "bytes": 6443,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-007",
+      "path": "documents/full-floating-007.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "722738a969888bd41123b7b1b3c6b2465b99d68d098c4e6016678e023cb1912e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-007"
+    },
+    {
+      "bytes": 6439,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-008",
+      "path": "documents/full-floating-008.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "fa8ff927c3a6fc4ce43e327ada38ae29e0230922743371cdaaea1e236e845933",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-008"
+    },
+    {
+      "bytes": 6441,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-009",
+      "path": "documents/full-floating-009.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "7a32378ab47fc670a29a987162fecc2ceb5791aaeaca387bef3819c4871cc049",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-009"
+    },
+    {
+      "bytes": 6440,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-010",
+      "path": "documents/full-floating-010.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "e993e7cf1dcf4c56f6f621ca4db4e3fa51cf2bde20def281f45c301bd36cb6de",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-010"
+    },
+    {
+      "bytes": 6442,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-011",
+      "path": "documents/full-floating-011.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "de7d8e560b5b5325456b36259203069e7f1578551262a30b7dc59798148c1943",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-011"
+    },
+    {
+      "bytes": 6441,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-012",
+      "path": "documents/full-floating-012.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "a7667c5fdc1e5bd2c36f953e53fd91bd417f97addad0543cf0925c5a4dce2240",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-012"
+    },
+    {
+      "bytes": 6443,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-013",
+      "path": "documents/full-floating-013.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "cba1d11781cbf5d1f6ea13fa972bb7a47e220a6f36de651923ae6b3d2a1d824f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-013"
+    },
+    {
+      "bytes": 6442,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-014",
+      "path": "documents/full-floating-014.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "8ea948008c2cd85773a4224afcd4ad6b0133c3e96a1b5420ec808aeec9f8689c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-014"
+    },
+    {
+      "bytes": 6444,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-015",
+      "path": "documents/full-floating-015.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "8fcf43864c5e0e25d570511f257fdb85e44848dcc507e39100117e45b194caa1",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-015"
+    },
+    {
+      "bytes": 6446,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-016",
+      "path": "documents/full-floating-016.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "b540b0bea26a5a4a1f36a93e17f725ed6d9193c7ee3a9f5442e870cdaa75e94d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-016"
+    },
+    {
+      "bytes": 6448,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-017",
+      "path": "documents/full-floating-017.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "fb263110dc9f7b78fb545aca0cb5fdc5e291db4500a6117d616fec89100e9c7e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-017"
+    },
+    {
+      "bytes": 6447,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-018",
+      "path": "documents/full-floating-018.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "5574f9ce673dc6bca912887117cc38f562d793bad66e8706bd34540bf6326744",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-018"
+    },
+    {
+      "bytes": 6449,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-019",
+      "path": "documents/full-floating-019.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "b9bbe1459933c05aff46fc54646a9f21b8d70b44c677fada8875c3f8e7b5b9b3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-019"
+    },
+    {
+      "bytes": 6448,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-020",
+      "path": "documents/full-floating-020.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "f2f9b9a83073f6a7acd47be3ba989379002aeb506acd81b6191d749edd1d9203",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-020"
+    },
+    {
+      "bytes": 6450,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-021",
+      "path": "documents/full-floating-021.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "f805286030b35cc3ada8a3923b4a4e93f9dc4ca85c328063c68a370acae4be8d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-021"
+    },
+    {
+      "bytes": 6449,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-022",
+      "path": "documents/full-floating-022.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "74f8db9b4902be1db2f6b10a94f861aec6e5169112855b27bcad30d4abf36831",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-022"
+    },
+    {
+      "bytes": 6451,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-023",
+      "path": "documents/full-floating-023.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "d3de1c03d960e4d1b98704107abca464684685b69d81989c816d04564ca58d8c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-023"
+    },
+    {
+      "bytes": 6447,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-024",
+      "path": "documents/full-floating-024.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "6727df5bf1f9b1a62eaba6c901ea3ca46c10bcf7d80ea4e7026c29534eb3194b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-024"
+    },
+    {
+      "bytes": 6449,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-025",
+      "path": "documents/full-floating-025.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "5b769d9cf1d216d5c55bdeeac2269654646c42d2338202da260b563b9cd6a1cc",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-025"
+    },
+    {
+      "bytes": 6448,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-026",
+      "path": "documents/full-floating-026.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "f1d5e0714169148875d9f8eebbc901e1a642e83ad6bca9d27971860450b92140",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-026"
+    },
+    {
+      "bytes": 6450,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-027",
+      "path": "documents/full-floating-027.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "79e3b5a4ee5bb96eb9cdd907d1382a0c2ac04501566245bdf1a9d1d03a1d00b3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-027"
+    },
+    {
+      "bytes": 6449,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-028",
+      "path": "documents/full-floating-028.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "c6535da714e7753c2bc27525132a77fb9db0d7127b532f0e0230a78be51eaa08",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-028"
+    },
+    {
+      "bytes": 6451,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-029",
+      "path": "documents/full-floating-029.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "077993809cddb1e6bd807b5ea0357ee8279df0c432dc75a0561bf7d3684f876d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-029"
+    },
+    {
+      "bytes": 6450,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-030",
+      "path": "documents/full-floating-030.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "feedba5623fcec0bc2049e94a0ff131bb1b8b296a3435fa3279cf5cf20d74ed3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-030"
+    },
+    {
+      "bytes": 6452,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "behind-text-layer",
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-031",
+      "path": "documents/full-floating-031.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "442ce9606d8dcc541cf1d12d854192069a296533a42ebcd3a467357e81d6c81e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-031"
+    },
+    {
+      "bytes": 6438,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-032",
+      "path": "documents/full-floating-032.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "c1b2d1d67572344a0fdf2aaa5266b2d672d2c640e31ec60d211a8372cb958cee",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-032"
+    },
+    {
+      "bytes": 6440,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-033",
+      "path": "documents/full-floating-033.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "7ff8b167c0f1891ac6b436367ffab3fc5ccdcc1bfb401f0b2fe39b2b970c6643",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-033"
+    },
+    {
+      "bytes": 6439,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-034",
+      "path": "documents/full-floating-034.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "2bf6509e208f79317eb7ef764310059e600c81f058f69f1899e8f3816b97fe43",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-034"
+    },
+    {
+      "bytes": 6441,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-035",
+      "path": "documents/full-floating-035.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "91a9fece47337de4cbb4d3ab939337e77cb29d6578c8f23c7dedadeecac5e14a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-035"
+    },
+    {
+      "bytes": 6440,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-036",
+      "path": "documents/full-floating-036.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "0078f6a5778bc1464501b890e6590e4e6bce77fee21abb8775352638482ab1e4",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-036"
+    },
+    {
+      "bytes": 6442,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-037",
+      "path": "documents/full-floating-037.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "5aaeeafdd53f73a713aaedac1e8fb6f396f535bea5a6d620c8f048b449807181",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-037"
+    },
+    {
+      "bytes": 6441,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-038",
+      "path": "documents/full-floating-038.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "32fe0facd5315c13a339257b01165cbcae493b12ad6e94ae39b2a73cd5ae6401",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-038"
+    },
+    {
+      "bytes": 6443,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-039",
+      "path": "documents/full-floating-039.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "3cd33c8af7dcbc0b39153069e2c44bec93f640753eb02467d19ec4854f5a1f21",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-039"
+    },
+    {
+      "bytes": 6439,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-040",
+      "path": "documents/full-floating-040.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "11a55824f4d6672d2bc5c57b7817a803c30f28e0f0c2484b1864bd25fc23a064",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-040"
+    },
+    {
+      "bytes": 6441,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-041",
+      "path": "documents/full-floating-041.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "0d23e2219f220cbc32424a0e96cdc63717c27a11e99c3ad92f21131a73525107",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-041"
+    },
+    {
+      "bytes": 6440,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-042",
+      "path": "documents/full-floating-042.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "caef753924b39bff1be62d79efd68bc4b1394645e1c5508be6908f6245364a84",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-042"
+    },
+    {
+      "bytes": 6442,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-043",
+      "path": "documents/full-floating-043.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "7db4e93a6a9b659eec98b077e81897aeb5ecaafd7ebd1eb4862ee018fa3eaad9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-043"
+    },
+    {
+      "bytes": 6441,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-044",
+      "path": "documents/full-floating-044.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "3b2330df965ff1c1bf2ef1bd8441e070fc5e213d5a2af696b04a0da06bc5ec57",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-044"
+    },
+    {
+      "bytes": 6443,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-045",
+      "path": "documents/full-floating-045.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "4bd28734f67a2def02fe21df8cc9ff503ce567795687eb68296025d894e8965c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-045"
+    },
+    {
+      "bytes": 6442,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-046",
+      "path": "documents/full-floating-046.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "a0aca76b144aaeed5f4514bf9b764dd9b025368d6b62bb4f199c42051e6f0542",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-046"
+    },
+    {
+      "bytes": 6444,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "no-wrap",
+        "text-bearing-shape",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-047",
+      "path": "documents/full-floating-047.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "e9def8819a880b31cf084718eb03e3b93ec1d2bce5da845e15b0ea98004bed95",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-047"
+    },
+    {
+      "bytes": 6446,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-048",
+      "path": "documents/full-floating-048.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "1469159fecfe7371dde2fc4adcf8421ff117386da9b3ee3e3f3218efadaacdb0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-048"
+    },
+    {
+      "bytes": 6448,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-049",
+      "path": "documents/full-floating-049.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "0d8ef4c47a7fc380fb7c70d5986efab733403fb8cb8cefc41620eadd6e43a65d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-049"
+    },
+    {
+      "bytes": 6447,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-050",
+      "path": "documents/full-floating-050.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "7601e3052a661448964566a46db0229ebc80936b8af5a2c64312361acfe30f7f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-050"
+    },
+    {
+      "bytes": 6449,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-051",
+      "path": "documents/full-floating-051.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "d58b1b2eb6094b73fdbdf3b0cbcdfa2832e7e0b80f4fcd10f2a5fee7bc244e62",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-051"
+    },
+    {
+      "bytes": 6448,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-052",
+      "path": "documents/full-floating-052.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "bd72eea342482d24531cbad09a6a0e770ba834773e9a45ac581cec77259e7aee",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-052"
+    },
+    {
+      "bytes": 6450,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-053",
+      "path": "documents/full-floating-053.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "198058249148b2ac75d1eea77562ff71c4b564aea873e4450d0fa379021255d6",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-053"
+    },
+    {
+      "bytes": 6449,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-page-reference",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-054",
+      "path": "documents/full-floating-054.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "108670ccdfb0c399c87977c3cef8a8078a7bed6fec84ea431d2db004e8a9d24b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-054"
+    },
+    {
+      "bytes": 6451,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "high-vertical-offset",
+        "horizontal-margin-reference",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-055",
+      "path": "documents/full-floating-055.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "cfcef2da77642a4561c2e975d460fc524dd92e9780fc0121d2d2006a89abce40",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-055"
+    },
+    {
+      "bytes": 6447,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-056",
+      "path": "documents/full-floating-056.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "2cda8d240d424eaf40ff579a4e5a7f0692d06a9a062d5952c9fea0d24ef96769",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-056"
+    },
+    {
+      "bytes": 6449,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-057",
+      "path": "documents/full-floating-057.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "cbb181c4122b88a20a85ff130449df6dd5a92414f5ab4526a36e868b11444b49",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-057"
+    },
+    {
+      "bytes": 6448,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-058",
+      "path": "documents/full-floating-058.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "6f2bc4d64c2bdd449e12c71c4238e92cc5eeb110aa3e9086214b9fb2f6badf04",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-058"
+    },
+    {
+      "bytes": 6450,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-page-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-059",
+      "path": "documents/full-floating-059.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "f23d0c89a71ff2dbc4b478b411f6b80d9ab1415257ec8015444e8ec183ea9d41",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-059"
+    },
+    {
+      "bytes": 6449,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-060",
+      "path": "documents/full-floating-060.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "01a77a28cbdef03441fcb6643ab56d2c773345368968b34377034d9f86f8441a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-060"
+    },
+    {
+      "bytes": 6451,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "near-horizontal-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-061",
+      "path": "documents/full-floating-061.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "468cfa846e111759e23b243e94f8a9ea9e357c526e86e4616f1ba7788f501968",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-061"
+    },
+    {
+      "bytes": 6450,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-page-reference",
+        "low-vertical-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-062",
+      "path": "documents/full-floating-062.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "657fcf3b1bd2094cdb57b4adcb96fcf3ad4c22ab060076ed8dde54e4fe9b852b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-062"
+    },
+    {
+      "bytes": 6452,
+      "expected": {
+        "pages": 1,
+        "warnings": [
+          "FloatingShapePlaceholderOnly"
+        ]
+      },
+      "features": [
+        "deterministic-anchor-geometry",
+        "far-horizontal-offset",
+        "floating-shape",
+        "front-text-layer",
+        "horizontal-margin-reference",
+        "low-vertical-offset",
+        "text-bearing-shape",
+        "top-and-bottom-wrap",
+        "vertical-margin-reference"
+      ],
+      "format": "docx",
+      "id": "full-floating-063",
+      "path": "documents/full-floating-063.docx",
+      "provenance": "rwml-render-full-floating",
+      "sha256": "047740997f7dd14096478a24338b1bc482169201919f541031d002f9e09f0b3f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_floating_corpus.py#full-floating-063"
+    }
+  ],
+  "generator_closure_sha256": "047af8e936d4fc695f21c02daed478ee619c40d4283b8cf4bec1aae0384ab9c4",
+  "limits": {
+    "max_documents": 64,
+    "max_input_bytes": 65536,
+    "max_pages_per_document": 4,
+    "max_total_input_bytes": 4194304
+  },
+  "provenance": [
+    {
+      "bytes": 1263,
+      "id": "rwml-render-full-floating",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "provenance/rwml-render-full-floating.md",
+      "sha256": "d5de76fa73c32182c188cbfbdbac21febd115fd6e91d05d8eeab042537becd22"
+    }
+  ],
+  "schema": "rwml.render-corpus-batch-lock.v1"
+}

@@ -199,6 +199,31 @@ output, deterministic gzip bytes, and the strict manifest contract. This does
 not establish general WMF/EMF vector replay, floating-object layout, external
 fidelity, completion of the planned 800 cases, or a release-validation change.
 
+## Full-corpus floating geometry/wrap batch
+
+`render-full-floating-v1.json` is the eighth bounded batch toward the reviewed
+full render corpus. It binds 64 generated one-page DOCX inputs forming the
+complete two-level factorial over page/margin horizontal reference, near/far
+horizontal offset, page/margin vertical reference, high/low vertical offset,
+no-wrap/top-and-bottom policy, and behind/front layer. Each factor level appears
+in 32 inputs and each of the 15 factor pairs has all four states 16 times.
+
+```sh
+python3 scripts/generate_render_floating_corpus.py
+python3 scripts/generate_render_floating_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-floating-v1/RENDER_ORACLE.json
+```
+
+Every input carries one text-bearing floating shape with fixed extent and anchor
+distances plus post-anchor flow text that makes bounded top-and-bottom behavior
+observable. The separate lock preserves all seven earlier generator closures
+and enforces exact factor coverage, unique identities and payloads, byte limits,
+fresh output, and the strict manifest contract. The explicit placeholder warning
+remains. This does not establish arbitrary exclusion-zone reflow, Word-exact
+pagination, external fidelity, completion of the planned 800 cases, or a
+release-validation change.
+
 ## Native fixed-font rendering
 
 `scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.

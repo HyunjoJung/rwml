@@ -36,13 +36,12 @@ Every file here is safe to redistribute:
   campaigns that are intentionally outside the ordinary release corpus. The
   unequal-table lock covers 48 table-continuation cases. The render-pilot lock
   combines all 21 ordinary public inputs with 19 focused generated inputs, 51
-  expected pages, and 71 feature labels. The first five full-corpus batch
-  locks separately cover 64 generated run-paint cases, 64 generated paragraph-
-  geometry cases, 64 generated list/RTL interaction cases, and 64 generated
-  table topology/paint cases, plus 64 generated section/column/running-surface
-  cases. Each batch has balanced factors and complete declared pairwise
-  coverage. Exact DOCX inputs and strict manifests are generated under ignored
-  `target/` output.
+  expected pages, and 71 feature labels. Eight full-corpus batch locks separately
+  cover 64 generated cases each for run paint, paragraph geometry, list/RTL,
+  table topology/paint, section/column/running surfaces, note/field/revisions,
+  metafile rasters, and floating geometry/wrap. Each batch has balanced factors
+  and complete declared pairwise coverage. Exact DOCX inputs and strict
+  manifests are generated under ignored `target/` output.
 - `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
   Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
   self-contained input for the strict public extraction benchmark.
@@ -173,6 +172,11 @@ python3 scripts/generate_render_metafile_corpus.py
 python3 scripts/generate_render_metafile_corpus.py --check
 python3 scripts/render_oracle_contract.py \
   target/render-oracle/render-full-metafile-v1/RENDER_ORACLE.json
+
+python3 scripts/generate_render_floating_corpus.py
+python3 scripts/generate_render_floating_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-floating-v1/RENDER_ORACLE.json
 ```
 
 The 64 one-page inputs form a complete orthogonal lattice over bold, italic,
@@ -230,6 +234,15 @@ representation combinations encode the same generated 160-by-80 four-quadrant
 raster, making decode equivalence independently observable. This batch covers
 the strict single-DIB subset, not general metafile vector replay, floating-object
 layout, external fidelity, or a release requirement.
+
+The eighth 64-input batch combines page/margin horizontal reference, near/far
+horizontal offset, page/margin vertical reference, high/low vertical offset,
+no-wrap/top-and-bottom policy, and behind/front layer in one text-bearing
+floating shape. Fixed page geometry, extent, distances, text, and font defaults
+make anchor placement, paint order, and bounded flow effects independently
+observable. The explicit `FloatingShapePlaceholderOnly` warning remains; this
+batch does not establish arbitrary exclusion-zone reflow, Word-exact
+pagination, external fidelity, or a release requirement.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:

@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The eighth reviewed full-render corpus batch adds 64 deterministic synthetic
+  DOCX inputs for floating-shape geometry, layer, and bounded wrap interactions.
+  A complete six-factor grid combines page/margin horizontal and vertical
+  references, near/far and high/low offsets, no-wrap/top-and-bottom policy, and
+  behind/front layering around one text-bearing shape. It retains the explicit
+  placeholder warning and does not claim arbitrary exclusion-zone reflow,
+  external fidelity, or expand release gates.
 - The seventh reviewed full-render corpus batch adds 64 deterministic synthetic
   DOCX inputs for valid single-raster metafile interactions. A complete
   six-factor grid combines EMF/WMF, raw/gzip payloads, source-blit/SETDIB
