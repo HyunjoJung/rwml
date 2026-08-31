@@ -1,0 +1,10 @@
+{
+  "schema": "rwml.pypdf-lock.v1",
+  "version": "6.16.2",
+  "wheel": {
+    "name": "pypdf-6.16.2-py3-none-any.whl",
+    "bytes": 385060,
+    "sha256": "c8b09a59399062fb45a1b8156c18a787a10a3dae03ac9674397a226712c94604",
+    "url": "https://files.pythonhosted.org/packages/13/f1/a2da3b55acd4ab737bf728c97edaaed5ec1d3c1236acb639dcdfa97e42c7/pypdf-6.16.2-py3-none-any.whl"
+  }
+}

@@ -192,6 +192,62 @@ extraction, and general campaign integration are not provided by this command.
 An outline proof does not establish Unicode semantics, font selection parity,
 shaping correctness, or Word layout fidelity.
 
+## Bounded PDF font resources
+
+`scripts/pdf_font_resources.py` independently extracts catalog-reachable,
+declared font dictionaries and their decoded embedded programs. It follows
+inherited page resources, Form XObjects, annotation appearances, AcroForm
+resources, and ExtGState font references. Repeated references are deduplicated
+by PDF object number and generation, not by font name or observed text. Unused
+declared fonts are included; unreachable objects are not. An empty inventory
+is explicit and does not prove that every text operator has a valid resource.
+
+The opt-in tool uses the exact pure-Python pypdf 6.16.2 wheel recorded in
+`pypdf-lock.json`. Its URL, byte length, and SHA-256 are checked before importing
+a private wheel snapshot inside the existing isolated Linux image. Nothing is
+downloaded automatically or installed in the host environment. The existing
+container, 512-MiB data-memory limit, 20-second CPU limit, and 30-second attached
+worker deadline are unchanged. PDF inputs are limited to 16 MiB, graph traversal
+to 16,384 nodes, 65,536 edges and depth 64, font resources to 64, and aggregate
+decoded font/CMap data to 4 MiB. Each ToUnicode stream is limited to 64 KiB;
+JSON output is limited to 8 MiB. Parser warnings fail rather than being hidden.
+
+```sh
+python3 scripts/pdf_font_resources.py \
+  --pdf <input.pdf> --pypdf-wheel <locked-pypdf-wheel> \
+  --output <fresh-resource-receipt.json>
+python3 scripts/pdf_font_resources.py \
+  --pdf <input.pdf> --pypdf-wheel <locked-pypdf-wheel> \
+  --verify <resource-receipt.json>
+```
+
+Receipts bind the original PDF digest, parser and worker identities, runtime,
+limits, unique font references, exact decoded program bytes, and raw ToUnicode
+bytes. Verification repeats extraction from the original PDF and compares the
+complete receipt. Missing or changed inputs, duplicate or unresolved identities,
+inconsistent embedded types, missing or multiple programs, unsupported filters,
+and exceeded bounds fail. Missing ToUnicode is recorded as `null`, not replaced
+with an inferred map. TrueType, Type 1/PFA, and composite CIDFontType0C are
+supported extraction representations; composite encodings are restricted to
+Identity-H/V. Direct font/stream resources, Type 3, encrypted PDFs, external
+streams, and non-Flate compressed font/CMap streams remain unsupported.
+
+This tool does not parse font outlines or validate CMap semantics, content
+operators, glyph selection, shaping, placement, raster equivalence, or Word
+fidelity. Raw program checks above remain separate; automatic CFF mapping and
+general campaign integration are not implied. Default release validation and
+renderer support claims are unchanged.
+
+The ordinary Python suite covers receipt contracts without pypdf or Docker.
+Run the isolated parser, nested-resource, and malformed-input checks separately:
+
+```sh
+RWML_PYPDF_WHEEL=<locked-pypdf-wheel> \
+  python3 -m unittest discover -s tests/pdf_resources -p 'test_*.py' -v
+```
+
+Missing prerequisites fail this explicit gate; they are not skipped.
+
 ## LibreOffice regression font lock
 
 `libreoffice-font-lock.json` pins eight LibreOffice-bundled Noto Sans, Noto Sans
