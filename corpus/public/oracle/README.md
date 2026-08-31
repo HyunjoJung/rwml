@@ -175,6 +175,30 @@ strict manifest contract. This does not establish page-bottom note placement,
 Word-exact pagination, external fidelity, completion of the planned 800 cases,
 or a release-validation change.
 
+## Full-corpus metafile raster batch
+
+`render-full-metafile-v1.json` is the seventh bounded batch toward the reviewed
+full render corpus. It binds 64 generated one-page DOCX inputs forming the
+complete two-level factorial over EMF/WMF container, raw/gzip payload,
+source-blit/SETDIB record, indexed-palette/RGB565 bitfield DIB, direct-body/
+table-cell placement, and zero/ninety-degree rotation. Each factor level appears
+in 32 inputs and each of the 15 factor pairs has all four states 16 times.
+
+```sh
+python3 scripts/generate_render_metafile_corpus.py
+python3 scripts/generate_render_metafile_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-metafile-v1/RENDER_ORACLE.json
+```
+
+Every representation combination carries the same synthetic 160-by-80
+four-quadrant raster, while package placement and rotation remain observable.
+The separate lock preserves all six earlier generator closures and enforces
+exact factor coverage, unique identities and payloads, byte limits, fresh
+output, deterministic gzip bytes, and the strict manifest contract. This does
+not establish general WMF/EMF vector replay, floating-object layout, external
+fidelity, completion of the planned 800 cases, or a release-validation change.
+
 ## Native fixed-font rendering
 
 `scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.

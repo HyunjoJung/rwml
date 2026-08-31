@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The seventh reviewed full-render corpus batch adds 64 deterministic synthetic
+  DOCX inputs for valid single-raster metafile interactions. A complete
+  six-factor grid combines EMF/WMF, raw/gzip payloads, source-blit/SETDIB
+  records, indexed/RGB565 DIBs, body/table placement, and zero/ninety-degree
+  rotation. All representation variants decode to the same four-quadrant raster;
+  this does not claim general vector replay, external fidelity, or expand
+  release gates.
 - The sixth reviewed full-render corpus batch adds 64 deterministic synthetic
   DOCX inputs for note, field, and accepted-current revision interactions. A
   complete six-factor grid combines footnotes/endnotes, numbering starts and

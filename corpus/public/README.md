@@ -168,6 +168,11 @@ python3 scripts/generate_render_note_field_corpus.py
 python3 scripts/generate_render_note_field_corpus.py --check
 python3 scripts/render_oracle_contract.py \
   target/render-oracle/render-full-note-field-v1/RENDER_ORACLE.json
+
+python3 scripts/generate_render_metafile_corpus.py
+python3 scripts/generate_render_metafile_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-metafile-v1/RENDER_ORACLE.json
 ```
 
 The 64 one-page inputs form a complete orthogonal lattice over bold, italic,
@@ -217,6 +222,14 @@ accepted/rejected note-body revisions, a deterministic formula, and note IDs
 and part order unrelated to visible sequence. This batch establishes bounded
 accepted-current input coverage, not page-bottom note placement, Word-exact
 pagination, external fidelity, or a release requirement.
+
+The seventh 64-input batch combines EMF/WMF containers, raw/gzip payloads,
+source-blit/SETDIB records, indexed-palette/RGB565 bitfield DIBs, direct-body/
+table-cell placement, and zero/ninety-degree rotation in one primary image. All
+representation combinations encode the same generated 160-by-80 four-quadrant
+raster, making decode equivalence independently observable. This batch covers
+the strict single-DIB subset, not general metafile vector replay, floating-object
+layout, external fidelity, or a release requirement.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:

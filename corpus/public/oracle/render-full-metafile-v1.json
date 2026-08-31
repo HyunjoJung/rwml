@@ -1,0 +1,1860 @@
+{
+  "campaign": "public-render-full-metafile-v1",
+  "coverage": {
+    "case_count": 64,
+    "cohort": "metafile-raster-interactions",
+    "design": "complete-2-level-factorial",
+    "factor_case_counts": {
+      "bitfields-dib": 32,
+      "gzip-compressed": 32,
+      "quarter-turn": 32,
+      "setdib-record": 32,
+      "table-cell-placement": 32,
+      "wmf-container": 32
+    },
+    "factor_levels": {
+      "bitfields-dib": [
+        "indexed-palette-dib",
+        "bitfields-dib"
+      ],
+      "gzip-compressed": [
+        "raw-metafile",
+        "gzip-compressed"
+      ],
+      "quarter-turn": [
+        "unrotated-image",
+        "quarter-turn"
+      ],
+      "setdib-record": [
+        "source-blit-record",
+        "setdib-record"
+      ],
+      "table-cell-placement": [
+        "direct-body-placement",
+        "table-cell-placement"
+      ],
+      "wmf-container": [
+        "emf-container",
+        "wmf-container"
+      ]
+    },
+    "factor_names": [
+      "wmf-container",
+      "gzip-compressed",
+      "setdib-record",
+      "bitfields-dib",
+      "table-cell-placement",
+      "quarter-turn"
+    ],
+    "factorial_rows": 64,
+    "held_constant": [
+      "four-quadrant-raster",
+      "one-page-geometry",
+      "single-image-relationship",
+      "visible-text"
+    ],
+    "interaction_scope": "single-raster-image",
+    "pairwise_state_counts": [
+      {
+        "factors": [
+          "wmf-container",
+          "gzip-compressed"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "wmf-container",
+          "setdib-record"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "wmf-container",
+          "bitfields-dib"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "wmf-container",
+          "table-cell-placement"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "wmf-container",
+          "quarter-turn"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "gzip-compressed",
+          "setdib-record"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "gzip-compressed",
+          "bitfields-dib"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "gzip-compressed",
+          "table-cell-placement"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "gzip-compressed",
+          "quarter-turn"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "setdib-record",
+          "bitfields-dib"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "setdib-record",
+          "table-cell-placement"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "setdib-record",
+          "quarter-turn"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "bitfields-dib",
+          "table-cell-placement"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "bitfields-dib",
+          "quarter-turn"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "table-cell-placement",
+          "quarter-turn"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      }
+    ]
+  },
+  "documents": [
+    {
+      "bytes": 17067,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "indexed-palette-dib",
+        "metafiles",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-000",
+      "path": "documents/full-metafile-000.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "e8fb38b7c749f36592fba625e1a8c5044199f7165a99b22bfc45c7c9166e933a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-000"
+    },
+    {
+      "bytes": 16927,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "indexed-palette-dib",
+        "metafiles",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-001",
+      "path": "documents/full-metafile-001.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "fceb52c4d89d32f4bd847cee5620c8dcbeed91652659ccdbe6d1ee56d47ea271",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-001"
+    },
+    {
+      "bytes": 17090,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "single-dib-raster",
+        "source-blit-record",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-002",
+      "path": "documents/full-metafile-002.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "13340f0cf2648fb4ad6d6cdcde2c7aba89900d98b67fa304c18a470ef73d7a30",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-002"
+    },
+    {
+      "bytes": 16950,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "single-dib-raster",
+        "source-blit-record",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-003",
+      "path": "documents/full-metafile-003.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "bf874d74d3afb277120f7ba15e2fa77509803b381437f295c41ab965e8d6dc6f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-003"
+    },
+    {
+      "bytes": 17043,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "indexed-palette-dib",
+        "metafiles",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-004",
+      "path": "documents/full-metafile-004.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "8af4fa4fd4b657ffbcc797a3f9067e881ebde10d54b23ba7eaac5aac27c1e51b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-004"
+    },
+    {
+      "bytes": 16929,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "indexed-palette-dib",
+        "metafiles",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-005",
+      "path": "documents/full-metafile-005.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "c1764060094cb52c5aebf1028379fd7fe89bc8ecfa7b27f41cceafb739f9d942",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-005"
+    },
+    {
+      "bytes": 17066,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "setdib-record",
+        "single-dib-raster",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-006",
+      "path": "documents/full-metafile-006.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "0689761c4b9b6f6c862a81735fcde1f0c9608cbb278cf1b6342926a44cd6812e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-006"
+    },
+    {
+      "bytes": 16952,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "setdib-record",
+        "single-dib-raster",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-007",
+      "path": "documents/full-metafile-007.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "13278c24d6b4e60f600a3a18fefd5b4d3d5deaf8556466c33af6fc129d68298c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-007"
+    },
+    {
+      "bytes": 29863,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "metafiles",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-008",
+      "path": "documents/full-metafile-008.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "e8237cc0f035f5f7c48a1f4a6a8c6cf5d313eb234407dd274fa6ccc3979d3628",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-008"
+    },
+    {
+      "bytes": 29723,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "metafiles",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-009",
+      "path": "documents/full-metafile-009.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "32010949be2dd81707e5b736a7b1eb8e4dc97ecbb690ee09ca3fd63eedffde29",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-009"
+    },
+    {
+      "bytes": 29886,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "gzip-compressed",
+        "metafiles",
+        "single-dib-raster",
+        "source-blit-record",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-010",
+      "path": "documents/full-metafile-010.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "34afb8acc312f0f2aeb06028e04d114b17e73a1fb699d50e1e09305f684c8a21",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-010"
+    },
+    {
+      "bytes": 29746,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "gzip-compressed",
+        "metafiles",
+        "single-dib-raster",
+        "source-blit-record",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-011",
+      "path": "documents/full-metafile-011.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "79012354eed005fa893d56542d24480ff7ce2b227bf75e603f28aa3244a65725",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-011"
+    },
+    {
+      "bytes": 29839,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "metafiles",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-012",
+      "path": "documents/full-metafile-012.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "402b59bad818c59628c9a74477c1ff8a5a9fcf13071fbb184f79d22d2c341e11",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-012"
+    },
+    {
+      "bytes": 29725,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "metafiles",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-013",
+      "path": "documents/full-metafile-013.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "e479841e8489e447ed003e35c6dfdde8f3813294ebb10086220d41f3b8abdee1",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-013"
+    },
+    {
+      "bytes": 29862,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "gzip-compressed",
+        "metafiles",
+        "setdib-record",
+        "single-dib-raster",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-014",
+      "path": "documents/full-metafile-014.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "7015db91a05c8548c54f286da9aec49ef253e361e70b7d22c6bc0e82818c1fb0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-014"
+    },
+    {
+      "bytes": 29748,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "gzip-compressed",
+        "metafiles",
+        "setdib-record",
+        "single-dib-raster",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-015",
+      "path": "documents/full-metafile-015.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "885d7ce2cb307ba48067b38085c2a20f8c7702413fd649333e5a90b5267ed40e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-015"
+    },
+    {
+      "bytes": 17515,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "emf-container",
+        "indexed-palette-dib",
+        "metafiles",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-016",
+      "path": "documents/full-metafile-016.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "2264cd3a7b0cda38fa969f080eaac3d34a9913f7165506615c5799be0f53ee46",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-016"
+    },
+    {
+      "bytes": 17375,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "indexed-palette-dib",
+        "metafiles",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-017",
+      "path": "documents/full-metafile-017.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "7f4bbf336398f444ee557c5ce4404fc235a5c8a98b3ff2ff94d126734febaa12",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-017"
+    },
+    {
+      "bytes": 17538,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "emf-container",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-018",
+      "path": "documents/full-metafile-018.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "201c8a4dece769592ab1ec49d31c036887ae24df58d0ed8fa396b780c73483e6",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-018"
+    },
+    {
+      "bytes": 17398,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-019",
+      "path": "documents/full-metafile-019.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "9ae50e88031617d566fa8e2954389654984e947a850901368221321ce0dce161",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-019"
+    },
+    {
+      "bytes": 17491,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "emf-container",
+        "indexed-palette-dib",
+        "metafiles",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-020",
+      "path": "documents/full-metafile-020.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "6c4013435b4ca74eaaaf0e3eb279ff943b6a689bf332c63ed7463f7f51c840ed",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-020"
+    },
+    {
+      "bytes": 17377,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "indexed-palette-dib",
+        "metafiles",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-021",
+      "path": "documents/full-metafile-021.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "ae312dab9cf2f5c5a7ffe2175d71d867121f527a21271cfaf990807cb2a8c100",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-021"
+    },
+    {
+      "bytes": 17514,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "emf-container",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-022",
+      "path": "documents/full-metafile-022.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "79162c0e62307f426375de6dbcc3a532817f8482f4edee8d2440d38565997f0e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-022"
+    },
+    {
+      "bytes": 17400,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-023",
+      "path": "documents/full-metafile-023.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "c25303b0a06257592d856b544e63233c2fa881baeaea7df5a53163d41b199822",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-023"
+    },
+    {
+      "bytes": 30311,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "emf-container",
+        "metafiles",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-024",
+      "path": "documents/full-metafile-024.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "d6cd0a936725b7cd4ceb771dd1f097bead1ddeae64270c8aea1eb04604785fa3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-024"
+    },
+    {
+      "bytes": 30171,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "metafiles",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-025",
+      "path": "documents/full-metafile-025.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "727fc4875498975ef925a6a6ee21f3291a8cd464e5f507f69e550cc5e479b0c8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-025"
+    },
+    {
+      "bytes": 30334,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "emf-container",
+        "gzip-compressed",
+        "metafiles",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-026",
+      "path": "documents/full-metafile-026.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "256e1ebe7a6316d429c01eb99a909d526fb19c73e0384c3b3d8d629f23b1ec3a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-026"
+    },
+    {
+      "bytes": 30194,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "gzip-compressed",
+        "metafiles",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-027",
+      "path": "documents/full-metafile-027.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "da2b2d65e11157597099bf90da41913a32b0be686bd2b3f797b3a52ee010fe08",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-027"
+    },
+    {
+      "bytes": 30287,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "emf-container",
+        "metafiles",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-028",
+      "path": "documents/full-metafile-028.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "bdabc7ec9319fb85e92f522fda4fa99b84f72adabdf1be1fccc38522c7cde182",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-028"
+    },
+    {
+      "bytes": 30173,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "metafiles",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-029",
+      "path": "documents/full-metafile-029.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "4dd05e513038e91753ecf93b16000830683c8505f666ee26b91b72a326469c11",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-029"
+    },
+    {
+      "bytes": 30310,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "emf-container",
+        "gzip-compressed",
+        "metafiles",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "unrotated-image"
+      ],
+      "format": "docx",
+      "id": "full-metafile-030",
+      "path": "documents/full-metafile-030.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "928cdfe3c8372576a5673c024521b889a212002c07f17bccacbe0855d68dc280",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-030"
+    },
+    {
+      "bytes": 30196,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "gzip-compressed",
+        "metafiles",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "unrotated-image",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-031",
+      "path": "documents/full-metafile-031.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "8f7da5adaf2a3f5d129dd7b9e84cb47f9787697631dcf623accd7ffa0e3488f7",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-031"
+    },
+    {
+      "bytes": 17081,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record"
+      ],
+      "format": "docx",
+      "id": "full-metafile-032",
+      "path": "documents/full-metafile-032.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "07672bd59d3fd3583739aae6cdd6d7a8e517287c590eaf65b24aeed51d33be3f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-032"
+    },
+    {
+      "bytes": 16941,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-033",
+      "path": "documents/full-metafile-033.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "ce7c0a625f7cdcf1d1c2f52205fe2cdc8818314b18012a082f26ca9940ab8729",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-033"
+    },
+    {
+      "bytes": 17104,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "single-dib-raster",
+        "source-blit-record"
+      ],
+      "format": "docx",
+      "id": "full-metafile-034",
+      "path": "documents/full-metafile-034.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "6663f182fce7d5713eccc8f2223d859c35c803503f7672248799d95a9bc45d97",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-034"
+    },
+    {
+      "bytes": 16964,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "single-dib-raster",
+        "source-blit-record",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-035",
+      "path": "documents/full-metafile-035.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "77347300b5014c79ce48c71b8bb6690b220434e2386e48dc7be9eb82b134264d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-035"
+    },
+    {
+      "bytes": 17057,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster"
+      ],
+      "format": "docx",
+      "id": "full-metafile-036",
+      "path": "documents/full-metafile-036.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "36496005a876334e2ddff6411d3d51d9f5736f7b2dbfdec4a32db5c98bb62895",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-036"
+    },
+    {
+      "bytes": 16943,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-037",
+      "path": "documents/full-metafile-037.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "9642e6ea504b2308ec2b3f452a271364ec0b6495e4415276968fb1c8aca10605",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-037"
+    },
+    {
+      "bytes": 17080,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "setdib-record",
+        "single-dib-raster"
+      ],
+      "format": "docx",
+      "id": "full-metafile-038",
+      "path": "documents/full-metafile-038.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "cb983e3c08f4f92ebb9e5d5d78ce22e11d75ad8e6bcc207c879258e27e3a11a9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-038"
+    },
+    {
+      "bytes": 16966,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "direct-body-placement",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "setdib-record",
+        "single-dib-raster",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-039",
+      "path": "documents/full-metafile-039.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "6c35449c34082c57680365ef0a2c6f4fa70bbc4671ebc458c20ae77f85aa39af",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-039"
+    },
+    {
+      "bytes": 29877,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record"
+      ],
+      "format": "docx",
+      "id": "full-metafile-040",
+      "path": "documents/full-metafile-040.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "f8f67d8b4089cede2904b2aa22abdcb74242c1ca325e3571c82588e4a9ef8a1c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-040"
+    },
+    {
+      "bytes": 29737,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-041",
+      "path": "documents/full-metafile-041.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "4d21f27e51e24e29d472a27e503bf1e1895578208f7bbd90819601cc859fb416",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-041"
+    },
+    {
+      "bytes": 29900,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "gzip-compressed",
+        "metafiles",
+        "quarter-turn",
+        "single-dib-raster",
+        "source-blit-record"
+      ],
+      "format": "docx",
+      "id": "full-metafile-042",
+      "path": "documents/full-metafile-042.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "9b12277b0badacd9f3f6e1543f2791244c3984f38f3dfaf53cf9d485b2bd2b20",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-042"
+    },
+    {
+      "bytes": 29760,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "gzip-compressed",
+        "metafiles",
+        "quarter-turn",
+        "single-dib-raster",
+        "source-blit-record",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-043",
+      "path": "documents/full-metafile-043.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "e270ec2977cee8465245bd569f95796ac0cd9d676e64155bff7cf2b3020b509e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-043"
+    },
+    {
+      "bytes": 29853,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster"
+      ],
+      "format": "docx",
+      "id": "full-metafile-044",
+      "path": "documents/full-metafile-044.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "f6cd76f1e5dc9b3f3dce1cea1954b9de8a857db829ae5f0f6910fcb667b2b9e8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-044"
+    },
+    {
+      "bytes": 29739,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-045",
+      "path": "documents/full-metafile-045.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "0cd2d4dd8d4de4addcfff09e5e9cb2408fb1e9a5eefa57400a305affa9ae6ed5",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-045"
+    },
+    {
+      "bytes": 29876,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "emf-container",
+        "gzip-compressed",
+        "metafiles",
+        "quarter-turn",
+        "setdib-record",
+        "single-dib-raster"
+      ],
+      "format": "docx",
+      "id": "full-metafile-046",
+      "path": "documents/full-metafile-046.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "2558da801639d32fb21da9937cafad6e2303968128f0f9cccb5b37a11201f2d6",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-046"
+    },
+    {
+      "bytes": 29762,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "direct-body-placement",
+        "gzip-compressed",
+        "metafiles",
+        "quarter-turn",
+        "setdib-record",
+        "single-dib-raster",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-047",
+      "path": "documents/full-metafile-047.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "86749fe34152f7a4eed0d70205355befb57d360827e3fab154dc7174f255d938",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-047"
+    },
+    {
+      "bytes": 17529,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "emf-container",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement"
+      ],
+      "format": "docx",
+      "id": "full-metafile-048",
+      "path": "documents/full-metafile-048.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "a357caeb37420857d34553b0d54944a151495bb8b357ab9772d9b80b9bd2eb35",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-048"
+    },
+    {
+      "bytes": 17389,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-049",
+      "path": "documents/full-metafile-049.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "6c8cc27191fe9ab1842339a7e07d2c34f1504c90c1ebaa8ef926fe3974b09c91",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-049"
+    },
+    {
+      "bytes": 17552,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "emf-container",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement"
+      ],
+      "format": "docx",
+      "id": "full-metafile-050",
+      "path": "documents/full-metafile-050.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "fcfec1202ba2c512e497267a5ea9a6db03d01c51e317df2732d5c7188c81d8cd",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-050"
+    },
+    {
+      "bytes": 17412,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-051",
+      "path": "documents/full-metafile-051.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "4c590f08c5323696503bafd0f5b81125ec02c13b1d0c1068f8ac7a07a90b38a4",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-051"
+    },
+    {
+      "bytes": 17505,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "emf-container",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement"
+      ],
+      "format": "docx",
+      "id": "full-metafile-052",
+      "path": "documents/full-metafile-052.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "f404c6fc72d34109d9a927118af1fb9bd4c6eeb1f03fac079647c96a3fe6cb0a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-052"
+    },
+    {
+      "bytes": 17391,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-053",
+      "path": "documents/full-metafile-053.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "b318504e077db08e899feee6e9488b68459a3ca39549ae9253d0ea26151dae19",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-053"
+    },
+    {
+      "bytes": 17528,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "emf-container",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement"
+      ],
+      "format": "docx",
+      "id": "full-metafile-054",
+      "path": "documents/full-metafile-054.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "2fd645afb05897e22b2a02b2b73acff38376e9573da4df0df33e37c961b86603",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-054"
+    },
+    {
+      "bytes": 17414,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "deterministic-raster",
+        "gzip-compressed",
+        "indexed-palette-dib",
+        "metafiles",
+        "quarter-turn",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-055",
+      "path": "documents/full-metafile-055.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "80679f56b8257ee4349ea1c2cf5d13d51ae1c2d60afcd29cb8144dc0f6722ffb",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-055"
+    },
+    {
+      "bytes": 30325,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "emf-container",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement"
+      ],
+      "format": "docx",
+      "id": "full-metafile-056",
+      "path": "documents/full-metafile-056.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "59727e1eddaf30a31bbee968a48da622c21f950bdc3c095db4e88ef80c249b91",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-056"
+    },
+    {
+      "bytes": 30185,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-057",
+      "path": "documents/full-metafile-057.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "a65634ab4c46422a03cb6cd922238f857658bc5027f9ad302503f6c943566732",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-057"
+    },
+    {
+      "bytes": 30348,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "emf-container",
+        "gzip-compressed",
+        "metafiles",
+        "quarter-turn",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement"
+      ],
+      "format": "docx",
+      "id": "full-metafile-058",
+      "path": "documents/full-metafile-058.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "22f4d61455082936656d0aa17d961ef1c5b6356ed00f64d520e9f4ad077e623d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-058"
+    },
+    {
+      "bytes": 30208,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "gzip-compressed",
+        "metafiles",
+        "quarter-turn",
+        "single-dib-raster",
+        "source-blit-record",
+        "table-cell-placement",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-059",
+      "path": "documents/full-metafile-059.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "225ddd869190abcfbb7abd09da876585eab332c6c0d8e87b013fa5d6eba088a1",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-059"
+    },
+    {
+      "bytes": 30301,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "emf-container",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement"
+      ],
+      "format": "docx",
+      "id": "full-metafile-060",
+      "path": "documents/full-metafile-060.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "ee616a5f70af66dce19d15dc5b5c4551de2bc674772c30095bd9f77fa4cec1ad",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-060"
+    },
+    {
+      "bytes": 30187,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "metafiles",
+        "quarter-turn",
+        "raw-metafile",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-061",
+      "path": "documents/full-metafile-061.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "b78fe7fcf278405e3cb580475e87a40f46148e0ab7de3eb6e2d0f377a837b371",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-061"
+    },
+    {
+      "bytes": 30324,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "emf-container",
+        "gzip-compressed",
+        "metafiles",
+        "quarter-turn",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement"
+      ],
+      "format": "docx",
+      "id": "full-metafile-062",
+      "path": "documents/full-metafile-062.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "90bbbb6648d4777572f2f10e2223bcb6afe7dd376ae94c4c3f026e772cf465a5",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-062"
+    },
+    {
+      "bytes": 30210,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "bitfields-dib",
+        "deterministic-raster",
+        "gzip-compressed",
+        "metafiles",
+        "quarter-turn",
+        "setdib-record",
+        "single-dib-raster",
+        "table-cell-placement",
+        "wmf-container"
+      ],
+      "format": "docx",
+      "id": "full-metafile-063",
+      "path": "documents/full-metafile-063.docx",
+      "provenance": "rwml-render-full-metafile",
+      "sha256": "d95f50046b86c5c2e4d5cbb975388a9ff2047885e62ba59a98f18d064c43ef47",
+      "source": "generated",
+      "source_path": "scripts/generate_render_metafile_corpus.py#full-metafile-063"
+    }
+  ],
+  "generator_closure_sha256": "d41c4722ebc81cb908a2c8c2b8842b54da350cab4400ccbe3da529868d15c028",
+  "limits": {
+    "max_documents": 64,
+    "max_input_bytes": 65536,
+    "max_pages_per_document": 4,
+    "max_total_input_bytes": 4194304
+  },
+  "provenance": [
+    {
+      "bytes": 1195,
+      "id": "rwml-render-full-metafile",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "provenance/rwml-render-full-metafile.md",
+      "sha256": "66d052890c8c8a5c58d490bebc77265a6d7f2fa351e6f6de7d4bcd2934a3bb6b"
+    }
+  ],
+  "schema": "rwml.render-corpus-batch-lock.v1"
+}
