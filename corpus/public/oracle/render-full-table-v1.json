@@ -1,0 +1,1924 @@
+{
+  "campaign": "public-render-full-table-v1",
+  "coverage": {
+    "case_count": 64,
+    "cohort": "table-topology-paint",
+    "design": "complete-2-level-factorial",
+    "factor_case_counts": {
+      "asymmetric-borders": 32,
+      "cell-shading": 32,
+      "direct-cell-margins": 32,
+      "horizontal-grid-span": 32,
+      "table-bidi-visual": 32,
+      "vertical-row-span": 32
+    },
+    "factor_levels": {
+      "asymmetric-borders": [
+        "uniform-borders",
+        "asymmetric-borders"
+      ],
+      "cell-shading": [
+        "unshaded-cell",
+        "cell-shading"
+      ],
+      "direct-cell-margins": [
+        "inherited-cell-margins",
+        "direct-cell-margins"
+      ],
+      "horizontal-grid-span": [
+        "separate-columns",
+        "horizontal-grid-span"
+      ],
+      "table-bidi-visual": [
+        "table-ltr",
+        "table-bidi-visual"
+      ],
+      "vertical-row-span": [
+        "separate-rows",
+        "vertical-row-span"
+      ]
+    },
+    "factor_names": [
+      "table-bidi-visual",
+      "horizontal-grid-span",
+      "vertical-row-span",
+      "asymmetric-borders",
+      "cell-shading",
+      "direct-cell-margins"
+    ],
+    "factorial_rows": 64,
+    "held_constant": [
+      "fixed-table-layout",
+      "one-page-geometry",
+      "three-equal-grid-columns",
+      "table-width-dxa-7200"
+    ],
+    "interaction_scope": "primary-table",
+    "pairwise_state_counts": [
+      {
+        "factors": [
+          "table-bidi-visual",
+          "horizontal-grid-span"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "table-bidi-visual",
+          "vertical-row-span"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "table-bidi-visual",
+          "asymmetric-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "table-bidi-visual",
+          "cell-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "table-bidi-visual",
+          "direct-cell-margins"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "horizontal-grid-span",
+          "vertical-row-span"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "horizontal-grid-span",
+          "asymmetric-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "horizontal-grid-span",
+          "cell-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "horizontal-grid-span",
+          "direct-cell-margins"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "vertical-row-span",
+          "asymmetric-borders"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "vertical-row-span",
+          "cell-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "vertical-row-span",
+          "direct-cell-margins"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "asymmetric-borders",
+          "cell-shading"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "asymmetric-borders",
+          "direct-cell-margins"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      },
+      {
+        "factors": [
+          "cell-shading",
+          "direct-cell-margins"
+        ],
+        "states": {
+          "00": 16,
+          "01": 16,
+          "10": 16,
+          "11": 16
+        }
+      }
+    ]
+  },
+  "documents": [
+    {
+      "bytes": 4829,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-000",
+      "path": "documents/full-table-000.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "8462c6c2564646d211d794a7a21cd47d91eed6e68a16427634a6880bee1b0cb0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-000"
+    },
+    {
+      "bytes": 4844,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-001",
+      "path": "documents/full-table-001.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "4bfd55f281204bdcb0e7366e4fdf71833d0af50b1e9f39d0c64d50e2bcca5034",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-001"
+    },
+    {
+      "bytes": 4771,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-002",
+      "path": "documents/full-table-002.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "2d922cb15eb0cd9cce57a0e0f3544880bd1662aa4aee86de557590f33e7687d0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-002"
+    },
+    {
+      "bytes": 4786,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-003",
+      "path": "documents/full-table-003.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "c87c3d17e969abf32227f97357bc899eff54d4863812b6349206e0b8979ede5c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-003"
+    },
+    {
+      "bytes": 4859,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-004",
+      "path": "documents/full-table-004.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "70fdfd384795f5a284617c8984b00ab85fbe8da2afb25857f11937886a311cb4",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-004"
+    },
+    {
+      "bytes": 4874,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-005",
+      "path": "documents/full-table-005.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "a341b7187f98f3f6e0d513fed96f2038669a603e14bdaa263339d77d78118c7f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-005"
+    },
+    {
+      "bytes": 4801,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-006",
+      "path": "documents/full-table-006.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "6fd8a5439e097df212121b9476664426e22370384ea0cfb2cc5fc12c3e000665",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-006"
+    },
+    {
+      "bytes": 4816,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-007",
+      "path": "documents/full-table-007.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "dc19896f98b57a9cf356c01958c1fe268d7d9db6e32029864f4a86106588c691",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-007"
+    },
+    {
+      "bytes": 4832,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-008",
+      "path": "documents/full-table-008.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "60c732795eae5fcc1ba1b872bf7651245652adb7beaf8d9fef071d78ecbf3df0",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-008"
+    },
+    {
+      "bytes": 4847,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-009",
+      "path": "documents/full-table-009.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "ee8ee7a4da62807a38917fdff24ebb3131c89689e196cdf694baad6a168e739d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-009"
+    },
+    {
+      "bytes": 4774,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-010",
+      "path": "documents/full-table-010.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "46f9236bda25b6eccc7967ec8a70e036873428651a08d09252956e5e3b6bb311",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-010"
+    },
+    {
+      "bytes": 4789,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-011",
+      "path": "documents/full-table-011.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "f16583560c3b92c50b6d3e0a44ae20cfae6dbdb84876b4c9130c9c542529d680",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-011"
+    },
+    {
+      "bytes": 4862,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-012",
+      "path": "documents/full-table-012.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "ae2e371e581001ddfae5770493620492be461937fa29baf02d8af89d105c9348",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-012"
+    },
+    {
+      "bytes": 4877,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-013",
+      "path": "documents/full-table-013.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "95b50209bce52aab00f628c40977795fbe5ba94cc7106420a25b16868dcac932",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-013"
+    },
+    {
+      "bytes": 4804,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-014",
+      "path": "documents/full-table-014.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "d3780f6cb1340c16cd60ccd581d27bb28f1267f8ee1da4ace279ac5fa2bbfda9",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-014"
+    },
+    {
+      "bytes": 4819,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-015",
+      "path": "documents/full-table-015.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "917d2fbcea8d5797ecf1141b59aca177034be37026035877f7d9b8e0bdcb25fa",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-015"
+    },
+    {
+      "bytes": 4882,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders"
+      ],
+      "format": "docx",
+      "id": "full-table-016",
+      "path": "documents/full-table-016.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "ecff43a064db78807977a1a4565ab412d0f36d20f9031a6bd92ce0c7a1330ad3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-016"
+    },
+    {
+      "bytes": 4897,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders"
+      ],
+      "format": "docx",
+      "id": "full-table-017",
+      "path": "documents/full-table-017.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "01587b52822d321850bbf37dcc166a2c562f275053e3dfcdde1bfbe1396c5cc6",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-017"
+    },
+    {
+      "bytes": 4824,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders"
+      ],
+      "format": "docx",
+      "id": "full-table-018",
+      "path": "documents/full-table-018.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "bc5c778c6ca3813c8a031c5a2c6f40e56643840df7b095b93d488d1f894d77c3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-018"
+    },
+    {
+      "bytes": 4839,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders"
+      ],
+      "format": "docx",
+      "id": "full-table-019",
+      "path": "documents/full-table-019.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "0c4faa799c257d1e02461ecd5bb3507dc52bf5744cca7d5b4a3f53b39c7fe27c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-019"
+    },
+    {
+      "bytes": 4912,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-020",
+      "path": "documents/full-table-020.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "070be70b3375ea0e3f1d41ac92b0b40b16fa91a7de5600cf11df03db8f5ffa03",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-020"
+    },
+    {
+      "bytes": 4927,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-021",
+      "path": "documents/full-table-021.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "1a072c806f4d52f0af36f0208aecbf298e24ace50998f4ccd610954e0094f88b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-021"
+    },
+    {
+      "bytes": 4854,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-022",
+      "path": "documents/full-table-022.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "893e8d11cd28c7e72afb4f9c3d2b84b6276e2d18048d62058b41ce6c8d135d65",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-022"
+    },
+    {
+      "bytes": 4869,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-023",
+      "path": "documents/full-table-023.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "bb32ec4e92d98ce37487ad6d1a65b96721f57a87495725966bf74d4e05f6c0bf",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-023"
+    },
+    {
+      "bytes": 4885,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid"
+      ],
+      "format": "docx",
+      "id": "full-table-024",
+      "path": "documents/full-table-024.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "653276953f80449da62d47f03d3a502b5c3e37476cce75e7bc2b458807b19ea5",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-024"
+    },
+    {
+      "bytes": 4900,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid"
+      ],
+      "format": "docx",
+      "id": "full-table-025",
+      "path": "documents/full-table-025.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "b22787a3ff2a6b46f8d5e2c4f0ce18f077ff3c1547956d498351f73a463f5afb",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-025"
+    },
+    {
+      "bytes": 4827,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid"
+      ],
+      "format": "docx",
+      "id": "full-table-026",
+      "path": "documents/full-table-026.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "55684e2cecef02e5c8b4b510f5ba75cf296f96fa537c67ab67ce1d6838022c1e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-026"
+    },
+    {
+      "bytes": 4842,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid"
+      ],
+      "format": "docx",
+      "id": "full-table-027",
+      "path": "documents/full-table-027.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "a03d91f2099dcdc0e8877b1e2cd3803d27e2bc957a24166d65e158d8b7ca4eae",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-027"
+    },
+    {
+      "bytes": 4915,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-028",
+      "path": "documents/full-table-028.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "f399bb10ddb4fff5ff4fba0a0926bcf18aa886eaa9f88addff0aeaf1cd89a642",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-028"
+    },
+    {
+      "bytes": 4930,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "inherited-cell-margins",
+        "separate-columns",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-029",
+      "path": "documents/full-table-029.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "28fbcd099b50c73cc1eb6f0408266ccc2882e8c57049fad950ec084ea4ba5e55",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-029"
+    },
+    {
+      "bytes": 4857,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-030",
+      "path": "documents/full-table-030.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "254fff3ed93e9d420d7393e3945478e5c96a595da69e006f64796eb1fe879000",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-030"
+    },
+    {
+      "bytes": 4872,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "inherited-cell-margins",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-031",
+      "path": "documents/full-table-031.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "79d09302082e0a17f96633e94d50d05cf90b316a4188858464886c6fa02941bb",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-031"
+    },
+    {
+      "bytes": 4978,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-032",
+      "path": "documents/full-table-032.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "a2632055e352b77ae41b4232d2c8fd01566df700cbe458a9efa02cf8689e144d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-032"
+    },
+    {
+      "bytes": 4993,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-033",
+      "path": "documents/full-table-033.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "6e91b1df6cd071b9978764507dd9bd1a00cef6f157332008b6d41fd74b2597d8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-033"
+    },
+    {
+      "bytes": 4920,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-034",
+      "path": "documents/full-table-034.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "1b27107f0a191676d69f0dc55012cfec9dcba2fe5df4f1ceee86cd15affb0a7e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-034"
+    },
+    {
+      "bytes": 4935,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-035",
+      "path": "documents/full-table-035.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "5ae0485df284802bf96d2033638d41bcefb59026031f91785b9dde0679411176",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-035"
+    },
+    {
+      "bytes": 5008,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-036",
+      "path": "documents/full-table-036.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "2d726a8ee2c4354331e2acbabcd4622df5680dbb3fe11d47ffe5545585529db6",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-036"
+    },
+    {
+      "bytes": 5023,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-037",
+      "path": "documents/full-table-037.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "99ee8462fb9eefd19a7bccd794e61aa1b569642af9324346618bffa4a265011c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-037"
+    },
+    {
+      "bytes": 4950,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-038",
+      "path": "documents/full-table-038.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "d06bafa2fb12cd222be7b74dd54c4b2b29fe06dc3953248f95f078f3b834992a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-038"
+    },
+    {
+      "bytes": 4965,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-039",
+      "path": "documents/full-table-039.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "18442212ad01f4f0e2391a5fae4468446743b8bd218ce0373b62d88916b7ff4a",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-039"
+    },
+    {
+      "bytes": 4981,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-040",
+      "path": "documents/full-table-040.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "d5708e8cd22b6608cdc84d5b75c393236acdc436275d7d453701f268312a1a6b",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-040"
+    },
+    {
+      "bytes": 4996,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-041",
+      "path": "documents/full-table-041.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "94696c1cf37d4294df8ea5f3d72b943563411ad654fe374ae4e63dfcf527e39d",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-041"
+    },
+    {
+      "bytes": 4923,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-042",
+      "path": "documents/full-table-042.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "f154df7234e7528092e6177379fe540a6a7ad243861637bde2d4d4b9f7e89e63",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-042"
+    },
+    {
+      "bytes": 4938,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell"
+      ],
+      "format": "docx",
+      "id": "full-table-043",
+      "path": "documents/full-table-043.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "c8dd7a815b2f6d328d049c67d713a747737aec775e2339afa9fce47060fecb87",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-043"
+    },
+    {
+      "bytes": 5011,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-044",
+      "path": "documents/full-table-044.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "4d16e853977072fe72cc84a9f0ba3e3b1b794ea70d84f49fb2f45b694c0c8d7f",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-044"
+    },
+    {
+      "bytes": 5026,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-045",
+      "path": "documents/full-table-045.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "e96061998a58c3c10de868c8741670d2bdf934cd84731cea142aaf14c9760b62",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-045"
+    },
+    {
+      "bytes": 4953,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-046",
+      "path": "documents/full-table-046.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "0fdf1aa464fc170c8d8cb1ccf416d3278d374dd4fec29cbc7c2732513f2a92d3",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-046"
+    },
+    {
+      "bytes": 4968,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "unshaded-cell",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-047",
+      "path": "documents/full-table-047.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "ee283e8f72bd259ed896c55f3b5062665b3308c1b2f226651dec69fc58498c65",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-047"
+    },
+    {
+      "bytes": 5031,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders"
+      ],
+      "format": "docx",
+      "id": "full-table-048",
+      "path": "documents/full-table-048.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "454c07b081c5eacaaff7448ca060b1e50be7516850a306bc49ed4b99f3f803a8",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-048"
+    },
+    {
+      "bytes": 5046,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders"
+      ],
+      "format": "docx",
+      "id": "full-table-049",
+      "path": "documents/full-table-049.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "89f67c84776f4bdcf5db0950b6122472c71979246e20938c7258dbfb44f281da",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-049"
+    },
+    {
+      "bytes": 4973,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders"
+      ],
+      "format": "docx",
+      "id": "full-table-050",
+      "path": "documents/full-table-050.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "3e60393440d54578409f436d31d869f8876ca3f21b3e2759b2422858dfe36cff",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-050"
+    },
+    {
+      "bytes": 4988,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders"
+      ],
+      "format": "docx",
+      "id": "full-table-051",
+      "path": "documents/full-table-051.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "2e039f579d6a924724266160f32f253dcbff55d43f6857bca05710752a4cc654",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-051"
+    },
+    {
+      "bytes": 5061,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-052",
+      "path": "documents/full-table-052.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "12ca74e14f63835c46605e89bb54bf4034d0ca00cf324aed08b508251f31ec80",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-052"
+    },
+    {
+      "bytes": 5076,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-053",
+      "path": "documents/full-table-053.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "d0b9c88dcfe205ab092be8c97473a86123b3d151a4aa679b7473b73d08d48412",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-053"
+    },
+    {
+      "bytes": 5003,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-054",
+      "path": "documents/full-table-054.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "c6618e09ab1c68c5ef2c50ce98420e54da8a2998257c1202965b3873484869bc",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-054"
+    },
+    {
+      "bytes": 5018,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "uniform-borders",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-055",
+      "path": "documents/full-table-055.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "219c0110be3d7b07986e1618fe045450be59d0375977f77b9926d214b5c05764",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-055"
+    },
+    {
+      "bytes": 5034,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid"
+      ],
+      "format": "docx",
+      "id": "full-table-056",
+      "path": "documents/full-table-056.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "2bbfbacdc01a70877b1c18b08d18d2c77b7a468f608a5cf5c2bc0c666e75a7d6",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-056"
+    },
+    {
+      "bytes": 5049,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid"
+      ],
+      "format": "docx",
+      "id": "full-table-057",
+      "path": "documents/full-table-057.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "b3eb8997a9d5d54efb42c0466507af855b93536eb2bff3918308c1a286de6b6e",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-057"
+    },
+    {
+      "bytes": 4976,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "separate-rows",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid"
+      ],
+      "format": "docx",
+      "id": "full-table-058",
+      "path": "documents/full-table-058.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "5682f93790d764857e6e4dd10953fef6242d063189aff981a271006106c36bfe",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-058"
+    },
+    {
+      "bytes": 4991,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "separate-rows",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid"
+      ],
+      "format": "docx",
+      "id": "full-table-059",
+      "path": "documents/full-table-059.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "ca3632f52cefcfa6133ce2bc65a1218b2b6bf943de0cc1841b64980c06f61240",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-059"
+    },
+    {
+      "bytes": 5064,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-060",
+      "path": "documents/full-table-060.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "c740cee9776ae2f5c9a010c2a1f6c48cbdf5ffae0438c539ab8bb0317723a95c",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-060"
+    },
+    {
+      "bytes": 5079,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "separate-columns",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-061",
+      "path": "documents/full-table-061.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "1e30389bf07f0cc26a58c9e3225a88af453ce247bd4fb57d28a7c08404cd9c53",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-061"
+    },
+    {
+      "bytes": 5006,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "table-ltr",
+        "table-topology-paint",
+        "three-column-grid",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-062",
+      "path": "documents/full-table-062.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "6a2bddcb0272e1deb73bb07415cef7bcd87b6654539b99aa0909113cb3270642",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-062"
+    },
+    {
+      "bytes": 5021,
+      "expected": {
+        "pages": 1,
+        "warnings": []
+      },
+      "features": [
+        "asymmetric-borders",
+        "cell-bottom-alignment",
+        "cell-shading",
+        "direct-cell-margins",
+        "fixed-table-layout",
+        "horizontal-grid-span",
+        "table-bidi-visual",
+        "table-topology-paint",
+        "three-column-grid",
+        "vertical-row-span"
+      ],
+      "format": "docx",
+      "id": "full-table-063",
+      "path": "documents/full-table-063.docx",
+      "provenance": "rwml-render-full-table",
+      "sha256": "69769fbf580a1e1e7ff54d2d0527afdc1891d1d34db1987dc9bc85033fba3dbb",
+      "source": "generated",
+      "source_path": "scripts/generate_render_table_corpus.py#full-table-063"
+    }
+  ],
+  "generator_closure_sha256": "f5002676e6d949caeb29240ae5a4b6b628e2e2e1e2f6cc9c63a5e2d7398b2a4b",
+  "limits": {
+    "max_documents": 64,
+    "max_input_bytes": 65536,
+    "max_pages_per_document": 4,
+    "max_total_input_bytes": 4194304
+  },
+  "provenance": [
+    {
+      "bytes": 1370,
+      "id": "rwml-render-full-table",
+      "kind": "generated",
+      "license": "MIT",
+      "reference": "provenance/rwml-render-full-table.md",
+      "sha256": "0d19b781454961c8f286e14e095fc60672448af3692a45f48f4955a30c9b7410"
+    }
+  ],
+  "schema": "rwml.render-corpus-batch-lock.v1"
+}

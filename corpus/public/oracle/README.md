@@ -96,6 +96,31 @@ byte limits, a canonical lock, and the strict manifest contract. The lock does
 not establish complete RTL support, external-oracle fidelity, completion of the
 planned 800 cases, or a release-validation change.
 
+## Full-corpus table topology/paint batch
+
+`render-full-table-v1.json` is the fourth bounded batch toward the reviewed full
+render corpus. It binds 64 generated one-page DOCX inputs forming the complete
+two-level factorial over visual RTL table order, horizontal grid span, vertical
+row span, uniform/asymmetric borders, cell shading, and inherited/direct cell
+margins. All six factors meet in one primary table: each level appears in 32
+inputs and each of the 15 factor pairs has all four states 16 times. A fixed
+bottom-aligned cell beside taller content makes vertical placement observable.
+
+```sh
+python3 scripts/generate_render_table_corpus.py
+python3 scripts/generate_render_table_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-table-v1/RENDER_ORACLE.json
+```
+
+Table width, fixed layout, equal grid columns, and one-page geometry are held
+constant. The separate unequal-column oracle continues to own width-policy,
+row-fragment, and column/page-handoff variation. The new generator preserves all
+three earlier batch closures and enforces fresh output, exact factor coverage,
+unique identities and payloads, byte limits, a canonical lock, and the strict
+manifest contract. This lock does not establish external fidelity, complete the
+planned 800 cases, or change release validation.
+
 ## Native fixed-font rendering
 
 `scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.

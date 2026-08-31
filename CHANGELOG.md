@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The fourth reviewed full-render corpus batch adds 64 deterministic synthetic
+  DOCX inputs for table topology and paint interactions. A complete six-factor
+  grid combines visual RTL order, horizontal and vertical spans, asymmetric
+  borders, cell shading, and direct cell margins in one table, with fixed bottom
+  alignment as a control. It keeps width, pagination, and row fragmentation in
+  the separate unequal-column oracle and does not expand release gates.
 - The third reviewed full-render corpus batch adds 64 deterministic synthetic
   DOCX inputs for list/RTL interactions. A complete six-factor grid combines
   Arabic/Hebrew text, paragraph and run direction, ordered/bullet numbering,

@@ -36,11 +36,12 @@ Every file here is safe to redistribute:
   campaigns that are intentionally outside the ordinary release corpus. The
   unequal-table lock covers 48 table-continuation cases. The render-pilot lock
   combines all 21 ordinary public inputs with 19 focused generated inputs, 51
-  expected pages, and 71 feature labels. The first three full-corpus batch
+  expected pages, and 71 feature labels. The first four full-corpus batch
   locks separately cover 64 generated run-paint cases, 64 generated paragraph-
-  geometry cases, and 64 generated list/RTL interaction cases. Each batch has
-  balanced factors and complete declared pairwise coverage. Exact DOCX inputs
-  and strict manifests are generated under ignored `target/` output.
+  geometry cases, 64 generated list/RTL interaction cases, and 64 generated
+  table topology/paint cases. Each batch has balanced factors and complete
+  declared pairwise coverage. Exact DOCX inputs and strict manifests are
+  generated under ignored `target/` output.
 - `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
   Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
   self-contained input for the strict public extraction benchmark.
@@ -151,6 +152,11 @@ python3 scripts/generate_render_list_rtl_corpus.py
 python3 scripts/generate_render_list_rtl_corpus.py --check
 python3 scripts/render_oracle_contract.py \
   target/render-oracle/render-full-list-rtl-v1/RENDER_ORACLE.json
+
+python3 scripts/generate_render_table_corpus.py
+python3 scripts/generate_render_table_corpus.py --check
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-table-v1/RENDER_ORACLE.json
 ```
 
 The 64 one-page inputs form a complete orthogonal lattice over bold, italic,
@@ -174,6 +180,14 @@ Every factor level occurs in 32 cases and every factor pair has all four states
 16 times. Fixed supplemental probes cover numbering starts, replacement levels,
 three-level labels, and bullet fallback. This remains bounded diagnostic input
 evidence, not complete RTL support, external-oracle fidelity, or a release gate.
+
+The fourth 64-input batch holds width, fixed layout, equal grid columns, and
+one-page geometry constant while varying visual RTL order, horizontal and
+vertical spans, uniform/asymmetric borders, cell shading, and inherited/direct
+cell margins in one primary table. A fixed bottom-aligned cell with a taller
+peer makes vertical placement observable. Width-policy, row-fragment, and
+column/page-handoff coverage remains in the unequal-column oracle. This batch is
+diagnostic input evidence, not external fidelity or a release requirement.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:
