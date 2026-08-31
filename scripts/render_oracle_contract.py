@@ -55,11 +55,14 @@ except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
 CORPUS_SCHEMA = "rwml.render-oracle-corpus.v1"
 EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v4"
 LEGACY_CAPTURE_EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v5"
-CAPTURE_EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v6"
+ANALYSIS_CAPTURE_EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v6"
+CAPTURE_EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v7"
 LEGACY_CAMPAIGN_CAPTURE_SCHEMA = "rwml.render-campaign-capture.v1"
-CAMPAIGN_CAPTURE_SCHEMA = "rwml.render-campaign-capture.v2"
+ANALYSIS_CAMPAIGN_CAPTURE_SCHEMA = "rwml.render-campaign-capture.v2"
+CAMPAIGN_CAPTURE_SCHEMA = "rwml.render-campaign-capture.v3"
 CAPTURE_SCHEMAS = {
     LEGACY_CAPTURE_EVIDENCE_SCHEMA: LEGACY_CAMPAIGN_CAPTURE_SCHEMA,
+    ANALYSIS_CAPTURE_EVIDENCE_SCHEMA: ANALYSIS_CAMPAIGN_CAPTURE_SCHEMA,
     CAPTURE_EVIDENCE_SCHEMA: CAMPAIGN_CAPTURE_SCHEMA,
 }
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024

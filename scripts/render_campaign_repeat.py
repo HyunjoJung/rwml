@@ -84,7 +84,7 @@ def replay_native_outputs(root: Path, corpus) -> dict[str, dict[str, bytes]]:
                     report,
                     fonts,
                 ),
-                timeout=120,
+                timeout=capture.NATIVE_WALL_SECONDS,
                 cwd=capture.ROOT,
             )
             result[document.case_id] = {

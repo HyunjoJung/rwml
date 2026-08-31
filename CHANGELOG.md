@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Version 3 render-campaign captures and version 7 capture-bound metric evidence
+  run every native render and retained replay through a digest-bound POSIX
+  launcher. Kernel limits cap CPU time at 120 seconds, each output file at 16
+  MiB, open files at 256, the process-count limit at 64, and core files at zero;
+  the existing 120-second wall and bounded stdout/stderr pipes remain active.
+  Linux also caps address space at 4 GiB. Darwin records its unsupported hard
+  address-space ceiling explicitly instead of claiming memory isolation.
+  Earlier v1/v5 and v2/v6 evidence pairs remain valid. This remains diagnostic
+  hardening and does not expand release gates.
 - Version 2 LibreOffice table and render-campaign capture receipts, paired with
   version 6 capture-bound metric evidence, bind bounded, path-neutral byte
   identities for the CPython executable, shared and standard libraries,

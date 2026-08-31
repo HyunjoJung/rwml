@@ -90,6 +90,9 @@ class CaptureTests(unittest.TestCase):
             )
         analysis_tools.assert_called_once_with({"numpy": ("numpy", "2.4.4", numpy)})
         self.assertEqual(material["analysis_tools"], {"identity": "bound"})
+        self.assertEqual(
+            material["native_execution"], capture.native_resource_profile()
+        )
         self.assertEqual(execution, {"image": "image"})
 
     def test_native_build_is_offline_and_does_not_install_a_toolchain(self):
@@ -283,19 +286,24 @@ class CaptureTests(unittest.TestCase):
             evidence = contract.bind_evidence_report(
                 report, corpus, environment, capture=binding
             )
-            self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v6")
-            legacy = copy.deepcopy(evidence)
-            legacy["schema"] = "rwml.render-oracle-evidence.v5"
-            legacy["capture"]["schema"] = "rwml.render-campaign-capture.v1"
-            contract.validate_evidence_report(legacy, corpus)
-            for incompatible in (copy.deepcopy(evidence), copy.deepcopy(legacy)):
-                incompatible["capture"]["schema"] = (
-                    "rwml.render-campaign-capture.v1"
-                    if incompatible["schema"] == "rwml.render-oracle-evidence.v6"
-                    else "rwml.render-campaign-capture.v2"
+            self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v7")
+            compatible = (
+                ("rwml.render-oracle-evidence.v5", "rwml.render-campaign-capture.v1"),
+                ("rwml.render-oracle-evidence.v6", "rwml.render-campaign-capture.v2"),
+                ("rwml.render-oracle-evidence.v7", "rwml.render-campaign-capture.v3"),
+            )
+            for evidence_schema, capture_schema in compatible:
+                retained = copy.deepcopy(evidence)
+                retained["schema"] = evidence_schema
+                retained["capture"]["schema"] = capture_schema
+                contract.validate_evidence_report(retained, corpus)
+                retained["capture"]["schema"] = (
+                    "rwml.render-campaign-capture.v2"
+                    if capture_schema != "rwml.render-campaign-capture.v2"
+                    else "rwml.render-campaign-capture.v3"
                 )
                 with self.assertRaises(ValueError):
-                    contract.validate_evidence_report(incompatible, corpus)
+                    contract.validate_evidence_report(retained, corpus)
             for mutation in (
                 "missing",
                 "duplicate",
@@ -330,24 +338,45 @@ class CaptureTests(unittest.TestCase):
             Path("report.json"),
             paths,
         )
+        separator = command.index("--")
         self.assertEqual(
-            command,
+            command[:2],
+            [sys.executable, str(capture.NATIVE_RESOURCE_LAUNCHER)],
+        )
+        self.assertEqual(
+            command[separator + 1 :],
             [
-                "renderer",
-                "input.docx",
-                "out.pdf",
+                str(Path("renderer").absolute()),
+                str(Path("input.docx").absolute()),
+                str(Path("out.pdf").absolute()),
                 "--report-json",
-                "report.json",
+                str(Path("report.json").absolute()),
                 "--font",
-                "z.ttf",
+                str(Path("z.ttf").absolute()),
                 "--font",
-                "a.otf",
+                str(Path("a.otf").absolute()),
             ],
         )
+        for value in ("120", "16777216", "256", "64", "0"):
+            self.assertIn(value, command[:separator])
         self.assertNotIn("cargo", command)
         self.assertNotIn("--fixed-fonts", command)
         with self.assertRaises(ValueError):
             capture.native_command(Path("x"), Path("i"), Path("o"), Path("r"), [])
+
+    def test_native_resource_profile_is_explicit_about_platform_memory_limit(self):
+        with mock.patch.object(capture.sys, "platform", "darwin"):
+            darwin = capture.native_resource_profile()
+        with mock.patch.object(capture.sys, "platform", "linux"):
+            linux = capture.native_resource_profile()
+        self.assertEqual(
+            darwin["address_space"], {"mode": "unsupported", "bytes": None}
+        )
+        self.assertEqual(
+            linux["address_space"],
+            {"mode": "rlimit-as", "bytes": 4 * 1024 * 1024 * 1024},
+        )
+        self.assertEqual(darwin["file_bytes"], capture.resources.worker.MAX_PDF_BYTES)
 
     def test_staged_font_closure_has_sorted_container_paths_but_retains_native_order(
         self,
@@ -539,12 +568,14 @@ class CaptureTests(unittest.TestCase):
                 }
 
             def execute(command, **kwargs):
-                self.assertEqual(kwargs["timeout"], 120)
+                self.assertEqual(kwargs["timeout"], capture.NATIVE_WALL_SECONDS)
+                payload = command[command.index("--") + 1 :]
                 self.assertEqual(
-                    command[-2:], ["--font", str(output / "fonts/Regular.ttf")]
+                    payload[-2:],
+                    ["--font", str((output / "fonts/Regular.ttf").absolute())],
                 )
-                Path(command[2]).write_bytes(b"%PDF-native")
-                Path(command[4]).write_text('{"warnings": []}')
+                Path(payload[2]).write_bytes(b"%PDF-native")
+                Path(payload[4]).write_text('{"warnings": []}')
                 return b""
 
             check = {
@@ -640,7 +671,7 @@ class CaptureTests(unittest.TestCase):
                             {"font_mode": "locked-shared-fonts"}
                         ),
                     )
-                self.assertEqual(metrics["schema"], "rwml.render-oracle-evidence.v6")
+                self.assertEqual(metrics["schema"], "rwml.render-oracle-evidence.v7")
                 self.assertEqual(metrics["summary"]["skipped"], 0)
                 self.assertIsNone(metrics["summary"]["reference_stable"])
                 self.assertEqual(

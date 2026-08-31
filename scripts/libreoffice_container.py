@@ -35,6 +35,8 @@ RECIPE_FILES = {
 }
 MAX_PDF_BYTES = 64 * 1024 * 1024
 MAX_CAPTURE_BYTES = MAX_PDF_BYTES + 1024 * 1024
+DEFAULT_STDOUT_LIMIT = 1024 * 1024
+STDERR_LIMIT = 65536
 CAPTURE_MEMBERS = {
     "output.pdf",
     "version.txt",
@@ -155,7 +157,7 @@ def run_bounded(
     command: list[str],
     *,
     timeout: float = 30,
-    stdout_limit: int = 1024 * 1024,
+    stdout_limit: int = DEFAULT_STDOUT_LIMIT,
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
 ) -> bytes:
@@ -190,7 +192,7 @@ def run_bounded(
                             selector.unregister(key.fileobj)
                             continue
                         output[key.data].extend(chunk)
-                        limit = stdout_limit if key.data == "stdout" else 65536
+                        limit = stdout_limit if key.data == "stdout" else STDERR_LIMIT
                         if len(output[key.data]) > limit:
                             raise ValueError("oracle process output exceeded its bound")
                 try:

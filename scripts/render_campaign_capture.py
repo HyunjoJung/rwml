@@ -35,6 +35,14 @@ MAX_BUNDLE_BYTES = 16 * 1024 * 1024
 MAX_RENDERER_BYTES = 256 * 1024 * 1024
 MAX_CAMPAIGN_BYTES = 2 * 1024 * 1024 * 1024
 MAX_CAMPAIGN_SECONDS = 4 * 60 * 60
+NATIVE_RESOURCE_LAUNCHER = ROOT / "scripts/posix_resource_exec.py"
+NATIVE_RESOURCE_SCHEMA = "rwml.native-render-resource-limits.v1"
+NATIVE_WALL_SECONDS = 120
+NATIVE_CPU_SECONDS = 120
+NATIVE_ADDRESS_SPACE_BYTES = 4 * 1024 * 1024 * 1024
+NATIVE_OPEN_FILES = 256
+NATIVE_PROCESSES = 64
+NATIVE_CORE_BYTES = 0
 NATIVE_BUILD_ENV = {
     "CARGO_INCREMENTAL": "0",
     "CARGO_PROFILE_DEV_DEBUG": "0",
@@ -62,14 +70,63 @@ def identity(payload: bytes) -> dict:
     return {"bytes": len(payload), "sha256": digest(payload)}
 
 
+def native_resource_profile() -> dict:
+    address_space = (
+        {"mode": "rlimit-as", "bytes": NATIVE_ADDRESS_SPACE_BYTES}
+        if sys.platform.startswith("linux")
+        else {"mode": "unsupported", "bytes": None}
+    )
+    return {
+        "schema": NATIVE_RESOURCE_SCHEMA,
+        "mode": "python-posix-setrlimit-exec",
+        "wall_seconds": NATIVE_WALL_SECONDS,
+        "cpu_seconds": NATIVE_CPU_SECONDS,
+        "file_bytes": resources.worker.MAX_PDF_BYTES,
+        "open_files": NATIVE_OPEN_FILES,
+        "processes": NATIVE_PROCESSES,
+        "core_bytes": NATIVE_CORE_BYTES,
+        "stdout_bytes": runtime.DEFAULT_STDOUT_LIMIT,
+        "stderr_bytes": runtime.STDERR_LIMIT,
+        "address_space": address_space,
+    }
+
+
 def native_command(
     binary: Path, source: Path, pdf: Path, report: Path, fonts: list[Path]
 ) -> list[str]:
     if not 1 <= len(fonts) <= 128:
         raise ValueError("native capture requires ordered explicit fonts")
-    command = [str(binary), str(source), str(pdf), "--report-json", str(report)]
+    profile = native_resource_profile()
+    command = [
+        sys.executable,
+        str(NATIVE_RESOURCE_LAUNCHER),
+        "--cpu-seconds",
+        str(profile["cpu_seconds"]),
+        "--file-bytes",
+        str(profile["file_bytes"]),
+        "--open-files",
+        str(profile["open_files"]),
+        "--processes",
+        str(profile["processes"]),
+        "--core-bytes",
+        str(profile["core_bytes"]),
+    ]
+    if profile["address_space"]["bytes"] is not None:
+        command.extend(
+            ["--address-space-bytes", str(profile["address_space"]["bytes"])]
+        )
+    command.extend(
+        [
+            "--",
+            str(binary.absolute()),
+            str(source.absolute()),
+            str(pdf.absolute()),
+            "--report-json",
+            str(report.absolute()),
+        ]
+    )
     for font in fonts:
-        command.extend(["--font", str(font)])
+        command.extend(["--font", str(font.absolute())])
     return command
 
 
@@ -184,6 +241,7 @@ def harness_identity() -> dict:
     result = table_capture.harness_identity()
     for name in (
         "render_campaign_capture.py",
+        "posix_resource_exec.py",
         "shared_oracle_fonts.py",
         "pdf_font_resources.py",
         "pdf_font_worker.py",
@@ -221,6 +279,7 @@ def prepare_environment(
         "pypdf": resources.tool_lock(),
         "harness": harness_identity(),
         "analysis_tools": table_capture.analysis_tools(additional),
+        "native_execution": native_resource_profile(),
         "native_build": {
             "environment": dict(NATIVE_BUILD_ENV),
             "target_directory": "fresh",
@@ -540,7 +599,7 @@ def run(
                     directory / "native-report.json",
                     [output / "fonts" / entry["name"] for entry in lock.fonts],
                 ),
-                timeout=120,
+                timeout=NATIVE_WALL_SECONDS,
                 cwd=ROOT,
             )
         row = inspect_case(
