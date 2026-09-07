@@ -31,6 +31,8 @@ from render_oracle_contract import (
 ROOT = runtime.ROOT
 SCHEMA = CAMPAIGN_CAPTURE_SCHEMA
 FONT_SCHEMA = "rwml.campaign-font-checks.v1"
+# Fixed by the locked recipe; both engines detect DOC/DOCX from the input bytes.
+STAGED_INPUT_NAME = "input.docx"
 MAX_BUNDLE_BYTES = 16 * 1024 * 1024
 MAX_RENDERER_BYTES = 256 * 1024 * 1024
 MAX_CAMPAIGN_BYTES = 2 * 1024 * 1024 * 1024
@@ -433,7 +435,7 @@ def inspect_case(
     verify: bool,
 ) -> dict:
     expected = {
-        "input.docx",
+        STAGED_INPUT_NAME,
         "SHA256SUMS",
         "native.pdf",
         "native-report.json",
@@ -446,11 +448,11 @@ def inspect_case(
     source = source_payload(document)
     require_equal(
         source,
-        runtime.read_regular_file(directory / "input.docx", document.input_bytes),
+        runtime.read_regular_file(directory / STAGED_INPUT_NAME, document.input_bytes),
         "retained input",
     )
     require_equal(
-        (digest(source) + "  input.docx\n").encode(),
+        (digest(source) + f"  {STAGED_INPUT_NAME}\n").encode(),
         runtime.read_regular_file(directory / "SHA256SUMS", 1024),
         "input checksum",
     )
@@ -500,8 +502,6 @@ def run(
         raise ValueError("capture output must be fresh")
     revision = table_capture.source_revision()
     corpus = load_corpus_manifest(manifest)
-    if any(document.format != "docx" for document in corpus.documents):
-        raise ValueError("locked campaign capture currently requires DOCX inputs")
     if output.resolve().is_relative_to(
         pack.resolve()
     ) or output.resolve().is_relative_to(corpus.path.parent.resolve()):
@@ -580,9 +580,10 @@ def run(
         if not verify:
             directory.mkdir()
             payload = source_payload(document)
-            write_new(directory / "input.docx", payload)
+            write_new(directory / STAGED_INPUT_NAME, payload)
             write_new(
-                directory / "SHA256SUMS", (digest(payload) + "  input.docx\n").encode()
+                directory / "SHA256SUMS",
+                (digest(payload) + f"  {STAGED_INPUT_NAME}\n").encode(),
             )
             captured = runtime.capture_document(
                 execution["image"], directory, output / "fonts"
@@ -594,7 +595,7 @@ def run(
             runtime.run_bounded(
                 native_command(
                     output / "renderer",
-                    directory / "input.docx",
+                    directory / STAGED_INPUT_NAME,
                     directory / "native.pdf",
                     directory / "native-report.json",
                     [output / "fonts" / entry["name"] for entry in lock.fonts],

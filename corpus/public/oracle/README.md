@@ -249,6 +249,37 @@ documents, establish Microsoft Word provenance or broad producer diversity,
 compare PDF layout with the text extractors, complete the planned 800 cases, or
 change release validation.
 
+## Full-corpus interaction batch and composition
+
+`render-full-interaction-v1.json` binds 197 generated DOCX inputs combining
+character paint, paragraph spacing and tabs, lists and RTL, nested tables,
+unequal columns, headers, notes, accepted-current fields, raster images, and
+floating shape flow. Sixteen binary factors each appear in 98 or 99 cases;
+every pair covers all four states between 47 and 52 times. These short
+documents exercise shared document structure; they do not exhaust all
+combinations or force every pagination control to affect a page break.
+
+`render-full-v1.json` composes twelve existing locks into exactly 800 unique
+inputs: eight 64-case batches, the three legacy DOC files, the 40-case pilot,
+the 48-case unequal-table matrix, and the 197 interaction cases. The ordinary
+public corpus and smoke subset are already included through the pilot. The
+composition rejects duplicate document IDs, input hashes, and output paths,
+conflicting provenance, changed payloads, and stale source locks.
+
+```sh
+python3 scripts/generate_render_interaction_corpus.py --check
+python3 scripts/compose_render_full_corpus.py --check
+python3 scripts/compose_render_full_corpus.py
+python3 scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-v1/RENDER_ORACLE.json
+```
+
+The resulting corpus has 797 DOCX and three DOC inputs, with 1,059 expected
+native pages. All payloads and provenance are checked before a fresh output
+directory is published. Corpus composition and native page/warning checks
+establish input readiness; external fidelity, repeated captures, and release
+acceptance require their separate evidence.
+
 ## Native fixed-font rendering
 
 `scripts/render_validate.py` uses the `to_pdf` example's `--fixed-fonts` path.
@@ -725,7 +756,7 @@ documents or establish authenticated producer provenance. Receipts bind observed
 bytes and identities; two separately captured campaigns are still needed for
 repeatability, and reviewed Word diagnostics remain a separate requirement.
 
-Shared capture metrics use `rwml.render-oracle-evidence.v5`, with complete
+Shared capture metrics use `rwml.render-oracle-evidence.v7`, with complete
 per-case capture bindings. Existing local/legacy-container validation remains
 v4. A single captured campaign leaves reference repeatability unverified;
 `--verify-oracle`, system-font, and renderer overrides cannot be combined with
@@ -735,4 +766,10 @@ Font results distinguish exact Type 1/native CFF glyph-outline checks from
 TrueType descriptor-name/SFNT-revision metadata checks. Empty inventories are
 explicit, and every declared resource is accounted for. Metadata agreement is
 not outline equivalence, font-selection correctness, Unicode/shaping correctness,
-or full PDF/Word fidelity. The current locked capture recipe accepts DOCX only.
+or full PDF/Word fidelity. Captures accept DOC and DOCX inputs. The locked
+recipe stages both formats under the fixed transport name `input.docx`;
+the original format remains in the bound corpus manifest, the bytes are
+unchanged, and both renderers detect the format from the file contents.
+The three committed legacy benchmark inputs have been checked through this
+transport with the locked LibreOffice image. This does not establish broader
+legacy layout fidelity.

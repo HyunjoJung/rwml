@@ -521,13 +521,29 @@ class CaptureTests(unittest.TestCase):
                 capture.source_payload(document)
 
     def test_capture_and_verify_compose_every_case_and_reject_repaired_receipts(self):
+        self._exercise_capture_roundtrip("docx")
+
+    def test_legacy_doc_capture_keeps_source_bytes_and_manifest_format(self):
+        self._exercise_capture_roundtrip("doc")
+
+    def _exercise_capture_roundtrip(self, format_name):
         from test_render_oracle_contract import valid_manifest, write_manifest
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source_root = root / "corpus"
             source_root.mkdir()
-            manifest = write_manifest(source_root, valid_manifest())
+            document_bytes = b"fixture"
+            if format_name == "doc":
+                document_bytes = bytes.fromhex("d0cf11e0a1b11ae1") + document_bytes
+            data = valid_manifest(document_bytes)
+            data["documents"][0]["format"] = format_name
+            data["documents"][0]["path"] = f"synthetic/fixture.{format_name}"
+            manifest = write_manifest(source_root, data, document_bytes)
+            if format_name == "doc":
+                (source_root / "synthetic/fixture.docx").rename(
+                    source_root / "synthetic/fixture.doc"
+                )
             output = root / "capture"
             entry = font_entry()
             lock = SimpleNamespace(fonts=[entry])
@@ -609,6 +625,14 @@ class CaptureTests(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()),
             ):
                 result = capture.run(*args)
+                self.assertEqual(
+                    (output / "cases/fixture-basic/input.docx").read_bytes(),
+                    document_bytes,
+                )
+                self.assertEqual(
+                    capture.load_corpus_manifest(manifest).documents[0].format,
+                    format_name,
+                )
                 self.assertEqual(len(result["rows"]), 1)
                 self.assertEqual(builds.call_count, 1)
                 self.assertEqual(conversions.call_count, 1)

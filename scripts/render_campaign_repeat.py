@@ -79,7 +79,7 @@ def replay_native_outputs(root: Path, corpus) -> dict[str, dict[str, bytes]]:
             capture.runtime.run_bounded(
                 capture.native_command(
                     root / "renderer",
-                    root / "cases" / document.case_id / "input.docx",
+                    root / "cases" / document.case_id / capture.STAGED_INPUT_NAME,
                     pdf,
                     report,
                     fonts,
