@@ -145,7 +145,7 @@
       "source_path": "corpus/public/benchmark/sample/nested_tables.doc"
     }
   ],
-  "generator_closure_sha256": "40e3ff5658a6086cb73b0f42fc37abbff3b4367df0706f5afa328eb4e937ea16",
+  "generator_closure_sha256": "703bfbc19a3f2ad470cd508b8c212cec2487097d20f7761c940ea5e4ca9bf6ab",
   "limits": {
     "max_documents": 3,
     "max_input_bytes": 65536,
