@@ -17,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
       # Keep rustdoc JSON compatible with the pinned cargo-semver-checks.
-      - uses: dtolnay/rust-toolchain@1.92.0
+      - uses: dtolnay/rust-toolchain@1.120.0
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
