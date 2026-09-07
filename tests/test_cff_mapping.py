@@ -63,6 +63,60 @@ class CFFMappingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ambiguous"):
             self.discover(source=source, edges={"cid00001": {"cid00002"}})
 
+    def mirrored_discovery(self, endpoint, *, right=10, left=20, edges=None):
+        source = {
+            ".notdef": Glyph(0),
+            "cid00010": Glyph(right),
+            "cid00009": Glyph(left),
+            "cid00030": Glyph(30),
+        }
+        graph = mapping.build_graph(
+            [] if edges is None else [NS(LookupType=1, SubTable=[NS(mapping=edges)])],
+            set(source),
+            mirrors={ord(")"): ord("("), ord("("): ord(")")},
+        )
+        return mapping.discover(
+            source,
+            {".notdef": Glyph(0), "cid00001": Glyph(endpoint)},
+            {1: ")"},
+            {ord(")"): "cid00010", ord("("): "cid00009"},
+            graph,
+        )
+
+    def test_logical_parenthesis_hint_accepts_exact_mirrored_outline(self):
+        result = self.mirrored_discovery(20)
+        self.assertEqual(result["glyphs"][1], ["cid00001", "cid00009"])
+
+    def test_mirror_candidates_preserve_unmirrored_outline(self):
+        result = self.mirrored_discovery(10)
+        self.assertEqual(result["glyphs"][1], ["cid00001", "cid00010"])
+
+    def test_mirrored_glyph_candidates_include_gsub_alternates(self):
+        result = self.mirrored_discovery(30, edges={"cid00009": "cid00030"})
+        self.assertEqual(result["glyphs"][1], ["cid00001", "cid00030"])
+
+    def test_mirror_candidates_do_not_accept_an_unrelated_outline(self):
+        with self.assertRaisesRegex(ValueError, "unmatched"):
+            self.mirrored_discovery(30)
+
+    def test_equal_mirrored_candidates_remain_ambiguous(self):
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            self.mirrored_discovery(20, right=20)
+
+    def test_union_of_mirror_and_default_candidates_is_bounded(self):
+        with mock.patch.dict(mapping.MAPPING_LIMITS, {"candidates_per_glyph": 1}):
+            with self.assertRaisesRegex(ValueError, "candidate_bound"):
+                self.mirrored_discovery(20)
+
+    def test_mirror_missing_from_source_cmap_does_not_invent_a_glyph(self):
+        graph = mapping.build_graph([], {"right"}, mirrors={ord(")"): ord("(")})
+        self.assertEqual(graph.candidates(")", {ord(")"): "right"}), {"right"})
+
+    def test_mirrors_do_not_hide_missing_logical_source_characters(self):
+        graph = mapping.build_graph([], {"left"}, mirrors={ord(")"): ord("(")})
+        with self.assertRaisesRegex(ValueError, "source_cmap_missing"):
+            graph.candidates(")", {ord("("): "left"})
+
     def test_candidate_closure_is_bounded(self):
         with mock.patch.dict(mapping.MAPPING_LIMITS, {"candidates_per_glyph": 1}):
             with self.assertRaisesRegex(ValueError, "candidate_bound"):
