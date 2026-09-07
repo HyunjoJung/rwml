@@ -57,6 +57,12 @@ class CaptureTests(unittest.TestCase):
         flags = mock.patch.dict(os.environ, {"RUSTFLAGS": ""})
         flags.start()
         self.addCleanup(flags.stop)
+        disk = mock.patch(
+            "shutil.disk_usage",
+            return_value=SimpleNamespace(free=8 * 1024 * 1024 * 1024),
+        )
+        disk.start()
+        self.addCleanup(disk.stop)
 
     def test_prepare_environment_binds_numpy_in_analysis_identity(self):
         numpy = SimpleNamespace(__version__="2.4.4")
@@ -117,6 +123,55 @@ class CaptureTests(unittest.TestCase):
             self.assertIn("--locked", command)
             self.assertNotIn("--install", command)
             self.assertEqual(run.call_count, 2)
+
+    def test_disk_check_uses_existing_ancestor_without_creating_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            output = root / "new" / "capture"
+            with mock.patch(
+                "shutil.disk_usage", return_value=SimpleNamespace(free=100)
+            ) as usage:
+                capture.require_free_space(output, 100)
+                usage.assert_called_once_with(root)
+                with self.assertRaisesRegex(ValueError, "insufficient free disk space"):
+                    capture.require_free_space(output, 101)
+            self.assertFalse(output.parent.exists())
+
+    def test_capture_rejects_low_disk_before_environment_or_output_creation(self):
+        manifest = capture.ROOT / "corpus/public/RENDER_SMOKE_ORACLE.json"
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "capture"
+            with (
+                mock.patch.object(
+                    capture.table_capture, "source_revision", return_value="a" * 40
+                ),
+                mock.patch("shutil.disk_usage", return_value=SimpleNamespace(free=0)),
+                mock.patch.object(capture, "prepare_environment") as prepare,
+                mock.patch.object(capture, "build_renderer") as build,
+            ):
+                with self.assertRaisesRegex(ValueError, "insufficient free disk space"):
+                    capture.run(
+                        manifest, output, root / "pack", root / "ft", root / "pp"
+                    )
+                prepare.assert_not_called()
+                build.assert_not_called()
+            self.assertFalse(output.exists())
+
+    def test_native_build_rejects_low_disk_before_compiling(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            output = root / "renderer"
+            with (
+                mock.patch.object(capture, "ROOT", root),
+                mock.patch("shutil.disk_usage", return_value=SimpleNamespace(free=0)),
+                mock.patch.object(capture.runtime, "run_bounded") as run,
+            ):
+                with self.assertRaisesRegex(ValueError, "insufficient free disk space"):
+                    capture.build_renderer(output)
+                run.assert_not_called()
+            self.assertFalse((root / "target").exists())
+            self.assertFalse(output.exists())
 
     def test_native_build_pins_reproducibility_settings_and_uses_fresh_targets(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -624,6 +679,24 @@ class CaptureTests(unittest.TestCase):
                 mock.patch.object(capture, "check_fonts", return_value=check) as checks,
                 contextlib.redirect_stderr(io.StringIO()),
             ):
+                failed_output = root / "disk-exhausted"
+                with mock.patch(
+                    "shutil.disk_usage",
+                    side_effect=[
+                        SimpleNamespace(free=capture.MAX_CAMPAIGN_BYTES),
+                        SimpleNamespace(free=0),
+                    ],
+                ):
+                    with self.assertRaisesRegex(
+                        ValueError, "insufficient free disk space"
+                    ):
+                        capture.run(manifest, failed_output, *args[2:])
+                conversions.assert_not_called()
+                checks.assert_not_called()
+                self.assertEqual(list((failed_output / "cases").iterdir()), [])
+                self.assertEqual((failed_output / "renderer").read_bytes(), b"renderer")
+                self.assertFalse((failed_output / "CAPTURE.json").exists())
+                builds.reset_mock()
                 result = capture.run(*args)
                 self.assertEqual(
                     (output / "cases/fixture-basic/input.docx").read_bytes(),
@@ -637,7 +710,11 @@ class CaptureTests(unittest.TestCase):
                 self.assertEqual(builds.call_count, 1)
                 self.assertEqual(conversions.call_count, 1)
                 self.assertEqual(checks.call_count, 2)
-                self.assertEqual(capture.run(*args, verify=True), result)
+                with mock.patch(
+                    "shutil.disk_usage", return_value=SimpleNamespace(free=0)
+                ):
+                    # Only the independently rebuilt renderer needs writable space.
+                    self.assertEqual(capture.run(*args, verify=True), result)
                 self.assertEqual(builds.call_count, 2)
                 self.assertEqual(conversions.call_count, 1)
                 self.assertEqual(checks.call_count, 4)

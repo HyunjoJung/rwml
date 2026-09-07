@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import base64
 from pathlib import Path
+import shutil
 import sys
 import tempfile
 import time
@@ -37,6 +38,8 @@ MAX_BUNDLE_BYTES = 16 * 1024 * 1024
 MAX_RENDERER_BYTES = 256 * 1024 * 1024
 MAX_CAMPAIGN_BYTES = 2 * 1024 * 1024 * 1024
 MAX_CAMPAIGN_SECONDS = 4 * 60 * 60
+# Conservative compiler headroom, not a filesystem reservation or build quota.
+MIN_NATIVE_BUILD_FREE_BYTES = 2 * 1024 * 1024 * 1024
 NATIVE_RESOURCE_LAUNCHER = ROOT / "scripts/posix_resource_exec.py"
 NATIVE_RESOURCE_SCHEMA = "rwml.native-render-resource-limits.v1"
 NATIVE_WALL_SECONDS = 120
@@ -66,6 +69,18 @@ def require_equal(expected: object, actual: object, label: str) -> None:
 def write_new(path: Path, payload: bytes) -> None:
     with path.open("xb") as stream:
         stream.write(payload)
+
+
+def require_free_space(path: Path, minimum: int) -> None:
+    directory = path.resolve()
+    while not directory.exists():
+        directory = directory.parent
+    free = shutil.disk_usage(directory).free
+    if free < minimum:
+        raise ValueError(
+            f"insufficient free disk space: need {minimum} bytes, have {free}; "
+            "free space or choose an output filesystem with more capacity"
+        )
 
 
 def identity(payload: bytes) -> dict:
@@ -318,6 +333,7 @@ def native_build_environment() -> dict[str, str]:
 def build_renderer(output: Path) -> dict:
     env = native_build_environment()
     scratch = ROOT / "target/render-oracle/native-builds"
+    require_free_space(scratch, MIN_NATIVE_BUILD_FREE_BYTES)
     scratch.mkdir(parents=True, exist_ok=True)
     # Never verify by reusing the capture's incremental/compiler artifacts.
     with tempfile.TemporaryDirectory(dir=scratch) as temporary:
@@ -506,6 +522,8 @@ def run(
         pack.resolve()
     ) or output.resolve().is_relative_to(corpus.path.parent.resolve()):
         raise ValueError("capture output overlaps its inputs")
+    if not verify:
+        require_free_space(output, MAX_CAMPAIGN_BYTES)
     material, sources, lock, execution = prepare_environment(pack, fonttools, pypdf)
     staged_fonts = font_files(lock.fonts, sources)
     deadline = time.monotonic() + MAX_CAMPAIGN_SECONDS
@@ -578,6 +596,7 @@ def run(
             raise ValueError("render campaign capture timed out")
         directory = output / "cases" / document.case_id
         if not verify:
+            require_free_space(output, MAX_CAMPAIGN_BYTES - total_bytes)
             directory.mkdir()
             payload = source_payload(document)
             write_new(directory / STAGED_INPUT_NAME, payload)
