@@ -1,0 +1,100 @@
+name: Render Oracle (Diagnostic)
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "examples/to_pdf.rs"
+      - "scripts/**"
+      - "tests/test_*.py"
+      - "corpus/public/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/render-oracle.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: render-oracle-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Diagnostic evidence integrity (12 documents)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      SOURCE_REVISION: ${{ github.sha }}
+      RUSTFLAGS: ""
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install native build and analysis prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfontconfig1-dev pkg-config
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            PyMuPDF==1.28.2 Pillow==12.3.0 numpy==2.4.4
+          cargo fetch --locked --target x86_64-unknown-linux-gnu
+      - name: Verify public inputs and prepare locked downloads
+        run: |
+          python scripts/public_hygiene_audit.py
+          python scripts/generate_render_smoke_manifest.py --check
+          python scripts/prepare_render_oracle_ci.py \
+            --output target/oracle-ci/prepared --cache target/oracle-ci/downloads
+      - name: Read the validated image build lock
+        id: lock
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import sys
+          sys.path.insert(0, "scripts")
+          import libreoffice_container as runtime
+          build = runtime.load_runtime_lock()["build"]
+          print("buildx=v" + build["buildx_version"])
+          print("buildkit=" + build["buildkit_image"])
+          print("epoch=" + str(build["source_date_epoch"]))
+          PY
+      - uses: docker/setup-buildx-action@v4
+        id: builder
+        with:
+          version: ${{ steps.lock.outputs.buildx }}
+          driver-opts: image=${{ steps.lock.outputs.buildkit }}
+          buildkitd-flags: --oci-worker-snapshotter=native
+      - name: Build and verify the digest-locked LibreOffice image
+        env:
+          BUILDER: ${{ steps.builder.outputs.name }}
+          SOURCE_DATE_EPOCH: ${{ steps.lock.outputs.epoch }}
+        run: |
+          docker buildx build --builder "$BUILDER" --platform linux/amd64 \
+            --file target/oracle-ci/prepared/context/Containerfile \
+            --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+            --no-cache --provenance=false --sbom=false \
+            --output type=docker,dest=target/oracle-ci/image.tar,rewrite-timestamp=true,oci-mediatypes=false \
+            target/oracle-ci/prepared/context
+          docker load --input target/oracle-ci/image.tar
+          python scripts/libreoffice_container.py inspect
+      - name: Capture and independently verify the complete smoke pair
+        id: capture
+        run: |
+          python -u scripts/render_oracle_ci.py \
+            --prepared target/oracle-ci/prepared \
+            --output target/oracle-ci/evidence \
+            --source-revision "$SOURCE_REVISION"
+      - name: Retain diagnostic evidence, including failed partial captures
+        if: ${{ always() && steps.capture.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: render-oracle-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/oracle-ci/evidence
+          if-no-files-found: error
+          retention-days: 14
