@@ -45,7 +45,8 @@ jobs:
           sudo apt-get install -y libfontconfig1-dev pkg-config
           python -m pip install --disable-pip-version-check --no-cache-dir \
             PyMuPDF==1.28.2 Pillow==12.3.0 numpy==2.4.4
-          cargo fetch --locked --target x86_64-unknown-linux-gnu
+          # Cargo 1.92 offline resolution also needs target-specific locked crates.
+          cargo fetch --locked
       - name: Verify public inputs and prepare locked downloads
         run: |
           python scripts/public_hygiene_audit.py

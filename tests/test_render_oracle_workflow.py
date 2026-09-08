@@ -6,6 +6,9 @@ WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/render-oracl
 
 
 class OracleWorkflowTests(unittest.TestCase):
+    def test_prefetch_includes_all_locked_targets_for_offline_cargo_resolution(self):
+        self.assertRegex(WORKFLOW.read_text(), r"(?m)^\s*cargo fetch --locked\s*$")
+
     def test_failed_build_retains_diagnostics_without_bypassing_image_verification(self):
         text = WORKFLOW.read_text()
         for expected in (
