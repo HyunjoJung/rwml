@@ -116,10 +116,7 @@ def discover_program(
     }
     SCRATCH.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="capture-", dir=SCRATCH) as temporary:
-        directory = Path(temporary)
-        for name, value in files.items():
-            with (directory / name).open("xb") as stream:
-                stream.write(value)
+        directory = attestation.stage_worker_inputs(Path(temporary), files)
         name = "rwml-oracle-" + uuid.uuid4().hex
         output = runtime.run_container(
             attestation.worker_command(image, name, directory),

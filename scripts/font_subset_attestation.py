@@ -53,6 +53,21 @@ def wheel_payload(path: Path) -> bytes:
     return payload
 
 
+def stage_worker_inputs(parent: Path, files: dict[str, bytes]) -> Path:
+    # Bind only the readable child; the host temporary parent stays private.
+    directory = parent / "inputs"
+    directory.mkdir(mode=0o700)
+    for name, payload in files.items():
+        if not name or name in {".", ".."} or "/" in name or "\\" in name:
+            raise ValueError("worker input name is not a basename")
+        path = directory / name
+        with path.open("xb") as stream:
+            stream.write(payload)
+        path.chmod(0o444)
+    directory.chmod(0o555)
+    return directory
+
+
 def worker_command(image: str, name: str, directory: Path) -> list[str]:
     command = runtime.create_command(image, name, directory, directory)
     return [
@@ -217,10 +232,7 @@ def attest_program(
     }
     SCRATCH.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="capture-", dir=SCRATCH) as temporary:
-        directory = Path(temporary)
-        for filename, payload in files.items():
-            with (directory / filename).open("xb") as stream:
-                stream.write(payload)
+        directory = stage_worker_inputs(Path(temporary), files)
         container_name = "rwml-oracle-" + uuid.uuid4().hex
         payload = runtime.run_container(
             worker_command(image, container_name, directory),

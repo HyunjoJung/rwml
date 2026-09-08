@@ -30,9 +30,10 @@ require = pdf.require
 
 
 class CandidateGraph:
-    def __init__(self, edges: dict, ligatures: list):
+    def __init__(self, edges: dict, ligatures: list, mirrors: dict | None = None):
         self.edges = edges
         self.ligatures = ligatures
+        self.mirrors = mirrors or {}
         self.search = common.Budget(MAPPING_LIMITS["candidate_search_steps"])
 
     def step(self):
@@ -58,7 +59,19 @@ class CandidateGraph:
             all(ord(character) in cmap for character in text),
             "mapping_source_cmap_missing",
         )
-        components = [self.closure(cmap[ord(character)]) for character in text]
+        components = []
+        for character in text:
+            allowed = self.closure(cmap[ord(character)])
+            # UAX #9 L4 can mirror a glyph while ToUnicode keeps logical text.
+            # Candidates still require an exact outline and width witness.
+            mirror = self.mirrors.get(ord(character))
+            if mirror in cmap:
+                allowed.update(self.closure(cmap[mirror]))
+            require(
+                len(allowed) <= MAPPING_LIMITS["candidates_per_glyph"],
+                "mapping_candidate_bound",
+            )
+            components.append(allowed)
         if len(components) == 1:
             return components[0]
         found = set()
@@ -81,7 +94,9 @@ class CandidateGraph:
         return found
 
 
-def build_graph(lookups: list, glyph_names: set) -> CandidateGraph:
+def build_graph(
+    lookups: list, glyph_names: set, *, mirrors: dict | None = None
+) -> CandidateGraph:
     require(
         isinstance(lookups, list) and len(lookups) <= MAPPING_LIMITS["gsub_lookups"],
         "mapping_lookup_bound",
@@ -149,7 +164,7 @@ def build_graph(lookups: list, glyph_names: set) -> CandidateGraph:
                             len(ligatures) <= MAPPING_LIMITS["ligature_records"],
                             "mapping_ligature_bound",
                         )
-    return CandidateGraph(edges, sorted(set(ligatures)))
+    return CandidateGraph(edges, sorted(set(ligatures)), mirrors)
 
 
 def validate_hints(hints: object, count: int) -> None:
@@ -336,6 +351,7 @@ def run_worker(directory: Path, output: Path) -> dict:
     import fontTools
     import pypdf
     from fontTools.ttLib import TTFont
+    from fontTools.unicodedata.Mirrored import MIRRORED
 
     require(
         fontTools.version == common.WHEEL_VERSION
@@ -358,7 +374,7 @@ def run_worker(directory: Path, output: Path) -> dict:
     subset, _ = common.read_cff_subset(inputs["program"], name)
     hints = parse_hints(inputs["cmap"], len(subset))
     lookups = font["GSUB"].table.LookupList.Lookup if "GSUB" in font else []
-    graph = build_graph(lookups, set(font.getGlyphOrder()))
+    graph = build_graph(lookups, set(font.getGlyphOrder()), mirrors=MIRRORED)
     result = discover(
         font.getGlyphSet(), subset, hints, font.getBestCmap() or {}, graph
     )

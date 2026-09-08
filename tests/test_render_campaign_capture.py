@@ -121,6 +121,7 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(command[:5], ["rustup", "run", "1.92.0", "cargo", "build"])
             self.assertIn("--offline", command)
             self.assertIn("--locked", command)
+            self.assertIn("--message-format=json-render-diagnostics", command)
             self.assertNotIn("--install", command)
             self.assertEqual(run.call_count, 2)
 
@@ -234,6 +235,23 @@ class CaptureTests(unittest.TestCase):
             self.assertEqual(len(targets), 1)
             self.assertFalse(targets[0].exists())
             self.assertFalse(output.exists())
+
+    def test_native_build_failure_reports_bounded_compiler_stderr(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            error = capture.runtime.ProcessFailed(101, b"error: missing library\xff")
+            with (
+                mock.patch.object(capture, "ROOT", root),
+                mock.patch.object(capture.runtime, "run_bounded", side_effect=error),
+            ):
+                with self.assertRaisesRegex(
+                    ValueError, "native renderer build failed.*101.*missing library"
+                ):
+                    capture.build_renderer(root / "renderer")
+            self.assertFalse((root / "renderer").exists())
+            self.assertEqual(
+                list((root / "target/render-oracle/native-builds").iterdir()), []
+            )
 
     def test_native_build_rejects_unbound_compiler_overrides(self):
         for variable in (
@@ -805,6 +823,7 @@ class CaptureTests(unittest.TestCase):
                     capture.run(*args, verify=True)
                 self.assertEqual(receipt.read_bytes(), payload)
 
+    @unittest.skipUnless(os.name == "posix", "process-group runner requires POSIX")
     def test_bounded_process_accepts_explicit_working_directory_and_environment(self):
         with tempfile.TemporaryDirectory() as temporary:
             result = capture.runtime.run_bounded(

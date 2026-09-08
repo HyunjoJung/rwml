@@ -2,6 +2,7 @@ import base64
 import copy
 import contextlib
 import io
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -58,6 +59,41 @@ def result():
 
 
 class PDFFontResourceTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix", "POSIX container input permissions")
+    def test_extraction_mounts_readable_inputs_under_a_private_host_parent(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            scratch = Path(temporary) / "scratch"
+
+            def check_inputs(image, name, directory):
+                self.assertEqual(directory.stat().st_mode & 0o777, 0o555)
+                self.assertEqual(directory.parent.stat().st_mode & 0o777, 0o700)
+                for path in directory.iterdir():
+                    self.assertEqual(path.stat().st_mode & 0o777, 0o444)
+                self.assertEqual((directory / "input.pdf").read_bytes(), b"%PDF-probe")
+                raise ValueError("staged inputs checked")
+
+            previous = os.umask(0o077)
+            try:
+                with (
+                    mock.patch.object(resources, "SCRATCH", scratch),
+                    mock.patch.object(
+                        resources, "wheel_payload", return_value=b"wheel"
+                    ),
+                    mock.patch.object(
+                        resources.runtime, "inspect_image", return_value="image"
+                    ),
+                    mock.patch.object(
+                        resources.attestation,
+                        "worker_command",
+                        side_effect=check_inputs,
+                    ),
+                ):
+                    with self.assertRaisesRegex(ValueError, "staged inputs checked"):
+                        resources.extract_pdf(b"%PDF-probe", Path("wheel"))
+            finally:
+                os.umask(previous)
+            self.assertEqual(list(scratch.iterdir()), [])
+
     def test_request_requires_bounded_pdf_and_exact_identities(self):
         worker.validate_request(request())
         for change in (

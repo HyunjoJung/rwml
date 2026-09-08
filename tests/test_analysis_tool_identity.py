@@ -85,6 +85,9 @@ class AnalysisToolIdentityTests(unittest.TestCase):
             with (
                 mock.patch.object(identity.sys, "executable", str(executable)),
                 mock.patch.object(identity.sysconfig, "get_path", side_effect=get_path),
+                mock.patch.object(
+                    identity.sysconfig, "get_config_var", return_value="test-abi"
+                ),
                 mock.patch.object(identity, "_python_library", return_value=library),
             ):
                 first = identity.python_identity()

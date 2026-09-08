@@ -52,6 +52,19 @@ def archive(entries):
 
 
 class LibreOfficeContainerTests(unittest.TestCase):
+    def test_process_failure_reports_retained_stderr_without_decode_errors(self):
+        error = oracle.ProcessFailed(2, b"permission denied\xff\n")
+        self.assertIn("permission denied", str(error))
+        self.assertEqual(error.status, 2)
+        self.assertEqual(error.stderr, b"permission denied\xff\n")
+
+    def test_recipe_removes_host_dependent_fontconfig_install_log(self):
+        recipe = (ROOT / "scripts/libreoffice-container/Containerfile").read_text()
+        self.assertRegex(
+            recipe,
+            r"(?m)^\s*rm -f [^\n]* /var/log/fontconfig\.log(?: |$)",
+        )
+
     def test_public_lock_binds_recipe_and_rejects_mutations(self):
         lock = oracle.load_runtime_lock()
         self.assertEqual(lock["build"]["platform"], "linux/amd64")

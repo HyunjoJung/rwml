@@ -709,6 +709,37 @@ not define a parity threshold, change renderer behavior, or add a release gate.
 
 ## Shared-font campaign capture
 
+### Diagnostic CI
+
+The `Render Oracle (Diagnostic)` workflow runs the fixed 12-document public
+smoke profile on relevant pull requests and manual dispatches. It uses a
+read-only token, the exact workflow checkout revision, a 60-minute job limit,
+and 14-day artifact retention. It does not publish packages or change release
+requirements. The ordinary CI matrix remains separate.
+
+`prepare_render_oracle_ci.py` downloads the existing locked source archives,
+fonts, licenses, and tool wheels. It checks lengths and SHA-256 before reuse
+or publication, reads selected ZIP members without extracting archive paths,
+and stages a verified font pack and image build context. It does not install
+fonts on the host. The workflow builds the already locked LibreOffice image
+with the pinned Buildx/BuildKit configuration and checks its complete identity
+before rendering.
+
+`render_oracle_ci.py` composes two fresh captures, two independently verified
+v7 metric reports, and the existing strict repeat verifier. The artifact retains
+both captures, both reports, the repeatability receipt, and upstream font
+licenses. Failed partial captures are retained when available, but cannot
+produce a successful repeatability receipt.
+
+**A green diagnostic job means complete, repeatable evidence, not passing
+rendering fidelity.** Existing metric failures remain false in the reports;
+there is no blanket error suppression or altered threshold. Missing cases,
+skips, source/identity mismatches, conversion errors, or non-repeatability fail
+the job. The smoke profile is not an 800-document campaign or Microsoft Word
+validation.
+
+### Local Capture
+
 The diagnostic capture command composes the locked LibreOffice runtime, verified
 shared font pack, native renderer, and declared PDF font-resource checks. It
 requires a clean checkout and a strict corpus manifest; outputs must be fresh

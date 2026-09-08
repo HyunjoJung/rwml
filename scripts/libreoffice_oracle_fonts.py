@@ -100,6 +100,7 @@ def _read_regular_file(path: Path, maximum: int, *, allow_empty: bool = False) -
         descriptor = os.open(
             path,
             os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
             | getattr(os, "O_CLOEXEC", 0)
             | getattr(os, "O_NOFOLLOW", 0)
             | getattr(os, "O_NONBLOCK", 0),

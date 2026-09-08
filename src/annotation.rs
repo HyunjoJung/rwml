@@ -581,6 +581,7 @@ pub(crate) enum FieldTextFormat {
     FirstCap,
 }
 
+#[cfg(any(feature = "docx", feature = "render"))]
 pub(crate) fn apply_field_text_format(text: String, format: Option<FieldTextFormat>) -> String {
     match format {
         Some(FieldTextFormat::Upper) => text.to_uppercase(),
@@ -591,6 +592,7 @@ pub(crate) fn apply_field_text_format(text: String, format: Option<FieldTextForm
     }
 }
 
+#[cfg(any(feature = "docx", feature = "render"))]
 fn capitalize_first_word(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut changed = false;
@@ -605,6 +607,7 @@ fn capitalize_first_word(text: &str) -> String {
     out
 }
 
+#[cfg(any(feature = "docx", feature = "render"))]
 fn capitalize_words(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut at_word_start = true;
