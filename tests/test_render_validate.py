@@ -7,7 +7,8 @@ import tempfile
 import types
 import unittest
 from unittest import mock
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "render_validate.py"
@@ -532,7 +533,8 @@ class RenderValidateReportTests(unittest.TestCase):
 
     def test_local_libreoffice_uses_a_fresh_per_document_profile(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = pathlib.Path(tmp)
+            root = pathlib.Path(tmp) / "profile inputs %23"
+            root.mkdir()
             src = root / "sample.docx"
             src.write_bytes(b"placeholder")
             out = root / "out"
@@ -545,7 +547,7 @@ class RenderValidateReportTests(unittest.TestCase):
                     if token.startswith("-env:UserInstallation=file:")
                 )
                 profile_uri = profile_argument.split("=", 1)[1]
-                profile_path = pathlib.Path(unquote(urlparse(profile_uri).path))
+                profile_path = pathlib.Path(url2pathname(urlparse(profile_uri).path))
                 registry = profile_path / "user" / "registrymodifications.xcu"
                 self.assertEqual(
                     registry.read_bytes(),
