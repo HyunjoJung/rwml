@@ -42,7 +42,7 @@ RUN set -eux; \
     rm -rf /tmp/libreoffice /tmp/libreoffice.tar.gz /tmp/ldd.txt /tmp/missing.txt /tmp/version.txt /tmp/image-fonts.txt \
       /root/.cache/fontconfig /root/.config/libreoffice /var/lib/apt/lists/* \
       /var/cache/apt/* /var/cache/debconf/* /var/cache/fontconfig/*; \
-    rm -f /var/cache/ldconfig/aux-cache /var/lib/dpkg/status-old /var/log/alternatives.log /var/log/dpkg.log /var/log/apt/*
+    rm -f /var/cache/ldconfig/aux-cache /var/lib/dpkg/status-old /var/log/alternatives.log /var/log/dpkg.log /var/log/fontconfig.log /var/log/apt/*
 COPY --chmod=0444 capture.sh fonts.conf profile.xcu /opt/rwml-oracle/
 RUN set -eux; chmod 0555 /opt/rwml-oracle /opt/rwml-oracle/capture.sh; \
     mkdir -p /oracle/source /oracle/fonts /oracle/output; \
