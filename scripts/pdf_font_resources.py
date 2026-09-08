@@ -108,10 +108,7 @@ def extract_pdf(payload: bytes, wheel: Path, *, timeout: float = 30) -> dict:
     }
     SCRATCH.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="capture-", dir=SCRATCH) as temporary:
-        directory = Path(temporary)
-        for filename, data in files.items():
-            with (directory / filename).open("xb") as stream:
-                stream.write(data)
+        directory = attestation.stage_worker_inputs(Path(temporary), files)
         name = "rwml-oracle-" + uuid.uuid4().hex
         output = runtime.run_container(
             attestation.worker_command(image, name, directory),

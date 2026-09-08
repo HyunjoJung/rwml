@@ -62,6 +62,18 @@ def sample_result():
 
 
 class FontSubsetAttestationTests(unittest.TestCase):
+    def test_worker_staging_rejects_paths_and_existing_input_roots(self):
+        for name in ("", ".", "..", "../outside", "/outside", "sub\\worker.py"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                with self.assertRaisesRegex(ValueError, "basename"):
+                    attestation.stage_worker_inputs(Path(temporary), {name: b"data"})
+        with tempfile.TemporaryDirectory() as temporary:
+            parent = Path(temporary)
+            directory = attestation.stage_worker_inputs(parent, {"worker.py": b"first"})
+            with self.assertRaises(FileExistsError):
+                attestation.stage_worker_inputs(parent, {"worker.py": b"second"})
+            self.assertEqual((directory / "worker.py").read_bytes(), b"first")
+
     def test_worker_result_requires_exact_inputs_tools_and_proof(self):
         attestation.validate_result(sample_result(), sample_request())
         for key, value in (

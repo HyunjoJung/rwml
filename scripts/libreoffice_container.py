@@ -51,7 +51,9 @@ NAME_RE = re.compile(r"rwml-oracle-[0-9a-f]{32}")
 
 class ProcessFailed(ValueError):
     def __init__(self, status: int, stderr: bytes):
-        super().__init__(f"oracle process failed with exit code {status}")
+        message = f"oracle process failed with exit code {status}"
+        detail = stderr.decode("utf-8", errors="replace").strip()
+        super().__init__(f"{message}: {detail}" if detail else message)
         self.status = status
         self.stderr = stderr
 
