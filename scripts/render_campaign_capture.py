@@ -349,13 +349,19 @@ def build_renderer(output: Path) -> dict:
             "render",
             "--example",
             "to_pdf",
-            "--message-format=json",
+            "--message-format=json-render-diagnostics",
             "--target-dir",
             temporary,
         ]
-        log = runtime.run_bounded(
-            command, cwd=ROOT, env=env, timeout=900, stdout_limit=4 * 1024 * 1024
-        )
+        try:
+            log = runtime.run_bounded(
+                command, cwd=ROOT, env=env, timeout=900, stdout_limit=4 * 1024 * 1024
+            )
+        except runtime.ProcessFailed as error:
+            detail = error.stderr.decode("utf-8", errors="replace").strip()
+            raise ValueError(
+                f"native renderer build failed (exit {error.status}): {detail}"
+            ) from error
         executables = []
         for line in log.splitlines():
             row = resources.strict_json(line)
