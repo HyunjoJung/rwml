@@ -805,6 +805,7 @@ class CaptureTests(unittest.TestCase):
                     capture.run(*args, verify=True)
                 self.assertEqual(receipt.read_bytes(), payload)
 
+    @unittest.skipUnless(os.name == "posix", "process-group runner requires POSIX")
     def test_bounded_process_accepts_explicit_working_directory_and_environment(self):
         with tempfile.TemporaryDirectory() as temporary:
             result = capture.runtime.run_bounded(

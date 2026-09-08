@@ -65,6 +65,7 @@ mod numfmt;
 mod ole;
 #[cfg(feature = "docx")]
 mod opc;
+#[cfg(any(feature = "docx", feature = "render"))]
 mod page_number;
 mod papx;
 #[cfg(feature = "render")]
