@@ -71,6 +71,7 @@ jobs:
           driver-opts: image=${{ steps.lock.outputs.buildkit }}
           buildkitd-flags: --oci-worker-snapshotter=native
       - name: Build and verify the digest-locked LibreOffice image
+        id: image
         env:
           BUILDER: ${{ steps.builder.outputs.name }}
           SOURCE_DATE_EPOCH: ${{ steps.lock.outputs.epoch }}
@@ -83,6 +84,20 @@ jobs:
             target/oracle-ci/prepared/context
           docker load --input target/oracle-ci/image.tar
           python scripts/libreoffice_container.py inspect
+      - name: Inspect a rejected image build
+        if: ${{ failure() && steps.image.outcome == 'failure' }}
+        run: |
+          python scripts/inspect_oracle_image.py \
+            --archive target/oracle-ci/image.tar \
+            --output target/oracle-ci/image-diagnostic.json
+      - name: Retain image build diagnostics
+        if: ${{ failure() && steps.image.outcome == 'failure' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: oracle-image-diagnostic-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: target/oracle-ci/image-diagnostic.json
+          if-no-files-found: warn
+          retention-days: 1
       - name: Capture and independently verify the complete smoke pair
         id: capture
         run: |

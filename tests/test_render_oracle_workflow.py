@@ -6,6 +6,17 @@ WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/render-oracl
 
 
 class OracleWorkflowTests(unittest.TestCase):
+    def test_failed_build_retains_diagnostics_without_bypassing_image_verification(self):
+        text = WORKFLOW.read_text()
+        for expected in (
+            "id: image",
+            "failure() && steps.image.outcome == 'failure'",
+            "scripts/inspect_oracle_image.py",
+            "target/oracle-ci/image-diagnostic.json",
+            "retention-days: 1",
+        ):
+            self.assertIn(expected, text)
+
     def test_job_is_bounded_read_only_and_bound_to_the_checked_out_commit(self):
         text = WORKFLOW.read_text()
         for expected in (
