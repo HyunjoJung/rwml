@@ -277,6 +277,7 @@ def _read_bounded_regular_file(path: Path, maximum: int) -> bytes:
         descriptor = os.open(
             path,
             os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
             | getattr(os, "O_CLOEXEC", 0)
             | getattr(os, "O_NOFOLLOW", 0)
             | getattr(os, "O_NONBLOCK", 0),
