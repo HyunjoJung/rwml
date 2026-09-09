@@ -29,10 +29,10 @@ By default, `--soffice auto` prefers local `soffice` when present and falls back
 to Docker.
 
   python scripts/render_validate.py corpus/public/**/*.docx
-  python scripts/render_validate.py --manifest corpus/public/RENDER_MANIFEST.tsv
+  python scripts/render_validate.py --manifest corpus/public/RENDER_ORACLE.json
   python scripts/render_validate.py --soffice docker corpus/*.doc
   python scripts/render_validate.py --json corpus/public/**/*.docx > render-report.json
-  python scripts/render_validate.py --json --manifest corpus/public/RENDER_MANIFEST.tsv > render-report.json
+  python scripts/render_validate.py --json --manifest corpus/public/RENDER_ORACLE.json > render-report.json
   python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/public/**/*.docx > render-report.json
 """
 
@@ -43,6 +43,7 @@ import contextlib
 import hashlib
 import json
 import math
+import platform
 import re
 import shutil
 import subprocess
@@ -50,6 +51,21 @@ import sys
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+try:
+    from render_oracle_contract import (
+        CorpusDocument,
+        CorpusManifest,
+        bind_evidence_report,
+        load_corpus_manifest,
+    )
+except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
+    from scripts.render_oracle_contract import (
+        CorpusDocument,
+        CorpusManifest,
+        bind_evidence_report,
+        load_corpus_manifest,
+    )
 
 with contextlib.redirect_stdout(sys.stderr):
     try:
@@ -71,6 +87,7 @@ DEFAULT_PAGE_CAP = 32
 DEFAULT_FOREGROUND_THRESHOLD = 245
 DEFAULT_AHASH_SIZE = 16
 DEFAULT_FONT_MODE = "fixed-noto-subsets"
+REPO = Path(__file__).resolve().parents[1]
 MAX_RASTER_DPI = 600
 MAX_PAGE_CAP = 256
 MAX_AHASH_SIZE = 64
@@ -128,6 +145,9 @@ class VisualMetricError(RuntimeError):
 class ValidationRow:
     document: str
     status: str
+    case_id: str | None = None
+    input_bytes: int | None = None
+    input_sha256: str | None = None
     recall: float | None = None
     rwml_pages: int | None = None
     reference_pages: int | None = None
@@ -405,6 +425,23 @@ def validation_report(
             raise ValueError(f"document path is invalid: {row.document}")
         if row.status not in {"pass", "fail", "skip"}:
             raise ValueError(f"status is invalid: {row.status}")
+        identity_values = (row.case_id, row.input_bytes, row.input_sha256)
+        if any(value is not None for value in identity_values) and not all(
+            value is not None for value in identity_values
+        ):
+            raise ValueError("row input identity is incomplete")
+        if row.case_id is not None and (
+            not isinstance(row.case_id, str)
+            or not row.case_id
+            or row.case_id != row.case_id.strip()
+            or not row.case_id.isascii()
+        ):
+            raise ValueError("row case id is invalid")
+        if row.input_sha256 is not None and (
+            not isinstance(row.input_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", row.input_sha256) is None
+        ):
+            raise ValueError("row input sha256 is invalid")
         for metric in (
             "recall",
             "page_ratio",
@@ -427,6 +464,7 @@ def validation_report(
         for metric in (
             "rwml_pages",
             "reference_pages",
+            "input_bytes",
             "render_warnings",
             "compared_pages",
             "unmatched_candidate_pages",
@@ -663,14 +701,25 @@ def render_libreoffice(src: Path, outdir: Path, mode: str) -> Path | None:
 
 
 def resolve_input_paths(inputs: list[Path], manifest: Path | None) -> list[Path]:
+    return resolve_input_campaign(inputs, manifest)[0]
+
+
+def resolve_input_campaign(
+    inputs: list[Path], manifest: Path | None
+) -> tuple[list[Path], CorpusManifest | None]:
     if manifest is None:
-        return inputs
+        return inputs, None
     if inputs:
         raise ValueError("--manifest cannot be combined with positional inputs")
-    return manifest_document_inputs(manifest)
+    if manifest.suffix.lower() == ".json":
+        corpus = load_corpus_manifest(manifest)
+        return [document.path for document in corpus.documents], corpus
+    return manifest_document_inputs(manifest), None
 
 
 def manifest_document_inputs(manifest: Path) -> list[Path]:
+    if manifest.suffix.lower() == ".json":
+        return [document.path for document in load_corpus_manifest(manifest).documents]
     header = None
     documents = []
     seen = set()
@@ -717,6 +766,151 @@ def unsafe_manifest_document_path(document_path: str) -> bool:
         or any(part in {"", ".", ".."} for part in document_path.split("/"))
         or any(char.isspace() for char in document_path)
     )
+
+
+def corpus_document_map(
+    corpus: CorpusManifest | None,
+) -> dict[Path, CorpusDocument]:
+    if corpus is None:
+        return {}
+    return {document.path: document for document in corpus.documents}
+
+
+def row_identity(
+    source: Path, documents: dict[Path, CorpusDocument]
+) -> dict[str, object]:
+    document = documents.get(source)
+    if document is None:
+        return {}
+    return {
+        "case_id": document.case_id,
+        "input_bytes": document.input_bytes,
+        "input_sha256": document.sha256,
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _command_text(command: list[str], *, cwd: Path | None = None) -> str:
+    completed = subprocess.run(
+        command,
+        cwd=cwd,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    value = completed.stdout.strip()
+    if completed.returncode != 0 or not value:
+        raise RenderDependencyError(
+            f"identity command failed: {command[0]}"
+        )
+    return value.splitlines()[0].strip()
+
+
+def _source_identity(explicit_revision: str | None) -> tuple[str, bool]:
+    revision = explicit_revision or _command_text(
+        ["git", "rev-parse", "HEAD"], cwd=REPO
+    )
+    if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise ValueError("source revision must be a full lowercase Git SHA")
+    completed = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+    )
+    if completed.returncode != 0:
+        raise ValueError("source dirty state could not be determined")
+    return revision, bool(completed.stdout)
+
+
+def _harness_sha256() -> str:
+    digest = hashlib.sha256()
+    for path in (
+        Path(__file__).resolve(),
+        Path(__file__).with_name("render_oracle_contract.py").resolve(),
+    ):
+        payload = path.read_bytes()
+        name = path.name.encode("ascii")
+        digest.update(len(name).to_bytes(8, "little"))
+        digest.update(name)
+        digest.update(len(payload).to_bytes(8, "little"))
+        digest.update(payload)
+    return digest.hexdigest()
+
+
+def _libreoffice_identity(mode: str) -> dict[str, str]:
+    if mode == "local":
+        executable = shutil.which("soffice")
+        if executable is None:
+            raise RenderDependencyError("soffice executable identity is unavailable")
+        resolved = Path(executable).resolve()
+        version = _command_text([str(resolved), "--version"])
+        executable_sha256 = _sha256_file(resolved)
+        identity_mode = "local"
+        material = {
+            "mode": identity_mode,
+            "version": version,
+            "executable_sha256": executable_sha256,
+        }
+    else:
+        image_id = _command_text(
+            ["docker", "image", "inspect", "lo-cli", "--format", "{{.Id}}"]
+        )
+        version = _command_text(
+            ["docker", "run", "--rm", "lo-cli", "soffice", "--version"]
+        )
+        identity_mode = "container"
+        material = {"mode": identity_mode, "version": version, "image_id": image_id}
+    identity_sha256 = hashlib.sha256(
+        json.dumps(
+            material,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+    ).hexdigest()
+    return {
+        "name": "libreoffice",
+        "mode": identity_mode,
+        "version": version,
+        "identity_sha256": identity_sha256,
+    }
+
+
+def environment_identity(
+    *,
+    soffice_mode: str,
+    font_mode: str,
+    source_revision: str | None = None,
+) -> dict[str, object]:
+    revision, dirty = _source_identity(source_revision)
+    pymupdf_version = getattr(fitz, "__version__", "unavailable")
+    pillow_version = getattr(Image, "__version__", "unavailable")
+    return {
+        "source_revision": revision,
+        "source_dirty": dirty,
+        "harness_sha256": _harness_sha256(),
+        "cargo_lock_sha256": _sha256_file(REPO / "Cargo.lock"),
+        "renderer": {"name": "rwml", "font_mode": font_mode},
+        "oracle": _libreoffice_identity(soffice_mode),
+        "platform": {
+            "system": platform.system() or "unknown",
+            "release": platform.release() or "unknown",
+            "machine": platform.machine() or "unknown",
+        },
+        "tools": [
+            {"name": "pillow", "version": str(pillow_version)},
+            {"name": "pymupdf", "version": str(pymupdf_version)},
+            {"name": "python", "version": platform.python_version()},
+        ],
+    }
 
 
 _HEX_STRING = re.compile(rb"<([0-9A-Fa-f\s]*)>")
@@ -1540,7 +1734,17 @@ def main() -> int:
     ap.add_argument(
         "--manifest",
         type=Path,
-        help="Read input document paths from a public corpus TSV manifest.",
+        help=(
+            "Read inputs from a strict render-oracle JSON corpus lock or a "
+            "legacy public TSV manifest."
+        ),
+    )
+    ap.add_argument(
+        "--source-revision",
+        help=(
+            "Bind strict JSON evidence to this full lowercase Git SHA; "
+            "defaults to the current repository HEAD."
+        ),
     )
     ap.add_argument(
         "--soffice",
@@ -1619,7 +1823,7 @@ def main() -> int:
     except ValueError as exc:
         ap.error(str(exc))
     try:
-        inputs = resolve_input_paths(args.inputs, args.manifest)
+        inputs, corpus = resolve_input_campaign(args.inputs, args.manifest)
     except ValueError as exc:
         ap.error(str(exc))
     if not inputs:
@@ -1632,6 +1836,7 @@ def main() -> int:
         )
         print("-" * 108)
     rows = []
+    corpus_documents = corpus_document_map(corpus)
     reference_stable: bool | None = None
     unstable_references: list[str] = []
     try:
@@ -1686,7 +1891,8 @@ def main() -> int:
                     ValidationRow(
                         document=src.name,
                         status="skip",
-                        reason="render failed",
+                        reason="render-failed" if corpus is not None else "render failed",
+                        **row_identity(src, corpus_documents),
                     )
                 )
                 if not args.json:
@@ -1701,7 +1907,12 @@ def main() -> int:
                     ValidationRow(
                         document=src.name,
                         status="skip",
-                        reason="render report invalid warnings",
+                        reason=(
+                            "invalid-render-warnings"
+                            if corpus is not None
+                            else "render report invalid warnings"
+                        ),
+                        **row_identity(src, corpus_documents),
                     )
                 )
                 if not args.json:
@@ -1730,7 +1941,10 @@ def main() -> int:
                     ValidationRow(
                         document=src.name,
                         status="skip",
-                        reason=str(exc),
+                        reason=(
+                            "visual-metric-failed" if corpus is not None else str(exc)
+                        ),
+                        **row_identity(src, corpus_documents),
                     )
                 )
                 if not args.json:
@@ -1740,6 +1954,7 @@ def main() -> int:
                         f"SKIP ({exc})"
                     )
                 continue
+            kinds = sorted(kinds)
             passed = rec >= args.recall_min
             status = "pass" if passed else "fail"
             rows.append(
@@ -1759,6 +1974,7 @@ def main() -> int:
                     capped_matched_pages=visual.capped_matched_pages,
                     render_warnings=len(kinds) if kinds is not None else None,
                     render_warning_kinds=kinds,
+                    **row_identity(src, corpus_documents),
                 )
             )
             if not args.json:
@@ -1790,6 +2006,19 @@ def main() -> int:
         reference_stable=reference_stable,
         unstable_references=unstable_references,
     )
+    if corpus is not None:
+        try:
+            report = bind_evidence_report(
+                report,
+                corpus,
+                environment_identity(
+                    soffice_mode=soffice_mode,
+                    font_mode=visual_settings["font_mode"],
+                    source_revision=args.source_revision,
+                ),
+            )
+        except (OSError, RenderDependencyError, ValueError) as exc:
+            ap.error(str(exc))
     if args.json:
         print(json_report_payload(report))
     elif report["summary"]["measured"]:

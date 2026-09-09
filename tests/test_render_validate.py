@@ -134,6 +134,31 @@ class RenderValidateReportTests(unittest.TestCase):
 
         self.assertEqual(inputs, [first, second])
 
+    def test_resolve_input_campaign_reads_strict_oracle_identity(self):
+        root = pathlib.Path(__file__).resolve().parents[1]
+        manifest = root / "corpus" / "public" / "RENDER_ORACLE.json"
+
+        inputs, corpus = render_validate.resolve_input_campaign([], manifest)
+
+        self.assertIsNotNone(corpus)
+        assert corpus is not None
+        self.assertEqual(len(inputs), 21)
+        self.assertEqual(inputs, [document.path for document in corpus.documents])
+        self.assertEqual(corpus.expected_pages, 26)
+        self.assertEqual(
+            render_validate.row_identity(
+                inputs[0], render_validate.corpus_document_map(corpus)
+            ),
+            {
+                "case_id": "python-docx-blk-inner-content",
+                "input_bytes": 11949,
+                "input_sha256": (
+                    "16243dd05f686d6d5fab331843691492"
+                    "ad78ae3eb4f13cc8686077b44718c0ba"
+                ),
+            },
+        )
+
     def test_validation_report_rejects_document_paths(self):
         row = render_validate.ValidationRow(
             document="private" + "/sample.docx",
