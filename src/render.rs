@@ -10981,6 +10981,106 @@ mod tests {
             .expect("closed depth-limited stack is balanced");
     }
 
+    fn clip_replay_pdf(inner: Option<[f32; 4]>) -> (Vec<u8>, bool) {
+        let mut scene = super::PageScene::default();
+        scene
+            .push_transform(super::SceneTransform::from_translate(2.0, 3.0))
+            .expect("transform projects");
+        assert!(scene
+            .push_clip_rect(5.0, 5.0, 40.0, 40.0)
+            .expect("outer clip projects"));
+        scene
+            .push_fill_rect(0.0, 0.0, 20.0, 20.0, rgb::Color::new(10, 20, 30))
+            .expect("first rectangle projects");
+        let accepted = inner.is_some_and(|[x, y, width, height]| {
+            scene
+                .push_clip_rect(x, y, width, height)
+                .expect("inner clip is checked")
+        });
+        if accepted {
+            scene.pop_clip().expect("inner clip closes");
+        }
+        scene
+            .push_fill_rect(30.0, 30.0, 20.0, 20.0, rgb::Color::new(40, 50, 60))
+            .expect("later rectangle projects");
+        scene.pop_clip().expect("outer clip closes");
+        scene.pop_transform().expect("transform closes");
+        scene.ensure_balanced().expect("scene state is balanced");
+
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        super::pdf::replay_complete_page_scene(&mut surface, &scene)
+            .expect("paired clips replay without losing outer state");
+        surface.finish();
+        page.finish();
+        (document.finish().expect("clipped PDF finishes"), accepted)
+    }
+
+    #[test]
+    fn page_scene_clip_replay_rejects_reconstructed_span_overflow() {
+        // Both endpoints are finite, but subtracting them rounds the span to infinity.
+        let origin = -3.0 * 2.0_f32.powi(103);
+        let edge = origin + f32::MAX;
+        assert!(edge.is_finite());
+        assert!(!(edge - origin).is_finite());
+        let (expected, _) = clip_replay_pdf(None);
+        for rect in [[origin, 0.0, f32::MAX, 1.0], [0.0, origin, 1.0, f32::MAX]] {
+            let (actual, accepted) = clip_replay_pdf(Some(rect));
+            assert!(!accepted, "unrepresentable clip must not enter the scene");
+            assert_eq!(
+                actual, expected,
+                "outer clip and later paint stay unchanged"
+            );
+        }
+    }
+
+    #[test]
+    fn page_scene_clip_replay_rejects_collapsed_spans() {
+        let (expected, _) = clip_replay_pdf(None);
+        for rect in [[1.0e20, 0.0, 1.0, 1.0], [0.0, 1.0e20, 1.0, 1.0]] {
+            let (actual, accepted) = clip_replay_pdf(Some(rect));
+            assert!(!accepted, "rounded zero-area clip must not enter the scene");
+            assert_eq!(
+                actual, expected,
+                "outer clip and later paint stay unchanged"
+            );
+        }
+    }
+
+    #[test]
+    fn page_scene_clip_replay_returns_error_if_backend_rejects_path() {
+        let mut scene = super::PageScene::default();
+        // Bypass scene admission to exercise the backend's failure propagation.
+        scene.operations.extend([
+            super::PageSceneOp::PushClipRect {
+                rect: super::SceneRect {
+                    x: -3.0 * 2.0_f32.powi(103),
+                    y: 0.0,
+                    width: f32::MAX,
+                    height: 1.0,
+                },
+            },
+            super::PageSceneOp::PopClip,
+        ]);
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let error = super::pdf::replay_complete_page_scene(&mut surface, &scene)
+            .expect_err("failed backend push must stop before its paired pop");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene contains an invalid clip path"
+        );
+        surface.finish();
+        page.finish();
+        document
+            .finish()
+            .expect("failed push leaves backend state balanced");
+    }
+
     #[test]
     fn page_scene_transform_stack_is_typed_finite_and_nested_with_clips() {
         let transform = super::SceneTransform::from_row(0.5, 0.0, 0.0, 0.5, 10.0, 20.0);
@@ -13479,7 +13579,8 @@ mod tests {
             let mut document = super::PdfDoc::new();
             let mut page = document.start_page_with(settings.clone());
             let mut surface = page.surface();
-            super::pdf::replay_geometry_operations(&mut surface, &scene, 0..1);
+            super::pdf::replay_geometry_operations(&mut surface, &scene, 0..1)
+                .expect("geometry replays");
             assert!(super::pdf::draw_image_for_test(
                 &mut surface,
                 &scene,

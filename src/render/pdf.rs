@@ -136,7 +136,7 @@ fn fill_polygon_color(surface: &mut Surface<'_>, points: &[ScenePoint], color: r
     }
 }
 
-fn replay_geometry_operation(surface: &mut Surface<'_>, operation: &PageSceneOp) -> bool {
+fn replay_geometry_operation(surface: &mut Surface<'_>, operation: &PageSceneOp) -> Result<bool> {
     match operation {
         PageSceneOp::FillRect { rect, color } => {
             fill_rect_color(surface, rect.x, rect.y, rect.width, rect.height, *color);
@@ -145,7 +145,11 @@ fn replay_geometry_operation(surface: &mut Surface<'_>, operation: &PageSceneOp)
             fill_polygon_color(surface, points, *color);
         }
         PageSceneOp::PushClipRect { rect } => {
-            push_pdf_rect_clip(surface, *rect);
+            if !push_pdf_rect_clip(surface, *rect) {
+                return Err(Error::Render(
+                    "page scene contains an invalid clip path".into(),
+                ));
+            }
         }
         PageSceneOp::PopClip => surface.pop(),
         PageSceneOp::PushTransform { transform } => {
@@ -160,10 +164,10 @@ fn replay_geometry_operation(surface: &mut Surface<'_>, operation: &PageSceneOp)
         }
         PageSceneOp::PopTransform => surface.pop(),
         PageSceneOp::Link { .. } | PageSceneOp::Image { .. } | PageSceneOp::GlyphRun(_) => {
-            return false;
+            return Ok(false);
         }
     }
-    true
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -171,13 +175,14 @@ pub(super) fn replay_geometry_operations(
     surface: &mut Surface<'_>,
     scene: &PageScene,
     operations: std::ops::Range<usize>,
-) {
+) -> Result<()> {
     let Some(operations) = scene.operations.get(operations) else {
-        return;
+        return Ok(());
     };
     for operation in operations {
-        replay_geometry_operation(surface, operation);
+        replay_geometry_operation(surface, operation)?;
     }
+    Ok(())
 }
 
 fn scene_font(scene: &PageScene, cache: &mut [Option<Font>], id: SceneFontId) -> Result<Font> {
@@ -312,7 +317,7 @@ pub(super) fn replay_complete_page_scene(
     let mut fonts = vec![None; scene.font_resources.len()];
     let mut images = vec![None; scene.image_resources.len()];
     for (operation_index, operation) in scene.operations.iter().enumerate() {
-        if replay_geometry_operation(surface, operation) {
+        if replay_geometry_operation(surface, operation)? {
             continue;
         }
         match operation {
