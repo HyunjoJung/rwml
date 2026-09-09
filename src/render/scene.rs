@@ -48,11 +48,18 @@ pub(super) struct SceneRect {
 
 impl SceneRect {
     pub(super) fn new(x: f32, y: f32, width: f32, height: f32) -> Option<Self> {
-        if ![x, y, width, height, x + width, y + height]
+        let right = x + width;
+        let bottom = y + height;
+        // Backends reconstruct spans from rounded endpoints, which can overflow or collapse.
+        let span_x = right - x;
+        let span_y = bottom - y;
+        if ![x, y, width, height, right, bottom, span_x, span_y]
             .into_iter()
             .all(f32::is_finite)
             || width <= 0.0
             || height <= 0.0
+            || span_x <= 0.0
+            || span_y <= 0.0
         {
             return None;
         }
