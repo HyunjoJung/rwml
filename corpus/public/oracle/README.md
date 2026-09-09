@@ -21,7 +21,7 @@ python3 scripts/render_oracle_contract.py \
 ```
 
 The generated `RENDER_ORACLE.json` uses the same bounded, path-neutral corpus contract
-as the release render campaign. The lock is an input identity contract, not a claim of
+as `corpus/public/RENDER_ORACLE.json`. The lock is an input identity contract, not a claim of
 Word parity and not a release threshold.
 
 `scripts/table_oracle_topology.py` reduces a complete directory of `<case-id>.pdf`

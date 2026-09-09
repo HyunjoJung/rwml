@@ -27,6 +27,8 @@ Every file here is safe to redistribute:
   labels, expected page/warning metadata, and explicit resource ceilings.
   `scripts/render_oracle_contract.py` validates the lock before LibreOffice or
   rwml receives any input.
+  This JSON contract is opt-in for diagnostics; release validation continues to
+  consume `RENDER_MANIFEST.tsv`.
 - `oracle/` — checked-in identity locks for larger generated diagnostic
   campaigns that are intentionally outside the ordinary release corpus. The
   first lock covers 48 unequal-column table-continuation cases; its exact DOCX
