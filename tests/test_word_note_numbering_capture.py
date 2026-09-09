@@ -7,9 +7,10 @@ import zipfile
 from pathlib import Path
 from unittest import mock
 
-from scripts import word_oracle_capture as word
 from scripts import word_note_numbering_capture as notes
-from scripts import word_pilot_capture as pagination
+
+word = notes.word
+pagination = notes.pagination
 
 
 class WordNoteNumberingBackendTests(unittest.TestCase):
