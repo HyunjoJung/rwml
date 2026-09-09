@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$JobPath,
-    [ValidateSet("unequal-table-v1", "pagination-pilot-v1")]
+    [ValidateSet("unequal-table-v1", "pagination-pilot-v1", "note-numbering-v1")]
     [string]$Profile = "unequal-table-v1"
 )
 
@@ -25,6 +25,14 @@ if ($Profile -ceq "pagination-pilot-v1") {
         "pilot-unequal-table-continuation" = @(18300, "748340d0344926fe0c937233d2b9c12a97c5d905761eac2f8d1b98a17c0ea0cb")
         "synthetic-pagination-keep" = @(4507, "ac3002711280f78ce473e5d1edc1660735485a70e1b6ecec943e720d5b3593fe")
         "synthetic-pagination-keep-noto11" = @(4701, "f04c46ea3da6e4c1ea023fee71389602cf7c0091f351e8a950b61982bd035979")
+    }
+}
+elseif ($Profile -ceq "note-numbering-v1") {
+    $ExpectedDocumentCount = 1
+    $ExpectedJobSchema = "rwml.word-note-numbering-export-job.v1"
+    $ExportMetadataSchema = "rwml.word-note-numbering-export-metadata.v1"
+    $ExpectedPilotInputs = @{
+        "pilot-notes-numbering" = @(5856, "e3c2192b845dd27396fbd9e9709915578736e2d12433710a9a4e3be66dca8092")
     }
 }
 
@@ -192,7 +200,7 @@ foreach ($row in $documents) {
         "case_id", "input", "output", "input_bytes", "input_sha256"
     ) "job document"
     Assert-CanonicalCaseId $row.case_id
-    if ($Profile -ceq "pagination-pilot-v1") {
+    if ($ExpectedPilotInputs.Count -gt 0) {
         if (-not $ExpectedPilotInputs.ContainsKey($row.case_id)) {
             throw "document is outside the fixed pilot profile"
         }

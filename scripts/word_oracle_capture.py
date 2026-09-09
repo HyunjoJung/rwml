@@ -797,7 +797,7 @@ def _run_backend(
     timeout_seconds: int,
     profile: str | None = None,
 ) -> None:
-    if profile not in {None, "pagination-pilot-v1"}:
+    if profile not in {None, "pagination-pilot-v1", "note-numbering-v1"}:
         raise ValueError("Word export profile is unsupported")
     environment = None
     if PureWindowsPath(powershell).name.casefold() == "powershell.exe":

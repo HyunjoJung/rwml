@@ -246,6 +246,11 @@ def observe_pdf(path: Path, case_id: str) -> dict:
     """Extract bounded font, span-baseline, page and raster observations anew."""
     if case_id not in INPUTS:
         raise ValueError("unknown pilot case")
+    return _observe_pdf(path, observe_installed_defaults=case_id == ORIGINAL_CASE)
+
+
+def _observe_pdf(path: Path, *, observe_installed_defaults: bool = False) -> dict:
+    """Share bounded PDF extraction with the separate fixed note-numbering probe."""
     pdf_module = _analysis_runtime()
     payload = word._read_regular_file(path, word.MAX_PDF_BYTES)
     pages, programs = [], {}
@@ -260,7 +265,7 @@ def observe_pdf(path: Path, case_id: str) -> dict:
                 raw_name = word._safe_text(font[3], "PDF font name")
                 name = (
                     re.sub(r"^[A-Z]{6}\+", "", raw_name)
-                    if case_id == ORIGINAL_CASE
+                    if observe_installed_defaults
                     else word.normalize_pdf_font_name(raw_name)
                 )
                 if font[0] <= 0:
@@ -268,7 +273,7 @@ def observe_pdf(path: Path, case_id: str) -> dict:
                 extracted = pdf.extract_font(font[0])
                 if not extracted[3]:
                     raise ValueError("pilot PDF font is not embedded")
-                if case_id != ORIGINAL_CASE and name != "NotoSans-Regular":
+                if not observe_installed_defaults and name != "NotoSans-Regular":
                     raise ValueError("explicit-font pilot used an unexpected font")
                 fonts.append(name)
                 programs[(name, digest(extracted[3]))] = len(extracted[3])
