@@ -117,8 +117,53 @@ on success and failure, and cleanup failure is reported. Process deadlines must
 be finite positive numbers and output limits must be bounded positive integers.
 
 Runtime inspection and a successful conversion alone do not prove repeatability,
-Word parity, or full-campaign acceptance. The repeated table-capture verifier
-and broader metric/campaign integration remain separate from this runtime.
+Word parity, or full-campaign acceptance.
+
+## Repeated LibreOffice table capture
+
+`scripts/libreoffice_table_capture.py` runs both complete exports of the 48-case
+unequal-column table corpus and independently validates the retained results.
+It uses the locked runtime above and the exact `NotoSans-Regular.ttf` bytes from
+`word-font-lock.json`. PyMuPDF 1.28.2 and Pillow 12.3.0 are required. The font is
+staged read-only; this command does not download it or install host fonts.
+
+From a clean checkout and a stable Python environment, use a fresh output path:
+
+```sh
+python3 -B scripts/libreoffice_table_capture.py capture \
+  --font <path-to-NotoSans-Regular.ttf> \
+  --output target/libreoffice-oracle/table-capture
+python3 -B scripts/libreoffice_table_capture.py validate \
+  --output target/libreoffice-oracle/table-capture
+```
+
+Each capture records the checkout, Python executable and runtime payload,
+imported library payloads, Docker executable/runtime, image/recipe, input, font,
+and extraction-harness identities. The analysis identity includes installed
+startup code and bytecode, not only version strings or installer receipts.
+Keep the environment unchanged and use `-B` for capture and validation. A
+symlinked or changing library payload is rejected rather than silently omitted.
+
+The verifier checks both complete PDF/metadata sets, exact artifact checksums,
+embedded font PostScript names and SFNT revisions, independently extracted table
+topology, and every page's 110-DPI raster. Raster hashes bind width, height and
+color mode; a truncated page set is not a complete stability observation.
+Only metadata reads explicitly allow empty regular files, such as warmup logs;
+empty inputs, links, FIFOs and changing files remain invalid. Font names and
+revision metadata alone do not prove outline or Unicode correctness.
+
+`CAPTURE.json` is written only after independent validation succeeds. All 48
+normalized topologies and complete raster sets must repeat. PDF bytes are
+retained but are not required to match, because producer metadata may differ.
+Validation uses the retained font and regenerated input identities and does not
+launch Docker or Word. It requires the recorded checkout, harness and analysis
+environment; historical receipts must not be relabeled to another revision.
+
+These are diagnostic captures, not an authoritative Word comparison or a
+release gate. General font packs and the expanded native-versus-oracle campaigns
+remain separate from this single-font table path. `libreoffice-font-lock.json`
+also records the bounded OFL font provenance used by the shared font-inspection
+helpers; it does not widen the table capture's accepted font set.
 
 ## Microsoft Word diagnostic capture
 

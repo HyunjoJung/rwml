@@ -239,7 +239,11 @@ def _validate_json_complexity(value: object) -> None:
             stack.extend((item, depth + 1) for item in current)
 
 
-def _read_bounded_regular_file(path: Path, maximum: int) -> bytes:
+def _read_bounded_regular_file(
+    path: Path, maximum: int, *, allow_empty: bool = False
+) -> bytes:
+    if type(allow_empty) is not bool:
+        raise ValueError("empty-file permission must be a boolean")
     if path.is_symlink():
         raise ValueError(f"{path.name} must not be a symlink")
     descriptor: int | None = None
@@ -255,7 +259,7 @@ def _read_bounded_regular_file(path: Path, maximum: int) -> bytes:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode):
             raise ValueError(f"{path.name} is not a regular file")
-        if before.st_size <= 0 or before.st_size > maximum:
+        if before.st_size < (0 if allow_empty else 1) or before.st_size > maximum:
             raise ValueError(f"{path.name} size is outside the contract")
         remaining = before.st_size
         chunks: list[bytes] = []
