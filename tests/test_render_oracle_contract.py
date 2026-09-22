@@ -371,6 +371,132 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
                             evidence, corpus
                         )
 
+    def test_evidence_rejects_gate_values_that_disagree_with_summary(self):
+        cases = [
+            ("below_recall_min", 0, "<=", 0, True),
+            ("mean_recall", 1.0, ">=", 0.97, True),
+            ("mean_recall", None, ">=", 0.97, False),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(pathlib.Path(tmp), valid_manifest())
+            )
+            for metric, actual, op, threshold, passed in cases:
+                with self.subTest(metric=metric, actual=actual):
+                    core = valid_core_report()
+                    core["rows"][0].update(status="fail", recall=0.5)
+                    core["summary"].update(below_recall_min=1, mean_recall=0.5)
+                    core["gate"] = {
+                        "passed": passed,
+                        "checks": [
+                            {
+                                "metric": metric,
+                                "actual": actual,
+                                "op": op,
+                                "threshold": threshold,
+                                "passed": passed,
+                            }
+                        ],
+                    }
+                    with self.assertRaisesRegex(ValueError, "gate actual.*summary"):
+                        render_oracle_contract.bind_evidence_report(
+                            core, corpus, valid_environment()
+                        )
+
+    def test_evidence_rejects_gate_metrics_without_numeric_summary_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(pathlib.Path(tmp), valid_manifest())
+            )
+            for metric in (
+                "unmeasured_score", "reference_stable", "unstable_references"
+            ):
+                with self.subTest(metric=metric):
+                    core = valid_core_report()
+                    core["gate"] = {
+                        "passed": True,
+                        "checks": [
+                            {
+                                "metric": metric,
+                                "actual": 1,
+                                "op": ">=",
+                                "threshold": 1,
+                                "passed": True,
+                            }
+                        ],
+                    }
+                    with self.assertRaisesRegex(ValueError, "gate metric.*summary"):
+                        render_oracle_contract.bind_evidence_report(
+                            core, corpus, valid_environment()
+                        )
+
+    def test_evidence_accepts_produced_passing_and_failing_gates(self):
+        from scripts import render_validate
+
+        thresholds = {
+            "min_mean_recall": 0.97,
+            "min_mean_page_ratio": 0.9,
+            "max_mean_page_ratio": 1.1,
+            "min_mean_ahash_similarity": 0.9,
+            "min_mean_page_ahash_similarity": 0.9,
+            "min_mean_foreground_ink_iou": 0.9,
+            "max_mean_render_warnings": 0,
+            "max_skipped": 0,
+            "max_unmatched_candidate_pages": 0,
+            "max_unmatched_reference_pages": 0,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(pathlib.Path(tmp), valid_manifest())
+            )
+            for recall in (1.0, 0.5):
+                with self.subTest(recall=recall):
+                    core = valid_core_report()
+                    passed = recall >= core["summary"]["recall_min"]
+                    core["rows"][0].update(
+                        status="pass" if passed else "fail", recall=recall
+                    )
+                    core["summary"].update(
+                        mean_recall=recall, below_recall_min=int(not passed)
+                    )
+                    core["gate"] = render_validate.validation_gate(
+                        core["summary"], thresholds
+                    )
+                    evidence = render_oracle_contract.bind_evidence_report(
+                        core, corpus, valid_environment()
+                    )
+                    self.assertEqual(len(evidence["gate"]["checks"]), 11)
+                    self.assertIs(evidence["gate"]["passed"], passed)
+
+    def test_evidence_accepts_missing_measurements_as_failed_gate_checks(self):
+        from scripts import render_validate
+
+        core = render_validate.validation_report(
+            [
+                render_validate.ValidationRow(
+                    document="fixture.docx", status="skip", reason="render-failed"
+                )
+            ],
+            recall_min=0.97,
+            thresholds={"min_mean_recall": 0.97, "max_skipped": 0},
+            visual_settings=valid_core_report()["visual_comparison"],
+        )
+        core["rows"][0].update(
+            case_id="fixture-basic", input_bytes=7, input_sha256=sha256(b"fixture")
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(pathlib.Path(tmp), valid_manifest())
+            )
+            evidence = render_oracle_contract.bind_evidence_report(
+                core, corpus, valid_environment()
+            )
+        checks = {check["metric"]: check for check in evidence["gate"]["checks"]}
+        self.assertIsNone(checks["mean_recall"]["actual"])
+        self.assertFalse(checks["mean_recall"]["passed"])
+        self.assertEqual(checks["skipped"]["actual"], 1)
+        self.assertFalse(evidence["gate"]["passed"])
+
     def test_evidence_rejects_a_contradictory_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -384,9 +510,9 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
                 "passed": True,
                 "checks": [
                     {
-                        "metric": "mean_recall",
-                        "actual": 0.5,
-                        "op": ">=",
+                        "metric": "mean_page_ratio",
+                        "actual": 1.0,
+                        "op": "<=",
                         "threshold": 0.9,
                         "passed": False,
                     }

@@ -836,7 +836,7 @@ def _validate_summary(
         raise ValueError("unchecked evidence summary lists unstable references")
 
 
-def _validate_gate(value: object) -> None:
+def _validate_gate(value: object, summary: dict[str, Any]) -> None:
     if not isinstance(value, dict):
         raise ValueError("evidence gate must be an object")
     _require_exact_keys(value, GATE_KEYS, "evidence gate")
@@ -853,6 +853,8 @@ def _validate_gate(value: object) -> None:
             or re.fullmatch(r"[a-z][a-z0-9_]*", metric) is None
         ):
             raise ValueError("evidence gate metric is invalid")
+        if metric not in SUMMARY_KEYS - {"reference_stable", "unstable_references"}:
+            raise ValueError("evidence gate metric has no numeric summary value")
         op = check["op"]
         if op not in {">=", "<="}:
             raise ValueError("evidence gate operator is invalid")
@@ -874,6 +876,8 @@ def _validate_gate(value: object) -> None:
             or not math.isfinite(actual)
         ):
             raise ValueError("evidence gate actual is invalid")
+        if isinstance(summary[metric], bool) or actual != summary[metric]:
+            raise ValueError("evidence gate actual contradicts summary")
         expected_passed = actual is not None and (
             (op == ">=" and actual >= threshold)
             or (op == "<=" and actual <= threshold)
@@ -907,7 +911,7 @@ def validate_evidence_report(
         _validate_evidence_row(row, document)
     _validate_visual_comparison(evidence["visual_comparison"])
     _validate_summary(evidence["summary"], rows, corpus)
-    _validate_gate(evidence["gate"])
+    _validate_gate(evidence["gate"], evidence["summary"])
     _assert_path_neutral(evidence)
 
 
