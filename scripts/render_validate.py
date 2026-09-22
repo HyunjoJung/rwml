@@ -814,11 +814,13 @@ def _command_text(command: list[str], *, cwd: Path | None = None) -> str:
 
 
 def _source_identity(explicit_revision: str | None) -> tuple[str, bool]:
-    revision = explicit_revision or _command_text(
+    revision = _command_text(
         ["git", "rev-parse", "HEAD"], cwd=REPO
     )
     if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
         raise ValueError("source revision must be a full lowercase Git SHA")
+    if explicit_revision is not None and explicit_revision != revision:
+        raise ValueError("source revision does not match the checked-out commit")
     completed = subprocess.run(
         ["git", "status", "--porcelain=v1", "--untracked-files=all"],
         cwd=REPO,
@@ -1742,8 +1744,8 @@ def main() -> int:
     ap.add_argument(
         "--source-revision",
         help=(
-            "Bind strict JSON evidence to this full lowercase Git SHA; "
-            "defaults to the current repository HEAD."
+            "Assert that this full lowercase Git SHA matches the checkout HEAD "
+            "for strict JSON evidence; defaults to HEAD."
         ),
     )
     ap.add_argument(
