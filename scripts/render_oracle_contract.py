@@ -666,7 +666,9 @@ def bind_evidence_report(
     return evidence
 
 
-def _validate_evidence_row(row: object, document: CorpusDocument) -> None:
+def _validate_evidence_row(
+    row: object, document: CorpusDocument, *, page_cap: int
+) -> None:
     if not isinstance(row, dict):
         raise ValueError("evidence row must be an object")
     status = row.get("status")
@@ -720,6 +722,22 @@ def _validate_evidence_row(row: object, document: CorpusDocument) -> None:
         }:
             if not isinstance(value, int) or isinstance(value, bool) or value < 0:
                 raise ValueError(f"evidence row count is invalid: {key}")
+    if status != "skip":
+        candidate_pages = row["rwml_pages"]
+        reference_pages = row["reference_pages"]
+        if candidate_pages == 0 or reference_pages == 0:
+            raise ValueError("measured evidence row page counts must be positive")
+        matched_pages = min(candidate_pages, reference_pages)
+        expected = {
+            "page_ratio": round(candidate_pages / reference_pages, 4),
+            "compared_pages": min(matched_pages, page_cap),
+            "unmatched_candidate_pages": max(0, candidate_pages - reference_pages),
+            "unmatched_reference_pages": max(0, reference_pages - candidate_pages),
+            "capped_matched_pages": max(0, matched_pages - page_cap),
+        }
+        for key, expected_value in expected.items():
+            if row[key] != expected_value:
+                raise ValueError(f"evidence row {key} contradicts page counts or cap")
     warnings = row.get("render_warning_kinds")
     if warnings is not None:
         if not isinstance(warnings, list) or warnings != sorted(set(warnings)):
@@ -907,9 +925,11 @@ def validate_evidence_report(
     rows = evidence["rows"]
     if not isinstance(rows, list) or len(rows) != len(corpus.documents):
         raise ValueError("evidence row coverage mismatch")
-    for row, document in zip(rows, corpus.documents, strict=True):
-        _validate_evidence_row(row, document)
     _validate_visual_comparison(evidence["visual_comparison"])
+    for row, document in zip(rows, corpus.documents, strict=True):
+        _validate_evidence_row(
+            row, document, page_cap=evidence["visual_comparison"]["page_cap"]
+        )
     _validate_summary(evidence["summary"], rows, corpus)
     _validate_gate(evidence["gate"], evidence["summary"])
     _assert_path_neutral(evidence)
