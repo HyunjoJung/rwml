@@ -16,9 +16,21 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+try:
+    from render_evidence_metrics import (
+        aggregate_metrics,
+        validate_metric_contract,
+        validate_metrics,
+    )
+except ModuleNotFoundError:
+    from scripts.render_evidence_metrics import (
+        aggregate_metrics,
+        validate_metric_contract,
+        validate_metrics,
+    )
 
 CORPUS_SCHEMA = "rwml.render-oracle-corpus.v1"
-EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v1"
+EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v2"
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
 MAX_JSON_DEPTH = 64
@@ -53,6 +65,7 @@ EVIDENCE_KEYS = {
     "campaign",
     "environment",
     "visual_comparison",
+    "integer_visual_metrics",
     "summary",
     "gate",
     "rows",
@@ -95,6 +108,7 @@ ROW_KEYS = {
     "unmatched_candidate_pages",
     "unmatched_reference_pages",
     "capped_matched_pages",
+    "integer_visual_metrics",
     "render_warnings",
     "render_warning_kinds",
     "reason",
@@ -109,6 +123,7 @@ SKIPPED_ROW_KEYS = {
     "reason",
 }
 VISUAL_COMPARISON_KEYS = {
+    "integer_metrics",
     "dpi",
     "page_cap",
     "foreground_threshold",
@@ -742,6 +757,9 @@ def _validate_evidence_row(
         for key, expected_value in expected.items():
             if row[key] != expected_value:
                 raise ValueError(f"evidence row {key} contradicts page counts or cap")
+        validate_metrics(row["integer_visual_metrics"])
+        if row["integer_visual_metrics"]["pages"] != row["compared_pages"]:
+            raise ValueError("integer visual page count contradicts compared_pages")
     warnings = row.get("render_warning_kinds")
     if warnings is not None:
         if not isinstance(warnings, list) or warnings != sorted(set(warnings)):
@@ -780,6 +798,29 @@ def _validate_visual_comparison(value: object) -> None:
             raise ValueError(f"visual comparison value is invalid: {key}")
     if value["font_mode"] not in FONT_MODES:
         raise ValueError("visual comparison font mode is invalid")
+    validate_metric_contract(value["integer_metrics"])
+
+
+def _validate_integer_visual_aggregate(evidence: dict[str, Any]) -> None:
+    measured = [
+        row["integer_visual_metrics"] for row in evidence["rows"]
+        if row["status"] != "skip"
+    ]
+    aggregate = evidence["integer_visual_metrics"]
+    if not measured:
+        if aggregate is not None:
+            raise ValueError("unmeasured integer visual aggregate must be null")
+        return
+    validate_metrics(aggregate)
+    if aggregate != aggregate_metrics(measured):
+        raise ValueError("integer visual aggregate contradicts measured rows")
+
+
+def _validate_metric_environment(evidence: dict[str, Any]) -> None:
+    implementation = evidence["visual_comparison"]["integer_metrics"]["implementation"]
+    has_numpy = any(tool["name"] == "numpy" for tool in evidence["environment"]["tools"])
+    if has_numpy != (implementation == "numpy-integer-exact-v1"):
+        raise ValueError("integer visual implementation contradicts environment")
 
 
 def _validate_summary(
@@ -930,10 +971,12 @@ def validate_evidence_report(
     if not isinstance(rows, list) or len(rows) != len(corpus.documents):
         raise ValueError("evidence row coverage mismatch")
     _validate_visual_comparison(evidence["visual_comparison"])
+    _validate_metric_environment(evidence)
     for row, document in zip(rows, corpus.documents, strict=True):
         _validate_evidence_row(
             row, document, page_cap=evidence["visual_comparison"]["page_cap"]
         )
+    _validate_integer_visual_aggregate(evidence)
     _validate_summary(evidence["summary"], rows, corpus)
     _validate_gate(evidence["gate"], evidence["summary"])
     _assert_path_neutral(evidence)

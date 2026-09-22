@@ -895,6 +895,7 @@ def _harness_sha256() -> str:
         SCRIPT_PATH,
         SCRIPT_PATH.with_name("generate_unequal_table_oracle.py"),
         SCRIPT_PATH.with_name("render_oracle_contract.py"),
+        SCRIPT_PATH.with_name("render_evidence_metrics.py"),
     ):
         payload = path.read_bytes()
         name = path.name.encode("ascii")

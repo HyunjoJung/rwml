@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 
+from scripts import render_evidence_metrics as metrics
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "render_oracle_contract.py"
@@ -65,6 +66,14 @@ def write_manifest(root: pathlib.Path, data: dict, document: bytes = b"fixture")
 
 
 def valid_environment() -> dict:
+    tools = [
+        {"name": "pillow", "version": "12.3.0"},
+        {"name": "pymupdf", "version": "1.28.2"},
+        {"name": "python", "version": "3.13.14"},
+    ]
+    numpy = metrics.numpy_module()
+    if numpy is not None:
+        tools.insert(0, {"name": "numpy", "version": str(numpy.__version__)})
     return {
         "source_revision": "a" * 40,
         "source_dirty": False,
@@ -82,22 +91,21 @@ def valid_environment() -> dict:
             "release": "6.8.0",
             "machine": "x86_64",
         },
-        "tools": [
-            {"name": "pillow", "version": "12.3.0"},
-            {"name": "pymupdf", "version": "1.28.2"},
-            {"name": "python", "version": "3.13.14"},
-        ],
+        "tools": tools,
     }
 
 
 def valid_core_report() -> dict:
+    integer_metrics = metrics.image_metrics(b"\xff\xff\xff", b"\xff\xff\xff", 1, 1)
     return {
+        "integer_visual_metrics": dict(integer_metrics),
         "visual_comparison": {
             "dpi": 110,
             "page_cap": 32,
             "foreground_threshold": 245,
             "ahash_size": 16,
             "font_mode": "fixed-noto-subsets",
+            "integer_metrics": metrics.metric_contract(),
         },
         "summary": {
             "documents": 1,
@@ -134,6 +142,7 @@ def valid_core_report() -> dict:
                 "mean_page_ahash_similarity": 1.0,
                 "foreground_ink_iou": 1.0,
                 "compared_pages": 1,
+                "integer_visual_metrics": integer_metrics,
                 "unmatched_candidate_pages": 0,
                 "unmatched_reference_pages": 0,
                 "capped_matched_pages": 0,
@@ -151,6 +160,7 @@ def page_core_report(candidate_pages: int, reference_pages: int, page_cap: int) 
     visual = render_validate.visual_metrics_from_scores(
         [1.0] * compared,
         [1.0] * compared,
+        integer_pages=[valid_core_report()["integer_visual_metrics"]] * compared,
         candidate_page_count=candidate_pages,
         reference_page_count=reference_pages,
         page_cap=page_cap,
@@ -163,6 +173,7 @@ def page_core_report(candidate_pages: int, reference_pages: int, page_cap: int) 
         **vars(visual),
     )
     settings = valid_core_report()["visual_comparison"]
+    settings.pop("integer_metrics")
     settings["page_cap"] = page_cap
     return render_validate.validation_report(
         [render_validate.ValidationRow(**row)],
@@ -322,7 +333,7 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
             )
             render_oracle_contract.validate_evidence_report(evidence, corpus)
 
-        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v1")
+        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v2")
         self.assertEqual(evidence["campaign"]["name"], "test-campaign")
         self.assertEqual(evidence["campaign"]["documents"], 1)
         self.assertEqual(evidence["campaign"]["expected_pages"], 1)
@@ -506,7 +517,7 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
             ],
             recall_min=0.97,
             thresholds={"min_mean_recall": 0.97, "max_skipped": 0},
-            visual_settings=valid_core_report()["visual_comparison"],
+            integer_metrics=True,
         )
         core["rows"][0].update(
             case_id="fixture-basic", input_bytes=7, input_sha256=sha256(b"fixture")
