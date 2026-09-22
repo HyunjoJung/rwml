@@ -53,6 +53,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 try:
+    from libreoffice_oracle_fonts import normalized_postscript_name, sfnt_revision
     from render_oracle_contract import (
         CorpusDocument,
         CorpusManifest,
@@ -60,6 +61,7 @@ try:
         load_corpus_manifest,
     )
 except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
+    from scripts.libreoffice_oracle_fonts import normalized_postscript_name, sfnt_revision
     from scripts.render_oracle_contract import (
         CorpusDocument,
         CorpusManifest,
@@ -377,18 +379,71 @@ def validation_gate(summary: dict, thresholds: dict | None = None) -> dict:
 
 
 def reference_page_digests(pdf: Path, *, dpi: int, page_cap: int) -> list[str] | None:
-    """Per-page raster digests of a rendered reference, for a stability probe."""
+    """Complete, dimension-bound raster digests for a reference stability probe."""
     try:
-        images, _ = rasterize_pdf_pages(pdf, dpi=dpi, page_cap=page_cap)
+        images, total_pages = rasterize_pdf_pages(pdf, dpi=dpi, page_cap=page_cap)
     except Exception:
+        return None
+    if not images or len(images) != total_pages:
         return None
     digests = []
     for image in images:
         try:
-            digests.append(hashlib.sha256(image.tobytes()).hexdigest())
+            digest = hashlib.sha256()
+            digest.update(image.width.to_bytes(8, "big"))
+            digest.update(image.height.to_bytes(8, "big"))
+            digest.update(image.mode.encode("ascii"))
+            digest.update(image.tobytes())
+            digests.append(digest.hexdigest())
         except Exception:
             return None
     return digests
+
+
+def reference_pdf_font_identities(pdf: Path) -> list[dict[str, object]]:
+    """Read path-neutral font identities from embedded PDF subset programs."""
+    if fitz is None:
+        raise ValueError("PyMuPDF is required for reference font attestation")
+    document = fitz.open(pdf)
+    identities: dict[str, int] = {}
+    extracted_xrefs: set[int] = set()
+    try:
+        for page in document:
+            for font in page.get_fonts(full=True):
+                if len(font) < 4:
+                    raise ValueError("reference PDF font resource is malformed")
+                xref = font[0]
+                base_name = font[3]
+                if (
+                    isinstance(xref, bool)
+                    or not isinstance(xref, int)
+                    or xref <= 0
+                    or not isinstance(base_name, str)
+                    or not base_name
+                ):
+                    raise ValueError("reference PDF font resource is malformed")
+                if xref in extracted_xrefs:
+                    continue
+                extracted_xrefs.add(xref)
+                extracted = document.extract_font(xref)
+                if (
+                    not isinstance(extracted, tuple)
+                    or len(extracted) < 4
+                    or not isinstance(extracted[3], bytes)
+                ):
+                    raise ValueError("reference PDF font program is unavailable")
+                name = normalized_postscript_name(base_name)
+                revision = sfnt_revision(extracted[3])
+                previous = identities.get(name)
+                if previous is not None and previous != revision:
+                    raise ValueError("reference PDF font identity is ambiguous")
+                identities[name] = revision
+    finally:
+        document.close()
+    return [
+        {"postscript_name": name, "sfnt_revision": identities[name]}
+        for name in sorted(identities)
+    ]
 
 
 def oracle_stability_verdict(
