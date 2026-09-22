@@ -1961,7 +1961,7 @@ def main() -> int:
                 ValidationRow(
                     document=src.name,
                     status=status,
-                    recall=round(rec, 4),
+                    recall=rec if corpus is not None else round(rec, 4),
                     rwml_pages=got_pages,
                     reference_pages=ref_pages,
                     page_ratio=round(pr, 4),

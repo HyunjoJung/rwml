@@ -1,4 +1,7 @@
+import contextlib
 import importlib.util
+import io
+import json
 import os
 import pathlib
 import subprocess
@@ -17,6 +20,73 @@ SPEC.loader.exec_module(render_validate)
 
 
 class RenderValidateReportTests(unittest.TestCase):
+    def run_cli_recall_report(self, recall, *, strict):
+        from tests.test_render_oracle_contract import (
+            valid_environment,
+            valid_manifest,
+            write_manifest,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            manifest = write_manifest(root, valid_manifest())
+            argv = [str(SCRIPT), "--json"]
+            if strict:
+                argv.extend(["--manifest", str(manifest)])
+            else:
+                argv.append(str(root / "synthetic" / "fixture.docx"))
+            output = io.StringIO()
+            visual = render_validate.visual_metrics_from_scores(
+                [1.0],
+                [1.0],
+                candidate_page_count=1,
+                reference_page_count=1,
+                page_cap=32,
+            )
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(
+                    render_validate, "resolve_soffice_mode", return_value="local"
+                ),
+                mock.patch.object(
+                    render_validate, "render_libreoffice", return_value=root / "ref.pdf"
+                ),
+                mock.patch.object(
+                    render_validate, "render_rwml", return_value={"warnings": []}
+                ),
+                mock.patch.object(render_validate, "text_recall", return_value=recall),
+                mock.patch.object(render_validate, "page_count", return_value=1),
+                mock.patch.object(render_validate, "hash_similarity", return_value=1.0),
+                mock.patch.object(
+                    render_validate, "compare_pdf_visuals", return_value=visual
+                ),
+                mock.patch.object(
+                    render_validate, "environment_identity", return_value=valid_environment()
+                ),
+                contextlib.redirect_stdout(output),
+            ):
+                result = render_validate.main()
+            return result, json.loads(output.getvalue())
+
+    def test_strict_cli_preserves_recall_at_the_threshold_boundary(self):
+        for recall in (0.9699, 0.96996, 0.97, 0.97004):
+            with self.subTest(recall=recall):
+                result, report = self.run_cli_recall_report(recall, strict=True)
+                passed = recall >= 0.97
+                self.assertEqual(result, 0 if passed else 1)
+                self.assertEqual(report["rows"][0]["recall"], recall)
+                self.assertEqual(
+                    report["rows"][0]["status"], "pass" if passed else "fail"
+                )
+                self.assertEqual(report["summary"]["below_recall_min"], int(not passed))
+                self.assertIs(report["gate"]["passed"], passed)
+
+    def test_legacy_cli_keeps_rounded_recall_output(self):
+        result, report = self.run_cli_recall_report(0.97004, strict=False)
+        self.assertEqual(result, 0)
+        self.assertEqual(report["rows"][0]["recall"], 0.97)
+        self.assertNotIn("schema", report)
+
     def test_cli_prefers_warning_free_pymupdf_module(self):
         with tempfile.TemporaryDirectory() as tmp:
             modules = pathlib.Path(tmp)
