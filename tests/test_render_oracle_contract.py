@@ -144,6 +144,33 @@ def valid_core_report() -> dict:
     }
 
 
+def page_core_report(candidate_pages: int, reference_pages: int, page_cap: int) -> dict:
+    from scripts import render_validate
+
+    compared = min(candidate_pages, reference_pages, page_cap)
+    visual = render_validate.visual_metrics_from_scores(
+        [1.0] * compared,
+        [1.0] * compared,
+        candidate_page_count=candidate_pages,
+        reference_page_count=reference_pages,
+        page_cap=page_cap,
+    )
+    row = valid_core_report()["rows"][0]
+    row.update(
+        rwml_pages=candidate_pages,
+        reference_pages=reference_pages,
+        page_ratio=round(candidate_pages / reference_pages, 4),
+        **vars(visual),
+    )
+    settings = valid_core_report()["visual_comparison"]
+    settings["page_cap"] = page_cap
+    return render_validate.validation_report(
+        [render_validate.ValidationRow(**row)],
+        recall_min=0.97,
+        visual_settings=settings,
+    )
+
+
 class RenderOracleCorpusContractTests(unittest.TestCase):
     def test_public_oracle_lock_matches_the_established_render_inventory(self):
         corpus_root = ROOT / "corpus" / "public"
@@ -531,13 +558,90 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
             core = valid_core_report()
             core["rows"][0]["rwml_pages"] = 2
             core["rows"][0]["page_ratio"] = 2.0
+            core["rows"][0]["unmatched_candidate_pages"] = 1
             core["summary"]["mean_page_ratio"] = 2.0
+            core["summary"]["unmatched_candidate_pages"] = 1
 
             evidence = render_oracle_contract.bind_evidence_report(
                 core, corpus, valid_environment()
             )
 
         self.assertEqual(evidence["summary"]["mean_page_ratio"], 2.0)
+
+    def test_evidence_rejects_inconsistent_page_accounting(self):
+        cases = [
+            ("rwml_pages", 2, None),
+            ("reference_pages", 2, None),
+            ("rwml_pages", 0, None),
+            ("reference_pages", 0, None),
+            ("page_ratio", 1.01, "mean_page_ratio"),
+            ("compared_pages", 0, "compared_pages"),
+            ("compared_pages", 2, "compared_pages"),
+            ("unmatched_candidate_pages", 1, "unmatched_candidate_pages"),
+            ("unmatched_reference_pages", 1, "unmatched_reference_pages"),
+            ("capped_matched_pages", 1, "capped_matched_pages"),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(pathlib.Path(tmp), valid_manifest())
+            )
+            for key, value, summary_key in cases:
+                with self.subTest(key=key, value=value):
+                    core = valid_core_report()
+                    core["rows"][0][key] = value
+                    if summary_key is not None:
+                        core["summary"][summary_key] = value
+                    with self.assertRaisesRegex(ValueError, "page"):
+                        render_oracle_contract.bind_evidence_report(
+                            core, corpus, valid_environment()
+                        )
+
+    def test_evidence_accepts_produced_page_accounting_and_rounding(self):
+        cases = [
+            (1, 1, 32, 1.0),
+            (2, 1, 32, 2.0),
+            (1, 2, 32, 0.5),
+            (2, 3, 32, 0.6667),
+            (3, 2, 32, 1.5),
+            (5, 3, 2, 1.6667),
+            (3, 5, 2, 0.6),
+            (3, 3, 2, 1.0),
+            (1, 1, 1, 1.0),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(pathlib.Path(tmp), valid_manifest())
+            )
+            for candidate_pages, reference_pages, page_cap, ratio in cases:
+                with self.subTest(pages=(candidate_pages, reference_pages, page_cap)):
+                    evidence = render_oracle_contract.bind_evidence_report(
+                        page_core_report(candidate_pages, reference_pages, page_cap),
+                        corpus,
+                        valid_environment(),
+                    )
+                    row = evidence["rows"][0]
+                    self.assertEqual(row["page_ratio"], ratio)
+                    accounted = row["compared_pages"] + row["capped_matched_pages"]
+                    self.assertEqual(
+                        accounted + row["unmatched_candidate_pages"], candidate_pages
+                    )
+                    self.assertEqual(
+                        accounted + row["unmatched_reference_pages"], reference_pages
+                    )
+
+    def test_evidence_rejects_page_accounting_that_ignores_the_cap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = render_oracle_contract.load_corpus_manifest(
+                write_manifest(pathlib.Path(tmp), valid_manifest())
+            )
+            core = page_core_report(5, 3, 2)
+            for key, value in (("compared_pages", 3), ("capped_matched_pages", 0)):
+                core["rows"][0][key] = value
+                core["summary"][key] = value
+            with self.assertRaisesRegex(ValueError, "page"):
+                render_oracle_contract.bind_evidence_report(
+                    core, corpus, valid_environment()
+                )
 
 
 if __name__ == "__main__":
