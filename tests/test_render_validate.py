@@ -20,8 +20,9 @@ SPEC.loader.exec_module(render_validate)
 
 
 class RenderValidateReportTests(unittest.TestCase):
-    def run_cli_recall_report(self, recall, *, strict):
+    def run_cli_recall_report(self, recall, *, strict, skip=False):
         from tests.test_render_oracle_contract import (
+            valid_core_report,
             valid_environment,
             valid_manifest,
             write_manifest,
@@ -42,6 +43,7 @@ class RenderValidateReportTests(unittest.TestCase):
                 candidate_page_count=1,
                 reference_page_count=1,
                 page_cap=32,
+                integer_pages=[valid_core_report()["integer_visual_metrics"]] if strict else None,
             )
             with (
                 mock.patch.object(sys, "argv", argv),
@@ -52,7 +54,8 @@ class RenderValidateReportTests(unittest.TestCase):
                     render_validate, "render_libreoffice", return_value=root / "ref.pdf"
                 ),
                 mock.patch.object(
-                    render_validate, "render_rwml", return_value={"warnings": []}
+                    render_validate, "render_rwml",
+                    return_value=None if skip else {"warnings": []},
                 ),
                 mock.patch.object(render_validate, "text_recall", return_value=recall),
                 mock.patch.object(render_validate, "page_count", return_value=1),
@@ -86,6 +89,16 @@ class RenderValidateReportTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(report["rows"][0]["recall"], 0.97)
         self.assertNotIn("schema", report)
+        self.assertNotIn("integer_visual_metrics", report)
+        self.assertNotIn("integer_visual_metrics", report["rows"][0])
+        self.assertNotIn("integer_metrics", report["visual_comparison"])
+
+    def test_strict_cli_emits_integer_contract_even_when_every_render_fails(self):
+        _, report = self.run_cli_recall_report(1.0, strict=True, skip=True)
+        self.assertEqual(report["schema"], "rwml.render-oracle-evidence.v2")
+        self.assertEqual(report["summary"]["skipped"], 1)
+        self.assertIsNone(report["integer_visual_metrics"])
+        self.assertIn("integer_metrics", report["visual_comparison"])
 
     def test_cli_prefers_warning_free_pymupdf_module(self):
         with tempfile.TemporaryDirectory() as tmp:

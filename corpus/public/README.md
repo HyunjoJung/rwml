@@ -66,6 +66,17 @@ JSON runs additionally bind the report to the corpus root, source revision,
 Cargo lock, harness, platform, tool versions, and recorded LibreOffice identity.
 Reference PDFs remain temporary and are not committed.
 
+Opt-in `--manifest` reports use `rwml.render-oracle-evidence.v2` and include
+integer raster evidence: raw RGB error counts, one-pixel foreground/edge/text-ink
+matching, matched foreground color error, and blurred-luma error. Ratios are
+recomputed in parts per million from raw counts, including pixel-weighted report
+aggregates. The contract binds the metric constants, compared-page coverage and
+implementation identity. NumPy accelerates the same integer calculations when
+available; a pure-Python reference implementation remains supported. These
+diagnostics do not establish Word fidelity or add release thresholds. Historical
+reports retain their original schema and source; validate them at that source
+instead of relabeling them as v2.
+
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:
 

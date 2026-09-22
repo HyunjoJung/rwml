@@ -12,6 +12,13 @@ capture = importlib.import_module("libreoffice_table_capture")
 
 
 class LibreOfficeTableCaptureTests(unittest.TestCase):
+    def test_harness_binds_transitive_integer_metric_module(self):
+        identity = capture.harness_identity()
+        self.assertEqual(
+            identity.get("render_evidence_metrics.py"),
+            capture.runtime.sha256((ROOT / "scripts/render_evidence_metrics.py").read_bytes()),
+        )
+
     def test_analysis_tools_bind_imported_distribution_payloads(self):
         expected = {"identity": "bound"}
         image = mock.Mock(__version__="12.3.0")

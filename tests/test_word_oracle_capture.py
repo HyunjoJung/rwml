@@ -40,6 +40,12 @@ def runtime_identity():
 
 
 class WordOracleCaptureTests(unittest.TestCase):
+    def test_harness_binds_transitive_integer_metric_module(self):
+        self.assertEqual(
+            capture._harness_identity().get("render_evidence_metrics.py"),
+            hashlib.sha256((ROOT / "scripts/render_evidence_metrics.py").read_bytes()).hexdigest(),
+        )
+
     def test_checked_in_font_lock_is_exact_and_public(self):
         lock = capture.load_word_font_lock(FONT_LOCK)
         self.assertEqual(lock["schema"], "rwml.word-oracle-font-lock.v1")

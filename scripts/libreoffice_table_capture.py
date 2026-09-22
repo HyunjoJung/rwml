@@ -145,6 +145,7 @@ def harness_identity() -> dict[str, str]:
         "libreoffice_oracle_fonts.py",
         "word_oracle_capture.py",
         "render_oracle_contract.py",
+        "render_evidence_metrics.py",
         "render_validate.py",
         "table_oracle_topology.py",
         "generate_unequal_table_oracle.py",
