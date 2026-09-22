@@ -864,19 +864,20 @@ def load_producer_metadata(path: Path) -> dict[str, Any]:
 def _source_identity(source_revision: str | None) -> tuple[str, bool]:
     import subprocess
 
-    if source_revision is None:
-        completed = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=ROOT,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if completed.returncode != 0:
-            raise ValueError("source revision is unavailable")
-        source_revision = completed.stdout.strip()
-    if REVISION_RE.fullmatch(source_revision) is None:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise ValueError("source revision is unavailable")
+    revision = completed.stdout.strip()
+    if REVISION_RE.fullmatch(revision) is None:
         raise ValueError("source revision must be a full lowercase Git SHA")
+    if source_revision is not None and source_revision != revision:
+        raise ValueError("source revision does not match the checked-out commit")
     completed = subprocess.run(
         ["git", "status", "--porcelain=v1", "--untracked-files=all"],
         cwd=ROOT,
@@ -885,7 +886,7 @@ def _source_identity(source_revision: str | None) -> tuple[str, bool]:
     )
     if completed.returncode != 0:
         raise ValueError("source dirty state is unavailable")
-    return source_revision, bool(completed.stdout)
+    return revision, bool(completed.stdout)
 
 
 def _harness_sha256() -> str:
@@ -1265,7 +1266,10 @@ def main(argv: list[str] | None = None) -> int:
     extract_parser.add_argument("--manifest", type=Path, required=True)
     extract_parser.add_argument("--pdf-dir", type=Path, required=True)
     extract_parser.add_argument("--producer-metadata", type=Path, required=True)
-    extract_parser.add_argument("--source-revision")
+    extract_parser.add_argument(
+        "--source-revision",
+        help="Assert the extracting checkout's full lowercase Git SHA; defaults to HEAD.",
+    )
     extract_parser.add_argument("--output", type=Path, required=True)
 
     compare_parser = subparsers.add_parser("compare")

@@ -51,6 +51,11 @@ Use `--require-normalized-exact` only when comparing two independent captures fr
 same producer. Cross-producer comparisons are diagnostic until authoritative Word
 evidence is reviewed.
 
+`--source-revision` asserts the current extracting checkout's full Git SHA; it
+cannot label newly extracted evidence with a different revision. The separate
+producer metadata identifies the application that wrote the PDFs. Retained capture
+reports keep their recorded source revisions when loaded for comparison.
+
 ## Microsoft Word diagnostic capture
 
 `word-font-lock.json` identifies the exact Noto Sans Regular font used by this
