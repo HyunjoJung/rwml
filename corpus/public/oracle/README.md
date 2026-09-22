@@ -56,6 +56,70 @@ cannot label newly extracted evidence with a different revision. The separate
 producer metadata identifies the application that wrote the PDFs. Retained capture
 reports keep their recorded source revisions when loaded for comparison.
 
+## Locked LibreOffice runtime
+
+`scripts/libreoffice_container.py` prepares and verifies a fixed Linux amd64
+LibreOffice Writer image. `libreoffice-container-lock.json` pins the upstream
+archive, base image, BuildKit/Buildx versions, recipe, profile, font configuration,
+image manifest, config, and uncompressed layer digests. The runtime requires a
+POSIX Docker client and a Linux daemon capable of executing amd64 images; use
+WSL for this path on Windows. It does not replace the local release-preflight
+oracle or change release acceptance.
+
+With Buildx 0.35.0 installed, prepare a fresh build context from the official
+archive. The preparation command verifies the archive bytes before creating the
+context and refuses an existing output directory:
+
+```sh
+mkdir -p target/libreoffice-oracle
+curl --fail --location --proto '=https' --proto-redir '=https' \
+  --output target/libreoffice-oracle/libreoffice.tar.gz \
+  https://downloadarchive.documentfoundation.org/libreoffice/old/26.2.3.2/deb/x86_64/LibreOffice_26.2.3.2_Linux_x86-64_deb.tar.gz
+python3 scripts/libreoffice_container.py prepare \
+  --archive target/libreoffice-oracle/libreoffice.tar.gz \
+  --output target/libreoffice-oracle/context
+docker buildx create --name rwml-lo-build --driver docker-container \
+  --driver-opt image=docker.io/moby/buildkit:v0.31.2@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec \
+  --buildkitd-flags '--oci-worker-snapshotter=native' --bootstrap
+docker buildx build --builder rwml-lo-build --platform linux/amd64 \
+  --file target/libreoffice-oracle/context/Containerfile \
+  --build-arg SOURCE_DATE_EPOCH=1783900800 \
+  --no-cache --provenance=false --sbom=false \
+  --output type=docker,dest=target/libreoffice-oracle/image.tar,rewrite-timestamp=true,oci-mediatypes=false \
+  target/libreoffice-oracle/context
+docker load --input target/libreoffice-oracle/image.tar
+python3 scripts/libreoffice_container.py inspect
+```
+
+Use a fresh builder name if the example name is occupied. Inspection accepts
+both Docker image-store formats only after checking the locked manifest/config
+identity, complete layer identity, platform, user, entrypoint, and working
+directory. Capture uses the validated digest with `--pull never`; it never
+substitutes a floating tag. The recipe removes installed fonts and a
+host-dependent fontconfig installation log. Do not update the lock to accept a
+different build output without investigating the difference.
+
+The Python `capture_document` helper runs one staged DOCX with a separately
+staged font directory. The source directory contains `input.docx` and
+`SHA256SUMS`; the font directory contains the selected font files, `SHA256SUMS`,
+and `expected-paths.txt` listing their exact `/oracle/fonts/` paths. The caller
+must bind these staged bytes to its corpus and font locks. The container checks
+both checksum sets before and after conversion and checks its complete visible
+font list. This low-level runtime does not attest a campaign or select fonts.
+
+Each call uses a fresh profile in a read-only, non-root container with no network
+or capabilities, two CPUs, 2 GiB memory with no extra swap, 128 PIDs, bounded
+temporary storage, and a 180-second attached-process deadline. Output is a
+bounded archive with exactly six regular-file members: the PDF, version, font
+list, PDF checksum, warmup log, and conversion log. Duplicate, missing, linked,
+sparse, or oversized members are rejected. The task-owned container is removed
+on success and failure, and cleanup failure is reported. Process deadlines must
+be finite positive numbers and output limits must be bounded positive integers.
+
+Runtime inspection and a successful conversion alone do not prove repeatability,
+Word parity, or full-campaign acceptance. The repeated table-capture verifier
+and broader metric/campaign integration remain separate from this runtime.
+
 ## Microsoft Word diagnostic capture
 
 `word-font-lock.json` identifies the exact Noto Sans Regular font used by this
