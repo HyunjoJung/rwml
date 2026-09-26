@@ -76,7 +76,7 @@ const MAX_SECTION_COLUMN_TWIPS: u32 = 31_680;
 const PAGE_BREAK_MARKER: char = '\u{000C}';
 const COLUMN_BREAK_MARKER: char = '\u{000B}';
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct PaginationCapture {
     hints: Vec<PaginationHint>,
     line_spacing: Vec<Option<LineSpacingHint>>,
@@ -92,7 +92,7 @@ pub(super) struct PaginationCapture {
     suspended: usize,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(super) struct SectionColumnCapture {
     gaps: Vec<Option<f32>>,
     layouts: Vec<Option<SectionColumnLayoutHints>>,
@@ -102,25 +102,25 @@ pub(super) struct SectionColumnCapture {
 }
 
 #[derive(Default)]
-pub(super) struct BodySectionColumnHints {
-    pub(super) gaps: Vec<Option<f32>>,
-    pub(super) layouts: Vec<Option<SectionColumnLayoutHints>>,
-    pub(super) separators: Vec<bool>,
-    pub(super) rtl: Vec<bool>,
+pub(crate) struct BodySectionColumnHints {
+    pub(crate) gaps: Vec<Option<f32>>,
+    pub(crate) layouts: Vec<Option<SectionColumnLayoutHints>>,
+    pub(crate) separators: Vec<bool>,
+    pub(crate) rtl: Vec<bool>,
 }
 
 #[derive(Default)]
-pub(super) struct BodyLayoutHints {
-    pub(super) pagination: Vec<PaginationHint>,
-    pub(super) line_spacing: Vec<Option<LineSpacingHint>>,
-    pub(super) tab_stops: Vec<Vec<TabStop>>,
-    pub(super) column_break_offsets: Vec<Vec<usize>>,
-    pub(super) table_rows: Vec<Vec<TableRowPaginationHint>>,
-    pub(super) table_cells: Vec<TableCellPaginationHints>,
-    pub(super) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
+pub(crate) struct BodyLayoutHints {
+    pub(crate) pagination: Vec<PaginationHint>,
+    pub(crate) line_spacing: Vec<Option<LineSpacingHint>>,
+    pub(crate) tab_stops: Vec<Vec<TabStop>>,
+    pub(crate) column_break_offsets: Vec<Vec<usize>>,
+    pub(crate) table_rows: Vec<Vec<TableRowPaginationHint>>,
+    pub(crate) table_cells: Vec<TableCellPaginationHints>,
+    pub(crate) table_cell_line_spacing: Vec<TableCellLineSpacingHints>,
     pub(super) table_cell_column_breaks: Vec<TableCellColumnBreakHints>,
-    pub(super) table_nested: Vec<TableCellNestedPaginationHints>,
-    pub(super) table_cell_tabs: Vec<TableCellTabStopHints>,
+    pub(crate) table_nested: Vec<TableCellNestedPaginationHints>,
+    pub(crate) table_cell_tabs: Vec<TableCellTabStopHints>,
     pub(super) source_block_anchors: Vec<Option<usize>>,
 }
 
@@ -132,7 +132,52 @@ struct BlockSectionColumnHints<'a> {
     rtl: bool,
 }
 
+#[cfg(feature = "render")]
+#[derive(Clone, Copy)]
+pub(super) struct RenderNotes<'a> {
+    context: &'a super::fields::NoteRefContext,
+    ids: [&'a HashSet<String>; 2],
+}
+
+#[cfg(feature = "render")]
+impl<'a> RenderNotes<'a> {
+    pub(super) fn new(
+        context: &'a super::fields::NoteRefContext,
+        footnotes: &'a HashSet<String>,
+        endnotes: &'a HashSet<String>,
+    ) -> Option<Self> {
+        let ids = [footnotes, endnotes];
+        ids.iter()
+            .enumerate()
+            .any(|(kind, ids)| {
+                ids.iter()
+                    .any(|id| context.render_label(kind == 1, id).is_some())
+            })
+            .then_some(Self { context, ids })
+    }
+
+    fn render_label(&self, endnote: bool, id: &str) -> Option<&'a str> {
+        self.ids[usize::from(endnote)]
+            .contains(id)
+            .then(|| self.context.render_label(endnote, id))
+            .flatten()
+    }
+
+    pub(super) fn reference_label(&self, element: &BytesStart<'_>) -> Option<&'a str> {
+        let name = element.name();
+        let name = local(name.as_ref());
+        if !matches!(name, b"footnoteReference" | b"endnoteReference")
+            || attr_local(element, b"customMarkFollows").is_some_and(|value| toggle_on(Some(value)))
+        {
+            return None;
+        }
+        attr_local_trimmed(element, b"id")
+            .and_then(|id| self.render_label(name == b"endnoteReference", &id))
+    }
+}
+
 /// Resolved supplementary tables, passed down the descent.
+#[cfg_attr(feature = "render", derive(Clone))]
 pub(crate) struct Ctx<'a> {
     pub styles: &'a Styles,
     pub numbering: &'a Numbering,
@@ -179,6 +224,10 @@ pub(crate) struct Ctx<'a> {
     pub paragraph_charts: std::cell::RefCell<Vec<Vec<Chart>>>,
     pub(super) section_column_capture: std::cell::RefCell<Option<SectionColumnCapture>>,
     pub(super) pagination_capture: std::cell::RefCell<Option<PaginationCapture>>,
+    #[cfg(feature = "render")]
+    pub(super) render_notes: Option<RenderNotes<'a>>,
+    #[cfg(feature = "render")]
+    pub render_note_entry: std::cell::RefCell<Option<(bool, String)>>,
 }
 
 impl Ctx<'_> {
@@ -1536,7 +1585,14 @@ fn read_note_entry(
         skip_subtree(r);
         return None;
     };
-    Some((id, read_blocks(r, ctx, 0)))
+    #[cfg(feature = "render")]
+    let previous = ctx
+        .render_note_entry
+        .replace(Some((local(e.name().as_ref()) == b"endnote", id.clone())));
+    let blocks = read_blocks(r, ctx, 0);
+    #[cfg(feature = "render")]
+    ctx.render_note_entry.replace(previous);
+    Some((id, blocks))
 }
 
 /// Scan `word/document.xml` for note reference ids and the containing top-level
@@ -4366,6 +4422,15 @@ fn read_run(
                         },
                     );
                 }
+                #[cfg(feature = "render")]
+                b"footnoteReference" | b"endnoteReference" | b"footnoteRef" | b"endnoteRef" => {
+                    append_render_note_marker(&mut text, &e, ctx);
+                    mark_complex_field_result_text(
+                        complex_field.as_deref(),
+                        &mut text_is_field_result,
+                    );
+                    skip_subtree(r);
+                }
                 _ => skip_subtree(r),
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
@@ -4389,6 +4454,14 @@ fn read_run(
                     if in_result {
                         text_is_field_result = true;
                     }
+                }
+                #[cfg(feature = "render")]
+                b"footnoteReference" | b"endnoteReference" | b"footnoteRef" | b"endnoteRef" => {
+                    append_render_note_marker(&mut text, &e, ctx);
+                    mark_complex_field_result_text(
+                        complex_field.as_deref(),
+                        &mut text_is_field_result,
+                    );
                 }
                 _ => {}
             },
@@ -4446,6 +4519,30 @@ fn read_run(
     }
     runs.extend(images);
     runs
+}
+
+#[cfg(feature = "render")]
+fn append_render_note_marker(text: &mut String, element: &BytesStart<'_>, ctx: &Ctx<'_>) {
+    let Some(notes) = ctx.render_notes else {
+        return;
+    };
+    let name = element.name();
+    let name = local(name.as_ref());
+    let label = if matches!(name, b"footnoteReference" | b"endnoteReference") {
+        notes.reference_label(element)
+    } else {
+        ctx.render_note_entry
+            .borrow()
+            .as_ref()
+            .and_then(|(endnote, id)| {
+                (*endnote == (name == b"endnoteRef"))
+                    .then(|| notes.render_label(*endnote, id))
+                    .flatten()
+            })
+    };
+    if let Some(label) = label {
+        text.push_str(label);
+    }
 }
 
 fn append_run_inline_marker(
@@ -4712,6 +4809,12 @@ fn append_run_alternate_content_branch(
                         image_result_runs: &mut *image_result_runs,
                     },
                 ),
+                #[cfg(feature = "render")]
+                b"footnoteReference" | b"endnoteReference" | b"footnoteRef" | b"endnoteRef" => {
+                    append_render_note_marker(text, &e, ctx);
+                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
+                    skip_subtree(r);
+                }
                 _ => skip_subtree(r),
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
@@ -4734,6 +4837,11 @@ fn append_run_alternate_content_branch(
                     if in_result {
                         *text_is_field_result = true;
                     }
+                }
+                #[cfg(feature = "render")]
+                b"footnoteReference" | b"endnoteReference" | b"footnoteRef" | b"endnoteRef" => {
+                    append_render_note_marker(text, &e, ctx);
+                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
                 }
                 _ => {}
             },
@@ -8700,6 +8808,10 @@ mod tests {
             paragraph_charts: Default::default(),
             section_column_capture: Default::default(),
             pagination_capture: Default::default(),
+            #[cfg(feature = "render")]
+            render_notes: None,
+            #[cfg(feature = "render")]
+            render_note_entry: Default::default(),
         };
         if capture_pagination {
             *ctx.pagination_capture.borrow_mut() = Some(PaginationCapture::default());
@@ -11094,6 +11206,10 @@ mod tests {
             paragraph_charts: Default::default(),
             section_column_capture: Default::default(),
             pagination_capture: Default::default(),
+            #[cfg(feature = "render")]
+            render_notes: None,
+            #[cfg(feature = "render")]
+            render_note_entry: Default::default(),
         };
         let xml = r#"<w:footnotes>
             <w:footnote w:type=" separator " w:id="-1"><w:p><w:r><w:t>SEP</w:t></w:r></w:p></w:footnote>
@@ -11177,6 +11293,10 @@ mod tests {
             paragraph_charts: Default::default(),
             section_column_capture: Default::default(),
             pagination_capture: Default::default(),
+            #[cfg(feature = "render")]
+            render_notes: None,
+            #[cfg(feature = "render")]
+            render_note_entry: Default::default(),
         };
         let xml = r#"<w:footnotes xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
             <mc:AlternateContent>
@@ -11273,6 +11393,10 @@ mod tests {
             paragraph_charts: Default::default(),
             section_column_capture: Default::default(),
             pagination_capture: Default::default(),
+            #[cfg(feature = "render")]
+            render_notes: None,
+            #[cfg(feature = "render")]
+            render_note_entry: Default::default(),
         };
         let xml = r#"<w:hdr><w:p><w:r><w:t>헤더 텍스트</w:t></w:r></w:p></w:hdr>"#;
         let blocks = parse_hdrftr(xml, &ctx);
