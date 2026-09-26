@@ -23,6 +23,7 @@ class IntegerMetricContractTests(unittest.TestCase):
             for name in (
                 "table_oracle_topology.py", "generate_unequal_table_oracle.py",
                 "render_oracle_contract.py", "render_evidence_metrics.py",
+                "render_pdf_diagnostics.py",
             ):
                 (root / name).write_bytes(b"before")
             with mock.patch.object(topology, "SCRIPT_PATH", root / "table_oracle_topology.py"):
@@ -44,7 +45,7 @@ class IntegerMetricContractTests(unittest.TestCase):
 
     def test_strict_evidence_binds_integer_schema_and_preserves_raw_counts(self):
         evidence = self.evidence()
-        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v2")
+        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v4")
         self.assertEqual(evidence["integer_visual_metrics"]["pixels"], 1)
         contract.validate_evidence_report(evidence, self.corpus)
 
@@ -102,6 +103,7 @@ class IntegerMetricContractTests(unittest.TestCase):
         row.update(status="skip", reason="render-failed")
         core = render.validation_report(
             [render.ValidationRow(**row)], 0.97, integer_metrics=True,
+            pdf_diagnostics=True,
             thresholds={"max_skipped": 0},
         )
         evidence = contract.bind_evidence_report(core, self.corpus, valid_environment())

@@ -53,6 +53,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 try:
+    import render_pdf_diagnostics as pdf_metrics
     from render_evidence_metrics import (
         METRIC_WORK_UNITS_PER_PIXEL,
         aggregate_metrics as aggregate_integer_metrics,
@@ -69,6 +70,7 @@ try:
         load_corpus_manifest,
     )
 except ModuleNotFoundError:  # Imported as ``scripts.*`` by unit tests.
+    from scripts import render_pdf_diagnostics as pdf_metrics
     from scripts.render_evidence_metrics import (
         METRIC_WORK_UNITS_PER_PIXEL,
         aggregate_metrics as aggregate_integer_metrics,
@@ -181,6 +183,9 @@ class ValidationRow:
     unmatched_reference_pages: int | None = None
     capped_matched_pages: int | None = None
     integer_visual_metrics: dict[str, int] | None = None
+    pdf_point_geometry: dict[str, object] | None = None
+    semantic_text_metrics: dict[str, int] | None = None
+    text_geometry_metrics: dict[str, object] | None = None
     render_warnings: int | None = None
     render_warning_kinds: list[str] | None = None
     reason: str | None = None
@@ -195,6 +200,9 @@ class VisualMetrics:
     unmatched_reference_pages: int
     capped_matched_pages: int
     integer_visual_metrics: dict[str, int] | None = None
+    pdf_point_geometry: dict[str, object] | None = None
+    semantic_text_metrics: dict[str, int] | None = None
+    text_geometry_metrics: dict[str, object] | None = None
 
 
 def is_finite_number(value: object) -> bool:
@@ -489,9 +497,12 @@ def validation_report(
     unstable_references: list[str] | None = None,
     *,
     integer_metrics: bool = False,
+    pdf_diagnostics: bool = False,
 ) -> dict:
     if type(integer_metrics) is not bool:
         raise ValueError("integer metric mode must be a boolean")
+    if type(pdf_diagnostics) is not bool:
+        raise ValueError("PDF diagnostic mode must be a boolean")
     for row in rows:
         if not isinstance(row.document, str):
             raise ValueError("document must be a string")
@@ -583,6 +594,18 @@ def validation_report(
             validate_integer_metrics(row.integer_visual_metrics)
             if row.compared_pages != row.integer_visual_metrics["pages"]:
                 raise ValueError("integer visual page count mismatch")
+        if row.pdf_point_geometry is not None:
+            pdf_metrics.validate_geometry_report(row.pdf_point_geometry)
+            if row.compared_pages != row.pdf_point_geometry["summary"]["pages"]:
+                raise ValueError("PDF point geometry page count mismatch")
+        if row.semantic_text_metrics is not None:
+            pdf_metrics.validate_semantic_report(row.semantic_text_metrics)
+            if row.compared_pages != row.semantic_text_metrics["pages"]:
+                raise ValueError("semantic text page count mismatch")
+        if row.text_geometry_metrics is not None:
+            pdf_metrics.validate_text_geometry_report(row.text_geometry_metrics)
+            if row.compared_pages != row.text_geometry_metrics["summary"]["pages"]:
+                raise ValueError("text geometry page count mismatch")
         if row.status == "skip" and any(
             getattr(row, metric) is not None
             for metric in (
@@ -598,6 +621,9 @@ def validation_report(
                 "unmatched_reference_pages",
                 "capped_matched_pages",
                 "integer_visual_metrics",
+                "pdf_point_geometry",
+                "semantic_text_metrics",
+                "text_geometry_metrics",
                 "render_warnings",
                 "render_warning_kinds",
             )
@@ -695,6 +721,22 @@ def validation_report(
         report["integer_visual_metrics"] = (
             aggregate_integer_metrics(integer_rows) if integer_rows else None
         )
+    diagnostic_aggregators = (
+        ("pdf_point_geometry", pdf_metrics.aggregate_geometry_reports),
+        ("semantic_text_metrics", pdf_metrics.aggregate_semantic_reports),
+        ("text_geometry_metrics", pdf_metrics.aggregate_text_geometry_reports),
+    )
+    pdf_diagnostics = pdf_diagnostics or any(
+        getattr(row, key) is not None
+        for row in measured for key, _ in diagnostic_aggregators
+    )
+    if pdf_diagnostics:
+        report["pdf_diagnostic_contract"] = pdf_metrics.diagnostic_contract()
+        for key, aggregate in diagnostic_aggregators:
+            values = [getattr(row, key) for row in measured]
+            if any(value is None for value in values):
+                raise ValueError(f"PDF diagnostic evidence is partial: {key}")
+            report[key] = aggregate(values) if values else None
     return report
 
 
@@ -936,6 +978,7 @@ def _harness_sha256() -> str:
         Path(__file__).resolve(),
         Path(__file__).with_name("render_oracle_contract.py").resolve(),
         Path(__file__).with_name("render_evidence_metrics.py").resolve(),
+        Path(__file__).with_name("render_pdf_diagnostics.py").resolve(),
     ):
         payload = path.read_bytes()
         name = path.name.encode("ascii")
@@ -1531,6 +1574,132 @@ def page_count(pdf: Path) -> int:
     return fitz.open(pdf).page_count
 
 
+def pymupdf_page_geometry(page) -> dict[str, int]:
+    rect, media, crop = page.rect, page.mediabox, page.cropbox
+    return pdf_metrics.canonical_page_geometry(
+        page_size=(rect.width, rect.height),
+        media_box=(media.x0, media.y0, media.x1, media.y1),
+        crop_box=(crop.x0, crop.y0, crop.x1, crop.y1),
+        rotation_degrees=page.rotation,
+    )
+
+
+def pymupdf_page_semantic_tokens(
+    page, *, max_codepoints: int, max_tokens: int
+) -> tuple[str, ...]:
+    pdf_metrics.normalize_semantic_tokens(
+        "", max_codepoints=max_codepoints, max_tokens=max_tokens
+    )
+    return pdf_metrics.normalize_semantic_tokens(
+        page.get_text(), max_codepoints=max_codepoints, max_tokens=max_tokens
+    )
+
+
+def pymupdf_page_text_boxes(
+    page, *, max_items: int, max_codepoints: int, max_tokens: int
+) -> tuple[
+    tuple[pdf_metrics.SemanticTextBox, ...],
+    tuple[pdf_metrics.SemanticTextBox, ...], int, int,
+]:
+    if type(max_items) is not int or not 1 <= max_items <= pdf_metrics.MAX_TEXT_GEOMETRY_ITEMS:
+        raise ValueError("text geometry item limit is invalid")
+    pdf_metrics.normalize_semantic_tokens(
+        "", max_codepoints=max_codepoints, max_tokens=max_tokens
+    )
+    records = page.get_text("words", sort=False)
+    if not isinstance(records, (list, tuple)) or len(records) > max_items:
+        raise ValueError("text geometry word item limit exceeded")
+    words = []
+    line_groups: dict[
+        tuple[int, int], list[tuple[int, int, pdf_metrics.SemanticTextBox]]
+    ] = {}
+    used_codepoints = used_tokens = 0
+    for order, record in enumerate(records):
+        if not isinstance(record, (list, tuple)) or len(record) < 8:
+            raise ValueError("PyMuPDF word record is invalid")
+        block_number, line_number, word_number = record[5:8]
+        if any(type(value) is not int or value < 0
+               for value in (block_number, line_number, word_number)):
+            raise ValueError("PyMuPDF word record index is invalid")
+        tokens = pdf_metrics.normalize_semantic_tokens(
+            record[4], max_codepoints=max_codepoints - used_codepoints,
+            max_tokens=max_tokens - used_tokens,
+        )
+        if not tokens:
+            continue
+        box = pdf_metrics.canonical_text_box(tokens, record[:4])
+        words.append(box)
+        used_codepoints += sum(map(len, tokens))
+        used_tokens += len(tokens)
+        line_groups.setdefault((block_number, line_number), []).append(
+            (word_number, order, box)
+        )
+    lines = []
+    for entries in line_groups.values():
+        entries.sort(key=lambda entry: (entry[0], entry[1]))
+        boxes = [entry[2] for entry in entries]
+        lines.append(pdf_metrics.SemanticTextBox(
+            tuple(token for box in boxes for token in box.tokens),
+            (
+                min(box.bbox_millipoints[0] for box in boxes),
+                min(box.bbox_millipoints[1] for box in boxes),
+                max(box.bbox_millipoints[2] for box in boxes),
+                max(box.bbox_millipoints[3] for box in boxes),
+            ),
+        ))
+    return tuple(words), tuple(lines), used_codepoints, used_tokens
+
+
+def compare_pdf_diagnostics(reference, candidate, compared_pages: int) -> dict[str, object]:
+    if (
+        type(compared_pages) is not int
+        or not 1 <= compared_pages <= pdf_metrics.MAX_TEXT_GEOMETRY_PAGES
+    ):
+        raise ValueError("PDF diagnostic page limit is invalid")
+    geometry_pages, semantic_pages, text_geometry_pages = [], [], []
+    budgets = [
+        {
+            "text_codepoints": pdf_metrics.MAX_SEMANTIC_CODEPOINTS,
+            "text_tokens": pdf_metrics.MAX_SEMANTIC_TOKENS,
+            "box_codepoints": pdf_metrics.MAX_SEMANTIC_CODEPOINTS,
+            "box_tokens": pdf_metrics.MAX_SEMANTIC_TOKENS,
+        }
+        for _ in range(2)
+    ]
+    for index in range(compared_pages):
+        pages = reference[index], candidate[index]
+        geometry_pages.append(pdf_metrics.page_geometry_metrics(
+            pymupdf_page_geometry(pages[0]), pymupdf_page_geometry(pages[1])
+        ))
+        contents = []
+        for page, budget in zip(pages, budgets, strict=True):
+            tokens = pymupdf_page_semantic_tokens(
+                page, max_codepoints=budget["text_codepoints"],
+                max_tokens=budget["text_tokens"],
+            )
+            budget["text_codepoints"] -= sum(map(len, tokens))
+            budget["text_tokens"] -= len(tokens)
+            words, lines, used_codepoints, used_tokens = pymupdf_page_text_boxes(
+                page, max_items=pdf_metrics.MAX_TEXT_GEOMETRY_ITEMS,
+                max_codepoints=budget["box_codepoints"],
+                max_tokens=budget["box_tokens"],
+            )
+            budget["box_codepoints"] -= used_codepoints
+            budget["box_tokens"] -= used_tokens
+            contents.append((tokens, words, lines))
+        reference_tokens, reference_words, reference_lines = contents[0]
+        candidate_tokens, candidate_words, candidate_lines = contents[1]
+        semantic_pages.append(pdf_metrics.semantic_metrics(reference_tokens, candidate_tokens))
+        text_geometry_pages.append(pdf_metrics.text_geometry_page(
+            reference_words, candidate_words, reference_lines, candidate_lines
+        ))
+    return {
+        "pdf_point_geometry": pdf_metrics.geometry_report(geometry_pages),
+        "semantic_text_metrics": pdf_metrics.semantic_report(semantic_pages),
+        "text_geometry_metrics": pdf_metrics.text_geometry_report(text_geometry_pages),
+    }
+
+
 def opaque_rgb(image):
     if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
         rgba = image.convert("RGBA")
@@ -1694,6 +1863,9 @@ def visual_metrics_from_scores(
     reference_page_count: int,
     candidate_page_count: int,
     page_cap: int,
+    pdf_point_geometry: dict[str, object] | None = None,
+    semantic_text_metrics: dict[str, int] | None = None,
+    text_geometry_metrics: dict[str, object] | None = None,
 ) -> VisualMetrics:
     if len(page_hashes) != len(page_ink_ious):
         raise ValueError("visual page metric count mismatch")
@@ -1712,6 +1884,9 @@ def visual_metrics_from_scores(
         integer_visual_metrics=(
             aggregate_integer_metrics(integer_pages) if integer_pages else None
         ),
+        pdf_point_geometry=pdf_point_geometry,
+        semantic_text_metrics=semantic_text_metrics,
+        text_geometry_metrics=text_geometry_metrics,
     )
 
 
@@ -1776,6 +1951,7 @@ def compare_pdf_visuals(
     foreground_threshold: int,
     ahash_size: int,
     integer_metrics: bool = False,
+    pdf_diagnostics: bool = False,
 ) -> VisualMetrics:
     if fitz is None or Image is None or ImageChops is None:
         raise VisualMetricError("PyMuPDF and Pillow are required for page rasterization")
@@ -1797,6 +1973,10 @@ def compare_pdf_visuals(
                 reference_page_count,
                 candidate_page_count,
                 settings["page_cap"],
+            )
+            diagnostics = (
+                compare_pdf_diagnostics(reference_document, candidate_document, compared_pages)
+                if pdf_diagnostics else {}
             )
             page_hashes = []
             page_ink_ious = []
@@ -1846,6 +2026,7 @@ def compare_pdf_visuals(
                 reference_page_count=reference_page_count,
                 candidate_page_count=candidate_page_count,
                 page_cap=settings["page_cap"],
+                **diagnostics,
             )
     except VisualMetricError:
         raise
@@ -2084,6 +2265,7 @@ def main() -> int:
                     foreground_threshold=visual_settings["foreground_threshold"],
                     ahash_size=visual_settings["ahash_size"],
                     integer_metrics=corpus is not None,
+                    pdf_diagnostics=corpus is not None,
                 )
             except VisualMetricError as exc:
                 rows.append(
@@ -2122,6 +2304,9 @@ def main() -> int:
                     unmatched_reference_pages=visual.unmatched_reference_pages,
                     capped_matched_pages=visual.capped_matched_pages,
                     integer_visual_metrics=visual.integer_visual_metrics,
+                    pdf_point_geometry=visual.pdf_point_geometry,
+                    semantic_text_metrics=visual.semantic_text_metrics,
+                    text_geometry_metrics=visual.text_geometry_metrics,
                     render_warnings=len(kinds) if kinds is not None else None,
                     render_warning_kinds=kinds,
                     **row_identity(src, corpus_documents),
@@ -2156,6 +2341,7 @@ def main() -> int:
         reference_stable=reference_stable,
         unstable_references=unstable_references,
         integer_metrics=corpus is not None,
+        pdf_diagnostics=corpus is not None,
     )
     if corpus is not None:
         try:

@@ -17,12 +17,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 try:
+    import render_pdf_diagnostics as pdf_metrics
     from render_evidence_metrics import (
         aggregate_metrics,
         validate_metric_contract,
         validate_metrics,
     )
 except ModuleNotFoundError:
+    from scripts import render_pdf_diagnostics as pdf_metrics
     from scripts.render_evidence_metrics import (
         aggregate_metrics,
         validate_metric_contract,
@@ -30,7 +32,7 @@ except ModuleNotFoundError:
     )
 
 CORPUS_SCHEMA = "rwml.render-oracle-corpus.v1"
-EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v2"
+EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v4"
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
 MAX_JSON_DEPTH = 64
@@ -66,6 +68,10 @@ EVIDENCE_KEYS = {
     "environment",
     "visual_comparison",
     "integer_visual_metrics",
+    "pdf_diagnostic_contract",
+    "pdf_point_geometry",
+    "semantic_text_metrics",
+    "text_geometry_metrics",
     "summary",
     "gate",
     "rows",
@@ -109,6 +115,9 @@ ROW_KEYS = {
     "unmatched_reference_pages",
     "capped_matched_pages",
     "integer_visual_metrics",
+    "pdf_point_geometry",
+    "semantic_text_metrics",
+    "text_geometry_metrics",
     "render_warnings",
     "render_warning_kinds",
     "reason",
@@ -760,6 +769,15 @@ def _validate_evidence_row(
         validate_metrics(row["integer_visual_metrics"])
         if row["integer_visual_metrics"]["pages"] != row["compared_pages"]:
             raise ValueError("integer visual page count contradicts compared_pages")
+        pdf_metrics.validate_geometry_report(row["pdf_point_geometry"])
+        if row["pdf_point_geometry"]["summary"]["pages"] != row["compared_pages"]:
+            raise ValueError("PDF point geometry page count contradicts compared_pages")
+        pdf_metrics.validate_semantic_report(row["semantic_text_metrics"])
+        if row["semantic_text_metrics"]["pages"] != row["compared_pages"]:
+            raise ValueError("semantic text page count contradicts compared_pages")
+        pdf_metrics.validate_text_geometry_report(row["text_geometry_metrics"])
+        if row["text_geometry_metrics"]["summary"]["pages"] != row["compared_pages"]:
+            raise ValueError("text geometry page count contradicts compared_pages")
     warnings = row.get("render_warning_kinds")
     if warnings is not None:
         if not isinstance(warnings, list) or warnings != sorted(set(warnings)):
@@ -821,6 +839,27 @@ def _validate_metric_environment(evidence: dict[str, Any]) -> None:
     has_numpy = any(tool["name"] == "numpy" for tool in evidence["environment"]["tools"])
     if has_numpy != (implementation == "numpy-integer-exact-v1"):
         raise ValueError("integer visual implementation contradicts environment")
+
+
+def _validate_pdf_diagnostic_aggregates(evidence: dict[str, Any]) -> None:
+    pdf_metrics.validate_diagnostic_contract(evidence["pdf_diagnostic_contract"])
+    measured = [row for row in evidence["rows"] if row["status"] != "skip"]
+    for key, aggregate, validate in (
+        ("pdf_point_geometry", pdf_metrics.aggregate_geometry_reports,
+         pdf_metrics.validate_geometry_summary),
+        ("semantic_text_metrics", pdf_metrics.aggregate_semantic_reports,
+         pdf_metrics.validate_semantic_report),
+        ("text_geometry_metrics", pdf_metrics.aggregate_text_geometry_reports,
+         pdf_metrics.validate_text_geometry_summary),
+    ):
+        value = evidence[key]
+        if not measured:
+            if value is not None:
+                raise ValueError(f"unmeasured PDF diagnostic aggregate must be null: {key}")
+            continue
+        validate(value)
+        if value != aggregate([row[key] for row in measured]):
+            raise ValueError(f"PDF diagnostic aggregate contradicts measured rows: {key}")
 
 
 def _validate_summary(
@@ -977,6 +1016,7 @@ def validate_evidence_report(
             row, document, page_cap=evidence["visual_comparison"]["page_cap"]
         )
     _validate_integer_visual_aggregate(evidence)
+    _validate_pdf_diagnostic_aggregates(evidence)
     _validate_summary(evidence["summary"], rows, corpus)
     _validate_gate(evidence["gate"], evidence["summary"])
     _assert_path_neutral(evidence)
