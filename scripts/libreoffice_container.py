@@ -18,8 +18,12 @@ import tarfile
 import time
 import uuid
 
-from render_oracle_contract import _read_bounded_regular_file as read_regular_file
-from render_oracle_contract import _load_json, _require_exact_keys, _require_sha256
+try:
+    from render_oracle_contract import _read_bounded_regular_file as read_regular_file
+    from render_oracle_contract import _load_json, _require_exact_keys, _require_sha256
+except ModuleNotFoundError:
+    from scripts.render_oracle_contract import _read_bounded_regular_file as read_regular_file
+    from scripts.render_oracle_contract import _load_json, _require_exact_keys, _require_sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = ROOT / "scripts" / "libreoffice-container"
