@@ -147,6 +147,58 @@ ToUnicode/CMap associations, automatic native-CFF source mapping, variable-font
 fidelity, shaping, or Word layout parity. The ordinary PDF metadata verifier,
 campaign integration and release policy are unchanged.
 
+## Isolated PDF font resources
+
+`scripts/pdf_font_resources.py` connects an original PDF to its declared font
+resources and exact decoded font-program/ToUnicode bytes. It walks the complete
+catalog-reachable object graph, including inherited page resources, Form
+XObjects, annotation appearances, AcroForm resources and ExtGState fonts.
+Indirect resource references are identities; equal font names do not merge
+distinct resources, and unused reachable fonts are not silently omitted.
+
+The digest-pinned pure-Python wheel in `pypdf-lock.json` runs inside the same
+locked Linux image. Supply that wheel locally; no parser or font is downloaded:
+
+```sh
+python3 -B scripts/pdf_font_resources.py \
+  --pdf <original.pdf> --pypdf-wheel <locked-pypdf-wheel> \
+  --output target/pdf-font-resources.json
+python3 -B scripts/pdf_font_resources.py \
+  --pdf <original.pdf> --pypdf-wheel <locked-pypdf-wheel> \
+  --verify target/pdf-font-resources.json
+```
+
+Receipts bind PDF bytes, worker/helper code, parser wheel, runtime and limits.
+Verification extracts again in a fresh worker and compares the complete receipt;
+editing the resource list or repairing outer digests cannot substitute for it.
+Outputs must be fresh. Receipts contain embedded font and mapping bytes, so
+treat them as document-derived artifacts, not content-free diagnostics.
+
+The bounded representations are Type 1/PFA, TrueType, Identity-H/V Type0 fonts
+with one CIDFontType2 descendant, and CIDFontType0 with a CIDFontType0C stream.
+Streams may be unfiltered or Flate-compressed without decoding parameters.
+Missing embeddings, direct font resources, Type3 fonts, other composite
+encodings, unsupported filters, external streams, encrypted PDFs and malformed
+resource graphs fail explicitly. PDF name objects cannot be replaced by text
+strings with the same characters. An absent ToUnicode stream is recorded as
+absent, and a font-free PDF has an explicit empty inventory.
+
+Limits are 16 MiB per PDF, 64 font resources, 16,384 graph nodes, 65,536 edges,
+depth 64, 4 MiB total decoded program/mapping bytes and 64 KiB per ToUnicode
+stream. The worker retains the existing 2-GiB no-swap container, 512-MiB data
+and 20-second CPU limits; host execution allows at most 30 seconds and 8 MiB of
+output. The parser's warnings, output overflow and timeouts are failures, with
+owned-container and staging cleanup. Run explicit synthetic/hostile PDF tests:
+
+```sh
+RWML_PYPDF_WHEEL=<locked-pypdf-wheel> \
+  python3 -B -m unittest discover -s tests/pdf_resources -p 'test_*.py'
+```
+
+Extraction is not font-source proof, CMap semantic validation, native glyph-map
+discovery, shaping verification or Word fidelity. It is an opt-in diagnostic;
+default PDF validation, renderer behavior and release policy remain unchanged.
+
 ## Locked LibreOffice runtime
 
 `scripts/libreoffice_container.py` prepares and verifies a fixed Linux amd64
