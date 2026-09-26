@@ -3077,6 +3077,17 @@ impl Document {
         }
     }
 
+    #[cfg(feature = "render")]
+    fn render_floating_shapes(&self) -> Vec<FloatingShape> {
+        #[cfg(feature = "docx")]
+        if let Backend::Docx(document) = &self.backend {
+            if let Some(body) = &document.render_body {
+                return body.floating_shapes.clone();
+            }
+        }
+        self.floating_shapes()
+    }
+
     /// Render this document to a **PDF** with native typesetting
     /// — `parley` lays out and shapes the text (Korean/CJK line-breaking and font
     /// fallback included) and `krilla` emits the PDF with subsetted embedded fonts
@@ -3087,7 +3098,7 @@ impl Document {
     #[cfg(feature = "render")]
     pub fn to_pdf(&self) -> Vec<u8> {
         let features = self.report().features;
-        let shapes = self.floating_shapes();
+        let shapes = self.render_floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::to_pdf_with_fonts_and_features_and_shapes(
                 model,
@@ -3104,7 +3115,7 @@ impl Document {
     #[cfg(feature = "render")]
     pub fn try_to_pdf(&self) -> Result<Vec<u8>> {
         let features = self.report().features;
-        let shapes = self.floating_shapes();
+        let shapes = self.render_floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::try_to_pdf_with_fonts_and_features_and_shapes(
                 model,
@@ -3123,7 +3134,7 @@ impl Document {
     #[cfg(feature = "render")]
     pub fn to_pdf_with_fonts(&self, fonts: &[Vec<u8>]) -> Vec<u8> {
         let features = self.report().features;
-        let shapes = self.floating_shapes();
+        let shapes = self.render_floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::to_pdf_with_fonts_and_features_and_shapes(
                 model,
@@ -3140,7 +3151,7 @@ impl Document {
     #[cfg(feature = "render")]
     pub fn try_to_pdf_with_fonts(&self, fonts: &[Vec<u8>]) -> Result<Vec<u8>> {
         let features = self.report().features;
-        let shapes = self.floating_shapes();
+        let shapes = self.render_floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::try_to_pdf_with_fonts_and_features_and_shapes(
                 model,
@@ -3161,7 +3172,7 @@ impl Document {
     /// caller bytes are considered. Available with the `render` feature.
     #[cfg(feature = "render")]
     pub fn layout_pages_with_fonts(&self, fonts: &[Vec<u8>]) -> Result<LayoutPages> {
-        let shapes = self.floating_shapes();
+        let shapes = self.render_floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::layout_pages_with_fonts_and_pagination(model, fonts, source_hints, &shapes)
         })
@@ -3174,7 +3185,7 @@ impl Document {
     #[cfg(feature = "render")]
     pub fn to_pdf_with_report(&self) -> RenderedPdf {
         let features = self.report().features;
-        let shapes = self.floating_shapes();
+        let shapes = self.render_floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::to_pdf_with_fonts_and_report_and_shapes(
                 model,
@@ -3193,7 +3204,7 @@ impl Document {
     #[cfg(feature = "render")]
     pub fn to_pdf_with_fonts_and_report(&self, fonts: &[Vec<u8>]) -> RenderedPdf {
         let features = self.report().features;
-        let shapes = self.floating_shapes();
+        let shapes = self.render_floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::to_pdf_with_fonts_and_report_and_shapes(
                 model,
@@ -3210,7 +3221,7 @@ impl Document {
     #[cfg(feature = "render")]
     pub fn try_to_pdf_with_report(&self) -> Result<RenderedPdf> {
         let features = self.report().features;
-        let shapes = self.floating_shapes();
+        let shapes = self.render_floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::try_to_pdf_with_fonts_and_report_and_shapes(
                 model,
@@ -3227,7 +3238,7 @@ impl Document {
     #[cfg(feature = "render")]
     pub fn try_to_pdf_with_fonts_and_report(&self, fonts: &[Vec<u8>]) -> Result<RenderedPdf> {
         let features = self.report().features;
-        let shapes = self.floating_shapes();
+        let shapes = self.render_floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::try_to_pdf_with_fonts_and_report_and_shapes(
                 model,
@@ -3250,7 +3261,7 @@ impl Document {
     #[cfg(feature = "render")]
     pub fn try_to_pdf_with_fixed_fonts_and_report(&self, fonts: &[Vec<u8>]) -> Result<RenderedPdf> {
         let features = self.report().features;
-        let shapes = self.floating_shapes();
+        let shapes = self.render_floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::try_to_pdf_with_fixed_fonts_and_report_and_shapes(
                 model,
@@ -3299,9 +3310,21 @@ impl Document {
             }
             #[cfg(feature = "docx")]
             Backend::Docx(d) => {
-                let mut model = d.model.clone();
+                let note_body = d.render_body.as_ref();
+                let mut model = DocModel {
+                    blocks: note_body
+                        .map_or(&d.model.blocks, |body| &body.blocks)
+                        .clone(),
+                    regions: d.model.regions.clone(),
+                    meta: d.model.meta.clone(),
+                    custom_properties: d.model.custom_properties.clone(),
+                    custom_xml_items: d.model.custom_xml_items.clone(),
+                    setup: d.model.setup.clone(),
+                };
                 let body_block_count = model.blocks.len();
-                model.blocks.extend(d.notes.iter().cloned());
+                model
+                    .blocks
+                    .extend(d.render_notes.as_ref().unwrap_or(&d.notes).iter().cloned());
                 let mut pagination_boundaries = d
                     .note_entry_starts
                     .iter()
@@ -3310,21 +3333,39 @@ impl Document {
                     .collect::<Vec<_>>();
                 pagination_boundaries.sort_unstable();
                 pagination_boundaries.dedup();
-                let mut pagination = d.pagination_hints.clone();
+                let mut pagination = note_body
+                    .map_or(&d.pagination_hints, |body| &body.hints.pagination)
+                    .clone();
                 pagination.extend_from_slice(&d.note_pagination_hints);
-                let mut line_spacing = d.line_spacing_hints.clone();
+                let mut line_spacing = note_body
+                    .map_or(&d.line_spacing_hints, |body| &body.hints.line_spacing)
+                    .clone();
                 line_spacing.extend_from_slice(&d.note_line_spacing_hints);
-                let mut table_row_pagination = d.table_row_pagination.clone();
+                let mut table_row_pagination = note_body
+                    .map_or(&d.table_row_pagination, |body| &body.hints.table_rows)
+                    .clone();
                 table_row_pagination.extend_from_slice(&d.note_table_row_pagination);
-                let mut table_cell_pagination = d.table_cell_pagination.clone();
+                let mut table_cell_pagination = note_body
+                    .map_or(&d.table_cell_pagination, |body| &body.hints.table_cells)
+                    .clone();
                 table_cell_pagination.extend_from_slice(&d.note_table_cell_pagination);
-                let mut table_cell_line_spacing = d.table_cell_line_spacing.clone();
+                let mut table_cell_line_spacing = note_body
+                    .map_or(&d.table_cell_line_spacing, |body| {
+                        &body.hints.table_cell_line_spacing
+                    })
+                    .clone();
                 table_cell_line_spacing.extend_from_slice(&d.note_table_cell_line_spacing);
-                let mut table_nested_pagination = d.table_nested_pagination.clone();
+                let mut table_nested_pagination = note_body
+                    .map_or(&d.table_nested_pagination, |body| &body.hints.table_nested)
+                    .clone();
                 table_nested_pagination.extend_from_slice(&d.note_table_nested_pagination);
-                let mut tab_stops = d.tab_stops.clone();
+                let mut tab_stops = note_body
+                    .map_or(&d.tab_stops, |body| &body.hints.tab_stops)
+                    .clone();
                 tab_stops.extend_from_slice(&d.note_tab_stops);
-                let mut table_cell_tab_stops = d.table_cell_tab_stops.clone();
+                let mut table_cell_tab_stops = note_body
+                    .map_or(&d.table_cell_tab_stops, |body| &body.hints.table_cell_tabs)
+                    .clone();
                 table_cell_tab_stops.extend_from_slice(&d.note_table_cell_tab_stops);
                 render_document(
                     &model,
@@ -3333,11 +3374,19 @@ impl Document {
                         pagination_boundaries: &pagination_boundaries,
                         line_spacing: &line_spacing,
                         tab_stops: &tab_stops,
-                        column_break_offsets: &d.column_break_offsets,
-                        section_column_gap_pt: &d.section_column_gap_pt,
-                        section_column_layouts: &d.section_column_layouts,
-                        section_column_separators: &d.section_column_separators,
-                        section_column_rtl: &d.section_column_rtl,
+                        column_break_offsets: note_body.map_or(&d.column_break_offsets, |body| {
+                            &body.hints.column_break_offsets
+                        }),
+                        section_column_gap_pt: note_body
+                            .map_or(&d.section_column_gap_pt, |body| &body.columns.gaps),
+                        section_column_layouts: note_body
+                            .map_or(&d.section_column_layouts, |body| &body.columns.layouts),
+                        section_column_separators: note_body
+                            .map_or(&d.section_column_separators, |body| {
+                                &body.columns.separators
+                            }),
+                        section_column_rtl: note_body
+                            .map_or(&d.section_column_rtl, |body| &body.columns.rtl),
                         final_section_column_gap_pt: d.final_section_column_gap_pt,
                         final_section_column_layout: d.final_section_column_layout.as_ref(),
                         final_section_column_separator: d.final_section_column_separator,

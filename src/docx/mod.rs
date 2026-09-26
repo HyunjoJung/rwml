@@ -261,6 +261,16 @@ pub(crate) struct FreshConversionNotes {
     pub(crate) payloads: Vec<Vec<Option<crate::model::NoteWritePayload>>>,
 }
 
+#[cfg(feature = "render")]
+pub(crate) struct NoteRenderBody {
+    /// Body blocks reparsed with deterministic structural note labels.
+    pub(crate) blocks: Vec<Block>,
+    /// Layout sidecars aligned to `blocks` after labels affect text offsets.
+    pub(crate) hints: body::BodyLayoutHints,
+    pub(crate) columns: body::BodySectionColumnHints,
+    pub(crate) floating_shapes: Vec<FloatingShape>,
+}
+
 pub(crate) struct DocxState {
     /// The **body-only** model (no footnote/endnote blocks). `Document::model()`
     /// re-appends `notes` for the read view; the lossy model is read/render only.
@@ -268,6 +278,12 @@ pub(crate) struct DocxState {
     /// Footnote/endnote blocks, kept separate from `model.blocks` (their `.docx`
     /// parts are preserved on save, never inlined into the body).
     pub notes: Vec<Block>,
+    /// Render-only body view containing resolved note-reference labels.
+    #[cfg(feature = "render")]
+    pub render_body: Option<NoteRenderBody>,
+    /// Render-only note view containing resolved note-entry labels.
+    #[cfg(feature = "render")]
+    pub render_notes: Option<Vec<Block>>,
     /// Conversion-only body blocks and exact note-paragraph payloads.
     /// `None` keeps the historical flattened-note fallback.
     pub fresh_conversion_notes: Option<FreshConversionNotes>,
@@ -565,7 +581,13 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         paragraph_charts: Default::default(),
         section_column_capture: Default::default(),
         pagination_capture: Default::default(),
+        #[cfg(feature = "render")]
+        render_notes: None,
+        #[cfg(feature = "render")]
+        render_note_entry: Default::default(),
     };
+    #[cfg(feature = "render")]
+    let render_ctx = note_ref_context.has_render_targets().then(|| ctx.clone());
     ctx.begin_section_column_capture();
     ctx.begin_pagination_capture();
     let mut blocks = body::parse_document(&doc_xml, &ctx); // body only
@@ -602,6 +624,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         b"footnote",
         NoteKind::Footnote,
         part_env,
+        #[cfg(feature = "render")]
+        &note_ref_context,
     );
     let mut endnote_part = read_notes(
         &mut zip,
@@ -609,9 +633,30 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         b"endnote",
         NoteKind::Endnote,
         part_env,
+        #[cfg(feature = "render")]
+        &note_ref_context,
     );
     #[cfg(feature = "render")]
-    let endnote_block_offset = note_part.blocks.len();
+    let endnote_block_offset = note_part
+        .render_blocks
+        .as_ref()
+        .unwrap_or(&note_part.blocks)
+        .len();
+    #[cfg(feature = "render")]
+    let render_notes = (note_part.render_blocks.is_some() || endnote_part.render_blocks.is_some())
+        .then(|| {
+            let mut blocks = note_part
+                .render_blocks
+                .take()
+                .unwrap_or_else(|| note_part.blocks.clone());
+            blocks.extend(
+                endnote_part
+                    .render_blocks
+                    .take()
+                    .unwrap_or_else(|| endnote_part.blocks.clone()),
+            );
+            blocks
+        });
     note_part.blocks.extend(endnote_part.blocks);
     note_part
         .source_entries
@@ -665,25 +710,30 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             bookmark_names: &bookmark_names,
         },
     );
+    let shape_field_context = ShapeFieldContext {
+        properties: field_properties,
+        document_bookmarks: &ref_targets,
+        ref_positions: &ref_position_context,
+        ref_numbers: &ref_number_context,
+        page_refs: &page_ref_context,
+        note_refs: &note_ref_context,
+        sections: &section_context,
+        legacy_forms: &legacy_form_context,
+        table_formulas: &table_formula_context,
+        toc_entries: &toc_entries,
+        bookmark_names: &bookmark_names,
+        style_refs: &style_ref_context,
+        sequence_headings: &sequence_heading_context,
+    };
     let mut floating_shapes = read_floating_shapes(
         &doc_xml,
-        ShapeFieldContext {
-            properties: field_properties,
-            document_bookmarks: &ref_targets,
-            ref_positions: &ref_position_context,
-            ref_numbers: &ref_number_context,
-            page_refs: &page_ref_context,
-            note_refs: &note_ref_context,
-            sections: &section_context,
-            legacy_forms: &legacy_form_context,
-            table_formulas: &table_formula_context,
-            toc_entries: &toc_entries,
-            bookmark_names: &bookmark_names,
-            style_refs: &style_ref_context,
-            sequence_headings: &sequence_heading_context,
-        },
+        shape_field_context,
         Some(&source_block_anchors),
+        #[cfg(feature = "render")]
+        None,
     );
+    #[cfg(feature = "render")]
+    let body_shape_count = floating_shapes.len();
     floating_shapes.extend(note_part.floating_shapes);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
     text_boxes.extend(note_part.text_boxes);
@@ -814,6 +864,47 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         all.extend(note_part.blocks.iter().cloned());
         assemble::compute_stats(&all)
     };
+    #[cfg(feature = "render")]
+    let render_body = render_ctx.and_then(|mut ctx| {
+        ctx.render_notes = Some(body::RenderNotes::new(
+            &note_ref_context,
+            &note_part.render_ids,
+            &endnote_part.render_ids,
+        )?);
+        ctx.begin_section_column_capture();
+        ctx.begin_pagination_capture();
+        let mut rendered = body::parse_document(&doc_xml, &ctx);
+        // Header/footer relationships are attached after body parsing.
+        let mut source_sections = blocks
+            .iter()
+            .filter(|block| matches!(block, Block::SectionBreak(_)));
+        for target in rendered
+            .iter_mut()
+            .filter(|block| matches!(block, Block::SectionBreak(_)))
+        {
+            if let Some(source) = source_sections.next() {
+                *target = source.clone();
+            }
+        }
+        let hints = ctx.take_layout_hints();
+        let mut rendered_shapes = if body_shape_count > 0 {
+            read_floating_shapes(
+                &doc_xml,
+                shape_field_context,
+                Some(&hints.source_block_anchors),
+                ctx.render_notes,
+            )
+        } else {
+            Vec::new()
+        };
+        rendered_shapes.extend_from_slice(&floating_shapes[body_shape_count..]);
+        Some(NoteRenderBody {
+            blocks: rendered,
+            hints,
+            columns: ctx.take_section_column_hints(),
+            floating_shapes: rendered_shapes,
+        })
+    });
     let model = DocModel {
         blocks, // body only
         regions: Vec::new(),
@@ -875,6 +966,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     Ok(DocxState {
         model,
         notes: note_part.blocks,
+        #[cfg(feature = "render")]
+        render_body,
+        #[cfg(feature = "render")]
+        render_notes,
         fresh_conversion_notes,
         text,
         main_text,
@@ -1723,6 +1818,10 @@ fn read_hf_parts(
             paragraph_charts: Default::default(),
             section_column_capture: Default::default(),
             pagination_capture: Default::default(),
+            #[cfg(feature = "render")]
+            render_notes: None,
+            #[cfg(feature = "render")]
+            render_note_entry: Default::default(),
         };
         let type_name = normalized_header_footer_type(&reference.type_name);
         extend_missing_comment_anchors(
@@ -1764,6 +1863,8 @@ fn read_hf_parts(
                     style_refs: &style_ref_context,
                     sequence_headings: &sequence_heading_context,
                 },
+                None,
+                #[cfg(feature = "render")]
                 None,
             ));
         }
@@ -1953,6 +2054,10 @@ fn header_footer_kind(part_kind: HeaderFooterPartKind, type_name: &str) -> Heade
 #[derive(Default)]
 struct NotePartRead {
     blocks: Vec<Block>,
+    #[cfg(feature = "render")]
+    render_blocks: Option<Vec<Block>>,
+    #[cfg(feature = "render")]
+    render_ids: HashSet<String>,
     source_entries: Vec<NoteSourceEntry>,
     #[cfg(feature = "render")]
     pagination: Vec<crate::model::PaginationHint>,
@@ -1994,6 +2099,7 @@ fn read_notes(
     tag: &[u8],
     kind: NoteKind,
     env: PartParseEnv<'_>,
+    #[cfg(feature = "render")] render_note_context: &fields::NoteRefContext,
 ) -> NotePartRead {
     let PartParseEnv {
         styles,
@@ -2124,6 +2230,10 @@ fn read_notes(
         paragraph_charts: Default::default(),
         section_column_capture: Default::default(),
         pagination_capture: Default::default(),
+        #[cfg(feature = "render")]
+        render_notes: None,
+        #[cfg(feature = "render")]
+        render_note_entry: Default::default(),
     };
     let mut blocks = Vec::new();
     let mut records = Vec::new();
@@ -2153,6 +2263,8 @@ fn read_notes(
             sequence_headings: &sequence_heading_context,
         },
         None,
+        #[cfg(feature = "render")]
+        None,
     );
     let text_box_id_prefix = format!("{name}-text-box");
     let text_boxes = read_text_boxes_with_prefix(&xml, &ctx, &floating_shapes, &text_box_id_prefix);
@@ -2170,6 +2282,10 @@ fn read_notes(
         },
         preserve_legacy_form_cache,
     );
+    #[cfg(feature = "render")]
+    let render_ctx = render_note_context
+        .has_render_targets_for(kind == NoteKind::Endnote)
+        .then(|| ctx.clone());
     ctx.begin_pagination_capture();
     let note_entries = body::parse_note_entries(&xml, &ctx, tag);
     let layout_hints = ctx.take_layout_hints();
@@ -2198,8 +2314,55 @@ fn read_notes(
         });
         blocks.extend(note_blocks);
     }
+    #[cfg(feature = "render")]
+    let render_ids = {
+        let mut counts = HashMap::new();
+        for note in &records {
+            *counts.entry(note.id.as_str()).or_insert(0usize) += 1;
+        }
+        counts
+            .into_iter()
+            .filter(|(_, count)| *count == 1)
+            .map(|(id, _)| id.to_owned())
+            .collect::<HashSet<_>>()
+    };
+    #[cfg(feature = "render")]
+    let empty_ids = HashSet::new();
+    #[cfg(feature = "render")]
+    let render_ctx = render_ctx.and_then(|mut ctx| {
+        let (footnotes, endnotes) = if kind == NoteKind::Footnote {
+            (&render_ids, &empty_ids)
+        } else {
+            (&empty_ids, &render_ids)
+        };
+        ctx.render_notes = Some(body::RenderNotes::new(
+            render_note_context,
+            footnotes,
+            endnotes,
+        )?);
+        Some(ctx)
+    });
+    #[cfg(feature = "render")]
+    let (render_blocks, layout_hints, entry_starts) = if let Some(ctx) = render_ctx {
+        ctx.begin_pagination_capture();
+        let mut rendered = Vec::new();
+        let mut starts = Vec::new();
+        for (_, entry) in body::parse_note_entries(&xml, &ctx, tag) {
+            if !entry.is_empty() {
+                starts.push(rendered.len());
+            }
+            rendered.extend(entry);
+        }
+        (Some(rendered), ctx.take_layout_hints(), starts)
+    } else {
+        (None, layout_hints, entry_starts)
+    };
     NotePartRead {
         blocks,
+        #[cfg(feature = "render")]
+        render_blocks,
+        #[cfg(feature = "render")]
+        render_ids,
         source_entries,
         #[cfg(feature = "render")]
         pagination: layout_hints.pagination,
@@ -2422,6 +2585,7 @@ fn read_floating_shapes(
     doc_xml: &str,
     cx: ShapeFieldContext<'_>,
     source_block_anchors: Option<&[Option<usize>]>,
+    #[cfg(feature = "render")] render_notes: Option<body::RenderNotes<'_>>,
 ) -> Vec<FloatingShape> {
     let mut r = Reader::from_str(doc_xml);
     let mut shapes = Vec::new();
@@ -2603,6 +2767,16 @@ fn read_floating_shapes(
                     continue;
                 }
                 if in_body && current_body_block_index.is_some() {
+                    #[cfg(feature = "render")]
+                    if let Some(label) = render_notes.and_then(|notes| notes.reference_label(&e)) {
+                        anchor_complex_field.append_result_text(label);
+                        if !anchor_complex_field.suppresses_result() {
+                            append_floating_anchor_text(&mut current_body_block_text, label);
+                        }
+                        skip_subtree(&mut r);
+                        body_depth = body_depth.saturating_sub(1);
+                        continue;
+                    }
                     if let Some(marker) = inline_marker_text(&e) {
                         anchor_complex_field.append_result_text(marker);
                         if !anchor_complex_field.suppresses_result() {
@@ -2658,6 +2832,15 @@ fn read_floating_shapes(
                             append_floating_anchor_text(&mut current_body_block_text, &text);
                         }
                     } else {
+                        #[cfg(feature = "render")]
+                        if let Some(label) =
+                            render_notes.and_then(|notes| notes.reference_label(&e))
+                        {
+                            anchor_complex_field.append_result_text(label);
+                            if !anchor_complex_field.suppresses_result() {
+                                append_floating_anchor_text(&mut current_body_block_text, label);
+                            }
+                        }
                         if let Some(marker) = inline_marker_text(&e) {
                             anchor_complex_field.append_result_text(marker);
                         } else if name == b"sym" {
@@ -5362,6 +5545,33 @@ mod tests {
     };
     use super::{running_surface_distances_by_model_section, SectionHeaderFooter};
     use crate::model::{Block, RunningSurfaceDistanceHints, SectionSetup};
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn render_note_views_require_resolvable_part_ids() {
+        use std::io::Write;
+
+        let note = r#"<w:footnote w:id="9"><w:p><w:r><w:footnoteRef/><w:t>Note</w:t></w:r></w:p></w:footnote>"#;
+        for (reference, notes, needed) in [
+            ("", note.to_string(), false),
+            (r#"<w:footnoteReference w:id="9"/>"#, String::new(), false),
+            (r#"<w:footnoteReference w:id="9"/>"#, note.repeat(2), false),
+            (r#"<w:footnoteReference w:id="9"/>"#, note.to_string(), true),
+        ] {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            for (name, xml) in [
+                ("word/document.xml", format!("<w:document><w:body><w:p><w:r><w:t>Body</w:t>{reference}</w:r></w:p></w:body></w:document>")),
+                ("word/footnotes.xml", format!("<w:footnotes>{notes}</w:footnotes>")),
+            ] {
+                zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+                zip.write_all(xml.as_bytes()).unwrap();
+            }
+            let bytes = zip.finish().unwrap().into_inner();
+            let document = super::open(&bytes).unwrap();
+            assert_eq!(document.render_body.is_some(), needed);
+            assert_eq!(document.render_notes.is_some(), needed);
+        }
+    }
 
     #[test]
     fn toggle_on_accepts_case_insensitive_off_values() {

@@ -18,6 +18,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Opened DOCX PDF previews now render deterministic footnote/endnote reference
+  and entry labels from source-order numbering, supported document settings and
+  custom marks while preserving read/edit views and package payloads. Render-only
+  layout and floating-shape anchors stay aligned after label insertion.
+  Ambiguous references, unsupported formats, page restarts and section numbering
+  overrides do not receive invented labels; notes remain end-flow content.
 - PDF preview now paints dynamic `PAGE` fields and generated page-number footers
   with section display numbering, including explicit restarts, inherited section
   formats, and field-level number-format overrides. `LayoutPages` continues to

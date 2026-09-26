@@ -3,6 +3,8 @@ use super::*;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct NoteRefContext {
     pub(crate) targets: HashMap<String, NoteRefTarget>,
+    #[cfg(feature = "render")]
+    render_labels: [HashMap<String, String>; 2],
     custom_marks: HashMap<usize, String>,
     field_positions: Vec<NoteRefFieldPosition>,
     ref_field_positions: Vec<NoteRefFieldPosition>,
@@ -11,6 +13,23 @@ pub(crate) struct NoteRefContext {
 }
 
 impl NoteRefContext {
+    #[cfg(feature = "render")]
+    pub(crate) fn has_render_targets(&self) -> bool {
+        self.render_labels.iter().any(|labels| !labels.is_empty())
+    }
+
+    #[cfg(feature = "render")]
+    pub(crate) fn has_render_targets_for(&self, endnote: bool) -> bool {
+        !self.render_labels[usize::from(endnote)].is_empty()
+    }
+
+    #[cfg(feature = "render")]
+    pub(crate) fn render_label(&self, endnote: bool, id: &str) -> Option<&str> {
+        self.render_labels[usize::from(endnote)]
+            .get(id)
+            .map(String::as_str)
+    }
+
     pub(crate) fn empty() -> Self {
         Self::default()
     }
@@ -125,6 +144,8 @@ pub(crate) struct NoteNumbering {
     footnote_format: Option<PageNumberFormat>,
     endnote_start: Option<usize>,
     endnote_format: Option<PageNumberFormat>,
+    #[cfg(feature = "render")]
+    render_unsupported: [bool; 2],
 }
 
 impl NoteNumbering {
@@ -161,11 +182,15 @@ pub(crate) fn note_numbering_from_settings(settings_xml: &str) -> NoteNumbering 
                 b"endnotePr" => current_kind = Some(NoteRefKind::Endnote),
                 b"numStart" => apply_note_num_start(&e, current_kind, &mut numbering),
                 b"numFmt" => apply_note_num_fmt(&e, current_kind, &mut numbering),
+                #[cfg(feature = "render")]
+                b"numRestart" => apply_render_note_restart(&e, current_kind, &mut numbering),
                 _ => {}
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"numStart" => apply_note_num_start(&e, current_kind, &mut numbering),
                 b"numFmt" => apply_note_num_fmt(&e, current_kind, &mut numbering),
+                #[cfg(feature = "render")]
+                b"numRestart" => apply_render_note_restart(&e, current_kind, &mut numbering),
                 _ => {}
             },
             Ok(Event::End(e)) => {
@@ -206,12 +231,29 @@ fn apply_note_num_fmt(
     let Some(format) =
         crate::model::PageNumberFormat::from_wml_value(&value).map(PageNumberFormat::from)
     else {
+        #[cfg(feature = "render")]
+        if let Some(kind) = kind {
+            numbering.render_unsupported[usize::from(kind == NoteRefKind::Endnote)] = true;
+        }
         return;
     };
     match kind {
         Some(NoteRefKind::Footnote) => numbering.footnote_format = Some(format),
         Some(NoteRefKind::Endnote) => numbering.endnote_format = Some(format),
         _ => {}
+    }
+}
+
+#[cfg(feature = "render")]
+fn apply_render_note_restart(
+    e: &BytesStart<'_>,
+    kind: Option<NoteRefKind>,
+    numbering: &mut NoteNumbering,
+) {
+    if let Some(kind) = kind {
+        if attr_local_trimmed(e, b"val").as_deref() != Some("continuous") {
+            numbering.render_unsupported[usize::from(kind == NoteRefKind::Endnote)] = true;
+        }
     }
 }
 
@@ -289,6 +331,12 @@ pub(crate) fn note_ref_context_with_numbering(
 ) -> NoteRefContext {
     let mut r = Reader::from_str(xml);
     let mut targets = HashMap::new();
+    #[cfg(feature = "render")]
+    let mut render_targets: [HashMap<String, Option<NoteRefTarget>>; 2] = Default::default();
+    #[cfg(feature = "render")]
+    let mut render_unsupported = numbering.render_unsupported;
+    #[cfg(feature = "render")]
+    let mut render_section_note_properties = None;
     let mut custom_marks = HashMap::new();
     let mut field_positions = Vec::new();
     let mut ref_field_positions = Vec::new();
@@ -344,7 +392,7 @@ pub(crate) fn note_ref_context_with_numbering(
                     continue;
                 }
                 match name {
-                    b"del" | b"moveFrom" => {
+                    b"del" | b"moveFrom" | b"sectPrChange" => {
                         pending_custom_mark = None;
                         skip_subtree(&mut r);
                         continue;
@@ -466,6 +514,15 @@ pub(crate) fn note_ref_context_with_numbering(
                             numbering.format_for(NoteRefKind::Footnote),
                             &mut targets,
                         );
+                        #[cfg(feature = "render")]
+                        record_render_note_target(
+                            &e,
+                            NoteRefKind::Footnote,
+                            footnote_number,
+                            source_order,
+                            numbering,
+                            &mut render_targets,
+                        );
                         source_order += 1;
                         skip_subtree(&mut r);
                         continue;
@@ -488,6 +545,15 @@ pub(crate) fn note_ref_context_with_numbering(
                             custom_mark,
                             numbering.format_for(NoteRefKind::Endnote),
                             &mut targets,
+                        );
+                        #[cfg(feature = "render")]
+                        record_render_note_target(
+                            &e,
+                            NoteRefKind::Endnote,
+                            endnote_number,
+                            source_order,
+                            numbering,
+                            &mut render_targets,
                         );
                         source_order += 1;
                         skip_subtree(&mut r);
@@ -531,6 +597,22 @@ pub(crate) fn note_ref_context_with_numbering(
                         }
                         continue;
                     }
+                    #[cfg(feature = "render")]
+                    b"footnotePr" | b"endnotePr" => {
+                        render_section_note_properties = Some(if name == b"endnotePr" {
+                            NoteRefKind::Endnote
+                        } else {
+                            NoteRefKind::Footnote
+                        });
+                    }
+                    #[cfg(feature = "render")]
+                    b"numFmt" | b"numStart" | b"numRestart"
+                        if render_section_note_properties.is_some() =>
+                    {
+                        if let Some(kind) = render_section_note_properties {
+                            render_unsupported[usize::from(kind == NoteRefKind::Endnote)] = true;
+                        }
+                    }
                     b"p" => pending_custom_mark = None,
                     b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
                     | b"pict" | b"object" => {
@@ -562,6 +644,14 @@ pub(crate) fn note_ref_context_with_numbering(
                     continue;
                 }
                 match name {
+                    #[cfg(feature = "render")]
+                    b"numFmt" | b"numStart" | b"numRestart"
+                        if render_section_note_properties.is_some() =>
+                    {
+                        if let Some(kind) = render_section_note_properties {
+                            render_unsupported[usize::from(kind == NoteRefKind::Endnote)] = true;
+                        }
+                    }
                     b"fldSimple" => {
                         pending_custom_mark = None;
                         if let Some(text) = computed_note_ref_scan_field_result(
@@ -663,6 +753,15 @@ pub(crate) fn note_ref_context_with_numbering(
                             numbering.format_for(NoteRefKind::Footnote),
                             &mut targets,
                         );
+                        #[cfg(feature = "render")]
+                        record_render_note_target(
+                            &e,
+                            NoteRefKind::Footnote,
+                            footnote_number,
+                            source_order,
+                            numbering,
+                            &mut render_targets,
+                        );
                         source_order += 1;
                     }
                     b"endnoteReference" => {
@@ -683,6 +782,15 @@ pub(crate) fn note_ref_context_with_numbering(
                             custom_mark,
                             numbering.format_for(NoteRefKind::Endnote),
                             &mut targets,
+                        );
+                        #[cfg(feature = "render")]
+                        record_render_note_target(
+                            &e,
+                            NoteRefKind::Endnote,
+                            endnote_number,
+                            source_order,
+                            numbering,
+                            &mut render_targets,
                         );
                         source_order += 1;
                     }
@@ -724,6 +832,10 @@ pub(crate) fn note_ref_context_with_numbering(
                 if local(e.name().as_ref()) == b"p" {
                     pending_custom_mark = None;
                 }
+                #[cfg(feature = "render")]
+                if matches!(local(e.name().as_ref()), b"footnotePr" | b"endnotePr") {
+                    render_section_note_properties = None;
+                }
                 if local(e.name().as_ref()) == b"AlternateContent" {
                     alternate_content_stack.pop();
                 }
@@ -733,14 +845,60 @@ pub(crate) fn note_ref_context_with_numbering(
             _ => {}
         }
     }
+    #[cfg(feature = "render")]
+    let render_labels = std::array::from_fn(|index| {
+        if render_unsupported[index] {
+            return HashMap::new();
+        }
+        render_targets[index]
+            .drain()
+            .filter_map(|(id, target)| {
+                let target = target?;
+                let label = if let Some(order) = target.custom_mark_order {
+                    custom_marks.get(&order)?.clone()
+                } else {
+                    format_page_number(target.number, target.format)?
+                };
+                Some((id, label))
+            })
+            .collect()
+    });
     NoteRefContext {
         targets,
+        #[cfg(feature = "render")]
+        render_labels,
         custom_marks,
         field_positions,
         ref_field_positions,
         markers,
         generated_ref_note_fields,
     }
+}
+
+#[cfg(feature = "render")]
+fn record_render_note_target(
+    element: &BytesStart<'_>,
+    kind: NoteRefKind,
+    number: usize,
+    order: usize,
+    numbering: NoteNumbering,
+    targets: &mut [HashMap<String, Option<NoteRefTarget>>; 2],
+) {
+    let Some(id) = attr_local_trimmed(element, b"id") else {
+        return;
+    };
+    let target = NoteRefTarget {
+        kind,
+        number,
+        start: order,
+        end: order,
+        custom_mark_order: note_reference_uses_custom_mark(element).then_some(order),
+        format: numbering.format_for(kind),
+    };
+    targets[usize::from(kind == NoteRefKind::Endnote)]
+        .entry(id)
+        .and_modify(|target| *target = None)
+        .or_insert(Some(target));
 }
 
 #[derive(Debug)]

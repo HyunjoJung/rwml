@@ -233,7 +233,7 @@ fn docx_footnote_num_start_offsets_first_note_number() {
 #[test]
 fn docx_footnote_num_fmt_formats_note_number() {
     let doc = Document::open(&footnote_settings_docx(
-        r#"<w:footnotePr><w:numStart w:val="5"/><w:numFmt w:val="lowerRoman"/></w:footnotePr>"#,
+        r#"<w:footnotePr><w:numFmt w:val="lowerRoman"/><w:numStart w:val="5"/></w:footnotePr>"#,
     ))
     .expect("fixture opens");
     let fields = doc.fields();
