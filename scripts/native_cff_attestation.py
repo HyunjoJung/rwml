@@ -166,9 +166,16 @@ def discover_program(
 
 
 def attest_pdf(
-    payload: bytes, source: bytes, entry: dict, fonttools: Path, pypdf: Path
+    payload: bytes, source: bytes, entry: dict, fonttools: Path, pypdf: Path,
+    *, timeout: float = BATCH_SECONDS,
 ) -> dict:
-    deadline = time.monotonic() + BATCH_SECONDS
+    if (
+        type(timeout) not in (int, float)
+        or not 0 < timeout <= BATCH_SECONDS
+        or not math.isfinite(timeout)
+    ):
+        raise ValueError("native CFF PDF timeout is outside its bound")
+    deadline = time.monotonic() + timeout
 
     def remaining():
         value = deadline - time.monotonic()

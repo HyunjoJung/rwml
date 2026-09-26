@@ -10,34 +10,42 @@ import re
 import shutil
 import sys
 
-import analysis_tool_identity as analysis
-import libreoffice_container as runtime
-from generate_unequal_table_oracle import CASES, check_materialized, materialize
-from libreoffice_oracle_fonts import sfnt_revision
-from render_oracle_contract import (
-    _assert_path_neutral,
-    _load_json,
-    _require_exact_keys,
-    _require_safe_text,
-    _require_sha256,
-    load_corpus_manifest,
-)
-from render_validate import (
-    Image,
-    fitz,
-    reference_page_digests,
-    reference_pdf_font_identities,
-)
-from table_oracle_topology import (
-    _harness_sha256 as topology_harness_sha256,
-    _write_json as write_json,
-    build_capture_report,
-    compare_capture_reports,
-    extract_pdf,
-    load_capture_report,
-    load_comparison_report,
-)
-from word_oracle_capture import load_word_font_lock
+try:
+    import analysis_tool_identity as analysis
+    import libreoffice_container as runtime
+    from generate_unequal_table_oracle import CASES, check_materialized, materialize
+    from libreoffice_oracle_fonts import sfnt_revision
+    from render_oracle_contract import (
+        _assert_path_neutral, _load_json, _require_exact_keys, _require_safe_text,
+        _require_sha256, load_corpus_manifest,
+    )
+    from render_validate import (
+        Image, fitz, reference_page_digests, reference_pdf_font_identities,
+    )
+    from table_oracle_topology import (
+        _harness_sha256 as topology_harness_sha256, _write_json as write_json,
+        build_capture_report, compare_capture_reports, extract_pdf,
+        load_capture_report, load_comparison_report,
+    )
+    from word_oracle_capture import load_word_font_lock
+except ModuleNotFoundError:
+    from scripts import analysis_tool_identity as analysis
+    from scripts import libreoffice_container as runtime
+    from scripts.generate_unequal_table_oracle import CASES, check_materialized, materialize
+    from scripts.libreoffice_oracle_fonts import sfnt_revision
+    from scripts.render_oracle_contract import (
+        _assert_path_neutral, _load_json, _require_exact_keys, _require_safe_text,
+        _require_sha256, load_corpus_manifest,
+    )
+    from scripts.render_validate import (
+        Image, fitz, reference_page_digests, reference_pdf_font_identities,
+    )
+    from scripts.table_oracle_topology import (
+        _harness_sha256 as topology_harness_sha256, _write_json as write_json,
+        build_capture_report, compare_capture_reports, extract_pdf,
+        load_capture_report, load_comparison_report,
+    )
+    from scripts.word_oracle_capture import load_word_font_lock
 
 ROOT = runtime.ROOT
 SCHEMA = "rwml.libreoffice-table-capture.v2"
