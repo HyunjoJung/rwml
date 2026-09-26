@@ -56,6 +56,43 @@ cannot label newly extracted evidence with a different revision. The separate
 producer metadata identifies the application that wrote the PDFs. Retained capture
 reports keep their recorded source revisions when loaded for comparison.
 
+## Shared diagnostic font sources
+
+`shared-font-lock.json` extends the unchanged eight-font
+`libreoffice-font-lock.json` by its exact SHA-256. It adds Noto Sans CJK KR
+OpenType CFF and Noto Emoji variable TrueType sources, with immutable upstream
+repository/commit/path/Git-blob identities, file sizes, SHA-256 digests, SFNT
+revisions, and the two additional sources' license payloads. Its explicit
+ten-font order is the intended native diagnostic order, not host font discovery.
+
+`scripts/shared_oracle_fonts.py` prepares and verifies this source pack offline.
+Obtain the eight base fonts from their existing pinned release assets and the
+two additions and licenses from the commit paths in the shared lock. Retain
+upstream license/provenance material; the pack does not replace the base assets'
+distribution obligations. Stage exactly the ten named fonts in one directory
+and the two additional license files, using their locked names, in another:
+
+```sh
+python3 -B scripts/shared_oracle_fonts.py prepare \
+  --font-dir <exact-font-directory> \
+  --license-dir <additional-license-directory> \
+  --output target/shared-oracle-fonts
+python3 -B scripts/shared_oracle_fonts.py verify \
+  --output target/shared-oracle-fonts
+```
+
+Preparation requires a fresh output outside the input directories. It validates
+the complete file sets before writing; verification rereads every font and
+license independently and checks the exact path-neutral `MANIFEST.json`.
+Missing, extra, modified, aliased, symlinked, nonregular, or oversized inputs
+and inconsistent receipts are rejected. The commands do not download fonts,
+install them on the host, or change an existing capture's inputs.
+
+This establishes source identity and order only. It does not prove embedded
+Type 1/CFF subset identity, variable-font instance fidelity, glyph shaping,
+Word-compatible layout, or cross-producer equivalence. Existing PDF attestation
+and release validation retain their separate contracts.
+
 ## Locked LibreOffice runtime
 
 `scripts/libreoffice_container.py` prepares and verifies a fixed Linux amd64
