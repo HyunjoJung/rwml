@@ -11,6 +11,7 @@ use krilla::paint::{Fill, FillRule};
 use krilla::surface::Surface;
 use krilla::text::{Font, GlyphId, KrillaGlyph};
 use krilla::Data;
+use skrifa::MetadataProvider;
 
 use super::{
     Error, PageScene, PageSceneOp, Result, SceneFontId, SceneFontResource, SceneGlyph,
@@ -30,6 +31,51 @@ impl SceneFontResource {
         Font::new(self.bytes.clone().into(), self.index)
             .ok_or_else(|| Error::Render("page scene contains an invalid font resource".into()))
     }
+}
+
+pub(super) fn validate_fixed_glyphs(scene: &PageScene) -> Result<()> {
+    let mut checked = std::collections::HashSet::new();
+    for operation in &scene.operations {
+        let PageSceneOp::GlyphRun(run) = operation else {
+            continue;
+        };
+        let resource = scene
+            .font_resources
+            .get(run.font.0)
+            .ok_or_else(|| Error::Render("page scene contains an invalid font resource".into()))?;
+        let face = skrifa::FontRef::from_index(resource.bytes.as_ref().as_ref(), resource.index)
+            .map_err(|_| Error::Render("page scene contains an invalid font resource".into()))?;
+        let outlines = face.outline_glyphs();
+        let colors = face.color_glyphs();
+        let bitmaps = face.bitmap_strikes();
+        for glyph in &run.glyphs {
+            if !run
+                .text
+                .get(glyph.text_range.clone())
+                .is_some_and(super::has_visible_text)
+                || !checked.insert((run.font.0, glyph.glyph_id))
+            {
+                continue;
+            }
+            let id = skrifa::GlyphId::new(glyph.glyph_id);
+            let has_artwork = outlines.get(id).is_some()
+                || colors.get(id).is_some()
+                || bitmaps
+                    .glyph_for_size(skrifa::instance::Size::unscaled(), id)
+                    .is_some_and(|bitmap| match bitmap.data {
+                        skrifa::bitmap::BitmapData::Png(data) => {
+                            PdfImage::from_png(data.to_vec().into(), false).is_ok()
+                        }
+                        _ => false,
+                    });
+            if glyph.glyph_id == 0 || !has_artwork {
+                return Err(Error::Render(
+                    "fixed-font PDF text requires a glyph absent from the supplied fonts".into(),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 impl SceneGlyph {

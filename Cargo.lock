@@ -850,6 +850,7 @@ dependencies = [
  "parley",
  "quick-xml",
  "rwml-fonts",
+ "skrifa 0.42.1",
  "thiserror",
  "wasm-bindgen",
  "zip",
