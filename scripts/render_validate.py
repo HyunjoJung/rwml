@@ -266,7 +266,7 @@ def validate_visual_settings(settings: dict | None = None) -> dict[str, int | st
         value = values[name]
         if not isinstance(value, int) or isinstance(value, bool):
             raise ValueError(f"visual setting is invalid: {name}")
-    if values["font_mode"] not in {"fixed-noto-subsets", "system"}:
+    if values["font_mode"] not in {"fixed-noto-subsets", "system", "locked-shared-fonts"}:
         raise ValueError(
             f"visual setting is out of range: font_mode={values['font_mode']}"
         )
