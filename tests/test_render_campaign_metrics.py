@@ -236,8 +236,8 @@ class CaptureMetricCompositionTests(unittest.TestCase):
         for name in ("native.pdf", "native-report.json"):
             shutil.copyfile(self.root / name, self.case / name)
         (self.case / "input.docx").write_bytes(b"fixture")
-        (self.case / "SHA256SUMS").write_text(
-            metrics.capture.digest(b"fixture") + "  input.docx\n"
+        (self.case / "SHA256SUMS").write_bytes(
+            (metrics.capture.digest(b"fixture") + "  input.docx\n").encode("ascii")
         )
         for engine in ("native", "reference"):
             (self.case / (engine + "-fonts.json")).write_text('{"resources":[]}')
