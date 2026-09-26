@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from scripts import render_evidence_metrics as metrics
+from scripts import render_pdf_diagnostics as pdf_metrics
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "render_oracle_contract.py"
@@ -95,10 +96,34 @@ def valid_environment() -> dict:
     }
 
 
+def valid_pdf_row(pages=1) -> dict:
+    geometry = pdf_metrics.canonical_page_geometry(
+        page_size=(72, 72), media_box=(0, 0, 72, 72),
+        crop_box=(0, 0, 72, 72), rotation_degrees=0,
+    )
+    box = pdf_metrics.canonical_text_box(("fixture",), (1, 1, 20, 10))
+    return {
+        "pdf_point_geometry": pdf_metrics.geometry_report([
+            pdf_metrics.page_geometry_metrics(geometry, geometry)
+        ] * pages),
+        "semantic_text_metrics": pdf_metrics.semantic_report([
+            pdf_metrics.semantic_metrics(("fixture",), ("fixture",))
+        ] * pages),
+        "text_geometry_metrics": pdf_metrics.text_geometry_report([
+            pdf_metrics.text_geometry_page([box], [box], [box], [box])
+        ] * pages),
+    }
+
+
 def valid_core_report() -> dict:
     integer_metrics = metrics.image_metrics(b"\xff\xff\xff", b"\xff\xff\xff", 1, 1)
+    pdf_row = valid_pdf_row()
     return {
         "integer_visual_metrics": dict(integer_metrics),
+        "pdf_diagnostic_contract": pdf_metrics.diagnostic_contract(),
+        "pdf_point_geometry": pdf_row["pdf_point_geometry"]["summary"],
+        "semantic_text_metrics": dict(pdf_row["semantic_text_metrics"]),
+        "text_geometry_metrics": pdf_row["text_geometry_metrics"]["summary"],
         "visual_comparison": {
             "dpi": 110,
             "page_cap": 32,
@@ -143,6 +168,7 @@ def valid_core_report() -> dict:
                 "foreground_ink_iou": 1.0,
                 "compared_pages": 1,
                 "integer_visual_metrics": integer_metrics,
+                **pdf_row,
                 "unmatched_candidate_pages": 0,
                 "unmatched_reference_pages": 0,
                 "capped_matched_pages": 0,
@@ -161,6 +187,7 @@ def page_core_report(candidate_pages: int, reference_pages: int, page_cap: int) 
         [1.0] * compared,
         [1.0] * compared,
         integer_pages=[valid_core_report()["integer_visual_metrics"]] * compared,
+        **valid_pdf_row(compared),
         candidate_page_count=candidate_pages,
         reference_page_count=reference_pages,
         page_cap=page_cap,
@@ -333,7 +360,7 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
             )
             render_oracle_contract.validate_evidence_report(evidence, corpus)
 
-        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v2")
+        self.assertEqual(evidence["schema"], "rwml.render-oracle-evidence.v4")
         self.assertEqual(evidence["campaign"]["name"], "test-campaign")
         self.assertEqual(evidence["campaign"]["documents"], 1)
         self.assertEqual(evidence["campaign"]["expected_pages"], 1)
@@ -518,6 +545,7 @@ class RenderOracleEvidenceContractTests(unittest.TestCase):
             recall_min=0.97,
             thresholds={"min_mean_recall": 0.97, "max_skipped": 0},
             integer_metrics=True,
+            pdf_diagnostics=True,
         )
         core["rows"][0].update(
             case_id="fixture-basic", input_bytes=7, input_sha256=sha256(b"fixture")

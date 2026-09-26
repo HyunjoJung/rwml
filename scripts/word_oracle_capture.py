@@ -883,6 +883,7 @@ def _harness_identity() -> dict[str, str]:
         SCRIPT_PATH.with_name("generate_unequal_table_oracle.py"),
         SCRIPT_PATH.with_name("render_oracle_contract.py"),
         SCRIPT_PATH.with_name("render_evidence_metrics.py"),
+        SCRIPT_PATH.with_name("render_pdf_diagnostics.py"),
         SCRIPT_PATH.with_name("table_oracle_topology.py"),
     )
     return {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}

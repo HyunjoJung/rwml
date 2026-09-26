@@ -25,6 +25,7 @@ class RenderValidateReportTests(unittest.TestCase):
             valid_core_report,
             valid_environment,
             valid_manifest,
+            valid_pdf_row,
             write_manifest,
         )
 
@@ -44,6 +45,7 @@ class RenderValidateReportTests(unittest.TestCase):
                 reference_page_count=1,
                 page_cap=32,
                 integer_pages=[valid_core_report()["integer_visual_metrics"]] if strict else None,
+                **(valid_pdf_row() if strict else {}),
             )
             with (
                 mock.patch.object(sys, "argv", argv),
@@ -92,13 +94,20 @@ class RenderValidateReportTests(unittest.TestCase):
         self.assertNotIn("integer_visual_metrics", report)
         self.assertNotIn("integer_visual_metrics", report["rows"][0])
         self.assertNotIn("integer_metrics", report["visual_comparison"])
+        for key in ("pdf_diagnostic_contract", "pdf_point_geometry",
+                    "semantic_text_metrics", "text_geometry_metrics"):
+            self.assertNotIn(key, report)
+            self.assertNotIn(key, report["rows"][0])
 
     def test_strict_cli_emits_integer_contract_even_when_every_render_fails(self):
         _, report = self.run_cli_recall_report(1.0, strict=True, skip=True)
-        self.assertEqual(report["schema"], "rwml.render-oracle-evidence.v2")
+        self.assertEqual(report["schema"], "rwml.render-oracle-evidence.v4")
         self.assertEqual(report["summary"]["skipped"], 1)
         self.assertIsNone(report["integer_visual_metrics"])
         self.assertIn("integer_metrics", report["visual_comparison"])
+        self.assertIn("pdf_diagnostic_contract", report)
+        for key in ("pdf_point_geometry", "semantic_text_metrics", "text_geometry_metrics"):
+            self.assertIsNone(report[key])
 
     def test_cli_prefers_warning_free_pymupdf_module(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -66,7 +66,7 @@ JSON runs additionally bind the report to the corpus root, source revision,
 Cargo lock, harness, platform, tool versions, and recorded LibreOffice identity.
 Reference PDFs remain temporary and are not committed.
 
-Opt-in `--manifest` reports use `rwml.render-oracle-evidence.v2` and include
+Opt-in `--manifest` reports use `rwml.render-oracle-evidence.v4` and include
 integer raster evidence: raw RGB error counts, one-pixel foreground/edge/text-ink
 matching, matched foreground color error, and blurred-luma error. Ratios are
 recomputed in parts per million from raw counts, including pixel-weighted report
@@ -75,7 +75,19 @@ implementation identity. NumPy accelerates the same integer calculations when
 available; a pure-Python reference implementation remains supported. These
 diagnostics do not establish Word fidelity or add release thresholds. Historical
 reports retain their original schema and source; validate them at that source
-instead of relabeling them as v2.
+instead of relabeling them as v4.
+
+Strict reports also include page, MediaBox and CropBox coordinates in integer
+millipoints; semantic token/codepoint/bigram counts; and bounded word/line box
+delta histograms. Semantic normalization uses NFC and drops the documented
+layout-control characters. Text geometry matches only token sequences unique on
+both sides of each page; repeated labels remain explicitly ambiguous, and their
+positions are not guessed. Reports retain counts and coordinate differences,
+not extracted text. Page coverage and aggregates are checked against every
+measured row; skipped measurements remain absent. Text extraction has per-side
+token/codepoint limits across the compared pages, with bounded per-page word
+records. These diagnostics do not prove glyph appearance or Word layout parity,
+and non-manifest release validation does not run them.
 
 The unequal-column table campaign can be reproduced without expanding the
 ordinary release set:
