@@ -18,6 +18,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- PDF previews omit placeholder glyph ink for tabs while retaining tab advances,
+  visible text positions and full-run highlights, underlines and strike-through.
 - Opened DOCX PDF previews now render deterministic footnote/endnote reference
   and entry labels from source-order numbering, supported document settings and
   custom marks while preserving read/edit views and package payloads. Render-only

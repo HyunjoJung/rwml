@@ -273,6 +273,24 @@ fn scene_image(
     Ok(image)
 }
 
+fn draw_glyph_span(
+    surface: &mut Surface<'_>,
+    run: &SceneGlyphRun,
+    font: Font,
+    x_offset: f32,
+    glyphs: &[SceneGlyph],
+) {
+    let glyphs = glyphs.iter().map(SceneGlyph::to_krilla).collect::<Vec<_>>();
+    surface.draw_glyphs(
+        Point::from_xy(run.origin.x + x_offset, run.origin.y),
+        &glyphs,
+        font,
+        &run.text,
+        run.size,
+        false,
+    );
+}
+
 fn draw_glyph_run(surface: &mut Surface<'_>, run: &SceneGlyphRun, font: Font) {
     let width = run.width();
     if let Some(highlight) = run.highlight {
@@ -290,19 +308,34 @@ fn draw_glyph_run(surface: &mut Surface<'_>, run: &SceneGlyphRun, font: Font) {
         rule: FillRule::NonZero,
         opacity: NormalizedF32::ONE,
     }));
-    let glyphs = run
-        .glyphs
-        .iter()
-        .map(SceneGlyph::to_krilla)
-        .collect::<Vec<_>>();
-    surface.draw_glyphs(
-        Point::from_xy(run.origin.x, run.origin.y),
-        &glyphs,
-        font,
-        &run.text,
-        run.size,
-        false,
-    );
+    let is_tab = |glyph: &SceneGlyph| run.text.get(glyph.text_range.clone()) == Some("\t");
+    if run.glyphs.iter().any(is_tab) {
+        // Tabs retain layout advances and decorations, but have no glyph ink.
+        let mut start = 0;
+        let mut offset = 0.0;
+        let mut advance = 0.0;
+        for (index, glyph) in run.glyphs.iter().enumerate() {
+            if is_tab(glyph) {
+                if start < index {
+                    draw_glyph_span(
+                        surface,
+                        run,
+                        font.clone(),
+                        offset,
+                        &run.glyphs[start..index],
+                    );
+                }
+                start = index + 1;
+                offset = advance + glyph.x_advance * run.size;
+            }
+            advance += glyph.x_advance * run.size;
+        }
+        if start < run.glyphs.len() {
+            draw_glyph_span(surface, run, font, offset, &run.glyphs[start..]);
+        }
+    } else {
+        draw_glyph_span(surface, run, font, 0.0, &run.glyphs);
+    }
     if let Some(decoration) = run.underline {
         fill_rect_color(
             surface,
@@ -471,5 +504,189 @@ pub(super) fn draw_run_for_test(
             decoration.thickness,
             run.color,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Range;
+
+    use super::*;
+    use crate::render::TextDecoration;
+
+    fn tab_run(text: &str) -> SceneGlyphRun {
+        let bytes = rwml_fonts::noto_sans_kr_subset();
+        let face = skrifa::FontRef::from_index(bytes, 0).unwrap();
+        let glyphs = text
+            .char_indices()
+            .map(|(start, ch)| SceneGlyph {
+                glyph_id: if ch == '\t' {
+                    0
+                } else {
+                    face.charmap().map(ch).unwrap().to_u32()
+                },
+                text_range: start..start + ch.len_utf8(),
+                x_advance: if ch == '\t' { 2.0 } else { 0.5 },
+                x_offset: 0.1,
+                y_offset: 0.2,
+                y_advance: 0.0,
+            })
+            .collect();
+        SceneGlyphRun {
+            font: SceneFontId(0),
+            origin: ScenePoint { x: 10.0, y: 50.0 },
+            glyphs,
+            text: text.into(),
+            size: 10.0,
+            color: rgb::Color::new(20, 40, 60),
+            highlight: None,
+            ascent: 9.0,
+            descent: 3.0,
+            underline: None,
+            strikethrough: None,
+            link: Some("https://example.com/tab-content".into()),
+            is_rtl: false,
+        }
+    }
+
+    fn run_pdf(run: &SceneGlyphRun, spans: Option<&[(f32, Range<usize>)]>) -> Vec<u8> {
+        let font = Font::new(rwml_fonts::noto_sans_kr_subset().to_vec().into(), 0).unwrap();
+        let mut document = krilla::Document::new();
+        let settings = krilla::page::PageSettings::from_wh(200.0, 100.0).unwrap();
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        if let Some(spans) = spans {
+            // Independently draw the specified visible spans at known positions.
+            if let Some(color) = run.highlight {
+                fill_rect_color(
+                    &mut surface,
+                    run.origin.x,
+                    run.origin.y - run.ascent,
+                    run.width(),
+                    run.ascent + run.descent,
+                    color,
+                );
+            }
+            surface.set_fill(Some(Fill {
+                paint: run.color.into(),
+                rule: FillRule::NonZero,
+                opacity: NormalizedF32::ONE,
+            }));
+            for (offset, range) in spans {
+                let glyphs = run.glyphs[range.clone()]
+                    .iter()
+                    .map(SceneGlyph::to_krilla)
+                    .collect::<Vec<_>>();
+                surface.draw_glyphs(
+                    Point::from_xy(run.origin.x + offset, run.origin.y),
+                    &glyphs,
+                    font.clone(),
+                    &run.text,
+                    run.size,
+                    false,
+                );
+            }
+            for decoration in [run.underline, run.strikethrough].into_iter().flatten() {
+                fill_rect_color(
+                    &mut surface,
+                    run.origin.x,
+                    run.origin.y + decoration.offset,
+                    run.width(),
+                    decoration.thickness,
+                    run.color,
+                );
+            }
+        } else {
+            draw_glyph_run(&mut surface, run, font);
+        }
+        surface.finish();
+        page.finish();
+        document.finish().unwrap()
+    }
+
+    fn decorate(run: &mut SceneGlyphRun) {
+        run.highlight = Some(rgb::Color::new(240, 230, 180));
+        run.underline = Some(TextDecoration {
+            offset: 1.0,
+            thickness: 0.5,
+        });
+        run.strikethrough = Some(TextDecoration {
+            offset: -3.0,
+            thickness: 0.5,
+        });
+    }
+
+    fn assert_span_pdf(run: &SceneGlyphRun, spans: &[(f32, Range<usize>)]) {
+        let original = run.clone();
+        let actual = run_pdf(run, None);
+        assert!(
+            actual == run_pdf(run, Some(spans)),
+            "unexpected glyph ink or position for {:?}",
+            run.text
+        );
+        assert!(
+            actual == run_pdf(run, None),
+            "PDF replay must repeat exactly"
+        );
+        assert_eq!(
+            &original, run,
+            "painting must preserve the complete scene run"
+        );
+    }
+
+    #[test]
+    fn pdf_tab_glyphs_preserve_advance_without_painting() {
+        for (text, spans) in [
+            ("A\tB", vec![(0.0, 0..1), (25.0, 2..3)]),
+            ("\tA\t\tB\t", vec![(20.0, 1..2), (65.0, 4..5)]),
+            ("\u{ac00}\tA", vec![(0.0, 0..1), (25.0, 2..3)]),
+            ("AB", vec![(0.0, 0..2)]),
+        ] {
+            let mut run = tab_run(text);
+            assert_span_pdf(&run, &spans);
+            decorate(&mut run);
+            assert_span_pdf(&run, &spans);
+        }
+    }
+
+    #[test]
+    fn pdf_tab_only_runs_keep_decorations() {
+        let mut run = tab_run("\t\t");
+        assert_span_pdf(&run, &[]);
+        decorate(&mut run);
+        assert_span_pdf(&run, &[]);
+    }
+
+    #[test]
+    fn pdf_tab_glyphs_preserve_visual_order_and_scene_metadata() {
+        let mut run = tab_run("AB\tC");
+        run.glyphs.reverse();
+        run.is_rtl = true;
+        decorate(&mut run);
+        assert_span_pdf(&run, &[(0.0, 0..1), (25.0, 2..4)]);
+    }
+
+    #[test]
+    fn pdf_tab_nonzero_glyph_is_not_drawn() {
+        let mut run = tab_run("A\tB");
+        run.glyphs[1].glyph_id = run.glyphs[0].glyph_id;
+        assert_span_pdf(&run, &[(0.0, 0..1), (25.0, 2..3)]);
+    }
+
+    #[test]
+    fn pdf_non_tab_missing_glyphs_are_not_suppressed() {
+        let mut run = tab_run("A B");
+        run.glyphs[0].glyph_id = 0;
+        run.glyphs[1].glyph_id = 0;
+        assert_span_pdf(&run, &[(0.0, 0..3)]);
+    }
+
+    #[test]
+    fn pdf_tab_mixed_source_cluster_keeps_visible_glyph() {
+        let mut run = tab_run("A\tB");
+        run.glyphs[1].text_range = 1..3;
+        run.glyphs[1].glyph_id = run.glyphs[2].glyph_id;
+        run.glyphs = run.glyphs[..2].into();
+        assert_span_pdf(&run, &[(0.0, 0..2)]);
     }
 }
