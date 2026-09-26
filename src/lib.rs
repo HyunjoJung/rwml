@@ -195,7 +195,8 @@ pub fn try_render_pdf_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<
 /// indices are physical, 1-based page numbers; section page-number restarts and
 /// formats are intentionally not applied. The supplied fonts are used strictly:
 /// system fonts are disabled and only successfully registered caller bytes are
-/// considered. Available with the `render` feature.
+/// considered. Caller families also serve as script and emoji fallbacks in input
+/// order. Available with the `render` feature.
 #[cfg(feature = "render")]
 pub fn layout_pages_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<LayoutPages> {
     render::layout_pages_with_fonts(model, fonts)
@@ -261,6 +262,29 @@ pub fn try_render_pdf_with_fonts_and_report(
 ) -> Result<RenderedPdf> {
     let features = report::render_inventory_for_model(&model.blocks);
     render::try_to_pdf_with_fonts_and_report(model, fonts, features)
+}
+
+/// Render a model to PDF using only caller-supplied fonts, without system fallback.
+///
+/// Returns an error if no supplied font can be registered, a registered face
+/// cannot be embedded, or a rendered glyph is missing from the supplied font set.
+/// Registered caller families serve as script and emoji fallbacks in input order.
+/// Undecodable blobs are ignored if another supplied font registers successfully.
+/// The report comes from the same pagination pass as the PDF. Available with the
+/// `render` feature.
+#[cfg(feature = "render")]
+pub fn try_render_pdf_with_fixed_fonts_and_report(
+    model: &DocModel,
+    fonts: &[Vec<u8>],
+) -> Result<RenderedPdf> {
+    let features = report::render_inventory_for_model(&model.blocks);
+    render::try_to_pdf_with_fixed_fonts_and_report_and_shapes(
+        model,
+        fonts,
+        features,
+        &[],
+        render::SourceRenderHints::default(),
+    )
 }
 
 /// A parsed Word document — either legacy `.doc` (OLE2/[MS-DOC]) or modern
@@ -3206,6 +3230,29 @@ impl Document {
         let shapes = self.floating_shapes();
         self.with_render_model_and_hints(|model, source_hints| {
             render::try_to_pdf_with_fonts_and_report_and_shapes(
+                model,
+                fonts,
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
+    }
+
+    /// Render this document using only caller-supplied fonts, without system fallback.
+    ///
+    /// Preserves the opened document's source layout hints and feature report.
+    /// Returns an error if no supplied font can be registered, a registered face
+    /// cannot be embedded, or a rendered glyph is missing from the font set.
+    /// Caller families serve as script and emoji fallbacks in input order;
+    /// undecodable blobs are ignored if another supplied font registers successfully.
+    /// Available with the `render` feature.
+    #[cfg(feature = "render")]
+    pub fn try_to_pdf_with_fixed_fonts_and_report(&self, fonts: &[Vec<u8>]) -> Result<RenderedPdf> {
+        let features = self.report().features;
+        let shapes = self.floating_shapes();
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::try_to_pdf_with_fixed_fonts_and_report_and_shapes(
                 model,
                 fonts,
                 features,

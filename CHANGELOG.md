@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Fallible fixed-font PDF APIs for models and opened documents disable system
+  font fallback, use supplied families in deterministic fallback order, and reject
+  unembeddable registered faces or missing visible glyph resources. Reports come
+  from the same pagination pass. The `to_pdf` example accepts ordered repeatable
+  `--font` paths with count/byte limits. Ordinary rendering and the example's
+  existing `--fixed-fonts` option retain system fallback; release validation
+  behavior is unchanged.
+
 ### Changed
 
 - PDF preview now paints dynamic `PAGE` fields and generated page-number footers

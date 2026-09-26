@@ -36,12 +36,14 @@ flate2 = { version = "1.0", optional = true }
 # Heavy + raises the MSRV to 1.92 (currently krilla), so it is strictly opt-in.
 krilla = { version = "0.8", optional = true }
 parley = { version = "0.11", optional = true }
+# Reuse krilla's font parser for strict glyph-resource validation.
+skrifa = { version = "0.42", optional = true }
 rwml-fonts = { version = "0.1.4", path = "rwml-fonts", optional = true }
 
 [features]
 default = ["docx"]
 docx = ["dep:zip", "dep:quick-xml", "dep:flate2"]
-render = ["dep:krilla", "dep:parley"]
+render = ["dep:krilla", "dep:parley", "dep:skrifa"]
 bundled-fonts = ["render", "dep:rwml-fonts"]
 
 [dev-dependencies]

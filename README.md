@@ -138,6 +138,13 @@ The renderer is a deterministic preview/report renderer, not a Word layout
 engine. See [Compatibility and limits](#compatibility-and-limits) before using
 it for pagination-sensitive output.
 
+Development builds add font-isolated diagnostics:
+`try_render_pdf_with_fixed_fonts_and_report` and
+`Document::try_to_pdf_with_fixed_fonts_and_report` use only caller-supplied fonts
+and fail on missing visible glyph resources. The `to_pdf` example accepts ordered
+`--font` paths; see the [diagnostic font contract](corpus/public/oracle/README.md#font-isolated-native-pdfs).
+Ordinary and bundled-font rendering APIs still allow system fallback.
+
 ## Preservation
 
 Package-preserving editing is intentionally narrower than reading. An opened

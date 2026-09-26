@@ -67,3 +67,31 @@ fn opened_docx_rewraps_a_paragraph_for_its_wider_target_column() {
             .expect("rerender is deterministic")
     );
 }
+
+#[test]
+fn fixed_font_pdf_preserves_opened_unequal_column_hints() {
+    let document = Document::open(&unequal_column_docx()).unwrap();
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let rendered = document
+        .try_to_pdf_with_fixed_fonts_and_report(&fonts)
+        .unwrap();
+    let model_only =
+        rwml::try_render_pdf_with_fixed_fonts_and_report(&document.model(), &fonts).unwrap();
+
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(
+        rendered.report.pages,
+        document.layout_pages_with_fonts(&fonts).unwrap().pages
+    );
+    assert_ne!(
+        rendered.pdf, model_only.pdf,
+        "source-only column hints must reach PDF layout"
+    );
+    assert_eq!(
+        rendered.pdf,
+        document
+            .try_to_pdf_with_fixed_fonts_and_report(&fonts)
+            .unwrap()
+            .pdf
+    );
+}

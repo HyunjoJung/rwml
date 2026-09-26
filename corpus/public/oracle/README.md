@@ -93,6 +93,40 @@ Type 1/CFF subset identity, variable-font instance fidelity, glyph shaping,
 Word-compatible layout, or cross-producer equivalence. Existing PDF attestation
 and release validation retain their separate contracts.
 
+## Font-isolated native PDFs
+
+The `to_pdf` example accepts repeatable `--font` arguments. Files are loaded and
+registered in the supplied order, without system-font discovery or fallback:
+
+```sh
+cargo build --locked --features render --example to_pdf
+target/debug/examples/to_pdf input.docx output.pdf \
+  --font <regular.ttf> --font <fallback.otf> --report-json render.json
+```
+
+Use the verified shared pack's manifest order for diagnostic captures. The
+example does not verify the pack or produce a campaign receipt itself. It allows
+at most 128 nonempty regular font files, 64 MiB per file and 256 MiB total;
+malformed options, duplicate singleton options and mixed `--font`/`--fixed-fonts`
+are errors. Native paths need not be UTF-8. `--` ends option parsing for input
+and output paths; use `./` for option values whose filenames begin with `-`.
+
+Both model and `Document` fixed-font APIs return PDF bytes and metrics from the
+same pass. Authored font families take precedence; supplied families then serve
+as script/emoji fallbacks in input order, with multi-family files ordered by face
+index. Opened documents retain source layout hints and feature warnings.
+No registered font, an unembeddable registered face, or missing visible glyph
+resources is a rendering error. Undecodable blobs are ignored if another font
+registers; hidden text is not a rendered glyph requirement. These checks do not
+prove shaping, subset source identity, cross-platform byte equality or Word layout.
+
+The existing `--fixed-fonts` example option registers bundled Noto subsets and
+still permits system fallback, as required by the current release validator.
+It is not an isolated capture mode despite its historical name. Without either
+font option the example keeps its system-font behavior, as do the existing
+ordinary and bundled-font library APIs. Use explicit `--font` arguments for
+isolation. Release defaults and acceptance gates are unchanged.
+
 ## Isolated font-program comparison
 
 `scripts/font_subset_attestation.py` compares bounded Type 1/PFA or explicitly
