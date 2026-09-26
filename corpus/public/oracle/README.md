@@ -45,6 +45,46 @@ changes the ordinary release corpus, validation defaults or release policy.
 Generator metadata changes do not relabel historical captures: retain their
 original source revisions, locks and receipts even when input bytes are unchanged.
 
+## Character, paragraph and list cohorts
+
+Three additional locks define disjoint 64-document diagnostic cohorts:
+
+| Lock | Coverage | Interaction scope |
+|---|---|---|
+| `render-full-run-paint-v1.json` | Twelve character properties, including caps, highlight, hidden text and vertical alignment | Document-level pairwise lattice; conflicting vertical values use separate runs |
+| `render-full-paragraph-v1.json` | Fifteen paragraph properties, including alignment, spacing, indents, tabs, borders and shading | Document-level pairwise lattice with separate labeled probe paragraphs |
+| `render-full-list-rtl-v1.json` | Complete six-factor grid over Arabic/Hebrew, paragraph direction, run direction, numbering kind, list level and tabs | One primary paragraph, plus fixed override/multilevel/fallback probes |
+
+Each factor/property is enabled in 32 inputs, and each pair covers all four
+states 16 times. The run/paragraph lattices are not all-combinations coverage
+and do not imply that every property shares one run or paragraph. The list
+cohort does not claim complete RTL support.
+
+```sh
+python3 -B scripts/generate_render_full_corpus.py --check
+python3 -B scripts/generate_render_paragraph_corpus.py --check
+python3 -B scripts/generate_render_list_rtl_corpus.py --check
+
+python3 -B scripts/generate_render_full_corpus.py
+python3 -B scripts/generate_render_paragraph_corpus.py
+python3 -B scripts/generate_render_list_rtl_corpus.py
+```
+
+The default destinations are `target/render-oracle/render-full-run-paint-v1/`,
+`target/render-oracle/render-full-paragraph-v1/` and
+`target/render-oracle/render-full-list-rtl-v1/`. Each contains 64 DOCX inputs,
+one MIT provenance file and a strict `RENDER_ORACLE.json`; pass that manifest
+to `scripts/render_oracle_contract.py` to independently validate it. All three
+generators use the same fresh-directory, staged-publication and bounded-lock
+rules as the pilot. Their locks also bind source coverage and the complete
+local generator dependency set.
+
+Despite its historical name, `generate_render_full_corpus.py` generates only
+the 64-input character cohort, not the complete 800-input campaign. These three
+cohorts supply 192 inputs, with a native expectation of one page per document.
+Deterministic payloads, pairwise coverage and hygiene do not establish external
+layout fidelity. Ordinary release inputs, thresholds and captures are unchanged.
+
 ## Unequal-column tables
 
 `unequal-table-v1.json` binds a 48-case factorial campaign across four physical column
