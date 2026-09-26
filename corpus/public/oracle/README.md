@@ -344,6 +344,83 @@ not establish reference repeatability, Word fidelity, metric acceptance or a
 release gate. Existing release validation and historical `--fixed-fonts`
 fallback behavior remain unchanged.
 
+## Capture-bound metrics and repeats
+
+`scripts/render_campaign_metrics.py` measures retained shared-font captures using
+the same stable Python environment, source checkout, corpus and locked font pack.
+It first runs independent capture verification, including fresh-build native
+replay, then recomputes text, integer raster and PDF geometry/semantic metrics
+from retained PDFs. It never executes the retained renderer. Each document is
+measured in a separate bounded process over temporary copies; original evidence
+is checked again and never rewritten.
+
+Use the manifest and runtime inputs from the capture commands above:
+
+```sh
+python3 -B scripts/render_campaign_metrics.py measure \
+  --manifest corpus/public/RENDER_ORACLE.json \
+  --capture target/render-oracle/capture-a \
+  --font-pack target/render-oracle/shared-fonts \
+  --fonttools-wheel <path-to-fonttools-4.63.0-py3-none-any.whl> \
+  --pypdf-wheel <path-to-pypdf-6.16.2-py3-none-any.whl> \
+  --output target/render-oracle/metrics-a.json
+python3 -B scripts/render_campaign_metrics.py verify \
+  --manifest corpus/public/RENDER_ORACLE.json \
+  --capture target/render-oracle/capture-a \
+  --font-pack target/render-oracle/shared-fonts \
+  --fonttools-wheel <path-to-fonttools-4.63.0-py3-none-any.whl> \
+  --pypdf-wheel <path-to-pypdf-6.16.2-py3-none-any.whl> \
+  --evidence target/render-oracle/metrics-a.json
+```
+
+The v8 report binds the exact v3 capture receipt, source/environment, renderer,
+manifest, ordered cases, PDF/report/font-receipt hashes and complete reference
+page raster hashes, including dimensions and color mode. It requires the locked
+shared-font profile, complete page coverage and zero skipped cases. Page counts
+beyond the configured cap are rejected, not silently measured as partial
+coverage. `--dpi`, `--page-cap` and `--recall-min` must match for verification;
+their defaults are the existing raster settings and 0.97 recall. Single-capture
+reports do not claim reference repeatability.
+
+After independently capturing and measuring a second complete run at the same
+source and environment, verify both reports and the retained pair:
+
+```sh
+python3 -B scripts/render_campaign_metrics.py repeat \
+  --manifest corpus/public/RENDER_ORACLE.json \
+  --first-capture target/render-oracle/capture-a \
+  --second-capture target/render-oracle/capture-b \
+  --first-evidence target/render-oracle/metrics-a.json \
+  --second-evidence target/render-oracle/metrics-b.json \
+  --font-pack target/render-oracle/shared-fonts \
+  --fonttools-wheel <path-to-fonttools-4.63.0-py3-none-any.whl> \
+  --pypdf-wheel <path-to-pypdf-6.16.2-py3-none-any.whl> \
+  --output target/render-oracle/repeat.json
+```
+
+The v2 repeat verifier requires distinct roots and report paths, independently
+recomputes both reports, and compares exact native PDF/report/font-receipt bytes,
+all reference page rasters and metric content outside capture-specific bindings.
+Matching fabricated reports cannot pass solely because their hashes or aggregates
+agree. Both artifact sets, environment and source are rechecked after measurement.
+Reference PDF metadata may differ; the complete reference rasters must match.
+Verification streams cases rather than retaining all campaign PDFs in memory.
+
+Each metric child has a 180-second wall/CPU limit, 16 MiB file-size limit,
+8 MiB output limit, 256 descriptors, 64 processes and no core dumps. Linux also
+enforces a 4 GiB address-space limit; Darwin does not claim hard memory isolation.
+Use WSL on Windows. The existing four-hour capture-verification limit is
+unchanged; metric measurement has a separate four-hour budget. Repeat checks
+the combined sixteen-hour acceptance budget for both verification/measurement
+pairs, including final checks; this is a ceiling, not an expected duration.
+
+Successful measurement or repeat verification means the diagnostic evidence is
+valid, not that fidelity passes. Reports retain the recall/skip gate and repeat
+receipts expose `fidelity_gate_passed`, including `false`. There is no Word parity
+or release-acceptance claim. Type 1/CFF proof and metadata-only TrueType coverage
+remain distinct. Existing v4 evidence, legacy release defaults and thresholds
+are unchanged; historical v5-v7 reports are not silently accepted as v8.
+
 ## Locked LibreOffice runtime
 
 `scripts/libreoffice_container.py` prepares and verifies a fixed Linux amd64

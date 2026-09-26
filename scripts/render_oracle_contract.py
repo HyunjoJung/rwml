@@ -34,6 +34,18 @@ except ModuleNotFoundError:
 CORPUS_SCHEMA = "rwml.render-oracle-corpus.v1"
 EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v4"
 CAMPAIGN_CAPTURE_SCHEMA = "rwml.render-campaign-capture.v3"
+CAPTURE_EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v8"
+CAPTURE_MEASUREMENT_LIMITS = {
+    "schema": "rwml.capture-metric-execution.v1",
+    "wall_seconds": 180,
+    "cpu_seconds": 180,
+    "file_bytes": 16 * 1024 * 1024,
+    "open_files": 256,
+    "processes": 64,
+    "core_bytes": 0,
+    "stdout_bytes": 8 * 1024 * 1024,
+    "batch_seconds": 4 * 60 * 60,
+}
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
 MAX_JSON_DEPTH = 64
@@ -617,7 +629,7 @@ def _assert_path_neutral(value: object, label: str = "evidence") -> None:
                 raise ValueError(f"{label} is not path-neutral")
 
 
-def _validate_environment(environment: object) -> None:
+def _validate_environment(environment: object, *, captured: bool = False) -> None:
     if not isinstance(environment, dict):
         raise ValueError("environment must be an object")
     _require_exact_keys(environment, ENVIRONMENT_KEYS, "environment")
@@ -635,7 +647,7 @@ def _validate_environment(environment: object) -> None:
     _require_exact_keys(renderer, RENDERER_KEYS, "environment renderer")
     if renderer["name"] != "rwml":
         raise ValueError("environment renderer name is invalid")
-    if renderer["font_mode"] not in FONT_MODES:
+    if renderer["font_mode"] not in ({"locked-shared-fonts"} if captured else FONT_MODES):
         raise ValueError("environment renderer font mode is invalid")
 
     oracle = environment["oracle"]
@@ -644,7 +656,7 @@ def _validate_environment(environment: object) -> None:
     _require_exact_keys(oracle, ORACLE_KEYS, "environment oracle")
     if oracle["name"] not in ORACLE_NAMES:
         raise ValueError("environment oracle name is invalid")
-    if oracle["mode"] not in ORACLE_MODES:
+    if oracle["mode"] not in ({"locked-container"} if captured else ORACLE_MODES):
         raise ValueError("environment oracle mode is invalid")
     _require_safe_text(oracle["version"], "environment oracle version")
     _require_sha256(oracle["identity_sha256"], "environment oracle identity")
@@ -680,17 +692,21 @@ def bind_evidence_report(
     core_report: dict[str, Any],
     corpus: CorpusManifest,
     environment: dict[str, Any],
+    *,
+    capture: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(core_report, dict):
         raise ValueError("core report must be an object")
     expected_core_keys = EVIDENCE_KEYS - {"schema", "campaign", "environment"}
     _require_exact_keys(core_report, expected_core_keys, "core report")
     evidence = {
-        "schema": EVIDENCE_SCHEMA,
+        "schema": EVIDENCE_SCHEMA if capture is None else CAPTURE_EVIDENCE_SCHEMA,
         "campaign": corpus.identity(),
         "environment": copy.deepcopy(environment),
         **copy.deepcopy(core_report),
     }
+    if capture is not None:
+        evidence["capture"] = copy.deepcopy(capture)
     validate_evidence_report(evidence, corpus)
     return evidence
 
@@ -797,7 +813,7 @@ def _mean(values: list[float | int]) -> float | None:
     return round(sum(values) / len(values), 4)
 
 
-def _validate_visual_comparison(value: object) -> None:
+def _validate_visual_comparison(value: object, *, captured: bool = False) -> None:
     if not isinstance(value, dict):
         raise ValueError("evidence visual comparison must be an object")
     _require_exact_keys(value, VISUAL_COMPARISON_KEYS, "visual comparison")
@@ -815,7 +831,7 @@ def _validate_visual_comparison(value: object) -> None:
             or not minimum <= item <= maximum
         ):
             raise ValueError(f"visual comparison value is invalid: {key}")
-    if value["font_mode"] not in FONT_MODES:
+    if value["font_mode"] not in ({"locked-shared-fonts"} if captured else FONT_MODES):
         raise ValueError("visual comparison font mode is invalid")
     validate_metric_contract(value["integer_metrics"])
 
@@ -991,26 +1007,97 @@ def _validate_gate(value: object, summary: dict[str, Any]) -> None:
         raise ValueError("evidence gate passed result is inconsistent")
 
 
+def _validate_capture_binding(evidence: dict[str, Any], corpus: CorpusManifest) -> None:
+    value = evidence["capture"]
+    if not isinstance(value, dict):
+        raise ValueError("capture binding must be an object")
+    _require_exact_keys(value, {
+        "schema", "sha256", "environment_sha256", "source_revision", "campaign",
+        "renderer_sha256", "font_scope", "measurement", "cases",
+    }, "capture binding")
+    environment = evidence["environment"]
+    if (
+        value["schema"] != CAMPAIGN_CAPTURE_SCHEMA
+        or value["source_revision"] != environment["source_revision"]
+        or value["campaign"] != corpus.identity()
+        or value["environment_sha256"] != environment["oracle"]["identity_sha256"]
+        or value["font_scope"] != "declared-font-resources"
+        or environment["source_dirty"] is not False
+        or environment["oracle"]["name"] != "libreoffice"
+    ):
+        raise ValueError("capture binding identity differs")
+    for key in ("sha256", "environment_sha256", "renderer_sha256"):
+        _require_sha256(value[key], f"capture {key}")
+    expected_limits = {
+        **CAPTURE_MEASUREMENT_LIMITS,
+        "address_space_bytes": (
+            4 * 1024 * 1024 * 1024 if environment["platform"]["system"] == "Linux" else None
+        ),
+    }
+    if json.dumps(value["measurement"], sort_keys=True) != json.dumps(expected_limits, sort_keys=True):
+        raise ValueError("capture measurement limits differ")
+    cases = value["cases"]
+    if not isinstance(cases, list) or len(cases) != len(corpus.documents):
+        raise ValueError("capture binding case coverage differs")
+    digest_keys = {
+        "input_sha256", "native_pdf_sha256", "reference_pdf_sha256",
+        "native_fonts_sha256", "reference_fonts_sha256", "native_report_sha256",
+    }
+    for case, document, row in zip(cases, corpus.documents, evidence["rows"], strict=True):
+        if not isinstance(case, dict):
+            raise ValueError("capture case must be an object")
+        _require_exact_keys(case, digest_keys | {"case_id", "reference_page_digests"}, "capture case")
+        if case["case_id"] != document.case_id or case["input_sha256"] != document.sha256:
+            raise ValueError("capture case identity differs")
+        for key in digest_keys:
+            _require_sha256(case[key], f"capture case {key}")
+        if (
+            row["status"] == "skip"
+            or row["capped_matched_pages"] != 0
+            or max(row["rwml_pages"], row["reference_pages"]) > min(
+                evidence["visual_comparison"]["page_cap"],
+                corpus.limits["max_pages_per_document"], 256,
+            )
+        ):
+            raise ValueError("capture measurement page coverage is incomplete")
+        rasters = case["reference_page_digests"]
+        if not isinstance(rasters, list) or len(rasters) != row["reference_pages"]:
+            raise ValueError("capture reference raster coverage is incomplete")
+        for digest in rasters:
+            _require_sha256(digest, "capture reference raster")
+    summary = evidence["summary"]
+    if summary["reference_stable"] is not None or summary["unstable_references"]:
+        raise ValueError("single capture cannot establish reference repeatability")
+    checks = [
+        {"metric": key, "actual": summary[key], "op": "<=", "threshold": 0,
+         "passed": summary[key] == 0}
+        for key in ("below_recall_min", "skipped")
+    ]
+    if evidence["gate"] != {"passed": all(row["passed"] for row in checks), "checks": checks}:
+        raise ValueError("capture diagnostic gate differs")
+
+
 def validate_evidence_report(
     evidence: dict[str, Any], corpus: CorpusManifest
 ) -> None:
     if not isinstance(evidence, dict):
         raise ValueError("evidence must be an object")
-    _require_exact_keys(evidence, EVIDENCE_KEYS, "evidence")
-    if evidence["schema"] != EVIDENCE_SCHEMA:
-        raise ValueError(f"evidence schema must be {EVIDENCE_SCHEMA}")
+    captured = evidence.get("schema") == CAPTURE_EVIDENCE_SCHEMA
+    _require_exact_keys(evidence, EVIDENCE_KEYS | ({"capture"} if captured else set()), "evidence")
+    if evidence["schema"] not in {EVIDENCE_SCHEMA, CAPTURE_EVIDENCE_SCHEMA}:
+        raise ValueError("evidence schema is unsupported")
     campaign = evidence["campaign"]
     if not isinstance(campaign, dict):
         raise ValueError("evidence campaign must be an object")
     _require_exact_keys(campaign, CAMPAIGN_IDENTITY_KEYS, "evidence campaign")
     if campaign != corpus.identity():
         raise ValueError("evidence campaign identity mismatch")
-    _validate_environment(evidence["environment"])
+    _validate_environment(evidence["environment"], captured=captured)
 
     rows = evidence["rows"]
     if not isinstance(rows, list) or len(rows) != len(corpus.documents):
         raise ValueError("evidence row coverage mismatch")
-    _validate_visual_comparison(evidence["visual_comparison"])
+    _validate_visual_comparison(evidence["visual_comparison"], captured=captured)
     _validate_metric_environment(evidence)
     for row, document in zip(rows, corpus.documents, strict=True):
         _validate_evidence_row(
@@ -1020,6 +1107,8 @@ def validate_evidence_report(
     _validate_pdf_diagnostic_aggregates(evidence)
     _validate_summary(evidence["summary"], rows, corpus)
     _validate_gate(evidence["gate"], evidence["summary"])
+    if captured:
+        _validate_capture_binding(evidence, corpus)
     _assert_path_neutral(evidence)
 
 
