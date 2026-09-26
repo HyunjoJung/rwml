@@ -1,0 +1,10 @@
+{
+  "schema": "rwml.fonttools-lock.v1",
+  "version": "4.63.0",
+  "wheel": {
+    "name": "fonttools-4.63.0-py3-none-any.whl",
+    "bytes": 1164562,
+    "sha256": "445af2eab030a16b9171ea8bdda7ebf7d96bda2df88ee182a464252f6e05e20d",
+    "url": "https://files.pythonhosted.org/packages/2c/47/c99d5268f354002ce80f8d029cd9d7d872969da1de8b93d32de4dc56d6f4/fonttools-4.63.0-py3-none-any.whl"
+  }
+}

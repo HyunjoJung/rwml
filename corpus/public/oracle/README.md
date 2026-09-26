@@ -93,6 +93,60 @@ Type 1/CFF subset identity, variable-font instance fidelity, glyph shaping,
 Word-compatible layout, or cross-producer equivalence. Existing PDF attestation
 and release validation retain their separate contracts.
 
+## Isolated font-program comparison
+
+`scripts/font_subset_attestation.py` compares bounded Type 1/PFA or explicitly
+mapped CID-keyed CFF subset programs against the locked Noto Sans CJK KR source.
+It checks every glyph, including `.notdef`, with exact mappings, widths, font
+matrices and outline operations. CID aliases, missing/extra glyphs, unsupported
+font kinds or matrices, and changed outlines fail explicitly.
+
+The parser runs only in the digest-locked Linux image described below, using
+the exact pure-Python FontTools wheel in `fonttools-lock.json`. The host verifies
+the wheel, stages read-only inputs, invokes the isolated worker, validates the
+result, and checks that its inputs/tools/runtime did not change. No host font
+installation or fallback is used. Supply the locked wheel locally:
+
+```sh
+python3 -B scripts/font_subset_attestation.py \
+  --font-pack target/shared-oracle-fonts \
+  --fonttools-wheel <locked-fonttools-wheel> \
+  --program <subset.pfa> \
+  --output target/subset-proof.json
+python3 -B scripts/font_subset_attestation.py \
+  --font-pack target/shared-oracle-fonts \
+  --fonttools-wheel <locked-fonttools-wheel> \
+  --program <subset.pfa> \
+  --verify target/subset-proof.json
+```
+
+Verification recomputes the proof from the original program/source bytes in a
+new worker and compares the complete receipt; it does not just trust a repaired
+outer digest. Outputs must be fresh, and verification never rewrites receipts.
+For raw CID-keyed CFF, also provide `--cff-glyph-map <map.json>` with schema
+`rwml.cff-glyph-map.v1`, exact `source_sha256`/`subset_sha256`, and ordered
+`glyphs` pairs. The map must cover `.notdef` and each canonical subset CID once,
+without source aliases. This command does not discover that mapping from a PDF.
+
+The worker checks a 2-GiB no-swap container limit and enforces a 512-MiB data
+limit, 20-second CPU limit and bounded glyph/outline work. Host execution has a
+30-second maximum deadline and 512-KiB stdout limit, with strict cleanup on
+failure. UTF-8 JSON, numeric types, nesting and node counts are bounded before
+receipt acceptance. Unsupported programs are rejected, not downgraded to
+metadata-only success.
+
+Run the explicit locked-runtime tests separately from the ordinary Python suite:
+
+```sh
+RWML_FONTTOOLS_WHEEL=<locked-fonttools-wheel> \
+  python3 -B -m unittest discover -s tests/font_programs -p 'test_*.py'
+```
+
+These program comparisons do not establish PDF resource coverage, correct
+ToUnicode/CMap associations, automatic native-CFF source mapping, variable-font
+fidelity, shaping, or Word layout parity. The ordinary PDF metadata verifier,
+campaign integration and release policy are unchanged.
+
 ## Locked LibreOffice runtime
 
 `scripts/libreoffice_container.py` prepares and verifies a fixed Linux amd64
