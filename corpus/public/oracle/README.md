@@ -5,6 +5,48 @@ documents are generated on demand. The generated DOCX files do not join the ordi
 public release corpus until their external-oracle expectations and release value have
 been reviewed independently.
 
+## Smoke and pilot inputs
+
+`corpus/public/RENDER_SMOKE_ORACLE.json` selects 12 existing public documents
+without copying them. The selection covers 35 of the parent corpus's 37 feature
+labels; `alternate-content` and `top-bottom-wrap` are deliberately omitted.
+It retains each input's digest, provenance, native page expectation and warnings.
+
+`render-pilot-v1.json` locks all 21 parent documents plus 19 deterministic
+synthetic OOXML fixtures. The additions exercise character paint, fields, notes,
+sections, RTL lists/tables/mixed text, spacing/tabs, floating placement, revisions,
+images and unequal-column continuation. Their source and provenance are
+repository-owned MIT material; copied inputs retain their original provenance.
+The generator closure binds the pilot, shared materializer, public fixture
+generator and strict corpus contract. All 40 document and three provenance
+payloads are independently size- and SHA-256-locked.
+
+```sh
+python3 -B scripts/generate_render_smoke_manifest.py --check
+python3 -B scripts/generate_render_pilot.py --check
+python3 -B scripts/generate_render_pilot.py \
+  --output target/render-oracle/render-pilot-v1
+python3 -B scripts/render_oracle_contract.py \
+  target/render-oracle/render-pilot-v1/RENDER_ORACLE.json
+```
+
+Pilot output must be absent or an empty regular directory. Occupied or symlinked
+destinations are rejected; payloads are staged and strictly validated before
+the complete directory is published. Use a new directory for a repeat rather
+than overwriting existing evidence. Both lock readers reject nonregular,
+symlinked, oversized, stale or noncanonical files. Smoke output must remain
+beside its parent manifest because document paths are relative to that directory;
+it cannot replace the parent manifest.
+
+The smoke and pilot manifests expect 15 and 51 native pages respectively.
+These are input contracts, not Word/LibreOffice page-count assertions, completed
+captures, fidelity thresholds or full-campaign acceptance. Neither selection
+changes the ordinary release corpus, validation defaults or release policy.
+Generator metadata changes do not relabel historical captures: retain their
+original source revisions, locks and receipts even when input bytes are unchanged.
+
+## Unequal-column tables
+
 `unequal-table-v1.json` binds a 48-case factorial campaign across four physical column
 layouts, three table-width policies, two row-fragment classes, and two continuation
 handoffs. It records the generator SHA-256 plus every output path, byte length, SHA-256,
