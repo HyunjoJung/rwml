@@ -33,6 +33,7 @@ except ModuleNotFoundError:
 
 CORPUS_SCHEMA = "rwml.render-oracle-corpus.v1"
 EVIDENCE_SCHEMA = "rwml.render-oracle-evidence.v4"
+CAMPAIGN_CAPTURE_SCHEMA = "rwml.render-campaign-capture.v3"
 MAX_MANIFEST_BYTES = 4 * 1024 * 1024
 MAX_EVIDENCE_BYTES = 64 * 1024 * 1024
 MAX_JSON_DEPTH = 64

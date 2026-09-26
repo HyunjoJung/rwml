@@ -288,6 +288,62 @@ not interpret general GSUB context, attest other font representations, prove
 ToUnicode semantics or PDF text operators, or validate shaping, positioning
 or Word layout. Default release gates and renderer behavior are unchanged.
 
+## Shared-font campaign capture
+
+`scripts/render_campaign_capture.py` composes the strict corpus manifest,
+verified shared font pack, locked LibreOffice runtime and explicit native
+`--font` renderer into one diagnostic capture. It requires a clean source
+checkout, Rust 1.92.0 and cached Cargo dependencies; builds are offline and
+locked, with a fresh target directory. Keep the Python environment and optional
+NumPy installation unchanged between capture and verification.
+
+```sh
+python3 -B scripts/render_campaign_capture.py capture \
+  --manifest <strict-corpus-manifest> \
+  --font-pack <verified-shared-font-pack> \
+  --fonttools-wheel <locked-fonttools-wheel> \
+  --pypdf-wheel <locked-pypdf-wheel> \
+  --output target/render-oracle/campaign
+python3 -B scripts/render_campaign_capture.py verify \
+  --manifest <same-strict-corpus-manifest> \
+  --font-pack <same-verified-shared-font-pack> \
+  --fonttools-wheel <same-locked-fonttools-wheel> \
+  --pypdf-wheel <same-locked-pypdf-wheel> \
+  --output target/render-oracle/campaign
+```
+
+Capture builds the native executable once and retains every source input,
+native PDF/report, reference PDF/metadata and independently computed font
+receipt. Verification rereads every PDF and repeats its applicable font checks.
+It also builds a fresh native executable, checks its identity and replays every
+case in temporary storage, requiring exact native PDF and report bytes. It
+never executes the retained executable or rewrites the retained bundle.
+Missing, extra or duplicated coverage, changed inputs/environment and repaired
+hashes without matching recomputation fail verification.
+
+Type 1 and native CFF resources require the exact outline proofs described
+above. TrueType resources have only PostScript-name and revision checks,
+explicitly labeled `postscript-and-revision-only`; this does not prove glyph
+outlines, Unicode semantics or shaping. A font-free PDF records an empty
+resource inventory, not a font proof.
+
+The campaign has a four-hour elapsed-time acceptance bound and a 2-GiB retained
+artifact bound. Each native render has a 120-second wall/CPU bound, a 16-MiB
+per-file limit, 256 open files, 64 processes and no core dumps. The POSIX launcher
+applies and reads back kernel limits before execution. Linux additionally uses
+a 4-GiB address-space limit; Darwin explicitly records hard memory isolation as
+unsupported. Use WSL on Windows. Font checks share a 180-second PDF budget,
+with at most 30 seconds per isolated worker and 120 seconds per CFF pipeline.
+Nested operations receive the remaining campaign budget; cleanup can require
+additional time and failures do not produce an accepted capture receipt.
+
+The path-neutral `CAPTURE.json` binds source, corpus, runtime, tool payloads,
+ordered fonts, native build/execution settings and all artifacts. Verification
+is source/runtime-bound: do not relabel historical receipts. This command does
+not establish reference repeatability, Word fidelity, metric acceptance or a
+release gate. Existing release validation and historical `--fixed-fonts`
+fallback behavior remain unchanged.
+
 ## Locked LibreOffice runtime
 
 `scripts/libreoffice_container.py` prepares and verifies a fixed Linux amd64

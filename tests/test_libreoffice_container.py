@@ -221,6 +221,19 @@ class LibreOfficeContainerTests(unittest.TestCase):
             run.call_args_list[-1].args[0][:3], ["docker", "rm", "--force"]
         )
 
+    def test_document_timeout_is_bounded_before_container_creation(self):
+        for timeout in (True, None, "1", 0, -1, float("inf"), float("nan"), 181, 2**4096):
+            with self.subTest(timeout=repr(timeout)[:32]), mock.patch.object(oracle, "run_container") as run:
+                with self.assertRaises(ValueError):
+                    oracle.capture_document("image", ROOT, ROOT, timeout=timeout)
+                run.assert_not_called()
+        with (
+            mock.patch.object(oracle, "run_container", return_value=b"archive") as run,
+            mock.patch.object(oracle, "read_capture_archive", return_value={}),
+        ):
+            oracle.capture_document("sha256:" + "a" * 64, ROOT, ROOT, timeout=5)
+            self.assertEqual(run.call_args.kwargs["timeout"], 5)
+
     def test_bounded_container_result_is_reusable_without_archive_parsing(self):
         name = "rwml-oracle-" + "a" * 32
         state = json.dumps(

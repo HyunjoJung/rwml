@@ -134,6 +134,42 @@ class NativeCFFTests(unittest.TestCase):
                 )
         extract.assert_not_called()
 
+    def test_pdf_timeout_rejects_invalid_values_before_extraction(self):
+        for timeout in (True, None, "1", 1j, 0, -1, math.inf, math.nan, 121, 2**4096):
+            with (
+                self.subTest(timeout=repr(timeout)[:32]),
+                mock.patch.object(native.resources, "extract_pdf") as extract,
+            ):
+                with self.assertRaises(ValueError):
+                    native.attest_pdf(
+                        b"pdf", b"source", {}, Path("ft"), Path("pp"),
+                        timeout=timeout,
+                    )
+                extract.assert_not_called()
+
+    def test_pdf_timeout_caps_extraction_and_rejects_exhausted_budget(self):
+        with (
+            mock.patch.object(native.time, "monotonic", return_value=0),
+            mock.patch.object(
+                native.resources, "extract_pdf",
+                return_value={"result": {"fonts": [], "blobs": []}},
+            ) as extract,
+        ):
+            with self.assertRaisesRegex(ValueError, "no native CFF"):
+                native.attest_pdf(
+                    b"pdf", b"source", {}, Path("ft"), Path("pp"), timeout=5,
+                )
+            self.assertEqual(extract.call_args.kwargs["timeout"], 5)
+        with (
+            mock.patch.object(native.time, "monotonic", side_effect=[0, 5]),
+            mock.patch.object(native.resources, "extract_pdf") as extract,
+        ):
+            with self.assertRaisesRegex(ValueError, "timed out"):
+                native.attest_pdf(
+                    b"pdf", b"source", {}, Path("ft"), Path("pp"), timeout=5,
+                )
+            extract.assert_not_called()
+
     def test_changed_discovered_map_fails_independent_receipt_verification(self):
         original = result()
         changed = copy.deepcopy(original)

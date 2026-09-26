@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import io
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -378,12 +379,20 @@ def run_container(
             raise ValueError("oracle container cleanup failed") from None
 
 
-def capture_document(image: str, source: Path, fonts: Path) -> dict[str, bytes]:
+def capture_document(
+    image: str, source: Path, fonts: Path, *, timeout: float = 180,
+) -> dict[str, bytes]:
+    if (
+        type(timeout) not in (int, float)
+        or not 0 < timeout <= 180
+        or not math.isfinite(timeout)
+    ):
+        raise ValueError("LibreOffice capture timeout is outside its bound")
     name = "rwml-oracle-" + uuid.uuid4().hex
     payload = run_container(
         create_command(image, name, source, fonts),
         name,
-        timeout=180,
+        timeout=timeout,
         stdout_limit=MAX_CAPTURE_BYTES,
     )
     return read_capture_archive(payload)
