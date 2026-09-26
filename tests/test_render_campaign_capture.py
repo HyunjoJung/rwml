@@ -603,6 +603,7 @@ class CaptureTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             source_root = root / "corpus"
+            (root / "Cargo.lock").write_bytes((capture.ROOT / "Cargo.lock").read_bytes())
             source_root.mkdir()
             document_bytes = b"fixture"
             if format_name == "doc":
@@ -677,6 +678,7 @@ class CaptureTests(unittest.TestCase):
             }
             args = (manifest, output, root / "pack", root / "ft", root / "pp")
             with (
+                mock.patch.object(capture, "ROOT", root),
                 mock.patch.object(
                     capture.table_capture, "source_revision", return_value="a" * 40
                 ),
