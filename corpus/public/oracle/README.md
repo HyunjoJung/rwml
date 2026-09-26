@@ -199,6 +199,61 @@ Extraction is not font-source proof, CMap semantic validation, native glyph-map
 discovery, shaping verification or Word fidelity. It is an opt-in diagnostic;
 default PDF validation, renderer behavior and release policy remain unchanged.
 
+## Native CFF mapping and proof
+
+`scripts/native_cff_attestation.py` discovers and independently proves the
+renumbered glyph mapping for every extracted native CFF resource in a PDF.
+It uses the shared Noto Sans CJK KR source, the existing PDF extractor and the
+mapped-program proof worker. The parser wheels and Linux image remain locked.
+
+```sh
+python3 -B scripts/native_cff_attestation.py \
+  --pdf <native.pdf> --font-pack target/shared-oracle-fonts \
+  --fonttools-wheel <locked-fonttools-wheel> \
+  --pypdf-wheel <locked-pypdf-wheel> \
+  --output target/native-cff-proof.json
+python3 -B scripts/native_cff_attestation.py \
+  --pdf <native.pdf> --font-pack target/shared-oracle-fonts \
+  --fonttools-wheel <locked-fonttools-wheel> \
+  --pypdf-wheel <locked-pypdf-wheel> \
+  --verify target/native-cff-proof.json
+```
+
+ToUnicode text is a lookup hint, not evidence that the default source cmap glyph
+was selected. Discovery includes bounded GSUB single/alternate substitutions,
+multi-character ligatures and extension lookups. Unicode mirrored-glyph
+candidates from the pinned FontTools data are included without assuming a bidi
+shaping decision. Every subset glyph, including `.notdef`, must have one exact
+width/outline match; no match or multiple matches is an error. The resulting
+complete one-to-one map is then checked by the separate raw-CFF proof worker,
+including effective font matrices. Successful discovery alone is not a proof.
+
+The receipt binds PDF resource identities, exact CFF/ToUnicode bytes, source
+font, discovery witnesses, independent proofs and all worker/tool/runtime
+identities. Verification repeats extraction, discovery and proof and does not
+rewrite retained evidence. It cannot accept a repaired receipt in place of
+recomputation. Non-CFF resources are explicitly listed as unverified, and a
+PDF with no CFF resources is not reported as a successful CFF proof.
+
+Discovery bounds GSUB lookups/subtables/edges and ligature records, hints to
+eight Unicode scalars, candidates to 256 per glyph and source signatures to
+4,096. Outline and candidate-search work each have a 131,072-operation budget;
+the existing per-glyph, input/output, memory and CPU bounds remain enforced.
+Each isolated worker has at most 30 seconds, and the complete PDF pipeline has
+a 120-second deadline. Timeouts and other failures clean up owned containers
+and temporary inputs. Run the explicit locked-runtime tests with both wheels:
+
+```sh
+RWML_FONTTOOLS_WHEEL=<locked-fonttools-wheel> \
+RWML_PYPDF_WHEEL=<locked-pypdf-wheel> \
+  python3 -B -m unittest discover -s tests/cff_discovery -p 'test_*.py'
+```
+
+This proves the bounded source-glyph relationship for CFF resources. It does
+not interpret general GSUB context, attest other font representations, prove
+ToUnicode semantics or PDF text operators, or validate shaping, positioning
+or Word layout. Default release gates and renderer behavior are unchanged.
+
 ## Locked LibreOffice runtime
 
 `scripts/libreoffice_container.py` prepares and verifies a fixed Linux amd64
