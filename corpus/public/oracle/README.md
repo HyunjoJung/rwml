@@ -118,8 +118,33 @@ independent contract check.
 
 The section inputs intentionally span multiple pages. These retained native
 expectations do not assert Word-compatible pagination or note placement. The
-six 64-input cohorts are disjoint; the complete 800-input composition and
+64-input cohorts are disjoint; the complete 800-input composition and
 external fidelity evidence remain separate work.
+
+## Floating-shape and metafile cohorts
+
+`render-full-floating-v1.json` and `render-full-metafile-v1.json` bind two more
+disjoint 64-document synthetic DOCX cohorts. Their source coverage and immutable
+payload identities are recorded in the locks; both retain MIT provenance.
+
+```sh
+python3 -B scripts/generate_render_floating_corpus.py --check
+python3 -B scripts/generate_render_metafile_corpus.py --check
+
+python3 -B scripts/generate_render_floating_corpus.py
+python3 -B scripts/generate_render_metafile_corpus.py
+```
+
+The default destinations are `target/render-oracle/render-full-floating-v1/`
+and `target/render-oracle/render-full-metafile-v1/`. Each fresh output contains
+64 DOCX files, one provenance file and a strict `RENDER_ORACLE.json`. Both use
+the shared staged-publication and bounded-lock checks; their complete output
+maps are pinned and repeated through both script and package entry points.
+
+Each cohort retains 64 expected native pages. All floating cases deliberately
+expect `FloatingShapePlaceholderOnly`; the metafile cases retain no expected
+warnings. These inputs do not expand floating-object or metafile support, and
+successful corpus generation does not establish external rendering fidelity.
 
 ## Unequal-column tables
 
