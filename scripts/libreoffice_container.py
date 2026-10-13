@@ -407,12 +407,17 @@ def prepare_build(archive: Path, output: Path) -> None:
     ):
         raise ValueError("LibreOffice archive identity differs")
     output.mkdir(parents=True, exist_ok=False)
-    (output / "libreoffice.tar.gz").write_bytes(payload)
+    # Docker COPY retains source modes, which participate in the locked image.
+    destination = output / "libreoffice.tar.gz"
+    destination.write_bytes(payload)
+    destination.chmod(0o644)
     for name, path in RECIPE_FILES.items():
         contents = read_regular_file(path, 65536)
         if sha256(contents) != lock["files"][name]:
             raise ValueError("recipe changed while preparing the build")
-        (output / name).write_bytes(contents)
+        destination = output / name
+        destination.write_bytes(contents)
+        destination.chmod(0o644)
 
 
 def main() -> int:

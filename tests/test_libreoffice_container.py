@@ -52,6 +52,39 @@ def archive(entries):
 
 
 class LibreOfficeContainerTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "posix", "POSIX image build context")
+    def test_build_context_modes_do_not_depend_on_the_callers_umask(self):
+        payload = b"verified archive payload"
+        recipe = b"FROM scratch\n"
+        lock = {
+            "archive": {"bytes": len(payload), "sha256": oracle.sha256(payload)},
+            "files": {"Containerfile": oracle.sha256(recipe)},
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            source = root / "source.tar.gz"
+            source.write_bytes(payload)
+            recipe_path = root / "Containerfile"
+            recipe_path.write_bytes(recipe)
+            for mask in (0o022, 0o077):
+                with self.subTest(umask=oct(mask)), mock.patch.object(
+                    oracle, "load_runtime_lock", return_value=lock
+                ), mock.patch.object(
+                    oracle, "RECIPE_FILES", {"Containerfile": recipe_path}
+                ):
+                    previous = os.umask(mask)
+                    try:
+                        output = root / f"context-{mask}"
+                        oracle.prepare_build(source, output)
+                    finally:
+                        os.umask(previous)
+                    for name, expected in (
+                        ("libreoffice.tar.gz", payload), ("Containerfile", recipe)
+                    ):
+                        path = output / name
+                        self.assertEqual(path.read_bytes(), expected)
+                        self.assertEqual(path.stat().st_mode & 0o777, 0o644)
+
     def test_process_failure_reports_retained_stderr_without_decode_errors(self):
         error = oracle.ProcessFailed(2, b"permission denied\xff\n")
         self.assertIn("permission denied", str(error))
