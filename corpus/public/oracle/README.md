@@ -85,6 +85,42 @@ cohorts supply 192 inputs, with a native expectation of one page per document.
 Deterministic payloads, pairwise coverage and hygiene do not establish external
 layout fidelity. Ordinary release inputs, thresholds and captures are unchanged.
 
+## Table, section and note/field cohorts
+
+Three further disjoint cohorts each contain 64 synthetic DOCX inputs and MIT
+provenance. Each covers all combinations of six binary factors in its named
+surface; every factor occurs in 32 cases and each pair has all four states 16
+times.
+
+| Lock | Coverage | Native expected pages |
+|---|---|---|
+| `render-full-table-v1.json` | Visual-RTL order, horizontal/vertical merges, borders, shading and cell margins in a primary table | 64 |
+| `render-full-section-v1.json` | Section starts, orientation, column widths/direction/separators and running-surface distance | 288 |
+| `render-full-note-field-v1.json` | Footnote/endnote kind, start/format, simple/complex NOTEREF, accepted insertions and body/table placement | 64 |
+
+```sh
+python3 -B scripts/generate_render_table_corpus.py --check
+python3 -B scripts/generate_render_section_corpus.py --check
+python3 -B scripts/generate_render_note_field_corpus.py --check
+
+python3 -B scripts/generate_render_table_corpus.py
+python3 -B scripts/generate_render_section_corpus.py
+python3 -B scripts/generate_render_note_field_corpus.py
+```
+
+Their default destinations are `target/render-oracle/render-full-table-v1/`,
+`target/render-oracle/render-full-section-v1/` and
+`target/render-oracle/render-full-note-field-v1/`. Each contains 64 DOCX files,
+one provenance file and a strict `RENDER_ORACLE.json`. The generators enforce
+the same bounded-lock and staged fresh-directory publication rules as the other
+cohorts. Run `scripts/render_oracle_contract.py` on a generated manifest for an
+independent contract check.
+
+The section inputs intentionally span multiple pages. These retained native
+expectations do not assert Word-compatible pagination or note placement. The
+six 64-input cohorts are disjoint; the complete 800-input composition and
+external fidelity evidence remain separate work.
+
 ## Unequal-column tables
 
 `unequal-table-v1.json` binds a 48-case factorial campaign across four physical column
