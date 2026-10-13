@@ -615,6 +615,39 @@ or release-acceptance claim. Type 1/CFF proof and metadata-only TrueType coverag
 remain distinct. Existing v4 evidence, legacy release defaults and thresholds
 are unchanged; historical v5-v7 reports are not silently accepted as v8.
 
+## Bounded diagnostic CI
+
+The `Render Oracle (Diagnostic)` workflow runs the locked 12-document smoke
+pair on pull requests, pushes to main and manual dispatch. It checks out the
+exact workflow SHA, builds the locked LibreOffice image without cache, and
+uses the current capture, v8 measurement and v2 repeat verifiers. A successful
+job requires two complete measurements with zero skipped inputs and independent
+native replay. Raw fidelity failures remain visible in the retained reports.
+
+`scripts/prepare_render_oracle_ci.py` downloads only the existing pinned public
+font, wheel and runtime sources, verifies their sizes and hashes, and publishes
+a fresh prepared directory. HTTPS redirects cannot downgrade transport; cached
+files, archive members and copied license notices undergo bounded checks.
+For local reproduction with the pinned analysis dependencies installed:
+
+```sh
+python3 -B scripts/prepare_render_oracle_ci.py \
+  --output target/oracle-ci/prepared --cache target/oracle-ci/downloads
+# Build and inspect the locked image from prepared/context as described below.
+python3 -B scripts/render_oracle_ci.py \
+  --prepared target/oracle-ci/prepared \
+  --output target/oracle-ci/evidence \
+  --source-revision "$(git rev-parse HEAD)"
+```
+
+Capture requires a clean checkout and fresh output directory. Both evidence
+reports and partial captures survive a later failure; `repeatability.json` is
+written only after repeat verification and a final source-revision check.
+The workflow has a 60-minute job limit and step limits that reserve upload time.
+Artifacts retain preparation/build logs and available evidence for 14 days,
+named by source SHA, run and attempt. This smoke evidence does not close full
+800-input campaigns, Word comparison or release acceptance.
+
 ## Locked LibreOffice runtime
 
 `scripts/libreoffice_container.py` prepares and verifies a fixed Linux amd64
