@@ -364,6 +364,26 @@ class BenchVsMatureReportTests(unittest.TestCase):
 
             self.assertEqual([item.name for item in inputs], ["alpha", "beta", "gamma"])
 
+    def test_manifest_snapshot_does_not_reread_changed_disk_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = pathlib.Path(tmp)
+            self.write_legacy_corpus(corpus)
+            manifest = corpus / "LEGACY_MANIFEST.tsv"
+            snapshot = manifest.read_text(encoding="utf-8")
+            manifest.write_text("../outside.doc\n", encoding="utf-8")
+            inputs = bench_vs_mature.legacy_benchmark_inputs(corpus, manifest_text=snapshot)
+            self.assertEqual([item.name for item in inputs], ["alpha", "beta", "gamma"])
+            with self.assertRaises(ValueError):
+                bench_vs_mature.legacy_benchmark_inputs(corpus)
+
+    def test_manifest_snapshot_rejects_empty_invalid_and_duplicate_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = pathlib.Path(tmp)
+            self.write_legacy_corpus(corpus)
+            for text in ("", "../outside.doc\n", "sample/alpha.doc\nsample/alpha.doc\n"):
+                with self.subTest(text=text), self.assertRaises(ValueError):
+                    bench_vs_mature.legacy_benchmark_inputs(corpus, manifest_text=text)
+
     def test_legacy_manifest_rejects_missing_source_poi_or_libreoffice_input(self):
         cases = [
             ("DOC", pathlib.Path("sample/alpha.doc")),
@@ -376,8 +396,12 @@ class BenchVsMatureReportTests(unittest.TestCase):
                 self.write_legacy_corpus(corpus)
                 (corpus / relative).unlink()
 
-                with self.assertRaisesRegex(ValueError, f"{label} inventory mismatch"):
-                    bench_vs_mature.legacy_benchmark_inputs(corpus)
+                snapshot = (corpus / "LEGACY_MANIFEST.tsv").read_text(encoding="utf-8")
+                for options in ({}, {"manifest_text": snapshot}):
+                    with self.subTest(snapshot=bool(options)), self.assertRaisesRegex(
+                        ValueError, f"{label} inventory mismatch"
+                    ):
+                        bench_vs_mature.legacy_benchmark_inputs(corpus, **options)
 
     def test_legacy_manifest_rejects_unexpected_source_or_golden(self):
         cases = [
@@ -391,8 +415,12 @@ class BenchVsMatureReportTests(unittest.TestCase):
                 self.write_legacy_corpus(corpus)
                 (corpus / relative).write_bytes(b"extra")
 
-                with self.assertRaisesRegex(ValueError, f"{label} inventory mismatch"):
-                    bench_vs_mature.legacy_benchmark_inputs(corpus)
+                snapshot = (corpus / "LEGACY_MANIFEST.tsv").read_text(encoding="utf-8")
+                for options in ({}, {"manifest_text": snapshot}):
+                    with self.subTest(snapshot=bool(options)), self.assertRaisesRegex(
+                        ValueError, f"{label} inventory mismatch"
+                    ):
+                        bench_vs_mature.legacy_benchmark_inputs(corpus, **options)
 
 
 if __name__ == "__main__":

@@ -146,6 +146,32 @@ expect `FloatingShapePlaceholderOnly`; the metafile cases retain no expected
 warnings. These inputs do not expand floating-object or metafile support, and
 successful corpus generation does not establish external rendering fidelity.
 
+## Interaction and legacy cohorts
+
+`render-full-interaction-v1.json` binds 197 synthetic DOCX combinations of the
+character, paragraph, list, table, section, note, field and floating features.
+`render-full-legacy-v1.json` binds the three reviewed legacy DOC benchmark inputs,
+their synthetic DOCX sources, and Apache POI and LibreOffice text references.
+Both cohorts retain their existing MIT provenance and exact document bytes.
+
+```sh
+python3 -B scripts/generate_render_interaction_corpus.py --check
+python3 -B scripts/generate_render_legacy_corpus.py --check
+
+python3 -B scripts/generate_render_interaction_corpus.py
+python3 -B scripts/generate_render_legacy_corpus.py
+```
+
+The default fresh destinations are `target/render-oracle/render-full-interaction-v1/`
+and `target/render-oracle/render-full-legacy-v1/`. Both use the shared bounded
+lock reader and staged publication checks. Legacy source files and the manifest
+snapshot are bounded before parsing; the existing benchmark inventory checks
+still require the exact DOC and reference sets.
+
+The cohorts retain one expected native page per input; 98 interaction cases
+expect `FloatingShapePlaceholderOnly`. These input contracts do not establish
+Word fidelity, broader legacy-producer coverage or full-campaign acceptance.
+
 ## Unequal-column tables
 
 `unequal-table-v1.json` binds a 48-case factorial campaign across four physical column

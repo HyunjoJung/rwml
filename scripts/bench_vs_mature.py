@@ -81,7 +81,9 @@ def require_exact_inventory(label: str, expected: set[str], actual: set[str]) ->
     )
 
 
-def legacy_benchmark_inputs(corpus: Path) -> list[LegacyBenchmarkInput]:
+def legacy_benchmark_inputs(
+    corpus: Path, *, manifest_text: str | None = None
+) -> list[LegacyBenchmarkInput]:
     if not corpus.is_dir():
         raise ValueError(f"legacy benchmark corpus does not exist: {corpus}")
     manifest = corpus / "LEGACY_MANIFEST.tsv"
@@ -91,9 +93,9 @@ def legacy_benchmark_inputs(corpus: Path) -> list[LegacyBenchmarkInput]:
     documents: list[PurePosixPath] = []
     seen_paths: set[PurePosixPath] = set()
     seen_names: set[str] = set()
-    for line_number, line in enumerate(
-        manifest.read_text(encoding="utf-8").splitlines(), start=1
-    ):
+    if manifest_text is None:
+        manifest_text = manifest.read_text(encoding="utf-8")
+    for line_number, line in enumerate(manifest_text.splitlines(), start=1):
         line = line.strip()
         if not line or line.startswith("#") or line.startswith("path\t"):
             continue
