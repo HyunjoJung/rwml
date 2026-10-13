@@ -12,15 +12,21 @@ import zipfile
 from scripts import generate_render_full_corpus as runs
 from scripts import generate_render_list_rtl_corpus as lists
 from scripts import generate_render_paragraph_corpus as paragraphs
+from scripts import generate_render_table_corpus as tables
+from scripts import generate_render_section_corpus as sections
+from scripts import generate_render_note_field_corpus as notes
 from scripts import public_hygiene_audit as hygiene
 
 
 ROOT = Path(__file__).resolve().parents[1]
-COHORTS = (runs, paragraphs, lists)
+COHORTS = (runs, paragraphs, lists, tables, sections, notes)
 FILE_MAP_HASHES = {
     runs.CAMPAIGN: "006631126d8e25216c9495bbfacc565ff6d061bfb9791053e98f0e6d2c55ec72",
     paragraphs.CAMPAIGN: "54d1eb7c679307830210dbc5fca93ae5204aa8a996dc5ccd6ca5c1700d70a75f",
     lists.CAMPAIGN: "e72596d8e5f85f4a2ba6301d5123e4984037a9adf4b63a0d248b83313dd9f785",
+    tables.CAMPAIGN: "69ab3d1c36a05f5d8c05027aa2bdc9b615fcf264fa2452e3a2fc66f87db2e547",
+    sections.CAMPAIGN: "7efdc593a9b8acae5241ac639a21a64372ec6e51d2ead581025f5709f0f68c3c",
+    notes.CAMPAIGN: "1b3fc9313a6c71bae49a7c074fb40ee11d2e43de062175e9aace253f1492a1cf",
 }
 
 
@@ -132,15 +138,15 @@ class RenderCoreCorpusTests(unittest.TestCase):
                     self.assertEqual(hashlib.sha256(identity).hexdigest(), FILE_MAP_HASHES[module.CAMPAIGN])
                     corpus = module.load_corpus_manifest(output / "RENDER_ORACLE.json")
                     self.assertEqual(len(corpus.documents), 64)
-                    self.assertEqual(corpus.expected_pages, 64)
+                    self.assertEqual(corpus.expected_pages, 288 if module is sections else 64)
                     observed.append(snapshot)
                 self.assertEqual(observed[0], observed[1])
 
     def test_cohorts_are_disjoint_in_ids_paths_and_payloads(self):
         documents = [document for module in COHORTS for document in module.load_lock()["documents"]]
-        self.assertEqual(len(documents), 192)
+        self.assertEqual(len(documents), 384)
         for key in ("id", "path", "sha256"):
-            self.assertEqual(len({document[key] for document in documents}), 192, key)
+            self.assertEqual(len({document[key] for document in documents}), 384, key)
 
     def test_every_generated_office_package_passes_bounded_hygiene(self):
         for module in COHORTS:
