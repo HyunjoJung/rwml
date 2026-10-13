@@ -148,6 +148,25 @@ class RenderCoreCorpusTests(unittest.TestCase):
         for key in ("id", "path", "sha256"):
             self.assertEqual(len({document[key] for document in documents}), 384, key)
 
+    def test_cli_lock_failures_return_clean_errors_without_output(self):
+        for module in COHORTS:
+            with self.subTest(cohort=module.CAMPAIGN), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                stale = root / "stale.json"
+                stale.write_bytes(module.DEFAULT_LOCK.read_bytes() + b"\n")
+                for command in ((str(module.SCRIPT_PATH),), ("-m", module.__name__)):
+                    for lock in (root / "missing.json", stale):
+                        for action in (("--check",), ("--output", str(root / "output"))):
+                            with self.subTest(command=command, lock=lock.name, action=action[0]):
+                                result = subprocess.run(
+                                    [sys.executable, "-B", *command, "--lock", str(lock), *action],
+                                    cwd=ROOT, capture_output=True, text=True, timeout=30,
+                                )
+                                self.assertEqual(result.returncode, 1)
+                                self.assertIn(module.SCRIPT_PATH.stem, result.stderr)
+                                self.assertNotIn("Traceback", result.stderr)
+                                self.assertFalse((root / "output").exists())
+
     def test_every_generated_office_package_passes_bounded_hygiene(self):
         for module in COHORTS:
             for spec in module.case_specs():
