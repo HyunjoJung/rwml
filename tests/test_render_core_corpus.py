@@ -15,11 +15,13 @@ from scripts import generate_render_paragraph_corpus as paragraphs
 from scripts import generate_render_table_corpus as tables
 from scripts import generate_render_section_corpus as sections
 from scripts import generate_render_note_field_corpus as notes
+from scripts import generate_render_floating_corpus as floating
+from scripts import generate_render_metafile_corpus as metafiles
 from scripts import public_hygiene_audit as hygiene
 
 
 ROOT = Path(__file__).resolve().parents[1]
-COHORTS = (runs, paragraphs, lists, tables, sections, notes)
+COHORTS = (runs, paragraphs, lists, tables, sections, notes, floating, metafiles)
 FILE_MAP_HASHES = {
     runs.CAMPAIGN: "006631126d8e25216c9495bbfacc565ff6d061bfb9791053e98f0e6d2c55ec72",
     paragraphs.CAMPAIGN: "54d1eb7c679307830210dbc5fca93ae5204aa8a996dc5ccd6ca5c1700d70a75f",
@@ -27,6 +29,8 @@ FILE_MAP_HASHES = {
     tables.CAMPAIGN: "69ab3d1c36a05f5d8c05027aa2bdc9b615fcf264fa2452e3a2fc66f87db2e547",
     sections.CAMPAIGN: "7efdc593a9b8acae5241ac639a21a64372ec6e51d2ead581025f5709f0f68c3c",
     notes.CAMPAIGN: "1b3fc9313a6c71bae49a7c074fb40ee11d2e43de062175e9aace253f1492a1cf",
+    floating.CAMPAIGN: "8fd140db60dc81bc28e9d62ae201bf9d49d2c27e7cc664e59fe04da59da4f631",
+    metafiles.CAMPAIGN: "bd6db0b01293bfaf1090bcc95f166c77e3fe5e253ba24a8bf9f1af325cbe927b",
 }
 
 
@@ -144,9 +148,9 @@ class RenderCoreCorpusTests(unittest.TestCase):
 
     def test_cohorts_are_disjoint_in_ids_paths_and_payloads(self):
         documents = [document for module in COHORTS for document in module.load_lock()["documents"]]
-        self.assertEqual(len(documents), 384)
+        self.assertEqual(len(documents), 512)
         for key in ("id", "path", "sha256"):
-            self.assertEqual(len({document[key] for document in documents}), 384, key)
+            self.assertEqual(len({document[key] for document in documents}), 512, key)
 
     def test_cli_lock_failures_return_clean_errors_without_output(self):
         for module in COHORTS:
