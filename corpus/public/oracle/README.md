@@ -118,8 +118,7 @@ independent contract check.
 
 The section inputs intentionally span multiple pages. These retained native
 expectations do not assert Word-compatible pagination or note placement. The
-64-input cohorts are disjoint; the complete 800-input composition and
-external fidelity evidence remain separate work.
+64-input cohorts are disjoint and contribute to the full composition below.
 
 ## Floating-shape and metafile cohorts
 
@@ -171,6 +170,32 @@ still require the exact DOC and reference sets.
 The cohorts retain one expected native page per input; 98 interaction cases
 expect `FloatingShapePlaceholderOnly`. These input contracts do not establish
 Word fidelity, broader legacy-producer coverage or full-campaign acceptance.
+
+## Full 800-input composition
+
+`render-full-v1.json` binds the exact union of twelve source batches: the 40-case
+pilot, 48 unequal-column tables, eight 64-case cohorts, 197 interactions and
+three legacy DOC inputs. Smoke is already a subset of the pilot. The final
+inventory has 797 DOCX and three DOC inputs, 14 provenance files and 1,059
+expected native pages.
+
+```sh
+python3 -B scripts/compose_render_full_corpus.py --check
+python3 -B scripts/compose_render_full_corpus.py
+python3 -B scripts/render_oracle_contract.py \
+  target/render-oracle/render-full-v1/RENDER_ORACLE.json
+```
+
+Composition verifies every source lock and document/provenance identity,
+rejects duplicate inputs and conflicting records, and publishes only a fully
+validated fresh directory. The source identities come from the exact validated
+lock snapshots. Independent script/package runs pin the complete 815-file map;
+changes to generator metadata do not alter the retained document bytes or
+strict transport manifest.
+
+These are diagnostic inputs and native expectations. Materializing all 800
+documents does not establish complete external captures, Word fidelity,
+repeatability or release acceptance.
 
 ## Unequal-column tables
 
