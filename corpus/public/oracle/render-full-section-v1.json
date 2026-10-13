@@ -2032,7 +2032,7 @@
       "source_path": "scripts/generate_render_section_corpus.py#full-section-063"
     }
   ],
-  "generator_closure_sha256": "241eac862a7926932790291236751ecf16186b5c8779384fb053338cd2bb7bcb",
+  "generator_closure_sha256": "bf6f87aa32deed456a4894e214f19d7aa530fd00d5c3dbd198317dda5c2491f9",
   "limits": {
     "max_documents": 64,
     "max_input_bytes": 98304,

@@ -577,7 +577,7 @@ def check_lock(path: Path = DEFAULT_LOCK) -> bool:
         with tempfile.TemporaryDirectory() as temporary:
             materialize(Path(temporary) / "section", lock)
         return True
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, ValueError) as error:
         print(f"generate_render_section_corpus: {error}", file=sys.stderr)
         return False
 
@@ -602,7 +602,7 @@ def main(argv: list[str] | None = None) -> int:
         manifest = materialize(args.output, load_lock(args.lock))
         print(f"wrote {manifest}")
         return 0
-    except (OSError, ValueError, json.JSONDecodeError) as error:
+    except (OSError, ValueError) as error:
         print(f"generate_render_section_corpus: {error}", file=sys.stderr)
         return 1
 

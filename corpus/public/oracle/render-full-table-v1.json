@@ -1903,7 +1903,7 @@
       "source_path": "scripts/generate_render_table_corpus.py#full-table-063"
     }
   ],
-  "generator_closure_sha256": "c4992f216e02d8906144acbf7ab9b01f3f469aeea0cd59337b762daefa94397c",
+  "generator_closure_sha256": "d477c57ee0bd8a37390ccdfb6c30640b93b41b9c5e9b87621256fd8fd2abf214",
   "limits": {
     "max_documents": 64,
     "max_input_bytes": 65536,
