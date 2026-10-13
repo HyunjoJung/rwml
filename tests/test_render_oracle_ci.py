@@ -16,7 +16,7 @@ class CiTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
+        self.root = Path(temporary.name).resolve()
         self.output = self.root / "evidence"
         self.prepared = self.root / "prepared"
         self.revision = "a" * 40
