@@ -111,15 +111,9 @@ class CiWorkflowTests(unittest.TestCase):
             "cargo install cargo-semver-checks --version 0.48.0 --locked", text
         )
         self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.3 "
-            "--release-type patch --default-features",
-            text,
+            "python3 scripts/semver_check.py --baseline-rev v0.1.3", check_job
         )
-        self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.3 "
-            "--release-type patch --all-features",
-            text,
-        )
+        self.assertNotIn("cargo semver-checks check-release --baseline-rev", text)
 
     def test_ci_workflow_runs_pinned_rustsec_audit(self):
         text = WORKFLOW.read_text(encoding="utf-8")

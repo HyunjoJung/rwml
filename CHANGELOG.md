@@ -18,6 +18,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Public-API compatibility checks now build the released baseline from its
+  tagged `Cargo.lock` and compare locked rustdoc JSON for default and all
+  features, so yanked baseline dependencies no longer block CI or releases.
 - PDF previews omit placeholder glyph ink for tabs while retaining tab advances,
   visible text positions and full-run highlights, underlines and strike-through.
 - Opened DOCX PDF previews now render deterministic footnote/endnote reference
