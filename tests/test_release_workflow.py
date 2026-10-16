@@ -298,11 +298,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(
             "cargo install cargo-semver-checks --version 0.48.0 --locked", text
         )
+        verify = step_body(text, "Verify the crate builds, tests, and packages")
         self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.3 "
-            "--release-type patch --default-features",
-            text,
+            "python3 scripts/semver_check.py --baseline-rev v0.1.3", verify
         )
+        self.assertNotIn("cargo semver-checks check-release --baseline-rev", text)
 
     def test_release_removes_transient_cargo_sources_before_cache_save(self):
         text = WORKFLOW.read_text(encoding="utf-8")
@@ -311,7 +311,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         )
 
         self.assertIn("if: always()", cleanup)
-        self.assertIn("rm -rf -- target/package target/semver-checks", cleanup)
+        self.assertIn(
+            "rm -rf -- target/package target/semver-checks target/semver-locked",
+            cleanup,
+        )
         self.assertIn("https://github.com/Swatinem/rust-cache/issues/193", text)
         self.assertLess(
             text.index("- name: Create GitHub Release"),
@@ -388,11 +391,6 @@ class ReleaseWorkflowTests(unittest.TestCase):
         ]
         positions = [text.index(step) for step in ordered_steps]
         self.assertEqual(positions, sorted(positions))
-        self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.3 "
-            "--release-type patch --all-features",
-            text,
-        )
 
 
 if __name__ == "__main__":
