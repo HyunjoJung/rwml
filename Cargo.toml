@@ -23,7 +23,7 @@ exclude = [".github/", "rwml-fonts/"]
 crate-type = ["rlib", "cdylib"]
 
 [dependencies]
-cfb = "0.10"
+cfb = "0.15"
 encoding_rs = "0.8"
 thiserror = "2.0"
 # Modern .docx (OOXML WordprocessingML) support — on by default; disable for the
