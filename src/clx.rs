@@ -113,7 +113,7 @@ fn parse_plcpcd(plc: &[u8]) -> Result<Vec<Piece>> {
 }
 
 fn parse_plcpcd_with_limit(plc: &[u8], max_pieces: usize) -> Result<Vec<Piece>> {
-    if plc.len() < 4 || (plc.len() - 4) % 12 != 0 {
+    if plc.len() < 4 || !(plc.len() - 4).is_multiple_of(12) {
         return Err(Error::PieceTable(format!(
             "bad PlcPcd length {}",
             plc.len()

@@ -2796,14 +2796,14 @@ fn running_surface_variants_for_page<T: RunningSurfaceSetup + ?Sized>(
             || !setup.first_footer().is_empty());
     let header = if title_page {
         RunningSurfaceVariant::First
-    } else if page_number % 2 == 0 && !setup.even_header().is_empty() {
+    } else if page_number.is_multiple_of(2) && !setup.even_header().is_empty() {
         RunningSurfaceVariant::Even
     } else {
         RunningSurfaceVariant::Default
     };
     let footer = if title_page {
         RunningSurfaceVariant::First
-    } else if page_number % 2 == 0 && !setup.even_footer().is_empty() {
+    } else if page_number.is_multiple_of(2) && !setup.even_footer().is_empty() {
         RunningSurfaceVariant::Even
     } else {
         RunningSurfaceVariant::Default

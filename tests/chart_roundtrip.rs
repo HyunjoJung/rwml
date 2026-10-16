@@ -18,7 +18,7 @@ fn package_parts(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
         }
         let mut payload = Vec::new();
         entry.read_to_end(&mut payload).expect("read DOCX payload");
-        parts.insert(entry.name().to_string(), payload);
+        parts.insert(entry.name().unwrap().into_owned(), payload);
     }
     parts
 }
