@@ -300,7 +300,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         )
         verify = step_body(text, "Verify the crate builds, tests, and packages")
         self.assertIn(
-            "python3 scripts/semver_check.py --baseline-rev v0.1.3", verify
+            "python3 scripts/semver_check.py --baseline-rev v0.1.4", verify
         )
         self.assertNotIn("cargo semver-checks check-release --baseline-rev", text)
 

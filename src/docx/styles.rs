@@ -920,7 +920,7 @@ fn well_formed_xml(xml: &str) -> bool {
                     return false;
                 }
                 if depth == 0 {
-                    if !e.as_ref().iter().all(u8::is_ascii_whitespace) {
+                    if !e.iter().all(u8::is_ascii_whitespace) {
                         return false;
                     }
                     if !root_seen {

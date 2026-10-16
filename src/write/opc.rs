@@ -77,7 +77,9 @@ impl Package {
     /// `save` APIs surface instead of yielding empty bytes.
     pub(crate) fn try_into_zip(self) -> std::io::Result<Vec<u8>> {
         let mut zw = ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let opt = SimpleFileOptions::default();
+        // zip 9 records the build platform as the creating host (MS-DOS on Windows);
+        // pin Unix so saved bytes match on every platform, as zip 2 always wrote.
+        let opt = SimpleFileOptions::default().system(zip::System::Unix);
 
         // [Content_Types].xml
         let mut ct = String::new();

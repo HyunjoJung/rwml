@@ -94,7 +94,7 @@ fn assert_matches_literal_markers(source: &[u8], expected: &[u8]) {
     use std::io::Read;
     for index in 0..original.len() {
         let mut before = original.by_index(index).unwrap();
-        let mut after = saved.by_name(before.name()).unwrap();
+        let mut after = saved.by_name(&before.name().unwrap()).unwrap();
         let mut a = Vec::new();
         let mut b = Vec::new();
         before.read_to_end(&mut a).unwrap();

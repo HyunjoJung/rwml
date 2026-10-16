@@ -96,7 +96,7 @@ class CiWorkflowTests(unittest.TestCase):
     def test_ci_workflow_builds_no_default_msrv_surface(self):
         text = WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertIn("dtolnay/rust-toolchain@1.85.0", text)
+        self.assertIn("dtolnay/rust-toolchain@1.88.0", text)
         self.assertIn("dtolnay/rust-toolchain@1.92.0", text)
         self.assertIn("cargo build --no-default-features", text)
 
@@ -111,7 +111,7 @@ class CiWorkflowTests(unittest.TestCase):
             "cargo install cargo-semver-checks --version 0.48.0 --locked", text
         )
         self.assertIn(
-            "python3 scripts/semver_check.py --baseline-rev v0.1.3", check_job
+            "python3 scripts/semver_check.py --baseline-rev v0.1.4", check_job
         )
         self.assertNotIn("cargo semver-checks check-release --baseline-rev", text)
 

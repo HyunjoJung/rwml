@@ -24,7 +24,7 @@ fn package_parts(bytes: &[u8]) -> BTreeMap<String, Vec<u8>> {
         }
         let mut bytes = Vec::new();
         entry.read_to_end(&mut bytes).unwrap();
-        parts.insert(entry.name().to_string(), bytes);
+        parts.insert(entry.name().unwrap().into_owned(), bytes);
     }
     parts
 }

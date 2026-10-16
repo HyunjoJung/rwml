@@ -10,14 +10,14 @@ text, and render native preview PDFs.
 [![Docs.rs](https://docs.rs/rwml/badge.svg)](https://docs.rs/rwml)
 [![CI](https://github.com/HyunjoJung/rwml/actions/workflows/ci.yml/badge.svg)](https://github.com/HyunjoJung/rwml/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![MSRV](https://img.shields.io/badge/MSRV-1.85%20(render%201.92)-orange.svg)
+![MSRV](https://img.shields.io/badge/MSRV-1.88%20(render%201.92)-orange.svg)
 
 The core library requires no JVM, Apache POI, Microsoft Office automation, or
 subprocess. It handles legacy codepages, including Korean cp949, in-process and
 uses bounded parsers with typed errors for malformed or unsupported input.
 
 ```sh
-cargo add rwml@0.1.4
+cargo add rwml@0.1.5
 ```
 
 ## Why rwml
@@ -117,7 +117,7 @@ println!("updated package parts: {touched:?}");
 ### CLI and PDF preview
 
 ```sh
-cargo install rwml --version =0.1.4 --locked
+cargo install rwml --version =0.1.5 --locked
 
 rwml extract file.docx
 rwml convert legacy.doc md
@@ -130,7 +130,7 @@ PDF support is opt-in because it adds the shaping and PDF stack. The
 hanja, Arabic, and Hebrew:
 
 ```sh
-cargo install rwml --version =0.1.4 --locked --features bundled-fonts
+cargo install rwml --version =0.1.5 --locked --features bundled-fonts
 rwml to-pdf file.docx preview.pdf --report-json render.json
 ```
 
@@ -138,7 +138,7 @@ The renderer is a deterministic preview/report renderer, not a Word layout
 engine. See [Compatibility and limits](#compatibility-and-limits) before using
 it for pagination-sensitive output.
 
-Development builds add font-isolated diagnostics:
+Version 0.1.5 adds font-isolated diagnostics:
 `try_render_pdf_with_fixed_fonts_and_report` and
 `Document::try_to_pdf_with_fixed_fonts_and_report` use only caller-supplied fonts
 and fail on missing visible glyph resources. The `to_pdf` example accepts ordered
@@ -164,16 +164,16 @@ Fresh DOCX generation is a separate path: `write_docx` serializes the supported
 
 ## Validation
 
-Version `0.1.4` is published on
-[crates.io](https://crates.io/crates/rwml/0.1.4) and
-[docs.rs](https://docs.rs/rwml/0.1.4/rwml/). Its exact crates, checksums,
+Version `0.1.5` is published on
+[crates.io](https://crates.io/crates/rwml/0.1.5) and
+[docs.rs](https://docs.rs/rwml/0.1.5/rwml/). Its exact crates, checksums,
 public-hygiene result, extraction benchmark, render validation, and strict
 revision-bound manifest are attached to the
-[`v0.1.4` release](https://github.com/HyunjoJung/rwml/releases/tag/v0.1.4).
+[`v0.1.5` release](https://github.com/HyunjoJung/rwml/releases/tag/v0.1.5).
 
 | Release | Safety and toolchain | Public release evidence |
 |---|---|---|
-| `0.1.4` / MIT | no `unsafe`; core MSRV 1.85; render MSRV 1.92 | 21 DOCX fixtures, 26 rendered pages, 3 generated DOC oracle fixtures, tag-bound package manifest |
+| `0.1.5` / MIT | no `unsafe`; core MSRV 1.88; render MSRV 1.92 | 21 DOCX fixtures, 26 rendered pages, 3 generated DOC oracle fixtures, tag-bound package manifest |
 
 The release contract uses only redistributable public inputs:
 
@@ -246,8 +246,12 @@ from the lossy common model.
 Use `default-features = false` for the dependency-light legacy DOC reader:
 
 ```toml
-rwml = { version = "0.1.4", default-features = false }
+rwml = { version = "0.1.5", default-features = false }
 ```
+
+On Rust 1.88, resolve dependencies with Cargo's MSRV-aware resolver, for
+example `resolver = "3"` or `CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback`.
+`uuid` 1.27 and later, pulled in through `cfb`, require Rust 1.89.
 
 ### Built-in surfaces
 

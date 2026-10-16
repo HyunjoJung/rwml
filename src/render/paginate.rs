@@ -1847,7 +1847,7 @@ fn page_after_section_break(current_page: usize, section_break: Option<SectionBr
     let next_page = current_page + 1;
     match section_break.unwrap_or(SectionBreakKind::NextPage) {
         SectionBreakKind::EvenPage if next_page % 2 == 1 => next_page + 1,
-        SectionBreakKind::OddPage if next_page % 2 == 0 => next_page + 1,
+        SectionBreakKind::OddPage if next_page.is_multiple_of(2) => next_page + 1,
         SectionBreakKind::NextPage | SectionBreakKind::EvenPage | SectionBreakKind::OddPage => {
             next_page
         }

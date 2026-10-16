@@ -4691,9 +4691,11 @@ fn read_custom_xml_items(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>) -> V
     let mut names = Vec::new();
     for index in 0..zip.len() {
         if let Ok(file) = zip.by_index(index) {
-            let name = file.name().to_string();
+            let Ok(name) = file.name() else {
+                continue;
+            };
             if let Some(number) = custom_xml_item_number(&name) {
-                names.push((number, name));
+                names.push((number, name.into_owned()));
             }
         }
     }
@@ -4909,10 +4911,25 @@ const MAX_MEDIA_PART: u64 = 64 << 20;
 /// cumulative media inflation across all entries.
 const MAX_TOTAL_MEDIA: u64 = 256 << 20;
 
+/// Index of the entry whose decoded name is `name`. zip 9 matches names on their
+/// raw bytes, while `opc::Package::from_zip` keys parts by the decoded name (UTF-8,
+/// else CP437), so a non-ASCII miss falls back to comparing decoded names. That
+/// keeps the read model and the retained package in agreement.
+fn entry_index(zip: &zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Option<usize> {
+    zip.index_for_name(name).or_else(|| {
+        if name.is_ascii() {
+            return None;
+        }
+        (0..zip.len()).find(
+            |&index| matches!(zip.name_for_index(index), Some(Ok(decoded)) if decoded == name),
+        )
+    })
+}
+
 /// Read a ZIP entry to a UTF-8 string, if present — bounded to guard against a
 /// zip bomb (a tiny entry that decompresses to gigabytes).
 fn part(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Option<String> {
-    let f = zip.by_name(name).ok()?;
+    let f = zip.by_index(entry_index(zip, name)?).ok()?;
     if f.size() > MAX_XML_PART {
         return None;
     }
@@ -4923,7 +4940,7 @@ fn part(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Option
 
 /// Read a ZIP entry to raw bytes (for media), bounded like [`part`].
 fn part_bytes(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Option<Vec<u8>> {
-    let f = zip.by_name(name).ok()?;
+    let f = zip.by_index(entry_index(zip, name)?).ok()?;
     if f.size() > MAX_MEDIA_PART {
         return None;
     }
@@ -5545,6 +5562,51 @@ mod tests {
     };
     use super::{running_surface_distances_by_model_section, SectionHeaderFooter};
     use crate::model::{Block, RunningSurfaceDistanceHints, SectionSetup};
+
+    #[test]
+    fn part_lookup_matches_decoded_cp437_entry_names() {
+        use std::io::Write;
+
+        // zip 9 matches `by_name` on raw name bytes. A non-UTF-8 name decodes as
+        // CP437, which is how `opc::Package::from_zip` keys the part, so the reader
+        // must find the entry by that decoded name too.
+        let mut zw = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        zw.start_file(
+            "word/media/cafX.png",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        zw.write_all(b"png").unwrap();
+        let mut bytes = zw.finish().unwrap().into_inner();
+        // Swap the placeholder for raw CP437 0x82 (U+00E9) in both headers; the name
+        // stays without the UTF-8 flag because the original was ASCII.
+        let needle = b"cafX.png";
+        let positions: Vec<usize> = bytes
+            .windows(needle.len())
+            .enumerate()
+            .filter(|(_, window)| *window == needle)
+            .map(|(at, _)| at)
+            .collect();
+        assert_eq!(positions.len(), 2, "local and central header names");
+        for at in positions {
+            bytes[at + 3] = 0x82;
+        }
+
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.as_slice())).unwrap();
+        assert_eq!(
+            zip.name_for_index(0).unwrap().unwrap(),
+            "word/media/caf\u{e9}.png"
+        );
+        assert_eq!(
+            super::part_bytes(&mut zip, "word/media/caf\u{e9}.png").as_deref(),
+            Some(&b"png"[..])
+        );
+        assert_eq!(super::part_bytes(&mut zip, "word/media/cafe.png"), None);
+        assert_eq!(
+            super::part_bytes(&mut zip, "word/media/caf\u{e8}.png"),
+            None
+        );
+    }
 
     #[cfg(feature = "render")]
     #[test]

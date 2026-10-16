@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-10-16
+
 ### Added
 
 - Fallible fixed-font PDF APIs for models and opened documents disable system
@@ -18,6 +20,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- The default `docx` feature now depends on `zip` 9 with the `deflate-flate2`
+  backend. Every `zip` release before 9.0.3 has been yanked from crates.io, so
+  resolving `rwml` 0.1.4 with default features fails without an existing
+  lockfile; existing lockfiles and the `default-features = false` legacy reader
+  were unaffected. `zip` 9 requires Rust 1.88, so the core MSRV rises from 1.85
+  to 1.88 while the render MSRV remains 1.92. On Rust 1.88, fresh dependency
+  resolution needs Cargo's MSRV-aware resolver because `uuid` 1.27 and later
+  require Rust 1.89. `zip` types are not part of the public API. Non-ASCII ZIP
+  entry names now decode as UTF-8 whenever their bytes are valid UTF-8, with or
+  without the ZIP UTF-8 flag, and otherwise as CP437; ASCII part names, which
+  valid OPC packages use, are unchanged. Reads are stricter: an entry that
+  decompresses past its declared size is unreadable, so `save()` refuses the
+  package and opening fails when that entry is `word/document.xml`, and an
+  archive with a truncated ZIP extra field no longer opens.
 - Public-API compatibility checks now build the released baseline from its
   tagged `Cargo.lock` and compare locked rustdoc JSON for default and all
   features, so yanked baseline dependencies no longer block CI or releases.
@@ -55,10 +71,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nested-table controls. Note `keepNext` is honored within each exact note entry
   and stops at body/note, sibling-note, and footnote/endnote boundaries. Notes
   remain end-flow content rather than page-bottom composition.
-- Source-backed unequal-column PDF preview now uses a bounded convergence pass
-  to rewrap top-level paragraphs that remain wholly on a wider physical column
-  track, including RTL column order. Paragraphs that cross tracks or do not
-  stabilize retain the deterministic narrowest-column fallback; tables, media,
+- Source-backed unequal-column PDF preview now shapes top-level paragraphs to
+  the physical column tracks they occupy. A paragraph that stays on one wider
+  track is rewrapped by a bounded convergence pass, including RTL column order.
+  A paragraph that continues across tracks of different widths is shaped
+  fragment by fragment at each track's width when it has at least two lines and
+  no pagination controls, hidden text, images, preceding keep-with-next, or
+  top-and-bottom wrap bands. Other paragraphs, and passes that do not
+  stabilize, keep the deterministic narrowest-column fallback; tables, media,
   and Word-exact fragment reflow remain outside this slice.
 - The native PDF preview now lays nested tables out as bounded recursive grids,
   preserving modeled column proportions, width and alignment, spans, borders,
@@ -1876,7 +1896,8 @@ with no JVM, no Apache POI, no other `.docx` crate, and no subprocess.
   preserve body-coordinated constructs, so package-preserving editing is
   element-tree only.
 
-[Unreleased]: https://github.com/HyunjoJung/rwml/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/HyunjoJung/rwml/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/HyunjoJung/rwml/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/HyunjoJung/rwml/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/HyunjoJung/rwml/compare/v0.1.1...v0.1.3
 [0.1.1]: https://github.com/HyunjoJung/rwml/compare/v0.1.0...v0.1.1

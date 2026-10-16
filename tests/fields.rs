@@ -29,7 +29,7 @@ fn unzip_parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
         let mut file = zip.by_index(i).unwrap();
         let mut buf = Vec::new();
         file.read_to_end(&mut buf).unwrap();
-        parts.insert(file.name().to_string(), buf);
+        parts.insert(file.name().unwrap().into_owned(), buf);
     }
     parts
 }
