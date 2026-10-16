@@ -36,7 +36,7 @@ flate2 = { version = "1.0", optional = true }
 # line-breaking, krilla for PDF emit with subsetted fonts + selectable text.
 # Heavy + raises the MSRV to 1.92 (currently krilla), so it is strictly opt-in.
 krilla = { version = "0.8", optional = true }
-parley = { version = "0.11", optional = true }
+parley = { version = "0.12", optional = true }
 # Reuse krilla's font parser for strict glyph-resource validation.
 skrifa = { version = "0.42", optional = true }
 rwml-fonts = { version = "0.1.5", path = "rwml-fonts", optional = true }
