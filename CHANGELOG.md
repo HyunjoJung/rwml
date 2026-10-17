@@ -6,6 +6,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- Backport the `zip` 9.0.4 security update onto the 0.1.4 source baseline for
+  RUSTSEC-2026-0367, RUSTSEC-2026-0368, and RUSTSEC-2026-0369. The DOCX reader
+  handles fallible decoded names and preserves CP437 part lookups; both writers
+  keep the Unix ZIP host metadata used before this update. ZIP reads now reject
+  understated uncompressed sizes and malformed extra fields. The core MSRV is
+  1.88 (`render` remains 1.92); Rust 1.88 consumers need Cargo's MSRV-aware
+  resolver or a compatible lockfile because `uuid` 1.27+ requires Rust 1.89.
+
 ## [0.1.4] - 2026-08-29
 
 ### Changed

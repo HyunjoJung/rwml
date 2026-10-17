@@ -986,7 +986,7 @@ pub(super) fn page_after_section_break(page: usize, section_break: PageRefSectio
     match section_break {
         PageRefSectionBreak::Next => next,
         PageRefSectionBreak::Even if next % 2 == 1 => next + 1,
-        PageRefSectionBreak::Odd if next % 2 == 0 => next + 1,
+        PageRefSectionBreak::Odd if next.is_multiple_of(2) => next + 1,
         PageRefSectionBreak::Even | PageRefSectionBreak::Odd => next,
     }
 }

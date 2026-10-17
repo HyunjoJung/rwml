@@ -9,7 +9,7 @@ preview PDFs.
 [![Docs.rs](https://docs.rs/rwml/badge.svg)](https://docs.rs/rwml)
 [![CI](https://github.com/HyunjoJung/rwml/actions/workflows/ci.yml/badge.svg)](https://github.com/HyunjoJung/rwml/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![MSRV](https://img.shields.io/badge/MSRV-1.85%20(render%201.92)-orange.svg)
+![MSRV](https://img.shields.io/badge/MSRV-1.88%20(render%201.92)-orange.svg)
 
 The core library requires no JVM, Apache POI, Microsoft Office automation, or
 subprocess. It is built for document pipelines that need to accept legacy

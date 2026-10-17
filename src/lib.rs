@@ -5692,7 +5692,7 @@ fn is_png(bytes: &[u8]) -> bool {
             if seen_plte
                 || seen_idat
                 || matches!(color_type, 0 | 4)
-                || len % 3 != 0
+                || !len.is_multiple_of(3)
                 || !(1..=256).contains(&entries)
             {
                 return false;
@@ -7354,7 +7354,7 @@ mod tests {
         let mut parts = Vec::new();
         for index in 0..zip.len() {
             let mut file = zip.by_index(index).unwrap();
-            let name = file.name().to_string();
+            let name = file.name().unwrap().into_owned();
             if (name.starts_with("word/header") || name.starts_with("word/footer"))
                 && name.ends_with(".xml")
             {
@@ -10918,7 +10918,7 @@ mod tests {
         let mut header_xml = Vec::new();
         for index in 0..zip.len() {
             let mut file = zip.by_index(index).unwrap();
-            let name = file.name().to_string();
+            let name = file.name().unwrap().into_owned();
             if name.starts_with("word/header") && name.ends_with(".xml") {
                 let mut body = String::new();
                 file.read_to_string(&mut body).unwrap();
@@ -11280,7 +11280,7 @@ mod tests {
         let mut m = std::collections::BTreeMap::new();
         for i in 0..z.len() {
             let mut f = z.by_index(i).unwrap();
-            let n = f.name().to_string();
+            let n = f.name().unwrap().into_owned();
             let mut b = Vec::new();
             f.read_to_end(&mut b).unwrap();
             m.insert(n, b);
@@ -11331,7 +11331,7 @@ mod tests {
             let opt = SimpleFileOptions::default();
             for i in 0..zin.len() {
                 let mut f = zin.by_index(i).unwrap();
-                let name = f.name().to_string();
+                let name = f.name().unwrap().into_owned();
                 let mut b = Vec::new();
                 f.read_to_end(&mut b).unwrap();
                 // Type the unmodeled binary part so it's a valid Word-openable OPC part

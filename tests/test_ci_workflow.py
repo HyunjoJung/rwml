@@ -96,7 +96,7 @@ class CiWorkflowTests(unittest.TestCase):
     def test_ci_workflow_builds_no_default_msrv_surface(self):
         text = WORKFLOW.read_text(encoding="utf-8")
 
-        self.assertIn("dtolnay/rust-toolchain@1.85.0", text)
+        self.assertIn("dtolnay/rust-toolchain@1.88.0", text)
         self.assertIn("dtolnay/rust-toolchain@1.92.0", text)
         self.assertIn("cargo build --no-default-features", text)
 

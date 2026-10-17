@@ -27,7 +27,7 @@ fn unzip_parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
         let mut bytes = Vec::new();
         use std::io::Read;
         file.read_to_end(&mut bytes).unwrap();
-        parts.insert(file.name().to_string(), bytes);
+        parts.insert(file.name().unwrap().into_owned(), bytes);
     }
     parts
 }

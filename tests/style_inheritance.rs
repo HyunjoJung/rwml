@@ -583,7 +583,7 @@ fn default_tab_stop_render_docx(default_tab_stop_twips: Option<u32>) -> Vec<u8> 
             let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&out)).unwrap();
             for index in 0..archive.len() {
                 let mut entry = archive.by_index(index).unwrap();
-                zip.start_file(entry.name(), opt).unwrap();
+                zip.start_file(entry.name().unwrap(), opt).unwrap();
                 std::io::copy(&mut entry, &mut zip).unwrap();
             }
             zip.start_file("word/settings.xml", opt).unwrap();

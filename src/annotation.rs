@@ -129,7 +129,7 @@ fn parse_plc_reference_cps(slice: &[u8], data_len: usize, ccp_text: usize) -> Op
     if slice.is_empty() {
         return Some(Vec::new());
     }
-    if slice.len() < 4 || (slice.len() - 4) % (4 + data_len) != 0 {
+    if slice.len() < 4 || !(slice.len() - 4).is_multiple_of(4 + data_len) {
         return None;
     }
     let count = (slice.len() - 4) / (4 + data_len);
@@ -196,7 +196,7 @@ fn read_lpx_char_buffer9(slice: &[u8]) -> Option<String> {
 }
 
 fn read_utf16_units(bytes: &[u8]) -> Option<Vec<u16>> {
-    if bytes.len() % 2 != 0 {
+    if !bytes.len().is_multiple_of(2) {
         return None;
     }
     let mut units = Vec::with_capacity(bytes.len() / 2);

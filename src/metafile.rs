@@ -176,7 +176,7 @@ fn extract_emf_single_dib(bytes: &[u8], frame: MetafileFrame) -> Option<Metafile
     while offset.checked_add(8)? <= bytes.len() {
         let record_type = read_u32le(bytes, offset)?;
         let record_size = read_u32le(bytes, offset + 4)? as usize;
-        if record_size < 8 || record_size % 4 != 0 {
+        if record_size < 8 || !record_size.is_multiple_of(4) {
             return None;
         }
         let end = offset.checked_add(record_size)?;
@@ -451,7 +451,7 @@ fn extract_wmf_single_dib(bytes: &[u8], frame: MetafileFrame) -> Option<Metafile
 
 fn wmf_single_dib_header_is_valid(bytes: &[u8]) -> bool {
     if bytes.len() < 40
-        || bytes.len() % 2 != 0
+        || !bytes.len().is_multiple_of(2)
         || read_u32le(bytes, 0) != Some(0x9AC6_CDD7)
         || read_u16le(bytes, 4) != Some(0)
         || read_u32le(bytes, 16) != Some(0)

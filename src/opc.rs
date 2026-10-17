@@ -347,7 +347,15 @@ impl Package {
                     continue;
                 }
             };
-            let name = f.name().to_string();
+            // zip 9 decodes entry names lazily and can fail; an unreadable name
+            // means the part cannot be retained, so the package is not complete.
+            let name = match f.name() {
+                Ok(name) => name.into_owned(),
+                Err(_) => {
+                    complete = false;
+                    continue;
+                }
+            };
             if name.len() > MAX_NAME_LEN {
                 return Err(Error::Docx("part name too long".into()));
             }
@@ -362,8 +370,9 @@ impl Package {
             if !f.is_file() {
                 continue;
             }
-            // Fast reject on the ZIP-declared size, then enforce the real budget on
-            // the ACTUAL decompressed length (the declared size can lie).
+            // Fast reject on the ZIP-declared size. zip 9 fails any read that yields
+            // more than the declared size, so an understated entry lands in the
+            // unreadable branch below; the length check still guards the total budget.
             if f.size() > MAX_PART {
                 return Err(Error::Docx(format!("part {name} exceeds the size budget")));
             }
@@ -463,7 +472,9 @@ impl Package {
     pub(crate) fn to_zip(&self) -> Result<Vec<u8>> {
         let in_order = self.validate_write_metadata()?;
         let mut zw = ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let opt = SimpleFileOptions::default();
+        // zip 9 records the build platform as the creating host (MS-DOS on Windows);
+        // pin Unix so saved bytes match on every platform, as zip 2 always wrote.
+        let opt = SimpleFileOptions::default().system(zip::System::Unix);
         let mut total = 0u64;
         self.visit_write_entries(&in_order, |name, bytes| match bytes {
             Some(bytes) => {
@@ -1612,7 +1623,7 @@ fn parse_content_types(xml: &[u8]) -> Result<ContentTypes> {
                 }
             }
             Ok((_, Event::Text(t))) => {
-                if open_record_depth.is_some_and(|d| depth >= d) && !t.as_ref().is_empty() {
+                if open_record_depth.is_some_and(|d| depth >= d) && !t.is_empty() {
                     return Err(Error::Docx(
                         "[Content_Types].xml: Default/Override must be empty".into(),
                     ));
@@ -1932,7 +1943,7 @@ fn parse_rels(xml: &[u8]) -> Result<Vec<Rel>> {
                 }
             }
             Ok((_, Event::Text(t))) => {
-                if open_record_depth.is_some_and(|d| depth >= d) && !t.as_ref().is_empty() {
+                if open_record_depth.is_some_and(|d| depth >= d) && !t.is_empty() {
                     return Err(Error::Docx(".rels: Relationship must be empty".into()));
                 }
                 if !is_xml_whitespace(t.as_ref()) {
@@ -2182,7 +2193,7 @@ mod tests {
         let mut m = std::collections::BTreeMap::new();
         for i in 0..z.len() {
             let mut f = z.by_index(i).unwrap();
-            let n = f.name().to_string();
+            let n = f.name().unwrap().into_owned();
             let mut b = Vec::new();
             f.read_to_end(&mut b).unwrap();
             m.insert(n, b);
@@ -2418,7 +2429,7 @@ mod tests {
         // And it is a SINGLE entry (the duplicate is collapsed, not re-emitted twice).
         let mut z = ZipArchive::new(std::io::Cursor::new(out)).unwrap();
         let count = (0..z.len())
-            .filter(|&i| z.by_index(i).unwrap().name() == "word/document.xml")
+            .filter(|&i| z.by_index(i).unwrap().name().unwrap() == "word/document.xml")
             .count();
         assert_eq!(count, 1, "duplicate part re-emitted more than once");
     }

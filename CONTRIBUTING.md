@@ -94,7 +94,7 @@ The pull request must state:
 
 ## Validation by change area
 
-The default and DOCX paths support Rust 1.85; the `render` feature requires Rust
+The default and DOCX paths support Rust 1.88; the `render` feature requires Rust
 1.92. Python 3 is required for corpus, hygiene, benchmark, and release tooling.
 WASM validation additionally requires Node.js, the `wasm32-unknown-unknown`
 target, and `wasm-bindgen-cli` 0.2.126. On Linux, render builds require
@@ -124,7 +124,7 @@ complete matrix on every pull request and remains authoritative.
 | Bundled fonts or `rwml-fonts/` | `cargo test --test bundled_fonts --all-features --locked`<br>`cargo test --manifest-path rwml-fonts/Cargo.toml`<br>`cargo package --manifest-path rwml-fonts/Cargo.toml` |
 | WASM adapter or browser example | `cargo build --lib --target wasm32-unknown-unknown --locked`<br>`wasm-bindgen --target nodejs --out-dir target/wasm-node target/wasm32-unknown-unknown/debug/rwml.wasm`<br>`node tests/wasm_node_smoke.cjs target/wasm-node corpus/public/synthetic/comments.docx`<br>`node tests/wasm_demo_report_format.mjs` |
 | Dependencies or `Cargo.lock` | `cargo audit` |
-| MSRV, dependency declarations, or Cargo features | `cargo +1.85.0 build --no-default-features --locked`<br>`cargo +1.85.0 build --locked`<br>`cargo +1.92.0 build --features render --locked` |
+| MSRV, dependency declarations, or Cargo features | `cargo +1.88.0 build --no-default-features --locked`<br>`cargo +1.88.0 build --locked`<br>`cargo +1.92.0 build --features render --locked` |
 
 Install `cargo-semver-checks` 0.48.0 before running the public-API row:
 

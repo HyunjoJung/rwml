@@ -4477,14 +4477,14 @@ fn running_surface_variants_for_page<T: RunningSurfaceSetup + ?Sized>(
             || !setup.first_footer().is_empty());
     let header = if title_page {
         RunningSurfaceVariant::First
-    } else if page_number % 2 == 0 && !setup.even_header().is_empty() {
+    } else if page_number.is_multiple_of(2) && !setup.even_header().is_empty() {
         RunningSurfaceVariant::Even
     } else {
         RunningSurfaceVariant::Default
     };
     let footer = if title_page {
         RunningSurfaceVariant::First
-    } else if page_number % 2 == 0 && !setup.even_footer().is_empty() {
+    } else if page_number.is_multiple_of(2) && !setup.even_footer().is_empty() {
         RunningSurfaceVariant::Even
     } else {
         RunningSurfaceVariant::Default
@@ -8413,7 +8413,7 @@ fn page_after_section_break(current_page: usize, section_break: Option<SectionBr
     let next_page = current_page + 1;
     match section_break.unwrap_or(SectionBreakKind::NextPage) {
         SectionBreakKind::EvenPage if next_page % 2 == 1 => next_page + 1,
-        SectionBreakKind::OddPage if next_page % 2 == 0 => next_page + 1,
+        SectionBreakKind::OddPage if next_page.is_multiple_of(2) => next_page + 1,
         SectionBreakKind::NextPage | SectionBreakKind::EvenPage | SectionBreakKind::OddPage => {
             next_page
         }
