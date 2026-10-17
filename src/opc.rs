@@ -45,6 +45,48 @@ const REL_IMAGE: &str = "http://schemas.openxmlformats.org/officeDocument/2006/r
 const XML_DECL: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#;
 const CONTENT_TYPES: &str = "[Content_Types].xml";
 
+/// Select zip 2's decoded-name view before reading any payload: first logical
+/// position, final central-directory occurrence. ZIP 9 retains a raw key's first
+/// slot when replacing it, so raw index order alone cannot identify the last
+/// occurrence when one spelling repeats around another decoded alias.
+fn decoded_entry_indexes<R: Read + std::io::Seek>(
+    zip: &ZipArchive<R>,
+) -> Result<(Vec<usize>, bool)> {
+    let mut positions: HashMap<String, (usize, u64)> = HashMap::new();
+    let mut indexes = Vec::new();
+    let mut complete = true;
+    for index in 0..zip.len() {
+        let entry = match zip.by_index_data(index) {
+            Ok(entry) => entry,
+            Err(_) => {
+                complete = false;
+                continue;
+            }
+        };
+        let name = match entry.name() {
+            Ok(name) => name,
+            Err(_) => {
+                complete = false;
+                continue;
+            }
+        };
+        if name.len() > MAX_NAME_LEN {
+            return Err(Error::Docx("part name too long".into()));
+        }
+        let header = entry.central_header_start();
+        if let Some((position, last_header)) = positions.get_mut(name.as_ref()) {
+            if header > *last_header {
+                indexes[*position] = index;
+                *last_header = header;
+            }
+        } else {
+            positions.insert(name.into_owned(), (indexes.len(), header));
+            indexes.push(index);
+        }
+    }
+    Ok((indexes, complete))
+}
+
 /// Largest accepted decompressed size for a single part (zip-bomb guard).
 const MAX_PART: u64 = 64 << 20;
 /// Namespace bindings accepted on one OPC metadata element. This mirrors quick-xml's
@@ -338,8 +380,8 @@ impl Package {
         // NOT fully retained — `Document::save` refuses such a package so it can never
         // silently drop the part. (Intentional normalizations below — directory dedup,
         // duplicate names, non-file entries — are not data loss and keep `complete`.)
-        let mut complete = true;
-        for i in 0..zip.len() {
+        let (entry_indexes, mut complete) = decoded_entry_indexes(&zip)?;
+        for i in entry_indexes {
             let mut f = match zip.by_index(i) {
                 Ok(f) => f,
                 Err(_) => {

@@ -11480,7 +11480,9 @@ mod tests {
         source.add_image_png(&first, "cafX.png").unwrap();
         let original = source.save().unwrap();
 
-        for cp437_first in [true, false] {
+        for (cp437_first, repeat_first) in
+            [(true, false), (false, false), (true, true), (false, true)]
+        {
             let mut input = zip::ZipArchive::new(Cursor::new(&original)).unwrap();
             let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
             let options = SimpleFileOptions::default();
@@ -11512,7 +11514,34 @@ mod tests {
             output.write_all(b"middle payload").unwrap();
             output.start_file(names[1], options).unwrap();
             output.write_all(&last).unwrap();
+            if repeat_first {
+                let third = if cp437_first {
+                    "word/media/cafY.png"
+                } else {
+                    "word/media/cafè.png"
+                };
+                output.start_file(third, options).unwrap();
+                output.write_all(&first).unwrap();
+            }
             let mut bytes = output.finish().unwrap().into_inner();
+            // Corrupt every superseded logical version. ZIP 2 discarded them
+            // before payload reads, so their CRC errors must stay unobserved.
+            let archive = zip::ZipArchive::new(Cursor::new(&bytes)).unwrap();
+            let discarded: Vec<_> = names[..if repeat_first { 2 } else { 1 }]
+                .iter()
+                .map(|name| {
+                    archive
+                        .by_index_data(archive.index_for_name(name).unwrap())
+                        .unwrap()
+                        .header_start() as usize
+                })
+                .collect();
+            drop(archive);
+            for header in discarded {
+                let size_at = |at| u16::from_le_bytes([bytes[at], bytes[at + 1]]) as usize;
+                let payload = header + 30 + size_at(header + 26) + size_at(header + 28);
+                bytes[payload] ^= 1;
+            }
             let placeholder = b"word/media/cafX.png";
             let positions: Vec<_> = bytes
                 .windows(placeholder.len())
@@ -11523,20 +11552,43 @@ mod tests {
             for at in positions {
                 bytes[at + placeholder.len() - 5] = 0x82;
             }
+            if repeat_first {
+                let third = if cp437_first {
+                    "word/media/cafY.png"
+                } else {
+                    "word/media/cafè.png"
+                };
+                let positions: Vec<_> = bytes
+                    .windows(third.len())
+                    .enumerate()
+                    .filter_map(|(at, value)| (value == third.as_bytes()).then_some(at))
+                    .collect();
+                assert_eq!(positions.len(), 2, "repeated raw local and central names");
+                for at in positions {
+                    bytes[at + third.len() - 5] = if cp437_first { 0x82 } else { 0xa9 };
+                }
+            }
+            let expected = if repeat_first { &first } else { &last };
 
             let document = Document::open(&bytes).unwrap();
-            assert_eq!(document.images()[0].bytes.as_deref(), Some(last.as_slice()));
+            assert_eq!(
+                document.images()[0].bytes.as_deref(),
+                Some(expected.as_slice())
+            );
             let package = crate::opc::Package::from_zip(&bytes).unwrap();
             assert!(package.is_complete() && !package.is_meta_lossy());
             assert_eq!(
                 package.part("word/media/café.png").unwrap().as_slice(),
-                last.as_slice()
+                expected.as_slice()
             );
             for saved in [document.save().unwrap(), package.to_zip().unwrap()] {
                 let reopened = Document::open(&saved).unwrap();
-                assert_eq!(reopened.images()[0].bytes.as_deref(), Some(last.as_slice()));
+                assert_eq!(
+                    reopened.images()[0].bytes.as_deref(),
+                    Some(expected.as_slice())
+                );
                 let retained = unzip_parts(&saved);
-                assert_eq!(retained["word/media/café.png"], last);
+                assert_eq!(retained["word/media/café.png"], *expected);
                 assert_eq!(retained["word/media/middle.bin"], b"middle payload");
                 let mut archive = zip::ZipArchive::new(Cursor::new(&saved)).unwrap();
                 let names: Vec<_> = (0..archive.len())
