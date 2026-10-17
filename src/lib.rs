@@ -11456,6 +11456,114 @@ mod tests {
         ]
     }
 
+    #[cfg(feature = "docx")]
+    #[test]
+    fn decoded_zip_aliases_keep_last_image_and_first_package_position() {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let first = tiny_png();
+        // A valid ancillary chunk distinguishes the two real PNG payloads.
+        let mut last = first[..first.len() - 12].to_vec();
+        let text = b"Description\0last decoded entry";
+        last.extend_from_slice(&(text.len() as u32).to_be_bytes());
+        let chunk = [b"tEXt".as_slice(), text].concat();
+        last.extend_from_slice(&chunk);
+        last.extend_from_slice(&super::crc32(&chunk).to_be_bytes());
+        last.extend_from_slice(&first[first.len() - 12..]);
+        assert!(super::is_png(&first) && super::is_png(&last));
+
+        let mut source = Document::open(&minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>anchor</w:t></w:r></w:p></w:body></w:document>"#,
+        ))
+        .unwrap();
+        source.add_image_png(&first, "cafX.png").unwrap();
+        let original = source.save().unwrap();
+
+        for cp437_first in [true, false] {
+            let mut input = zip::ZipArchive::new(Cursor::new(&original)).unwrap();
+            let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            let options = SimpleFileOptions::default();
+            for index in 0..input.len() {
+                let mut entry = input.by_index(index).unwrap();
+                let name = entry.name().unwrap().into_owned();
+                if name == "word/media/cafX.png" {
+                    continue;
+                }
+                let mut payload = Vec::new();
+                entry.read_to_end(&mut payload).unwrap();
+                if name == "word/_rels/document.xml.rels" {
+                    payload = String::from_utf8(payload)
+                        .unwrap()
+                        .replace("media/cafX.png", "media/café.png")
+                        .into_bytes();
+                }
+                output.start_file(name, options).unwrap();
+                output.write_all(&payload).unwrap();
+            }
+            let names = if cp437_first {
+                ["word/media/cafX.png", "word/media/café.png"]
+            } else {
+                ["word/media/café.png", "word/media/cafX.png"]
+            };
+            output.start_file(names[0], options).unwrap();
+            output.write_all(&first).unwrap();
+            output.start_file("word/media/middle.bin", options).unwrap();
+            output.write_all(b"middle payload").unwrap();
+            output.start_file(names[1], options).unwrap();
+            output.write_all(&last).unwrap();
+            let mut bytes = output.finish().unwrap().into_inner();
+            let placeholder = b"word/media/cafX.png";
+            let positions: Vec<_> = bytes
+                .windows(placeholder.len())
+                .enumerate()
+                .filter_map(|(at, value)| (value == placeholder).then_some(at))
+                .collect();
+            assert_eq!(positions.len(), 2, "local and central names");
+            for at in positions {
+                bytes[at + placeholder.len() - 5] = 0x82;
+            }
+
+            let document = Document::open(&bytes).unwrap();
+            assert_eq!(document.images()[0].bytes.as_deref(), Some(last.as_slice()));
+            let package = crate::opc::Package::from_zip(&bytes).unwrap();
+            assert!(package.is_complete() && !package.is_meta_lossy());
+            assert_eq!(
+                package.part("word/media/café.png").unwrap().as_slice(),
+                last.as_slice()
+            );
+            for saved in [document.save().unwrap(), package.to_zip().unwrap()] {
+                let reopened = Document::open(&saved).unwrap();
+                assert_eq!(reopened.images()[0].bytes.as_deref(), Some(last.as_slice()));
+                let retained = unzip_parts(&saved);
+                assert_eq!(retained["word/media/café.png"], last);
+                assert_eq!(retained["word/media/middle.bin"], b"middle payload");
+                let mut archive = zip::ZipArchive::new(Cursor::new(&saved)).unwrap();
+                let names: Vec<_> = (0..archive.len())
+                    .map(|index| {
+                        archive
+                            .by_index(index)
+                            .unwrap()
+                            .name()
+                            .unwrap()
+                            .into_owned()
+                    })
+                    .collect();
+                assert_eq!(
+                    names
+                        .iter()
+                        .filter(|name| *name == "word/media/café.png")
+                        .count(),
+                    1
+                );
+                assert_eq!(
+                    &names[names.len() - 2..],
+                    ["word/media/café.png", "word/media/middle.bin"]
+                );
+            }
+        }
+    }
+
     /// Wrap a `document.xml` body in a minimal valid package (CT + root rels). The
     /// caller supplies the full `<w:document>…</w:document>` string.
     #[cfg(feature = "docx")]

@@ -385,16 +385,15 @@ impl Package {
             if buf.len() as u64 > MAX_PART || total > MAX_TOTAL {
                 return Err(Error::Docx(format!("part {name} exceeds the size budget")));
             }
-            // Duplicate part names are invalid OPC. The ZIP reader already collapses them
-            // to one entry per name; this `seen` guard keeps our `order`/`parts` in lock
-            // step (one slot per name) so re-emit is deterministic and single.
-            if !seen.insert(name.clone()) {
-                continue;
+            // zip 9 deduplicates raw name bytes, so UTF-8 and CP437 spellings can
+            // still decode to one name here. Keep zip 2's first position and last
+            // payload for that decoded name, without flagging it as a case clash.
+            if seen.insert(name.clone()) {
+                if !seen_ci.insert(name.to_ascii_lowercase()) {
+                    meta_lossy = true;
+                }
+                order.push(name.clone());
             }
-            if !seen_ci.insert(name.to_ascii_lowercase()) {
-                meta_lossy = true;
-            }
-            order.push(name.clone());
             parts.insert(name, Part::Raw(buf));
         }
 

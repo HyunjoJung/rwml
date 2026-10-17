@@ -4631,17 +4631,16 @@ const MAX_TOTAL_MEDIA: u64 = 256 << 20;
 
 /// Index of the entry whose decoded name is `name`. zip 9 matches names on their
 /// raw bytes, while `opc::Package::from_zip` keys parts by the decoded name (UTF-8,
-/// else CP437), so a non-ASCII miss falls back to comparing decoded names. That
-/// keeps the read model and the retained package in agreement.
+/// else CP437). Non-ASCII names must compare every decoded spelling, even when
+/// a raw UTF-8 spelling exists, to keep zip 2's last-decoded-entry-wins policy
+/// and agree with the retained package.
 fn entry_index(zip: &zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Option<usize> {
-    zip.index_for_name(name).or_else(|| {
-        if name.is_ascii() {
-            return None;
-        }
-        (0..zip.len()).find(
-            |&index| matches!(zip.name_for_index(index), Some(Ok(decoded)) if decoded == name),
-        )
-    })
+    if name.is_ascii() {
+        return zip.index_for_name(name);
+    }
+    (0..zip.len())
+        .rev()
+        .find(|&index| matches!(zip.name_for_index(index), Some(Ok(decoded)) if decoded == name))
 }
 
 /// Read a ZIP entry to a UTF-8 string, if present — bounded to guard against a
