@@ -493,19 +493,13 @@ fn public_corpus_render_report_matches_manifest() {
         expected.len() >= 5,
         "expected the render manifest to describe the synthetic feature corpus"
     );
-    let fonts = vec![
-        rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
-        rwml_fonts::noto_sans_arabic_subset().to_vec(),
-        rwml_fonts::noto_sans_hebrew_subset().to_vec(),
-    ];
-
     for row in expected {
         let path = root.join(&row.path);
         let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", row.path));
         let doc = Document::open(&bytes).unwrap_or_else(|e| panic!("open {}: {e}", row.path));
         let features = doc.report().features;
         let rendered = doc
-            .try_to_pdf_with_fixed_fonts_and_report(&fonts)
+            .try_to_pdf_with_report()
             .unwrap_or_else(|e| panic!("render {}: {e}", row.path));
 
         assert!(
