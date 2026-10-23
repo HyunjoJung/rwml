@@ -20,7 +20,7 @@ import stat
 import subprocess
 import sys
 import tempfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 try:
@@ -787,6 +787,13 @@ def _run_backend(
     job_path: Path,
     timeout_seconds: int,
 ) -> None:
+    environment = None
+    if PureWindowsPath(powershell).name.casefold() == "powershell.exe":
+        # Let Windows PowerShell rebuild its defaults instead of loading inherited
+        # PowerShell Core modules through an intermediate Python process.
+        environment = {
+            key: value for key, value in os.environ.items() if key.upper() != "PSMODULEPATH"
+        }
     command = [
         powershell,
         "-NoLogo",
@@ -803,6 +810,7 @@ def _run_backend(
         completed = subprocess.run(
             command,
             cwd=ROOT,
+            env=environment,
             check=False,
             capture_output=True,
             text=True,
