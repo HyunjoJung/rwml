@@ -1,6 +1,7 @@
 import contextlib
 import io
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -10,6 +11,30 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import render_oracle_ci as ci
+
+
+class WorkflowTests(unittest.TestCase):
+    def test_diagnostic_workflow_actions_use_immutable_commits(self):
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github/workflows/render-oracle.yml"
+        ).read_text(encoding="utf-8")
+        actions = re.findall(r"^\s*(?:-\s*)?uses:\s*(\S+)", workflow, re.MULTILINE)
+        self.assertEqual(
+            {action.split("@", 1)[0] for action in actions},
+            {
+                "actions/checkout",
+                "dtolnay/rust-toolchain",
+                "actions/setup-python",
+                "docker/setup-buildx-action",
+                "actions/upload-artifact",
+            },
+        )
+        for action in actions:
+            with self.subTest(action=action):
+                self.assertRegex(
+                    action, r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$"
+                )
 
 
 class CiTests(unittest.TestCase):

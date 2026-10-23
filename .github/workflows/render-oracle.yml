@@ -33,7 +33,7 @@ jobs:
       RUSTFLAGS: ""
       PYTHONDONTWRITEBYTECODE: "1"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 2
         with:
           ref: ${{ github.sha }}
@@ -44,9 +44,9 @@ jobs:
         run: |
           mkdir -p target/oracle-ci/logs
           printf '%s\n' "$SOURCE_REVISION" > target/oracle-ci/logs/source-revision.txt
-      - uses: dtolnay/rust-toolchain@1.92.0
+      - uses: dtolnay/rust-toolchain@3da603d4464771f1a8c3dd4acb41f03bc8107551 # 1.92.0
         timeout-minutes: 3
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         timeout-minutes: 2
         with:
           python-version: "3.13"
@@ -85,7 +85,7 @@ jobs:
           print("buildkit=" + build["buildkit_image"])
           print("epoch=" + str(build["source_date_epoch"]))
           PY
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         id: builder
         timeout-minutes: 2
         with:
@@ -125,7 +125,7 @@ jobs:
       - name: Retain diagnostics, including failed preparation and partial captures
         if: ${{ always() }}
         timeout-minutes: 5
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: render-oracle-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
