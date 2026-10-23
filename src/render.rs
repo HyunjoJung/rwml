@@ -451,6 +451,23 @@ impl LineLayout {
             .fit_height
             .filter(|height| height.is_finite() && *height > 0.0)
             .unwrap_or(self.height);
+        let fit = if self.fit_height.is_some() {
+            self.leaders.iter().fold(fit, |extent, leader| {
+                if !leader.start.is_finite() || !leader.end.is_finite() {
+                    return extent;
+                }
+                // These leader strokes can extend below the font's descent.
+                match leader.style {
+                    TabLeader::Bar => extent.max(self.height).max(1.8),
+                    TabLeader::Underscore if leader.start != leader.end => {
+                        extent.max((self.baseline + 1.0) + 0.8)
+                    }
+                    _ => extent,
+                }
+            })
+        } else {
+            fit
+        };
         if self.clip_to_height
             || self.background.is_some()
             || self.cell_visual.is_some()
@@ -10327,6 +10344,78 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn assert_automatic_leader_page_fit(style: TabLeader, size_half_pt: u16) {
+        let mut line = paragraph_lines(
+            ParaProps {
+                spacing: Spacing {
+                    line_pct: Some(2.0),
+                    ..Spacing::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "Ag".to_string(),
+                props: CharProps {
+                    size_half_pt: Some(size_half_pt),
+                    ..CharProps::default()
+                },
+                ..Run::default()
+            }],
+        )
+        .remove(0);
+        let glyph_extent = line.fit_height();
+        line.leaders.push(super::TabLeaderSpan {
+            start: 10.0,
+            end: 40.0,
+            style,
+            color: rgb::Color::new(0, 0, 0),
+        });
+        let mut scene = super::PageScene::default();
+        super::project_page_scene_line_paint(&mut scene, &line, 0.0, 0.0, line.baseline).unwrap();
+        let painted_bottom = scene
+            .operations
+            .iter()
+            .map(|operation| match operation {
+                super::PageSceneOp::FillRect { rect, .. } => rect.y + rect.height,
+                _ => panic!("leader paint must be a rectangle"),
+            })
+            .fold(0.0_f32, f32::max);
+        assert!(painted_bottom > glyph_extent + 0.1);
+        assert!(line.fit_height() >= painted_bottom);
+
+        let mut spacer = line.clone();
+        spacer.height = 40.0 - glyph_extent - 0.1;
+        spacer.fit_height = None;
+        spacer.runs.clear();
+        spacer.leaders.clear();
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 80.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let layout = paginate(
+            vec![FlowItem::Line(spacer), FlowItem::Line(line)],
+            geom,
+            &SectionSetup::default(),
+        );
+        assert_eq!(layout.pages.len(), 2);
+        let placed = &layout.pages[1][0];
+        assert!(placed.top + painted_bottom <= geom.bottom());
+    }
+
+    #[test]
+    fn automatic_line_spacing_bar_leader_stays_inside_page() {
+        for size in [1, 22] {
+            assert_automatic_leader_page_fit(TabLeader::Bar, size);
+        }
+    }
+
+    #[test]
+    fn automatic_line_spacing_small_underscore_leader_stays_inside_page() {
+        assert_automatic_leader_page_fit(TabLeader::Underscore, 1);
     }
 
     #[test]
