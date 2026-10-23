@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import io
 import tempfile
 import unittest
@@ -38,6 +39,16 @@ class WordNoteNumberingBackendTests(unittest.TestCase):
 
 
 class WordNoteNumberingCaptureTests(unittest.TestCase):
+    def test_harness_binds_current_shared_pagination_analysis(self):
+        identity = notes.harness_identity()
+        for name, expected in pagination.harness_identity().items():
+            with self.subTest(name=name):
+                self.assertEqual(identity.get(name), expected)
+        self.assertEqual(
+            identity.get(notes.SCRIPT_PATH.name),
+            hashlib.sha256(notes.SCRIPT_PATH.read_bytes()).hexdigest(),
+        )
+
     def _retained_capture(self, output):
         notes.materialize(output / "corpus")
         runtime = {
@@ -120,7 +131,7 @@ class WordNoteNumberingCaptureTests(unittest.TestCase):
 
     def test_original_note_formats_start_values_and_font_are_preserved(self):
         payload = notes.input_payloads()[notes.CASE_ID]
-        ns = {"w": notes.generator.W}
+        ns = {"w": pagination.generator.W}
         val = "{%s}val" % ns["w"]
         with zipfile.ZipFile(io.BytesIO(payload)) as archive:
             settings = ET.fromstring(archive.read("word/settings.xml"))

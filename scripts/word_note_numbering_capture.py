@@ -18,12 +18,10 @@ import sys
 from pathlib import Path
 
 try:
-    import gen_public_corpus as generator
     import generate_render_pilot as pilot
     import word_oracle_capture as word
     import word_pilot_capture as pagination
 except ModuleNotFoundError:
-    from scripts import gen_public_corpus as generator
     from scripts import generate_render_pilot as pilot
     from scripts import word_oracle_capture as word
     from scripts import word_pilot_capture as pagination
@@ -99,8 +97,8 @@ def materialize(output: Path) -> None:
     payloads = input_payloads()
     output.mkdir(parents=True)
     for case_id, payload in payloads.items():
-        pilot._atomic_write(output / f"{case_id}.docx", payload)
-    pilot._atomic_write(output / "PROVENANCE.md", PROVENANCE.encode())
+        pilot.batch.atomic_write(output / f"{case_id}.docx", payload)
+    pilot.batch.atomic_write(output / "PROVENANCE.md", PROVENANCE.encode())
     word._write_json(output / "INPUTS.json", input_manifest())
 
 
@@ -216,17 +214,9 @@ def compare_observations(candidate: dict, reference: dict) -> dict:
 
 
 def harness_identity() -> dict:
-    paths = [
-        SCRIPT_PATH,
-        word.SCRIPT_PATH,
-        pagination.SCRIPT_PATH,
-        word.BACKEND_PATH,
-        word.topology.SCRIPT_PATH,
-        Path(generator.__file__),
-        pilot.SCRIPT_PATH,
-        SCRIPT_PATH.with_name("render_oracle_contract.py"),
-    ]
-    return {path.name: digest(path.read_bytes()) for path in paths}
+    return pagination.harness_identity() | {
+        SCRIPT_PATH.name: digest(SCRIPT_PATH.read_bytes())
+    }
 
 
 def _analysis_runtime():
