@@ -154,6 +154,8 @@ fn note_table_pagination_docx(
 }
 
 fn mixed_endnote_table_pagination_docx(keep_lines: bool, cant_split: bool) -> Vec<u8> {
+    // Keep the seed at 11pt so this fixture isolates note-table sidecar alignment
+    // from the font metrics used by automatic line spacing.
     let table = protected_note_table_xml(false, keep_lines, cant_split, "");
     let footnotes = r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
         <w:footnote w:id="1"><w:p><w:r><w:t>footnote prefix</w:t></w:r></w:p></w:footnote>
@@ -181,7 +183,7 @@ fn mixed_endnote_table_pagination_docx(keep_lines: bool, cant_split: bool) -> Ve
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
-                <w:p><w:pPr><w:spacing w:line="240"/></w:pPr><w:r><w:t>seed</w:t></w:r><w:r><w:footnoteReference w:id="1"/><w:endnoteReference w:id="2"/></w:r></w:p>
+                <w:p><w:pPr><w:spacing w:line="220" w:lineRule="exact"/></w:pPr><w:r><w:t>seed</w:t></w:r><w:r><w:footnoteReference w:id="1"/><w:endnoteReference w:id="2"/></w:r></w:p>
                 <w:sectPr><w:pgSz w:w="4400" w:h="2000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
             </w:body></w:document>"#,
         ),
