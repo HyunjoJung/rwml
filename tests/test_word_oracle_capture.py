@@ -6,6 +6,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -40,6 +41,42 @@ def runtime_identity():
 
 
 class WordOracleCaptureTests(unittest.TestCase):
+    def test_windows_powershell_rebuilds_module_path_without_mutating_parent(self):
+        for powershell in (
+            "powershell.exe",
+            r"Windows\System32\WindowsPowerShell\v1.0\PowerShell.EXE",
+        ):
+            for key in ("PSModulePath", "PSMODULEPATH", "psmodulepath"):
+                with self.subTest(powershell=powershell, key=key), mock.patch.dict(
+                    capture.os.environ,
+                    {key: "foreign-edition-modules", "WORD_TEST_SENTINEL": "keep"},
+                    clear=True,
+                ), mock.patch.object(capture.subprocess, "run") as run:
+                    run.return_value.returncode = 0
+                    before = dict(capture.os.environ)
+                    capture._run_backend(
+                        powershell=powershell,
+                        job_path=pathlib.Path("job.json"),
+                        timeout_seconds=60,
+                    )
+                    environment = run.call_args.kwargs.get("env", before)
+                    self.assertEqual(environment, {"WORD_TEST_SENTINEL": "keep"})
+                    self.assertEqual(dict(capture.os.environ), before)
+
+    def test_powershell_core_keeps_its_inherited_module_path(self):
+        for powershell in ("pwsh.exe", r"Program Files\PowerShell\7\pwsh.exe"):
+            with self.subTest(powershell=powershell), mock.patch.dict(
+                capture.os.environ, {"PSModulePath": "core-modules"}, clear=True
+            ), mock.patch.object(capture.subprocess, "run") as run:
+                run.return_value.returncode = 0
+                capture._run_backend(
+                    powershell=powershell,
+                    job_path=pathlib.Path("job.json"),
+                    timeout_seconds=60,
+                )
+                self.assertIsNone(run.call_args.kwargs.get("env"))
+                self.assertEqual(capture.os.environ.get("PSModulePath"), "core-modules")
+
     def test_harness_binds_transitive_integer_metric_module(self):
         self.assertEqual(
             capture._harness_identity().get("render_evidence_metrics.py"),
