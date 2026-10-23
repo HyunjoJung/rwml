@@ -4396,8 +4396,10 @@ fn extreme_valid_table_grid_widths_serialize_as_positive_bounded_twips() {
         blocks: vec![Block::Table(Table {
             rows: vec![Row {
                 cells: vec![
-                    CellBuilder::text("A").build(),
-                    CellBuilder::text("B").build(),
+                    // Specify margins so reopen normalization only exercises
+                    // the extreme grid proportions in this fixture.
+                    CellBuilder::text("A").margins_twips(0, 115, 0, 115).build(),
+                    CellBuilder::text("B").margins_twips(0, 115, 0, 115).build(),
                 ],
             }],
             col_widths_pct: vec![f32::MIN_POSITIVE, f32::MAX],

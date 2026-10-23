@@ -59,6 +59,41 @@ fn zip_part(bytes: &[u8], name: &str) -> Vec<u8> {
 }
 
 #[test]
+fn omitted_cell_margins_resolve_schema_defaults_and_preserve_source() {
+    let document_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+        <w:tbl><w:tr><w:tc><w:p><w:r><w:t>implicit</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+        <w:tbl><w:tblPr><w:tblCellMar/></w:tblPr>
+            <w:tr><w:tc><w:tcPr><w:tcMar/></w:tcPr>
+                <w:p><w:r><w:t>empty properties</w:t></w:r></w:p>
+            </w:tc></w:tr>
+        </w:tbl>
+    </w:body></w:document>"#;
+    let source = docx_fixture(document_xml);
+    let document = Document::open(&source).expect("fixture opens");
+    let expected = Some(CellMargins {
+        top: 0,
+        right: 115,
+        bottom: 0,
+        left: 115,
+    });
+    for table in tables(document_xml) {
+        assert_eq!(table.rows[0].cells[0].margins, expected);
+    }
+    let saved = document.save().expect("package-preserving save succeeds");
+    assert_eq!(
+        zip_part(&saved, "word/document.xml"),
+        document_xml.as_bytes()
+    );
+    let converted = Document::open(&document.to_docx()).expect("fresh conversion reopens");
+    for block in converted.model().blocks {
+        let Block::Table(table) = block else {
+            panic!("fixture contains only tables");
+        };
+        assert_eq!(table.rows[0].cells[0].margins, expected);
+    }
+}
+
+#[test]
 fn direct_table_cell_margins_cascade_per_side() {
     let table = first_table(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
@@ -595,7 +630,15 @@ fn table_and_cell_margin_markup_compatibility_select_one_branch() {
             left: 120,
         })
     );
-    assert_eq!(tables[1].rows[0].cells[0].margins, None);
+    assert_eq!(
+        tables[1].rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 0,
+            right: 115,
+            bottom: 0,
+            left: 115,
+        })
+    );
     assert_eq!(
         tables[2].rows[0].cells[0].margins,
         Some(CellMargins {
@@ -676,7 +719,15 @@ fn markup_compatibility_can_wrap_table_and_cell_property_containers() {
     );
     assert_eq!(tables[1].rows.len(), 1);
     assert_eq!(tables[1].rows[0].cells[0].text(), "outside block");
-    assert_eq!(tables[1].rows[0].cells[0].margins, None);
+    assert_eq!(
+        tables[1].rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 0,
+            right: 115,
+            bottom: 0,
+            left: 115,
+        })
+    );
 }
 
 #[test]
@@ -948,6 +999,51 @@ fn fresh_conversion_canonicalizes_row_margin_exceptions_per_cell() {
         panic!("reopened first block is a table");
     };
     assert_eq!(reopened_table.rows[0].cells[0].margins, Some(expected));
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn omitted_cell_margins_match_explicit_defaults_across_unequal_columns() {
+    let rows = (1..=72)
+        .map(|row| {
+            format!(
+                r#"<w:tr><w:tc><w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>L{row:02}</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t>R{row:02}</w:t></w:r></w:p></w:tc></w:tr>"#
+            )
+        })
+        .collect::<String>();
+    let source = |margins: &str| {
+        docx_fixture(&format!(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tblPr><w:tblW w:w="1440" w:type="dxa"/><w:tblLayout w:type="fixed"/>{margins}</w:tblPr>
+                    <w:tblGrid><w:gridCol w:w="720"/><w:gridCol w:w="720"/></w:tblGrid>{rows}
+                </w:tbl>
+                <w:sectPr><w:pgSz w:w="7200" w:h="7200"/>
+                    <w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/>
+                    <w:cols w:num="2" w:equalWidth="0"><w:col w:w="1800" w:space="360"/><w:col w:w="3600"/></w:cols>
+                </w:sectPr>
+            </w:body></w:document>"#
+        ))
+    };
+    let implicit = Document::open(&source("")).expect("implicit fixture opens");
+    let explicit = Document::open(&source(
+        r#"<w:tblCellMar><w:top w:w="0"/><w:left w:w="115"/>
+            <w:bottom w:w="0"/><w:right w:w="115"/></w:tblCellMar>"#,
+    ))
+    .expect("explicit fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    let implicit_layout = implicit
+        .layout_pages_with_fonts(&fonts)
+        .expect("implicit layout");
+    let explicit_layout = explicit
+        .layout_pages_with_fonts(&fonts)
+        .expect("explicit layout");
+    assert_eq!(explicit_layout.pages, 2);
+    assert_eq!(implicit_layout, explicit_layout);
+    assert_eq!(
+        implicit.to_pdf_with_fonts(&fonts),
+        explicit.to_pdf_with_fonts(&fonts)
+    );
 }
 
 #[cfg(feature = "render")]

@@ -6,6 +6,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Opened DOCX tables now resolve omitted cell margins to the format defaults
+  (zero top/bottom, 115 twips left/right), including tables with no margin
+  declarations. Preview layout uses those margins while package-preserving saves
+  retain the original part payloads.
+
 ## [0.1.5] - 2026-10-16
 
 ### Added
