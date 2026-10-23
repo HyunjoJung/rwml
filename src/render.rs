@@ -430,6 +430,8 @@ impl PageScene {
 #[derive(Clone)]
 struct LineLayout {
     height: f32,
+    /// Visible extent of explicit auto spacing, separate from its line advance.
+    fit_height: Option<f32>,
     baseline: f32,
     clip_to_height: bool,
     x_indent: f32,
@@ -444,6 +446,22 @@ struct LineLayout {
 }
 
 impl LineLayout {
+    fn fit_height(&self) -> f32 {
+        let fit = self
+            .fit_height
+            .filter(|height| height.is_finite() && *height > 0.0)
+            .unwrap_or(self.height);
+        if self.clip_to_height
+            || self.background.is_some()
+            || self.cell_visual.is_some()
+            || self.runs.iter().any(|run| run.link.is_some())
+        {
+            fit.max(self.height)
+        } else {
+            fit
+        }
+    }
+
     fn cell_extent(&self) -> f32 {
         self.cell_spacing.before + self.height + self.cell_spacing.after
     }
@@ -3199,8 +3217,40 @@ fn collect_blocks_inner<'source, 'options, S: BlockFlowSink<'source>>(
                         }));
                 }
                 let marker = paragraph_list_marker(p, &mut lists);
-                if let Some(before) = p.props.spacing.before_pt.filter(|b| *b > 0.0) {
-                    out.ready_items().push(FlowItem::Gap(before));
+                if let Some(before) = p
+                    .props
+                    .spacing
+                    .before_pt
+                    .filter(|value| value.is_finite() && *value > 0.0)
+                {
+                    let previous_after = block_index
+                        .checked_sub(1)
+                        .and_then(|index| blocks.get(index))
+                        .filter(|_| {
+                            !p.props.page_break_before
+                                && !options.pagination_boundaries.is_some_and(|boundaries| {
+                                    boundaries.binary_search(&block_index).is_ok()
+                                })
+                        })
+                        .and_then(|block| match block {
+                            Block::Paragraph(previous) => Some(
+                                previous
+                                    .props
+                                    .spacing
+                                    .after_pt
+                                    .filter(|value| value.is_finite())
+                                    .map(|value| value.max(0.0))
+                                    .unwrap_or(PARA_GAP),
+                            ),
+                            _ => None,
+                        })
+                        .unwrap_or(0.0);
+                    // ECMA-376 Part 1 §17.3.1.33: adjacent margins use their
+                    // maximum; the preceding paragraph already emitted after.
+                    let remaining = (before - previous_after).max(0.0);
+                    if remaining > 0.0 {
+                        out.ready_items().push(FlowItem::Gap(remaining));
+                    }
                 }
                 let tab_stops = options
                     .tab_stops
@@ -10063,6 +10113,223 @@ mod tests {
     }
 
     #[test]
+    fn automatic_line_spacing_anchors_baseline_to_font_ascent() {
+        for sizes in [vec![22], vec![22, 36]] {
+            for multiplier in [1.0, 1.5, 2.0] {
+                let lines = paragraph_lines(
+                    ParaProps {
+                        spacing: Spacing {
+                            line_pct: Some(multiplier),
+                            ..Spacing::default()
+                        },
+                        ..ParaProps::default()
+                    },
+                    sizes
+                        .iter()
+                        .map(|size| Run {
+                            text: "Ag ".to_string(),
+                            props: CharProps {
+                                size_half_pt: Some(*size),
+                                ..CharProps::default()
+                            },
+                            ..Run::default()
+                        })
+                        .collect(),
+                );
+                let ascent = lines[0]
+                    .runs
+                    .iter()
+                    .map(|run| run.ascent)
+                    .fold(0.0_f32, f32::max);
+                assert_close(lines[0].baseline, ascent);
+            }
+        }
+    }
+
+    #[test]
+    fn automatic_line_spacing_fits_font_extent_but_retains_full_advance() {
+        let lines = paragraph_lines(
+            ParaProps {
+                spacing: Spacing {
+                    line_pct: Some(1.5),
+                    ..Spacing::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "First\nSecond\nThird".to_string(),
+                props: CharProps {
+                    size_half_pt: Some(22),
+                    ..CharProps::default()
+                },
+                ..Run::default()
+            }],
+        );
+        assert_eq!(lines.len(), 3);
+        let advance = lines[0].height;
+        let font_extent = lines[0]
+            .runs
+            .iter()
+            .map(|run| run.ascent + run.descent)
+            .fold(0.0_f32, f32::max);
+        assert!(font_extent + 0.1 < advance);
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 40.0 + advance * 2.0 + font_extent + 0.1,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        for pagination in [
+            PaginationHint::default(),
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+            PaginationHint {
+                keep_lines: true,
+                ..PaginationHint::default()
+            },
+        ] {
+            let mut items = vec![FlowItem::BlockStart {
+                index: 0,
+                pagination,
+            }];
+            items.extend(lines.iter().cloned().map(FlowItem::Line));
+            items.push(FlowItem::BlockStart {
+                index: 1,
+                pagination: PaginationHint::default(),
+            });
+            items.push(FlowItem::Line(lines[0].clone()));
+            let layout = paginate(items, geom, &SectionSetup::default());
+            let tops = layout
+                .pages
+                .iter()
+                .map(|page| {
+                    page.iter()
+                        .filter_map(|placed| {
+                            matches!(placed.item, FlowItem::Line(_)).then_some(placed.top)
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(tops.iter().map(Vec::len).collect::<Vec<_>>(), [3, 1]);
+            for (index, top) in tops[0].iter().enumerate() {
+                assert_close(*top, geom.top() + advance * index as f32);
+            }
+        }
+    }
+
+    #[test]
+    fn automatic_line_spacing_keeps_absolute_and_painted_line_bounds() {
+        let run = Run {
+            text: "Paint bounds".to_string(),
+            props: CharProps {
+                size_half_pt: Some(22),
+                underline: true,
+                strike: true,
+                highlight: Some("yellow".to_string()),
+                ..CharProps::default()
+            },
+            ..Run::default()
+        };
+        let mut lines = paragraph_lines(
+            ParaProps {
+                spacing: Spacing {
+                    line_pct: Some(1.5),
+                    ..Spacing::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![run.clone()],
+        );
+        let natural = lines.remove(0);
+        assert!(natural.fit_height() < natural.height);
+        for run in &natural.runs {
+            assert!(natural.fit_height() >= natural.baseline + run.baseline_shift + run.descent);
+            for decoration in [run.underline, run.strikethrough].into_iter().flatten() {
+                assert!(
+                    natural.fit_height()
+                        >= natural.baseline
+                            + run.baseline_shift
+                            + decoration.offset
+                            + decoration.thickness
+                );
+            }
+        }
+        let mut background = natural.clone();
+        background.background = Some(super::LineBackground {
+            color: rgb::Color::new(1, 2, 3),
+            width: 180.0,
+        });
+        assert_close(background.fit_height(), background.height);
+        let mut linked = natural.clone();
+        linked.runs[0].link = Some(Rc::from("https://example.com"));
+        assert_close(linked.fit_height(), linked.height);
+        for hint in [
+            LineSpacingHint::Exact(8.0),
+            LineSpacingHint::Exact(natural.height + 10.0),
+            LineSpacingHint::AtLeast(natural.height / 2.0),
+            LineSpacingHint::AtLeast(natural.height + 10.0),
+        ] {
+            let mut absolute = vec![natural.clone()];
+            super::apply_line_spacing_hint(&mut absolute, Some(hint));
+            assert!(absolute[0].fit_height.is_none());
+            assert_close(absolute[0].fit_height(), absolute[0].height);
+        }
+        let default = paragraph_lines(ParaProps::default(), vec![run]);
+        assert!(default[0].fit_height.is_none());
+        assert_close(default[0].height, 11.0 * 1.35);
+    }
+
+    #[test]
+    fn automatic_line_spacing_scales_font_metrics_including_mixed_sizes() {
+        use skrifa::{instance::Size, MetadataProvider};
+
+        let font = skrifa::FontRef::new(rwml_fonts::noto_sans_kr_subset()).unwrap();
+        for sizes in [vec![22], vec![22, 36]] {
+            for multiplier in [1.0, 1.5, 2.0] {
+                let runs = sizes
+                    .iter()
+                    .map(|size| Run {
+                        text: "Ag ".to_string(),
+                        props: CharProps {
+                            size_half_pt: Some(*size),
+                            ..CharProps::default()
+                        },
+                        ..Run::default()
+                    })
+                    .collect();
+                let lines = paragraph_lines(
+                    ParaProps {
+                        spacing: Spacing {
+                            line_pct: Some(multiplier),
+                            ..Spacing::default()
+                        },
+                        ..ParaProps::default()
+                    },
+                    runs,
+                );
+                assert_eq!(lines.len(), 1);
+                let expected = sizes
+                    .iter()
+                    .map(|size| {
+                        let metrics = font.metrics(
+                            Size::new(f32::from(*size) / 2.0),
+                            skrifa::instance::LocationRef::default(),
+                        );
+                        (metrics.ascent - metrics.descent + metrics.leading) * multiplier
+                    })
+                    .fold(0.0_f32, f32::max);
+                assert!(
+                    (lines[0].height - expected).abs() < 0.02,
+                    "sizes={sizes:?}, multiplier={multiplier}: height={}, expected={expected}",
+                    lines[0].height
+                );
+            }
+        }
+    }
+
+    #[test]
     fn paragraph_line_spacing_controls_layout_height() {
         let run = Run {
             text: "Line spacing".to_string(),
@@ -10150,6 +10417,75 @@ mod tests {
             .map(|run| clipped[0].baseline + run.baseline_shift + run.descent)
             .fold(f32::NEG_INFINITY, f32::max);
         assert_close(clipped_bottom, clipped[0].height);
+    }
+
+    #[test]
+    fn adjacent_paragraph_spacing_uses_the_larger_margin() {
+        for (after, before) in [(6.0, 6.0), (6.0, 12.0), (12.0, 4.0), (0.0, 6.0)] {
+            let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+            let mut font_cx = strict_font_context(&fonts);
+            let mut layout_cx = LayoutContext::new();
+            let mut font_cache = HashMap::new();
+            let mut text_cx = TextCx {
+                font_cx: &mut font_cx,
+                layout_cx: &mut layout_cx,
+                font_cache: &mut font_cache,
+            };
+            let paragraph = |before, after| {
+                Block::Paragraph(Paragraph {
+                    props: ParaProps {
+                        spacing: Spacing {
+                            before_pt: Some(before),
+                            after_pt: Some(after),
+                            ..Spacing::default()
+                        },
+                        ..ParaProps::default()
+                    },
+                    runs: vec![Run {
+                        text: "Paragraph".to_string(),
+                        ..Run::default()
+                    }],
+                })
+            };
+            for boundary in ["none", "block", "paragraph", "story"] {
+                let mut blocks = vec![paragraph(0.0, after)];
+                if boundary == "block" {
+                    blocks.push(Block::PageBreak);
+                }
+                let mut second = paragraph(before, 0.0);
+                if let Block::Paragraph(paragraph) = &mut second {
+                    paragraph.props.page_break_before = boundary == "paragraph";
+                }
+                blocks.push(second);
+                let mut flow = Vec::new();
+                super::collect_blocks_inner(
+                    &blocks,
+                    &mut flow,
+                    Geom::from_setup(&PageSetup::default()),
+                    &mut text_cx,
+                    &mut LayoutCapture::default(),
+                    super::BlockCollectionOptions {
+                        pagination_boundaries: (boundary == "story").then_some(&[1]),
+                        ..super::BlockCollectionOptions::default()
+                    },
+                );
+                let gaps = flow
+                    .iter()
+                    .filter_map(|item| match item {
+                        FlowItem::Gap(gap) => Some(*gap),
+                        _ => None,
+                    })
+                    .sum::<f32>();
+                assert_close(
+                    gaps,
+                    if boundary != "none" {
+                        after + before
+                    } else {
+                        after.max(before)
+                    },
+                );
+            }
+        }
     }
 
     #[test]
@@ -16210,6 +16546,7 @@ mod tests {
             FlowItem::Line(LineLayout {
                 height: 10.0,
                 baseline: 8.0,
+                fit_height: None,
                 clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,
@@ -16695,9 +17032,15 @@ mod tests {
             }],
             ..Paragraph::default()
         };
-        target.props.spacing.before_pt = Some(32.0);
+        // Reserve one narrow-column line using an explicit 38pt gap, independent
+        // of default paragraph-after spacing and adjacent-margin collapsing.
+        target.props.spacing.before_pt = Some(38.0);
+        let mut seed = para("seed", None);
+        if let Block::Paragraph(seed) = &mut seed {
+            seed.props.spacing.after_pt = Some(0.0);
+        }
         let model = DocModel {
-            blocks: vec![para("seed", None), Block::Paragraph(target)],
+            blocks: vec![seed, Block::Paragraph(target)],
             setup: crate::model::DocSetup {
                 page,
                 columns: Some(2),
@@ -17120,6 +17463,7 @@ mod tests {
         FlowItem::Line(LineLayout {
             height,
             baseline: height * 0.8,
+            fit_height: None,
             clip_to_height: false,
             x_indent: 0.0,
             char_range: None,
@@ -17150,6 +17494,7 @@ mod tests {
             .map(|_| LineLayout {
                 height: 10.0,
                 baseline: 8.0,
+                fit_height: None,
                 clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,
@@ -18260,6 +18605,7 @@ mod tests {
             FlowItem::Line(LineLayout {
                 height: 20.0,
                 baseline: 15.0,
+                fit_height: None,
                 clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,
@@ -18330,6 +18676,7 @@ mod tests {
             FlowItem::Line(LineLayout {
                 height: 20.0,
                 baseline: 15.0,
+                fit_height: None,
                 clip_to_height: false,
                 x_indent: 0.0,
                 char_range: None,

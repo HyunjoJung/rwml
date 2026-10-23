@@ -8,6 +8,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Explicit automatic paragraph line spacing uses the font's ascent, descent and
+  leading. PDF page fitting retains the visible last-line extent while keeping
+  the full advance between lines; absolute spacing, painted boxes and links keep
+  their existing bounds. Unspecified model spacing keeps its preview fallback.
+- Adjacent paragraph before/after spacing uses the larger margin within one
+  flow. Explicit page and story boundaries retain independent spacing.
+- An oversized keep-with-next group starts once and then breaks as needed,
+  instead of moving each smaller suffix to another page. This remains bounded
+  preview pagination rather than Word-exact layout.
+
 - Opened DOCX tables now resolve omitted cell margins to the format defaults
   (zero top/bottom, 115 twips left/right), including tables with no margin
   declarations. Preview layout uses those margins while package-preserving saves

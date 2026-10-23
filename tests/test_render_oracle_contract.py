@@ -241,14 +241,16 @@ class RenderOracleCorpusContractTests(unittest.TestCase):
             )
         self.assertEqual(
             {
-                document.relative_path: (
-                    document.expected_pages,
-                    document.expected_warnings,
-                )
+                document.relative_path: document.expected_warnings
                 for document in corpus.documents
             },
-            tsv_expected,
+            {relative: warnings for relative, (_, warnings) in tsv_expected.items()},
         )
+        # The frozen oracle keeps historical campaign metadata (26 pages).
+        # The current fixed-subset native baseline uses font-metric automatic
+        # spacing (27 pages); its per-document output is checked by Rust tests.
+        # Equal input identities and warnings do not imply equal font policies.
+        self.assertEqual(sum(pages for pages, _ in tsv_expected.values()), 27)
         self.assertEqual(
             sum(document.input_bytes for document in corpus.documents), 238180
         )

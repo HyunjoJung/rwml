@@ -355,6 +355,7 @@ struct BlockPlacementCursor {
     current_block_start: Option<usize>,
     current_line_index: usize,
     widow_break_before: Option<usize>,
+    next_in_keep_chain: Option<usize>,
 }
 
 impl BlockPlacementCursor {
@@ -555,6 +556,7 @@ struct BlockPaginationMetrics {
     pagination: PaginationHint,
     next_start: Option<usize>,
     line_heights: Vec<f32>,
+    line_fit_heights: Vec<f32>,
     first_line_extent: f32,
     last_line_extent: f32,
     total_height: f32,
@@ -563,6 +565,7 @@ struct BlockPaginationMetrics {
 
 struct BlockPaginationMetricAccumulator {
     line_heights: Vec<f32>,
+    line_fit_heights: Vec<f32>,
     extent: f32,
     first_line_extent: Option<f32>,
     last_line_extent: f32,
@@ -573,6 +576,7 @@ impl Default for BlockPaginationMetricAccumulator {
     fn default() -> Self {
         Self {
             line_heights: Vec::new(),
+            line_fit_heights: Vec::new(),
             extent: 0.0,
             first_line_extent: None,
             last_line_extent: 0.0,
@@ -587,10 +591,12 @@ impl BlockPaginationMetricAccumulator {
             FlowItem::Gap(height) => self.extent += height.max(0.0),
             FlowItem::Line(line) => {
                 let height = line.height.max(0.0);
+                let fit_extent = self.extent + line.fit_height();
+                self.first_line_extent.get_or_insert(fit_extent);
+                self.last_line_extent = fit_extent;
                 self.extent += height;
-                self.first_line_extent.get_or_insert(self.extent);
-                self.last_line_extent = self.extent;
                 self.line_heights.push(height);
+                self.line_fit_heights.push(line.fit_height());
             }
             FlowItem::BlockStart { .. } => unreachable!("block span excludes next anchor"),
             FlowItem::TopBottomBand { .. } => {}
@@ -621,6 +627,7 @@ impl BlockPaginationMetricAccumulator {
             total_height: self.extent,
             is_paragraph: self.is_paragraph && !self.line_heights.is_empty(),
             line_heights: self.line_heights,
+            line_fit_heights: self.line_fit_heights,
         }
     }
 }
@@ -748,6 +755,7 @@ fn cell_boxes_equivalent(left: &CellBox, right: &CellBox) -> bool {
 
 fn line_layouts_equivalent(left: &LineLayout, right: &LineLayout) -> bool {
     same_f32(left.height, right.height)
+        && left.fit_height.map(f32::to_bits) == right.fit_height.map(f32::to_bits)
         && same_f32(left.baseline, right.baseline)
         && left.clip_to_height == right.clip_to_height
         && same_f32(left.x_indent, right.x_indent)
@@ -1105,13 +1113,17 @@ fn admit_block_start(
     block_exclusions: &mut BlockExclusionState,
     input: BlockStartAdmission<'_>,
 ) {
+    let continues_keep_chain = block_cursor.next_in_keep_chain.take() == Some(input.item_index);
     block_exclusions.begin_block(input.pagination);
     block_projection.record_pending_page(pages.len().saturating_sub(1));
     if let Some(metric) = input.metric {
         if input.pagination.keep_next {
-            if let Some(height) =
+            let chain_height = if continues_keep_chain {
+                None
+            } else {
                 keep_next_chain_height(input.item_index, input.block_metrics, input.columns_by_item)
-            {
+            };
+            if let Some(height) = chain_height {
                 move_to_fresh_column_for_required_height(
                     pages,
                     &mut track.cursor,
@@ -1119,6 +1131,12 @@ fn admit_block_start(
                     track.geom,
                     block_exclusions.active_bands(),
                 );
+            }
+            if continues_keep_chain || chain_height.is_some() {
+                // ECMA-376 §17.3.1.14: an oversized keepNext group starts on a
+                // fresh page, then breaks as needed. Admit its bounded chain
+                // once, instead of moving each smaller suffix independently.
+                block_cursor.next_in_keep_chain = metric.next_start;
             }
         }
         let keep_whole_paragraph = input.pagination.keep_lines
@@ -1156,10 +1174,11 @@ fn admit_line(
     let cursor = &mut track.cursor;
     let line = input.line;
     let height = line.height;
+    let fit_height = line.fit_height();
     ensure_outside_top_bottom_bands(
         pages,
         cursor,
-        height,
+        fit_height,
         active_geom,
         block_exclusions.active_bands(),
         None,
@@ -1179,6 +1198,7 @@ fn admit_line(
                 let remaining = metric.line_heights.len() - block_cursor.current_line_index;
                 let fits = fitting_line_count_with_bands(
                     &metric.line_heights[block_cursor.current_line_index..],
+                    &metric.line_fit_heights[block_cursor.current_line_index..],
                     cursor.y,
                     pages.len().saturating_sub(1),
                     active_geom,
@@ -1197,7 +1217,9 @@ fn admit_line(
                             let remaining_height = metric.line_heights
                                 [block_cursor.current_line_index..]
                                 .iter()
-                                .sum::<f32>();
+                                .sum::<f32>()
+                                - metric.line_heights.last().copied().unwrap_or_default()
+                                + metric.line_fit_heights.last().copied().unwrap_or_default();
                             if cursor.column_nonempty
                                 && remaining_height <= active_geom.bottom() - active_geom.top()
                             {
@@ -1214,7 +1236,7 @@ fn admit_line(
     ensure_outside_top_bottom_bands(
         pages,
         cursor,
-        height,
+        fit_height,
         active_geom,
         block_exclusions.active_bands(),
         None,
@@ -1587,7 +1609,7 @@ fn prepare_live_paragraph_flow(
             return None;
         }
 
-        let first_height = fragment.lines[0].height;
+        let first_height = fragment.lines[0].fit_height();
         if !first_height.is_finite() || first_height <= 0.0 {
             return None;
         }
@@ -1601,7 +1623,8 @@ fn prepare_live_paragraph_flow(
             let height = line.height;
             if !height.is_finite()
                 || height <= 0.0
-                || (simulated.column_nonempty && simulated.y + height > active_track.geom.bottom())
+                || (simulated.column_nonempty
+                    && simulated.y + line.fit_height() > active_track.geom.bottom())
             {
                 return None;
             }
@@ -1801,15 +1824,16 @@ fn keep_next_chain_height(
 
 fn fitting_line_count_with_bands(
     line_heights: &[f32],
+    line_fit_heights: &[f32],
     mut y: f32,
     page_index: usize,
     geom: Geom,
     bands: &[ActiveTopBottomBand],
 ) -> usize {
     let mut count = 0;
-    for &height in line_heights {
-        y = top_bottom_adjusted_y(y, height, page_index, bands, None);
-        if y + height > geom.bottom() + f32::EPSILON {
+    for (&height, &fit_height) in line_heights.iter().zip(line_fit_heights) {
+        y = top_bottom_adjusted_y(y, fit_height, page_index, bands, None);
+        if y + fit_height > geom.bottom() + f32::EPSILON {
             break;
         }
         y += height;
@@ -2308,7 +2332,16 @@ mod tests {
     use super::*;
     use crate::Row;
 
-    type MetricSnapshot = (PaginationHint, Option<usize>, Vec<u32>, u32, u32, u32, bool);
+    type MetricSnapshot = (
+        PaginationHint,
+        Option<usize>,
+        Vec<u32>,
+        Vec<u32>,
+        u32,
+        u32,
+        u32,
+        bool,
+    );
 
     fn strict_font_context(font: Vec<u8>) -> FontContext {
         let mut collection = Collection::new(CollectionOptions {
@@ -2348,6 +2381,11 @@ mod tests {
                             .iter()
                             .map(|height| height.to_bits())
                             .collect(),
+                        metric
+                            .line_fit_heights
+                            .iter()
+                            .map(|height| height.to_bits())
+                            .collect(),
                         metric.first_line_extent.to_bits(),
                         metric.last_line_extent.to_bits(),
                         metric.total_height.to_bits(),
@@ -2375,6 +2413,7 @@ mod tests {
         FlowItem::Line(LineLayout {
             height,
             baseline: height * 0.8,
+            fit_height: None,
             clip_to_height: false,
             x_indent: 0.0,
             char_range: None,
@@ -2520,6 +2559,32 @@ mod tests {
                 (100.0, Some(2), 2),
             ]
         );
+    }
+
+    #[test]
+    fn automatic_line_spacing_metrics_retain_full_paragraph_advance() {
+        let fit_line = || {
+            let FlowItem::Line(mut line) = line(20.0) else {
+                unreachable!()
+            };
+            line.fit_height = Some(12.0);
+            FlowItem::Line(line)
+        };
+        let mut accumulator = BlockPaginationMetricAccumulator::default();
+        for item in [
+            FlowItem::Gap(5.0),
+            fit_line(),
+            fit_line(),
+            FlowItem::Gap(7.0),
+        ] {
+            accumulator.observe(&item);
+        }
+        let metric = accumulator.finish(PaginationHint::default(), None);
+        assert_eq!(metric.line_heights, [20.0, 20.0]);
+        assert_eq!(metric.line_fit_heights, [12.0, 12.0]);
+        assert_eq!(metric.first_line_extent, 17.0);
+        assert_eq!(metric.last_line_extent, 37.0);
+        assert_eq!(metric.total_height, 52.0);
     }
 
     #[test]
@@ -3122,6 +3187,98 @@ mod tests {
     }
 
     #[test]
+    fn oversized_keep_next_chain_starts_once_then_flows_across_pages() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 200.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let block = |index, keep_next| FlowItem::BlockStart {
+            index,
+            pagination: PaginationHint {
+                keep_next,
+                ..PaginationHint::default()
+            },
+        };
+        for preceding in [false, true] {
+            let mut items = Vec::new();
+            if preceding {
+                items.extend([block(0, false), line(10.0)]);
+            }
+            // The full 70 pt chain exceeds the 60 pt body, but its 30 pt
+            // suffix fits a fresh page. Do not move that suffix independently.
+            items.extend([
+                block(1, true),
+                line(40.0),
+                block(2, true),
+                line(10.0),
+                block(3, false),
+                line(20.0),
+            ]);
+            let pagination = paginate(items, geom, &SectionSetup::default());
+            assert_eq!(
+                page_line_counts(&pagination),
+                if preceding { vec![1, 2, 1] } else { vec![2, 1] }
+            );
+            let first_page = usize::from(preceding);
+            assert_eq!(pagination.block_pages.get(&1), Some(&first_page));
+            assert_eq!(pagination.block_pages.get(&2), Some(&first_page));
+            assert_eq!(pagination.block_pages.get(&3), Some(&(first_page + 1)));
+        }
+    }
+
+    #[test]
+    fn keep_next_admission_preserves_fitting_groups_and_boundary_controls() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 200.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let block = |index, keep_next| FlowItem::BlockStart {
+            index,
+            pagination: PaginationHint {
+                keep_next,
+                ..PaginationHint::default()
+            },
+        };
+        for boundary in [
+            None,
+            Some(FlowItem::PaginationBoundary),
+            Some(FlowItem::PageBreak),
+        ] {
+            let mut items = vec![block(0, false), line(10.0), block(1, true), line(40.0)];
+            let separates_chain = boundary.is_some();
+            if let Some(boundary) = boundary {
+                items.push(boundary);
+            }
+            items.extend([
+                block(2, true),
+                line(10.0),
+                block(3, false),
+                line(20.0),
+                block(4, true),
+                line(20.0),
+                block(5, false),
+                line(30.0),
+            ]);
+            let pagination = paginate(items, geom, &SectionSetup::default());
+            assert_eq!(
+                page_line_counts(&pagination),
+                if separates_chain {
+                    vec![2, 2, 2]
+                } else {
+                    vec![1, 2, 1, 2]
+                }
+            );
+            let final_page = if separates_chain { 2 } else { 3 };
+            assert_eq!(pagination.block_pages.get(&4), Some(&final_page));
+            assert_eq!(pagination.block_pages.get(&5), Some(&final_page));
+        }
+    }
+
+    #[test]
     fn block_start_admission_moves_keep_chain_and_initializes_owners() {
         let geom = Geom::from_section(&SectionSetup {
             page: PageSetup {
@@ -3141,6 +3298,7 @@ mod tests {
                 pagination,
                 next_start: Some(2),
                 line_heights: vec![30.0],
+                line_fit_heights: vec![30.0],
                 first_line_extent: 30.0,
                 last_line_extent: 30.0,
                 total_height: 30.0,
@@ -3151,6 +3309,7 @@ mod tests {
                 pagination: PaginationHint::default(),
                 next_start: None,
                 line_heights: vec![20.0],
+                line_fit_heights: vec![20.0],
                 first_line_extent: 20.0,
                 last_line_extent: 20.0,
                 total_height: 20.0,

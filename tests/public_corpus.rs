@@ -493,6 +493,11 @@ fn public_corpus_render_report_matches_manifest() {
         expected.len() >= 5,
         "expected the render manifest to describe the synthetic feature corpus"
     );
+    let fonts = vec![
+        rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+        rwml_fonts::noto_sans_arabic_subset().to_vec(),
+        rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+    ];
 
     for row in expected {
         let path = root.join(&row.path);
@@ -500,7 +505,7 @@ fn public_corpus_render_report_matches_manifest() {
         let doc = Document::open(&bytes).unwrap_or_else(|e| panic!("open {}: {e}", row.path));
         let features = doc.report().features;
         let rendered = doc
-            .try_to_pdf_with_report()
+            .try_to_pdf_with_fixed_fonts_and_report(&fonts)
             .unwrap_or_else(|e| panic!("render {}: {e}", row.path));
 
         assert!(
@@ -615,8 +620,12 @@ fn render_activation_fixtures_preserve_opened_document_semantics() {
     let pagination = pagination_doc
         .layout_pages_with_fonts(&fonts)
         .expect("fixed-font pagination layout");
-    assert_eq!(pagination.pages, 3);
+    // At 11pt the bundled KR face has a 15.928pt single-line metric, so this
+    // fixture's 1.5 spacing advances 23.892pt. Three three-line paragraphs plus
+    // two 6pt gaps need 219.064pt even without final leading, exceeding 214pt.
+    assert_eq!(pagination.pages, 4);
     assert_eq!(pagination.block_pages.len(), 8);
+    assert_eq!(pagination.block_pages, [1, 1, 2, 2, 3, 3, 4, 4].map(Some));
     assert!(pagination.block_pages.iter().all(Option::is_some));
     assert_eq!(pagination.block_pages[0], Some(1));
     assert_eq!(pagination.block_pages[1], Some(1));
