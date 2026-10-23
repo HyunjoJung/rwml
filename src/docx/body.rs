@@ -6440,11 +6440,10 @@ fn resolve_cell_margins(
     table: CellMarginSpec,
     cell: CellMarginSpec,
     bidi_visual: bool,
-    defaults_active: bool,
-) -> Option<CellMargins> {
-    if !defaults_active {
-        return None;
-    }
+) -> CellMargins {
+    // ECMA-376 §17.4.43: omitted tblCellMar still uses the per-side defaults:
+    // zero top/bottom (§17.4.76/§17.4.5), 115 twips leading/trailing. Resolve
+    // these even when no table, style, row, or cell declares any margins.
     let mut effective = CellMarginSpec {
         top: Some(0),
         trailing: Some(DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS),
@@ -6467,12 +6466,12 @@ fn resolve_cell_margins(
     } else {
         (trailing, leading)
     };
-    Some(CellMargins {
+    CellMargins {
         top,
         right,
         bottom,
         left,
-    })
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -8573,29 +8572,6 @@ fn build_table(
     }
 
     let row_count = grid.len();
-    let cell_margin_defaults_active = !props.cell_margins.is_empty()
-        || grid.iter().enumerate().any(|(row_index, row)| {
-            let row_regions = row_regions.get(row_index).copied().unwrap_or_default();
-            row.iter().any(|cell| {
-                let regions = effective_cell_style_regions(
-                    cell.style_regions,
-                    table_look,
-                    row_regions,
-                    row_index,
-                    row_count,
-                    cell.col,
-                    cell.col_span,
-                    model_grid_cols,
-                    col_band_size,
-                    props.bidi_visual,
-                );
-                let style_margins = style_cell_props.presentation_for_regions(regions).margins;
-                !cell.dropped
-                    && (!style_margins.is_empty()
-                        || cell.row_cell_margins.is_some()
-                        || !cell.margins.is_empty())
-            })
-        });
     let mut rows = Vec::with_capacity(grid.len());
     let mut table_cell_pagination = Vec::with_capacity(grid.len());
     let mut table_cell_line_spacing = Vec::with_capacity(grid.len());
@@ -8651,13 +8627,12 @@ fn build_table(
                 } else {
                     style_presentation.defaults.width_pct()
                 },
-                margins: resolve_cell_margins(
+                margins: Some(resolve_cell_margins(
                     style_presentation.margins,
                     p.row_cell_margins.unwrap_or(props.cell_margins),
                     p.margins,
                     props.bidi_visual,
-                    cell_margin_defaults_active,
-                ),
+                )),
             });
         }
         rows.push(Row { cells });

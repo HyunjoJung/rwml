@@ -1047,7 +1047,8 @@ pub struct Cell {
     /// Cell width as a fraction of the table width, if set (`None` = auto).
     pub width_pct: Option<f32>,
     /// Effective physical cell margins in twips, if modeled from table defaults
-    /// or direct cell properties.
+    /// or direct cell properties. DOCX tables include the implicit defaults:
+    /// zero top/bottom and 115 twips left/right.
     pub margins: Option<CellMargins>,
 }
 
