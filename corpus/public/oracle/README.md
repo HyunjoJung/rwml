@@ -793,3 +793,10 @@ evidence needed for review.
 Microsoft Word evidence remains diagnostic until the captured topology has been
 reviewed against the renderer and accepted publicly. A repeatable capture alone does
 not define a parity threshold, change renderer behavior, or add a release gate.
+
+For the separate three-input pagination profile and its explicit Noto Sans 11pt
+control, see [Microsoft Word pagination probes](word-pilot.md). Its distinct schemas
+and fixed input digests do not broaden the 48-case table contract.
+
+The separate one-input [Microsoft Word note-numbering probe](word-note-numbering.md)
+captures the unchanged generated pilot note fixture to inspect its actual labels.

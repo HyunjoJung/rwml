@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
-    [string]$JobPath
+    [string]$JobPath,
+    [ValidateSet("unequal-table-v1", "pagination-pilot-v1", "note-numbering-v1")]
+    [string]$Profile = "unequal-table-v1"
 )
 
 Set-StrictMode -Version Latest
@@ -12,6 +14,27 @@ $ExpectedFontSha256 = "f5f552c8c5edb61fe6efb824baf4d4de47b1a8689ab4925ff43f7bd6a
 $ExpectedFontName = "NotoSans-Regular.ttf"
 $ExpectedPostScriptName = "NotoSans-Regular"
 $ExpectedDocumentCount = 48
+$ExpectedJobSchema = "rwml.word-export-job.v1"
+$ExportMetadataSchema = "rwml.word-export-metadata.v1"
+$ExpectedPilotInputs = @{}
+if ($Profile -ceq "pagination-pilot-v1") {
+    $ExpectedDocumentCount = 3
+    $ExpectedJobSchema = "rwml.word-pilot-export-job.v1"
+    $ExportMetadataSchema = "rwml.word-pilot-export-metadata.v1"
+    $ExpectedPilotInputs = @{
+        "pilot-unequal-table-continuation" = @(18300, "748340d0344926fe0c937233d2b9c12a97c5d905761eac2f8d1b98a17c0ea0cb")
+        "synthetic-pagination-keep" = @(4507, "ac3002711280f78ce473e5d1edc1660735485a70e1b6ecec943e720d5b3593fe")
+        "synthetic-pagination-keep-noto11" = @(4701, "f04c46ea3da6e4c1ea023fee71389602cf7c0091f351e8a950b61982bd035979")
+    }
+}
+elseif ($Profile -ceq "note-numbering-v1") {
+    $ExpectedDocumentCount = 1
+    $ExpectedJobSchema = "rwml.word-note-numbering-export-job.v1"
+    $ExportMetadataSchema = "rwml.word-note-numbering-export-metadata.v1"
+    $ExpectedPilotInputs = @{
+        "pilot-notes-numbering" = @(5856, "e3c2192b845dd27396fbd9e9709915578736e2d12433710a9a4e3be66dca8092")
+    }
+}
 
 function Assert-ExactProperties {
     param(
@@ -98,7 +121,7 @@ $job = $jobText | ConvertFrom-Json
 Assert-ExactProperties $job @(
     "schema", "run_id", "output_directory", "metadata_path", "font", "export", "documents"
 ) "job"
-if ($job.schema -cne "rwml.word-export-job.v1") {
+if ($job.schema -cne $ExpectedJobSchema) {
     throw "job schema is invalid"
 }
 if ($job.run_id -cnotmatch "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$") {
@@ -168,7 +191,7 @@ if ([IO.Path]::GetDirectoryName($metadataPath) -cne [IO.Path]::GetDirectoryName(
 
 $documents = @($job.documents)
 if ($documents.Count -ne $ExpectedDocumentCount) {
-    throw "job must contain exactly 48 documents"
+    throw "job must contain exactly $ExpectedDocumentCount documents"
 }
 $seen = @{}
 $previousCaseId = ""
@@ -177,6 +200,15 @@ foreach ($row in $documents) {
         "case_id", "input", "output", "input_bytes", "input_sha256"
     ) "job document"
     Assert-CanonicalCaseId $row.case_id
+    if ($ExpectedPilotInputs.Count -gt 0) {
+        if (-not $ExpectedPilotInputs.ContainsKey($row.case_id)) {
+            throw "document is outside the fixed pilot profile"
+        }
+        $expectedInput = $ExpectedPilotInputs[$row.case_id]
+        if ([long]$row.input_bytes -ne $expectedInput[0] -or $row.input_sha256 -cne $expectedInput[1]) {
+            throw "document differs from the fixed pilot input identity"
+        }
+    }
     if ($seen.ContainsKey($row.case_id) -or ($previousCaseId -and $row.case_id -cle $previousCaseId)) {
         throw "job documents must have unique, sorted case IDs"
     }
@@ -264,7 +296,7 @@ try {
     }
 
     $metadata = [ordered]@{
-        schema = "rwml.word-export-metadata.v1"
+        schema = $ExportMetadataSchema
         run_id = $job.run_id
         producer = [ordered]@{
             name = "microsoft-word"

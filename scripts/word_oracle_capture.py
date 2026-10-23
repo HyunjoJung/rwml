@@ -545,9 +545,7 @@ def _validate_producer(producer: object, runtime: dict[str, Any]) -> dict[str, A
     expected_identity = word_producer_identity(runtime)
     if producer["identity_sha256"] != expected_identity:
         raise ValueError("producer identity does not match the Word runtime")
-    expected_version = (
-        f"Microsoft Word {runtime['version']} build {runtime['build']}"
-    )
+    expected_version = f"Microsoft Word {runtime['version']} build {runtime['build']}"
     if producer["version"] != expected_version:
         raise ValueError("producer version does not match the Word runtime")
     platform_value = producer["platform"]
@@ -615,9 +613,7 @@ def validate_export_metadata(
 
     if pdf_directory.is_symlink() or not pdf_directory.is_dir():
         raise ValueError("PDF directory is unavailable or symlinked")
-    expected_names = {
-        f"{document.case_id}.pdf" for document in corpus.documents
-    }
+    expected_names = {f"{document.case_id}.pdf" for document in corpus.documents}
     if _directory_entries(pdf_directory) != expected_names:
         raise ValueError("PDF directory does not contain the exact campaign set")
 
@@ -639,7 +635,10 @@ def validate_export_metadata(
             row["pdf_bytes"], "PDF byte length", maximum=MAX_PDF_BYTES
         )
         expected_sha = _sha256(row["pdf_sha256"], "PDF SHA-256")
-        if len(payload) != expected_bytes or hashlib.sha256(payload).hexdigest() != expected_sha:
+        if (
+            len(payload) != expected_bytes
+            or hashlib.sha256(payload).hexdigest() != expected_sha
+        ):
             raise ValueError(f"PDF identity mismatch for {expected.case_id}")
     _assert_path_neutral(metadata)
     return producer
@@ -704,10 +703,14 @@ def validate_pdf_fonts(
                     raise ValueError(f"{document.case_id}: PDF page has no fonts")
                 for font in page_fonts:
                     if len(font) < 4 or not isinstance(font[3], str):
-                        raise ValueError(f"{document.case_id}: malformed PDF font record")
+                        raise ValueError(
+                            f"{document.case_id}: malformed PDF font record"
+                        )
                     xref = font[0]
                     if isinstance(xref, bool) or not isinstance(xref, int) or xref <= 0:
-                        raise ValueError(f"{document.case_id}: PDF font is not embedded")
+                        raise ValueError(
+                            f"{document.case_id}: PDF font is not embedded"
+                        )
                     normalized = normalize_pdf_font_name(font[3])
                     if normalized != expected_postscript_name:
                         raise ValueError(
@@ -715,7 +718,9 @@ def validate_pdf_fonts(
                         )
                     extracted = pdf.extract_font(xref)
                     if len(extracted) < 4 or not extracted[3]:
-                        raise ValueError(f"{document.case_id}: PDF font is not embedded")
+                        raise ValueError(
+                            f"{document.case_id}: PDF font is not embedded"
+                        )
                     font_uses += 1
         finally:
             pdf.close()
@@ -775,9 +780,13 @@ def _validate_windows_font_location(font_path: Path) -> None:
     if windir:
         candidates.append((Path(windir) / "Fonts").resolve())
     if local_app_data:
-        candidates.append((Path(local_app_data) / "Microsoft" / "Windows" / "Fonts").resolve())
+        candidates.append(
+            (Path(local_app_data) / "Microsoft" / "Windows" / "Fonts").resolve()
+        )
     resolved = font_path.resolve()
-    if not candidates or not any(resolved.parent == candidate for candidate in candidates):
+    if not candidates or not any(
+        resolved.parent == candidate for candidate in candidates
+    ):
         raise ValueError("font must be the locked file in a Windows font directory")
 
 
@@ -786,13 +795,18 @@ def _run_backend(
     powershell: str,
     job_path: Path,
     timeout_seconds: int,
+    profile: str | None = None,
 ) -> None:
+    if profile not in {None, "pagination-pilot-v1", "note-numbering-v1"}:
+        raise ValueError("Word export profile is unsupported")
     environment = None
     if PureWindowsPath(powershell).name.casefold() == "powershell.exe":
         # Let Windows PowerShell rebuild its defaults instead of loading inherited
         # PowerShell Core modules through an intermediate Python process.
         environment = {
-            key: value for key, value in os.environ.items() if key.upper() != "PSMODULEPATH"
+            key: value
+            for key, value in os.environ.items()
+            if key.upper() != "PSMODULEPATH"
         }
     command = [
         powershell,
@@ -806,6 +820,8 @@ def _run_backend(
         "-JobPath",
         str(job_path),
     ]
+    if profile is not None:
+        command.extend(["-Profile", profile])
     try:
         completed = subprocess.run(
             command,
@@ -837,9 +853,7 @@ def _run_capture(
     timeout_seconds: int,
 ) -> dict[str, Any]:
     run_directory.mkdir()
-    job = build_export_job(
-        corpus, run_directory, font_path, font_lock, run_id=run_id
-    )
+    job = build_export_job(corpus, run_directory, font_path, font_lock, run_id=run_id)
     job_path = run_directory / "job.json"
     _write_json(job_path, job)
     _run_backend(
@@ -942,9 +956,7 @@ def capture_repeatable_word_oracle(
     ]
     if runs[0]["producer"] != runs[1]["producer"]:
         raise ValueError("Word producer identity changed between repeatability runs")
-    comparison = compare_capture_reports(
-        runs[1]["capture"], runs[0]["capture"], corpus
-    )
+    comparison = compare_capture_reports(runs[1]["capture"], runs[0]["capture"], corpus)
     exact = comparison["summary"]["normalized_exact_documents"]
     if exact != len(corpus.documents):
         raise ValueError(
@@ -1032,10 +1044,7 @@ def main(argv: list[str] | None = None) -> int:
             expected_run_id=args.run_id,
         )
         validate_pdf_fonts(args.pdf_dir, corpus, lock["postscript_name"])
-        print(
-            "validated Microsoft Word export metadata for "
-            f"{producer['version']}"
-        )
+        print(f"validated Microsoft Word export metadata for {producer['version']}")
         return 0
     except (OSError, ValueError) as error:
         print(f"word_oracle_capture: {error}", file=sys.stderr)
