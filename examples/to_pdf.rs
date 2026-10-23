@@ -152,7 +152,7 @@ fn render_document(
     options: &Options,
 ) -> rwml::Result<rwml::RenderedPdf> {
     match fonts {
-        // The existing release validator uses --fixed-fonts with system fallback.
+        // Preserve the historical --fixed-fonts option's system fallback.
         Some(fonts) if options.font_paths.is_empty() => doc.try_to_pdf_with_fonts_and_report(fonts),
         Some(fonts) => doc.try_to_pdf_with_fixed_fonts_and_report(fonts),
         None => doc.try_to_pdf_with_report(),

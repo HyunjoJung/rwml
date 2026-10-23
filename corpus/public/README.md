@@ -19,7 +19,8 @@ Every file here is safe to redistribute:
   synthetic set and permissively licensed vendored files. It is checked by
   `tests/public_corpus.rs`.
 - `RENDER_MANIFEST.tsv` — expected native-render page counts and render warning
-  classes for every manifest-listed fixture. It is checked when tests run with
+  classes using only the bundled Noto KR-with-hanja, Arabic, and Hebrew subsets,
+  in that order. It is checked when tests run with
   `--features render` and keeps strict release validation aligned with
   `MANIFEST.tsv`.
 - `RENDER_ORACLE.json` — the versioned external-render campaign lock. It binds
@@ -60,7 +61,13 @@ For every `.docx` here, rwml must:
    manifest** and each synthetic fixture emits a non-empty PDF.
 
 For LibreOffice A/B evidence, `scripts/render_validate.py` uses the bundled Noto
-subsets by default and reports the retained page-1 aHash plus bounded all-page
+subsets without system fallback by default; `--system-fonts` explicitly opts into
+host-dependent font selection. The Rust corpus test uses the same isolated
+profile. The native TSV expects four pages for `pagination-keep.docx` after the
+automatic-spacing correction; the frozen diagnostic JSON retains its original
+three-page metadata. All other page/warning expectations remain aligned.
+
+The validator reports the retained page-1 aHash plus bounded all-page
 aHash, foreground ink IoU, and explicit unmatched/capped page counts. Strict
 JSON runs additionally bind the report to the corpus root, source revision,
 Cargo lock, harness, platform, tool versions, and recorded LibreOffice identity.

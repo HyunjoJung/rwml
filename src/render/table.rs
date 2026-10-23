@@ -139,6 +139,7 @@ fn cell_visual_line(visual: CellVisual, height: f32, before: f32) -> LineLayout 
     LineLayout {
         height,
         baseline: 0.0,
+        fit_height: None,
         clip_to_height: false,
         x_indent: 0.0,
         char_range: None,

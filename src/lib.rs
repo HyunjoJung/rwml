@@ -7450,6 +7450,18 @@ mod tests {
         )
     }
 
+    #[cfg(feature = "render")]
+    fn legacy_five_line_column_page_height_twips() -> u16 {
+        use skrifa::{instance::Size, MetadataProvider};
+
+        let font = skrifa::FontRef::new(rwml_fonts::noto_sans_kr_subset()).unwrap();
+        let metrics = font.metrics(Size::new(11.0), skrifa::instance::LocationRef::default());
+        let line_height = metrics.ascent - metrics.descent + metrics.leading;
+        // Five single-spaced lines per column, with the fixture's 20pt margins.
+        // Column policy should not depend on an em-size approximation of a line.
+        ((40.0 + 5.0 * line_height) * 20.0).ceil() as u16
+    }
+
     fn single_paragraph_text(blocks: &[Block]) -> String {
         let [Block::Paragraph(paragraph)] = blocks else {
             panic!("expected exactly one paragraph block, got {blocks:?}");
@@ -10562,7 +10574,15 @@ mod tests {
             .map(|index| format!("line {index}\r"))
             .collect::<String>();
         let section_cps = [0, text.encode_utf16().count() as u32];
-        let single = section_page_grpprl(4_400, 2_000, 400, 400, 400, 400, false);
+        let single = section_page_grpprl(
+            4_400,
+            legacy_five_line_column_page_height_twips(),
+            400,
+            400,
+            400,
+            400,
+            false,
+        );
         let mut double = single.clone();
         push_section_column_count(&mut double, 1);
         let single_grpprls = [single.as_slice()];
@@ -10643,9 +10663,10 @@ mod tests {
             first_text.encode_utf16().count() as u32,
             text.encode_utf16().count() as u32,
         ];
-        let mut first = section_page_grpprl(4_400, 2_000, 400, 400, 400, 400, false);
+        let height = legacy_five_line_column_page_height_twips();
+        let mut first = section_page_grpprl(4_400, height, 400, 400, 400, 400, false);
         push_section_column_count(&mut first, 1);
-        let final_section = section_page_grpprl(4_400, 2_000, 400, 400, 400, 400, false);
+        let final_section = section_page_grpprl(4_400, height, 400, 400, 400, 400, false);
         let sepx_grpprls = [first.as_slice(), final_section.as_slice()];
         let bytes = legacy_doc_with_section_page_grpprls(&text, &section_cps, &sepx_grpprls);
         let model = Document::open(&bytes).unwrap().model();
@@ -15871,7 +15892,9 @@ mod tests {
     #[cfg(any(feature = "docx", feature = "render"))]
     fn push_legacy_pagination_fixture_spacing(grpprl: &mut Vec<u8>) {
         push_paragraph_spacing_twips(grpprl, 0xA414, 120);
-        push_paragraph_line_spacing(grpprl, 324, 1);
+        // Fix the advance at 14.85pt (11pt * the model-only 1.35 fallback) so
+        // these fixtures isolate pagination controls from automatic font metrics.
+        push_paragraph_line_spacing(grpprl, (-297_i16) as u16, 0);
     }
 
     #[cfg(feature = "render")]
@@ -15974,7 +15997,7 @@ mod tests {
         let mut seed_grpprl = Vec::new();
         push_legacy_pagination_fixture_spacing(&mut seed_grpprl);
         let mut cell_grpprl = vec![0x16, 0x24, 0x01];
-        push_paragraph_line_spacing(&mut cell_grpprl, 324, 1);
+        push_paragraph_line_spacing(&mut cell_grpprl, (-297_i16) as u16, 0);
         let mut after_grpprl = Vec::new();
         push_legacy_pagination_fixture_spacing(&mut after_grpprl);
         let runs = [
@@ -16101,7 +16124,7 @@ mod tests {
         let mut seed_grpprl = vec![0x31, 0x24, 0x00];
         push_legacy_pagination_fixture_spacing(&mut seed_grpprl);
         let mut cell_grpprl = vec![0x16, 0x24, 0x01];
-        push_paragraph_line_spacing(&mut cell_grpprl, 324, 1);
+        push_paragraph_line_spacing(&mut cell_grpprl, (-297_i16) as u16, 0);
         for &(sprm, value) in cell_properties {
             cell_grpprl.extend_from_slice(&sprm.to_le_bytes());
             cell_grpprl.push(value);

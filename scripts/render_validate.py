@@ -777,7 +777,7 @@ def render_rwml(
     *,
     fixed_fonts: bool = True,
 ) -> dict | None:
-    """Render via the crate's to_pdf example and return its JSON report."""
+    """Render with isolated bundled fonts, unless system fonts are requested."""
     cmd = [
         "cargo",
         "run",
@@ -791,7 +791,15 @@ def render_rwml(
         str(out),
     ]
     if fixed_fonts:
-        cmd.append("--fixed-fonts")
+        # The historical --fixed-fonts option still permits system fallback.
+        # Page-count validation must use the same font set on every host.
+        fonts = REPO / "rwml-fonts" / "fonts"
+        for name in (
+            "NotoSansKR-rwml-subset-full.ttf",
+            "NotoSansArabic-rwml-subset.ttf",
+            "NotoSansHebrew-rwml-subset.ttf",
+        ):
+            cmd.extend(["--font", str(fonts / name)])
     if report_out is not None:
         cmd.extend(["--report-json", str(report_out)])
     r = subprocess.run(

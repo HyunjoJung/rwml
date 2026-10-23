@@ -84,14 +84,15 @@ pub(super) fn shape_with_options(
     builder.push_default(StyleProperty::Brush(rgb::Color::new(0, 0, 0)));
     builder.push_default(StyleProperty::FontFamily(font_stack()));
     builder.push_default(StyleProperty::FontSize(base_size));
-    let line_height = options
+    let auto_line_height = options
         .line_height
-        .filter(|value| value.is_finite() && *value > 0.0)
-        .map(|value| value.clamp(0.25, 10.0))
-        .unwrap_or(1.35);
-    builder.push_default(StyleProperty::LineHeight(
-        parley::style::LineHeight::FontSizeRelative(line_height),
-    ));
+        .filter(|value| value.is_finite() && *value > 0.0);
+    let line_height = auto_line_height
+        // ECMA-376 Part 1 §17.3.1.33: auto spacing is a multiple of a line,
+        // including the font's ascent, descent and leading, not its em size.
+        .map(|value| parley::style::LineHeight::MetricsRelative(value.clamp(0.25, 10.0)))
+        .unwrap_or(parley::style::LineHeight::FontSizeRelative(1.35));
+    builder.push_default(StyleProperty::LineHeight(line_height));
     if heading {
         builder.push_default(StyleProperty::FontWeight(FontWeight::new(700.0)));
     }
@@ -174,7 +175,16 @@ pub(super) fn shape_with_options(
             break_lines_with_caps(&mut layout, break_width, &line_caps);
         }
         layout.align(align, Default::default());
-        out = shape_extract_lines(&layout, text, &text_rc, ranges, links, dynamic_ranges, cx);
+        out = shape_extract_lines(
+            &layout,
+            text,
+            &text_rc,
+            ranges,
+            links,
+            dynamic_ranges,
+            auto_line_height.is_some(),
+            cx,
+        );
         if !adjust_tabs {
             break;
         }
@@ -219,6 +229,7 @@ pub(super) fn apply_line_spacing_hint(lines: &mut [LineLayout], hint: Option<Lin
     }
     let requested = requested.min(MAX_ABSOLUTE_LINE_HEIGHT_PT);
     for line in lines {
+        line.fit_height = None;
         match hint {
             LineSpacingHint::AtLeast(_) if requested > line.height => {
                 line.baseline += (requested - line.height) * 0.5;
@@ -254,6 +265,7 @@ pub(super) fn apply_line_spacing_hint(lines: &mut [LineLayout], hint: Option<Lin
 }
 
 /// Build the drawable lines for an already-broken layout.
+#[allow(clippy::too_many_arguments)]
 fn shape_extract_lines(
     layout: &Layout<rgb::Color>,
     text: &str,
@@ -261,12 +273,18 @@ fn shape_extract_lines(
     ranges: &[(usize, usize, CharProps)],
     links: &[(usize, usize, Rc<str>)],
     dynamic_ranges: &[(usize, usize, DynamicTextRun)],
+    auto_line_height: bool,
     cx: &mut TextCx<'_>,
 ) -> Vec<LineLayout> {
     let mut out = Vec::new();
     for line in layout.lines() {
         let m = line.metrics();
-        let mut baseline = m.ascent + m.leading * 0.5;
+        let mut baseline = m.ascent
+            + if auto_line_height {
+                0.0
+            } else {
+                m.leading * 0.5
+            };
         let mut height = m.line_height;
         let mut line_start_byte = usize::MAX;
         let mut line_end_byte = 0usize;
@@ -411,8 +429,21 @@ fn shape_extract_lines(
         }
         baseline = -top;
         height = bottom - top;
+        // Extra automatic leading advances the next line below the glyph box;
+        // it is not required below the last visible line at a page boundary.
+        let fit_height = auto_line_height.then(|| {
+            runs.iter().fold(baseline + m.descent, |extent, run| {
+                let run_baseline = baseline + run.baseline_shift;
+                let mut bottom = run_baseline + run.descent;
+                for decoration in [run.underline, run.strikethrough].into_iter().flatten() {
+                    bottom = bottom.max(run_baseline + decoration.offset + decoration.thickness);
+                }
+                extent.max(bottom)
+            })
+        });
         out.push(LineLayout {
             height,
+            fit_height,
             baseline,
             clip_to_height: false,
             x_indent: 0.0,

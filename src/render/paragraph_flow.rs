@@ -226,7 +226,10 @@ pub(super) fn shape_paragraph_fragment_with_pagination(
     let mut advanced_to = source_start;
     for mut line in shaped.lines {
         let next_height = used_height + line.height.max(0.0);
-        if !lines.is_empty() && advanced_to > source_start && next_height > height + f32::EPSILON {
+        if !lines.is_empty()
+            && advanced_to > source_start
+            && used_height + line.fit_height() > height + f32::EPSILON
+        {
             break;
         }
         if let Some(range) = line.char_range.as_mut() {
@@ -673,6 +676,71 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    #[test]
+    fn automatic_line_spacing_fragment_uses_visible_extent_and_preserves_advance() {
+        let paragraph = Paragraph {
+            props: ParaProps {
+                spacing: crate::Spacing {
+                    line_pct: Some(1.5),
+                    ..crate::Spacing::default()
+                },
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: "First\nSecond\nThird".to_string(),
+                props: CharProps {
+                    size_half_pt: Some(22),
+                    ..CharProps::default()
+                },
+                ..Run::default()
+            }],
+        };
+        let mut font_cx = strict_font_context(rwml_fonts::noto_sans_kr_subset().to_vec());
+        let mut layout_cx = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut cx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let full = shape_paragraph_fragment(
+            &paragraph,
+            None,
+            &[],
+            None,
+            None,
+            FragmentTrack {
+                width: 180.0,
+                height: 400.0,
+            },
+            ParagraphFragmentCursor::default(),
+            &mut cx,
+            &mut capture,
+        );
+        assert_eq!(full.lines.len(), 3);
+        let advance = full.lines[0].height;
+        let height = advance * 2.0 + full.lines[2].fit_height() + 0.1;
+        let fitted = shape_paragraph_fragment(
+            &paragraph,
+            None,
+            &[],
+            None,
+            None,
+            FragmentTrack {
+                width: 180.0,
+                height,
+            },
+            ParagraphFragmentCursor::default(),
+            &mut cx,
+            &mut capture,
+        );
+        assert_eq!(fitted.lines.len(), 3);
+        assert!(fitted.next.is_none());
+        assert!(fitted.lines.iter().all(|line| line.height == advance));
+        assert!(fitted.lines.iter().map(|line| line.height).sum::<f32>() > height);
     }
 
     #[test]
