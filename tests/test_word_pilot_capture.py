@@ -14,6 +14,16 @@ word = pilot.word
 
 
 class WordPilotCaptureTests(unittest.TestCase):
+    def test_harness_binds_current_shared_analysis_and_generator_helpers(self):
+        identity = pilot.harness_identity()
+        for name, expected in word._harness_identity().items():
+            with self.subTest(name=name):
+                self.assertEqual(identity.get(name), expected)
+        batch_path = Path(pilot.pilot.batch.__file__)
+        self.assertEqual(
+            identity.get(batch_path.name), hashlib.sha256(batch_path.read_bytes()).hexdigest()
+        )
+
     def _retained_capture(self, output):
         pilot.materialize(output / "corpus")
         runtime = {

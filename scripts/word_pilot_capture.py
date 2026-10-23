@@ -143,8 +143,8 @@ def materialize(output: Path) -> None:
     payloads = input_payloads()
     output.mkdir(parents=True)
     for case_id, payload in payloads.items():
-        pilot._atomic_write(output / f"{case_id}.docx", payload)
-    pilot._atomic_write(output / "PROVENANCE.md", PROVENANCE.encode())
+        pilot.batch.atomic_write(output / f"{case_id}.docx", payload)
+    pilot.batch.atomic_write(output / "PROVENANCE.md", PROVENANCE.encode())
     word._write_json(output / "INPUTS.json", input_manifest())
 
 
@@ -345,9 +345,12 @@ def harness_identity() -> dict:
         word.topology.SCRIPT_PATH,
         Path(generator.__file__),
         pilot.SCRIPT_PATH,
+        Path(pilot.batch.__file__),
         SCRIPT_PATH.with_name("render_oracle_contract.py"),
     ]
-    return {path.name: digest(path.read_bytes()) for path in paths}
+    return word._harness_identity() | {
+        path.name: digest(path.read_bytes()) for path in paths
+    }
 
 
 def _analysis_runtime():
