@@ -315,11 +315,13 @@ registers; hidden text is not a rendered glyph requirement. These checks do not
 prove shaping, subset source identity, cross-platform byte equality or Word layout.
 
 The existing `--fixed-fonts` example option registers bundled Noto subsets and
-still permits system fallback, as required by the current release validator.
+still permits system fallback for compatibility.
 It is not an isolated capture mode despite its historical name. Without either
 font option the example keeps its system-font behavior, as do the existing
 ordinary and bundled-font library APIs. Use explicit `--font` arguments for
-isolation. Release defaults and acceptance gates are unchanged.
+isolation. The TSV release validator uses explicit paths to the three bundled
+Noto subsets, with system fallback disabled, so its native page expectations do
+not depend on installed fonts. It retains the existing acceptance thresholds.
 
 ## Isolated font-program comparison
 
@@ -535,8 +537,8 @@ The path-neutral `CAPTURE.json` binds source, corpus, runtime, tool payloads,
 ordered fonts, native build/execution settings and all artifacts. Verification
 is source/runtime-bound: do not relabel historical receipts. This command does
 not establish reference repeatability, Word fidelity, metric acceptance or a
-release gate. Existing release validation and historical `--fixed-fonts`
-fallback behavior remain unchanged.
+release gate. Release validation still consumes the TSV native font profile;
+the historical `--fixed-fonts` example fallback behavior remains unchanged.
 
 ## Capture-bound metrics and repeats
 

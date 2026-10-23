@@ -489,6 +489,11 @@ fn public_corpus_render_report_matches_manifest() {
     let manifest =
         fs::read_to_string(root.join("RENDER_MANIFEST.tsv")).expect("read render manifest");
     let expected = parse_expected_render_reports(&manifest);
+    let fonts = vec![
+        rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+        rwml_fonts::noto_sans_arabic_subset().to_vec(),
+        rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+    ];
     assert!(
         expected.len() >= 5,
         "expected the render manifest to describe the synthetic feature corpus"
@@ -499,7 +504,7 @@ fn public_corpus_render_report_matches_manifest() {
         let doc = Document::open(&bytes).unwrap_or_else(|e| panic!("open {}: {e}", row.path));
         let features = doc.report().features;
         let rendered = doc
-            .try_to_pdf_with_report()
+            .try_to_pdf_with_fixed_fonts_and_report(&fonts)
             .unwrap_or_else(|e| panic!("render {}: {e}", row.path));
 
         assert!(

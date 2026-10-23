@@ -239,16 +239,21 @@ class RenderOracleCorpusContractTests(unittest.TestCase):
                 int(pages),
                 () if warnings == "-" else tuple(sorted(warnings.split("|"))),
             )
-        self.assertEqual(
-            {
-                document.relative_path: (
-                    document.expected_pages,
-                    document.expected_warnings,
-                )
-                for document in corpus.documents
-            },
-            tsv_expected,
-        )
+        oracle_expected = {
+            document.relative_path: (
+                document.expected_pages,
+                document.expected_warnings,
+            )
+            for document in corpus.documents
+        }
+        # Frozen oracle metadata retains its original page profile. Native TSV
+        # validation isolates bundled fonts and uses corrected automatic spacing.
+        pagination = "synthetic/pagination-keep.docx"
+        self.assertEqual(oracle_expected[pagination], (3, ()))
+        self.assertEqual(tsv_expected[pagination], (4, ()))
+        self.assertEqual(sum(pages for pages, _ in tsv_expected.values()), 27)
+        oracle_expected[pagination] = (4, ())
+        self.assertEqual(oracle_expected, tsv_expected)
         self.assertEqual(
             sum(document.input_bytes for document in corpus.documents), 238180
         )

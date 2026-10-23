@@ -786,7 +786,34 @@ class RenderValidateReportTests(unittest.TestCase):
                 )
 
         command = run.call_args.args[0]
-        self.assertIn("--fixed-fonts", command)
+        fonts = render_validate.REPO / "rwml-fonts" / "fonts"
+        expected_fonts = [
+            fonts / "NotoSansKR-rwml-subset-full.ttf",
+            fonts / "NotoSansArabic-rwml-subset.ttf",
+            fonts / "NotoSansHebrew-rwml-subset.ttf",
+        ]
+        self.assertNotIn("--fixed-fonts", command)
+        self.assertEqual(
+            [command[index + 1] for index, arg in enumerate(command) if arg == "--font"],
+            [str(path) for path in expected_fonts],
+        )
+        self.assertTrue(all(path.is_file() for path in expected_fonts))
+
+    def test_render_rwml_preserves_explicit_system_font_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            source = root / "sample.docx"
+            output = root / "sample.pdf"
+            output.write_bytes(b"%PDF-1.7")
+            with mock.patch.object(
+                render_validate.subprocess, "run", return_value=mock.Mock(returncode=0)
+            ) as run:
+                self.assertEqual(
+                    render_validate.render_rwml(source, output, fixed_fonts=False), {}
+                )
+        command = run.call_args.args[0]
+        self.assertNotIn("--font", command)
+        self.assertNotIn("--fixed-fonts", command)
 
 
 @unittest.skipIf(render_validate.Image is None, "Pillow is not installed")
